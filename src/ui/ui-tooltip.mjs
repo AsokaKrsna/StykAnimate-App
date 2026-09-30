@@ -1,3 +1,6 @@
+import {replaceLocalized, appendLocalized} from '../localization-bindings.mjs';
+import {interfaceLocalization} from '../localization.mjs';
+
 /**
  * The one tooltip: an ink pill with a control's name and, as plain text after
  * a middle dot, its shortcut ("Undo · Ctrl+Z"). It shows after a delay, then
@@ -53,7 +56,7 @@ export function installTooltips(root = globalThis.document, {selector = TOOLTIP_
   element.setAttribute('role', 'tooltip');
   element.popover = 'hint';
   if (element.popover !== 'hint') element.popover = 'manual';   // before popover="hint" (Chromium 133)
-  doc.body.append(element);
+  appendLocalized(doc.body, element);
   const noHover = hoverless ?? view.matchMedia?.('(hover: none)');
   let target = null, timer = 0, lastHiddenAt = -Infinity, describedBy = null;
 
@@ -77,10 +80,10 @@ export function installTooltips(root = globalThis.document, {selector = TOOLTIP_
     span.textContent = text;
     return span;
   };
-  const show = next => {
+  const show = (next, refresh = false) => {
     const text = tooltipContent(next, {shortcut});
     if (!text || !next.isConnected) { hide(); return; }
-    if (next === target && element.matches(':popover-open')) return;   // already showing for it (hover, then focus)
+    if (!refresh && next === target && element.matches(':popover-open')) return;   // already showing for it (hover, then focus)
     if (next !== target) {
       unlink();
       target = next;
@@ -89,11 +92,11 @@ export function installTooltips(root = globalThis.document, {selector = TOOLTIP_
       next.setAttribute('aria-describedby', [describedBy, element.id].filter(Boolean).join(' '));
     }
     // Separate parts, so the pill's gap spaces both sides of the dot: "Undo · Ctrl+Z".
-    element.replaceChildren(part('ui-tooltip-label', text.label || text.shortcut));
+    replaceLocalized(element, part('ui-tooltip-label', text.label || text.shortcut));
     if (text.label && text.shortcut) {
       const dot = part('ui-tooltip-sep', '·');
       dot.setAttribute('aria-hidden', 'true');
-      element.append(dot, part('ui-tooltip-key', text.shortcut));
+      appendLocalized(element, dot, part('ui-tooltip-key', text.shortcut));
     }
     try { if (!element.matches(':popover-open')) element.showPopover(); } catch { hide(); return; }
     placeFloating(element, next, {placement: placementFor(next), offset: 6, fit: false, overlap: false, topInset, sheet: false});
@@ -146,6 +149,7 @@ export function installTooltips(root = globalThis.document, {selector = TOOLTIP_
   root.addEventListener('pointerdown', () => hide(), {capture: true, signal});
   root.addEventListener('keydown', event => { if (event.key === 'Escape') hide(); }, {capture: true, signal});
   doc.addEventListener('scroll', () => hide(), {capture: true, signal});
-  signal?.addEventListener('abort', () => { hide(); element.remove(); }, {once: true});
-  return {element, show, hide};
+  const unsubscribe = interfaceLocalization.subscribe(() => { if (target) show(target, true); });
+  signal?.addEventListener('abort', () => { unsubscribe(); hide(); element.remove(); }, {once: true});
+  return {element, show, hide, destroy() { unsubscribe(); hide(); element.remove(); }};
 }

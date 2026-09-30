@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Small editable rigs used by the library, regression suite and benchmarks.
  * Hidden segments are ordinary zero-width controls, not baked artwork. */
 import {createFrame, createObject} from './demo.mjs';
@@ -42,7 +43,7 @@ export const CONSTRAINT_TEST_RIGS = [
 export const RIG_EXAMPLES=[...MECHANISM_RIG_EXAMPLES,...SOLID_RIG_EXAMPLES,...CONNECTOR_3D_EXAMPLES];
 
 export function rigExampleDocument(id) {
-  const example=RIG_EXAMPLES.find(r=>r.id===id)??CONSTRAINT_TEST_RIGS.find(r=>r.id===id);if(!example)throw new Error('Unknown rig example.');
+  const example=RIG_EXAMPLES.find(r=>r.id===id)??CONSTRAINT_TEST_RIGS.find(r=>r.id===id);if(!example)throw messageError(new Error(''), "errors.rigExamples.unknownRigExample", {});
   const built=example.build?.(),segments=built?.segments??example.segments();
   const palette=[[13,153,255],[81,111,135],[118,172,208],[232,154,56]];
   if(!built)segments.forEach((s,i)=>{s.color_rgb=palette[i%palette.length].slice();});

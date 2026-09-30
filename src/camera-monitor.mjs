@@ -1,3 +1,6 @@
+import {messageError} from './localized-error.mjs';
+import {t as interfaceText} from './localization.mjs';
+import {localizedText} from './localization-bindings.mjs';
 import {drawExportScene} from './export-frame-core.mjs';
 import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {activeVfx,vfxStack} from './vfx.mjs';
@@ -32,7 +35,7 @@ function monitorState(canvas, options) {
   state.options=options;return state;
 }
 function reportMonitorError(error, options) {
-  if(!error||typeof error!=='object')error=new Error('The camera preview failed.');
+  if(!error||typeof error!=='object')error=messageError(new Error(''), "errors.cameraMonitor.theCameraPreviewFailed", {});
   error.telemetryStage??='prepare';
   if(options.onError)options.onError(error);
   else globalThis.reportError?.(error);
@@ -55,7 +58,7 @@ class MonitorGpuSource {
       this.width=width;this.height=height;this.canvas.width=width;this.canvas.height=height;
       this.context.configure({device:renderer.device,format:renderer.format,alphaMode:'premultiplied'});
       this.msaa?.destroy();this.msaaSamples=samples;
-      this.msaa=samples?renderer.device.createTexture({label:'Camera monitor MSAA',size:[width,height],sampleCount:samples,format:renderer.format,usage:GPUTextureUsage.RENDER_ATTACHMENT}):null;
+      this.msaa=samples?renderer.device.createTexture({label:interfaceText("cameraMonitor.cameraMonitorMsaa"), labelKey: "cameraMonitor.cameraMonitorMsaa",size:[width,height],sampleCount:samples,format:renderer.format,usage:GPUTextureUsage.RENDER_ATTACHMENT}):null;
     }
     if(!renderer.renderPreparedInto(key,{report,view:{scale:width/report.canvas_width},target:{context:this.context,msaa:this.msaa,width,height},hiddenUids}))return false;
     ctx.drawImage(this.canvas,view.x,view.y,report.canvas_width*view.scale,report.canvas_height*view.scale);
@@ -75,7 +78,7 @@ export function syncCameraControls(root, frame, {activeKey=null, guides=true}={}
     input.dataset.propertyValue=String(value);
   }
   const scale=root.querySelector('[data-camera-magnification]');
-  if(scale) scale.textContent=`${formatPropertyValue(100/c.scale,1)}% zoom`;
+  if(scale) localizedText(scale, "cameraMonitor.zoom", {value: formatPropertyValue(100/c.scale,1)});
   root.querySelector('[data-action="camera-guides"]')?.setAttribute('aria-pressed',String(guides));
 }
 
@@ -93,7 +96,7 @@ export function drawCameraMonitor(canvas, options) {
     canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);
   }
   const ctx=canvas.getContext('2d',{willReadFrequently:true}), scale=Math.min(width/report.canvas_width,height/report.canvas_height);
-  if(!ctx || ctx.isContextLost?.())throw Object.assign(new Error('The camera preview canvas is unavailable.'),{telemetryCode:'device_lost'});
+  if(!ctx || ctx.isContextLost?.())throw Object.assign(messageError(new Error(''), "errors.cameraMonitor.theCameraPreviewCanvasIsUnavailable", {}),{telemetryCode:'device_lost'});
   const view={scale,x:(width-report.canvas_width*scale)/2,y:(height-report.canvas_height*scale)/2};
   ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);
   if(prepared){

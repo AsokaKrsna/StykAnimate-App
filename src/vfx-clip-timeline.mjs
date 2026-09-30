@@ -1,13 +1,17 @@
+import {effectMessages,effectPropertyText} from './vfx-localization.mjs';
+import {appendLocalized, localizedAttribute} from './localization-bindings.mjs';
+
+import {t as interfaceText} from './localization.mjs';
 import {clipContains,vfxFadeAt} from './vfx-clips.mjs';
-import {VFX_REGISTRY,vfxPropertyLabel} from './vfx.mjs';
-import {vfxVisibleKeys,vfxChannelLabel} from './vfx-key-channels.mjs';
+import {VFX_REGISTRY,vfxDescriptor} from './vfx.mjs';
+import {vfxVisibleKeys,vfxChannelLabel,vfxChannelMessage} from './vfx-key-channels.mjs';
 import {openVfxChannelMenu} from './vfx-key-channel-menu.mjs';
 import {generatorClipTail} from './vfx-generators.mjs';
 
 /** Where an effect lane's keys sit: under the clip's name, near the lane's foot (the lane is `size` px tall, timeline-rows.mjs). */
 const keyY=size=>size-9;
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
-const name=c=>c.name||VFX_REGISTRY[c.effects[0]?.type]?.name||'Effects';
+const name=c=>c.name||(effectMessages[c.effects[0]?.type]?interfaceText(effectMessages[c.effects[0].type].nameKey):interfaceText("vfxClipTimeline.effects"));
 const lowerBound=(keys,tick)=>{let a=0,b=keys.length;while(a<b){const m=(a+b)>>>1;if(keys[m].tick<tick)a=m+1;else b=m;}return a;};
 const projections=new WeakMap();
 
@@ -37,7 +41,7 @@ export function appendVfxRows(rows,editor,target={scene:editor._vfxTimelineScene
    let lane=lanes.find(l=>l.end<=clip.start);if(!lane){lane={end:0,clips:[]};lanes.push(lane);}
    lane.clips.push(clip);lane.end=clip.duration===null?Infinity:clip.start+clip.duration;
   }
-  return [row,...lanes.map((lane,i)=>({id:`vfx/${row.id}/${i}`,kind:'vfx',name:i?'Effects '+(i+1):'Effects',clips:lane.clips,layerId:row.id,visible:true,locked:row.locked}))];
+  return [row,...lanes.map((lane,i)=>({id:`vfx/${row.id}/${i}`,kind:'vfx',name:i?interfaceText('vfxChannels.lane',{count:i+1}):interfaceText("vfxClipTimeline.effects"),nameKey:i?'vfxChannels.lane':'vfxClipTimeline.effects',nameParams:{count:i+1},clips:lane.clips,layerId:row.id,visible:true,locked:row.locked}))];
  });
 }
 function previewClip(host,clip){const g=host.gesture;return g?.kind==='vfx-clip'&&g.id===clip.id?{...clip,...g.patch}:clip;}
@@ -65,7 +69,7 @@ export function paintVfxRow(host,ctx,row,y,size=32){
   }
   ctx.font=`11px ${host.font}`;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillStyle=c.ink;
   const textY=top+Math.min(10,height/2-2);
-  if(width>34){ctx.save();ctx.beginPath();ctx.rect(Math.max(left+10,6),top+2,Math.max(1,width-20),15);ctx.clip();ctx.fillText(name(clip),Math.max(left+10,6),textY);if(selected){const filter=vfxChannelLabel(host.editor,clip),x=Math.max(left+10,6)+ctx.measureText(name(clip)).width+10;if(filter!=='All keys'&&b-x>65){ctx.fillStyle=c.muted;ctx.font=`10px ${host.font}`;ctx.fillText(filter,x,textY);}}ctx.restore();}
+  if(width>34){ctx.save();ctx.beginPath();ctx.rect(Math.max(left+10,6),top+2,Math.max(1,width-20),15);ctx.clip();ctx.fillText(name(clip),Math.max(left+10,6),textY);if(selected){const filter=vfxChannelLabel(host.editor,clip),x=Math.max(left+10,6)+ctx.measureText(name(clip)).width+10;if(vfxChannelMessage(host.editor,clip).messageKey!=='vfxChannels.allKeys'&&b-x>65){ctx.fillStyle=c.muted;ctx.font=`10px ${host.font}`;ctx.fillText(filter,x,textY);}}ctx.restore();}
   for(const tick of keyTicks(host,clip)){
    if(tick<clip.offset||clip.duration!==null&&tick>=clip.offset+clip.duration)continue;
    const moving=g?.kind==='vfx-key'&&g.id===clip.id&&g.from===tick,time=moving?g.to:tick,x=keyX(host,clip,time);
@@ -90,15 +94,15 @@ function pickKey(host,clip,hit){
  * All other blocks and keys use the timeline's existing virtual canvas. */
 function syncFadeHandles(host){
  if(!host.vfxHandles){
-  const overlay=host.vfxHandles=document.createElement('div');overlay.className='vfx-timeline-overlay';host.main.append(overlay);
+  const overlay=host.vfxHandles=document.createElement('div');overlay.className='vfx-timeline-overlay';appendLocalized(host.main, overlay);
   for(const edge of ['fadeIn','fadeOut']){
-   const node=document.createElement('button');node.type='button';node.className='vfx-fade-handle';node.dataset.vfxFade=edge;node.setAttribute('role','slider');node.setAttribute('aria-orientation','horizontal');node.setAttribute('aria-label',edge==='fadeIn'?'Fade in':'Fade out');overlay.append(node);
+   const node=document.createElement('button');node.type='button';node.className='vfx-fade-handle';node.dataset.vfxFade=edge;node.setAttribute('role','slider');node.setAttribute('aria-orientation','horizontal');localizedAttribute(node, 'aria-label', (edge==='fadeIn' ? "vfxClipTimeline.fadeIn" : "vfxClipTimeline.fadeOut"), (edge==='fadeIn' ? {} : {}));appendLocalized(overlay, node);
    host._on(node,'pointerdown',event=>host._pointerDown(event));
    host._on(node,'keydown',event=>{
     if(event.key==='Escape'){event.preventDefault();host._cancelGesture();host.scroll.focus();return;}
-    if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key))return host._keyDown(event);
+    if(!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Home","End"].includes(event.key))return host._keyDown(event);
     event.preventDefault();event.stopPropagation();const clip=host.editor.getVfxClips().find(c=>c.id===host.editor._selectedVfxClip);if(!clip||clip.duration===null)return;
-    const delta=(['ArrowRight','ArrowUp'].includes(event.key)?1:-1)*(event.shiftKey?10:1),value=event.key==='Home'?0:event.key==='End'?clip.duration:clamp(clip[edge]+delta,0,clip.duration);
+    const delta=(["ArrowRight","ArrowUp"].includes(event.key)?1:-1)*(event.shiftKey?10:1),value=event.key==='Home'?0:event.key==='End'?clip.duration:clamp(clip[edge]+delta,0,clip.duration);
     host._run(()=>host.editor.setVfxClip(clip.id,{[edge]:value}));host.update();
    });
   }
@@ -108,7 +112,7 @@ function syncFadeHandles(host){
  host.vfxHandles.hidden=!clip||clip.duration===null||y<ceiling||y+size>host.height;
  if(host.vfxHandles.hidden)return;
  const left=clip.start*host.pxPerTick-host._offsetX(),right=left+clip.duration*host.pxPerTick;
- for(const node of host.vfxHandles.children){const edge=node.dataset.vfxFade,x=clamp(fadeX(host,clip,edge),left+7,right-7);node.hidden=x<5||x>host.width-5||right-left<18;node.disabled=Boolean(row.locked);node.style.left=`${x}px`;node.style.top=`${y-layout.header+6}px`;node.dataset.dragging=String(host.gesture?.edge===edge);node.setAttribute('aria-valuemin','0');node.setAttribute('aria-valuemax',String(clip.duration));node.setAttribute('aria-valuenow',String(Math.min(clip[edge],clip.duration)));node.setAttribute('aria-valuetext',`${clip[edge]} frames`);node.title=`${edge==='fadeIn'?'Fade in':'Fade out'} · ${clip[edge]} frames`;}
+ for(const node of host.vfxHandles.children){const edge=node.dataset.vfxFade,x=clamp(fadeX(host,clip,edge),left+7,right-7);node.hidden=x<5||x>host.width-5||right-left<18;node.disabled=Boolean(row.locked);node.style.left=`${x}px`;node.style.top=`${y-layout.header+6}px`;node.dataset.dragging=String(host.gesture?.edge===edge);node.setAttribute('aria-valuemin','0');node.setAttribute('aria-valuemax',String(clip.duration));node.setAttribute('aria-valuenow',String(Math.min(clip[edge],clip.duration)));node.setAttribute('aria-valuetext',`${clip[edge]} frames`);localizedAttribute(node, "title", 'vfxClipTimeline.valueValue1Frames', {value: edge==='fadeIn'?{messageKey: "vfxClipTimeline.fadeIn"}:{messageKey: "vfxClipTimeline.fadeOut"}, value1: clip[edge]});}
 }
 export function installVfxTimeline(Timeline){
  const p=Timeline.prototype;
@@ -145,7 +149,7 @@ export function installVfxTimeline(Timeline){
   const g=this.gesture;
   if(!g?.kind.startsWith('vfx')){
    const hit=this._hit(event),clip=pickClip(this,hit),tick=clip&&pickKey(this,clip,hit);
-   this.scroll.title=clip?(tick!==undefined?`Frame ${tick+clip.start-clip.offset+1} · ${Object.entries(vfxVisibleKeys(this.editor,clip)).filter(([,keys])=>keys[lowerBound(keys,tick)]?.tick===tick).map(([property])=>vfxPropertyLabel(property)).join(', ')}`:name(clip)):'';
+   this.scroll.title=clip?(tick!==undefined?interfaceText('vfxClipTimeline.frameValueValue1', {value: tick+clip.start-clip.offset+1, value1: Object.entries(vfxVisibleKeys(this.editor,clip)).filter(([,keys])=>keys[lowerBound(keys,tick)]?.tick===tick).map(([property])=>effectPropertyText(property,vfxDescriptor(property))).join(', ')}):name(clip)):'';
    const result=move.call(this,event);if(clip&&!g)this.scroll.style.cursor=this.tracks[hit.row].locked?'default':trimEdge(this,clip,hit)||tick!==undefined?'ew-resize':clip.duration!==null?'grab':'default';return result;
   }
   let delta=Math.round((event.clientX-g.x)/this.pxPerTick);
@@ -165,7 +169,7 @@ export function installVfxTimeline(Timeline){
  };
  const key=p._keyDown;p._keyDown=function(event){
   if(!this.editor._selectedVfxClip||event.target.matches('input,select,textarea'))return key.call(this,event);
-  if(this.editor._selectedVfxKey&&['ArrowLeft','ArrowRight'].includes(event.key)&&!event.ctrlKey&&!event.metaKey&&!event.altKey){event.preventDefault();event.stopPropagation();this._run(()=>{const k=this.editor._selectedVfxKey,to=Math.max(0,k.tick+(event.key==='ArrowRight'?1:-1)*(event.shiftKey?10:1));this.editor.moveVfxClipKeys(k.id,k.tick,to,{properties:k.properties});this.editor._selectedVfxKey={...k,tick:to};const clip=this.editor.getVfxClips().find(c=>c.id===k.id);this.editor.seek(Math.max(0,to+clip.start-clip.offset),{allowBeyondEnd:true});});this.update();return;}
+  if(this.editor._selectedVfxKey&&["ArrowLeft","ArrowRight"].includes(event.key)&&!event.ctrlKey&&!event.metaKey&&!event.altKey){event.preventDefault();event.stopPropagation();this._run(()=>{const k=this.editor._selectedVfxKey,to=Math.max(0,k.tick+(event.key==='ArrowRight'?1:-1)*(event.shiftKey?10:1));this.editor.moveVfxClipKeys(k.id,k.tick,to,{properties:k.properties});this.editor._selectedVfxKey={...k,tick:to};const clip=this.editor.getVfxClips().find(c=>c.id===k.id);this.editor.seek(Math.max(0,to+clip.start-clip.offset),{allowBeyondEnd:true});});this.update();return;}
   if(event.key==='Escape'){if(this.gesture)this._cancelGesture();else{this.editor._selectedVfxClip=null;this.editor._selectedVfxKey=null;this.editor._emit('vfx-selection');}event.preventDefault();return;}
   if(event.key==='Delete'||event.key==='Backspace'){event.preventDefault();this._run(()=>{const k=this.editor._selectedVfxKey;if(k){this.editor.deleteVfxClipKeys(k.id,k.tick,{properties:k.properties});this.editor._selectedVfxKey=null;}else{this.editor.deleteVfxClip(this.editor._selectedVfxClip);this.editor._selectedVfxClip=null;}});return;}
   if((event.ctrlKey||event.metaKey)&&['c','d','v'].includes(event.key.toLowerCase())){event.preventDefault();this._run(()=>{const id=this.editor._selectedVfxClip,c=this.editor.getVfxClips().find(c=>c.id===id);if(!c)return;if(event.key.toLowerCase()==='c')this.editor.copyVfxClip(id);else this.editor._selectedVfxClip=event.key.toLowerCase()==='d'?this.editor.duplicateVfxClip(id):this.editor.pasteVfxClip(c.target);this.editor._emit('vfx-selection');});return;}

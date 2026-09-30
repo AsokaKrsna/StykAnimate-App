@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import { SHAPE, SHAPE_BYTES, SHAPE_FLOATS } from './renderer-geometry.mjs';
 
 // The staging memory is bounded independently of the scene size. writeBuffer
@@ -8,7 +9,7 @@ export const SHAPE_UPLOAD_RECORDS = 8192;
  * Entries matching `skip` are left unwritten for the caller to fill. */
 export function* uploadShapeLayoutSteps(queue, buffer, entries, staging, skip = null) {
   const records = Math.floor(staging.length / SHAPE_FLOATS);
-  if (!records) throw new RangeError('Shape upload staging must hold at least one record.');
+  if (!records) throw messageError(new RangeError(''), "errors.rendererUpload.shapeUploadStagingMustHoldAtLeastOne", {});
   let batchStart = 0, used = 0, bytes = 0, calls = 0;
   const flush = () => {
     if (!used) return;
@@ -18,7 +19,7 @@ export function* uploadShapeLayoutSteps(queue, buffer, entries, staging, skip = 
   };
   for (const entry of entries) {
     if (entry.offset !== batchStart + used || entry.count > entry.capacity || entry.data.length !== entry.count * SHAPE_FLOATS)
-      throw new RangeError('Shape upload layout must be contiguous and match its primitive data.');
+      throw messageError(new RangeError(''), "errors.rendererUpload.shapeUploadLayoutMustBeContiguousAndMatch", {});
     if (skip?.(entry)) {flush(); batchStart += entry.capacity; continue;}
     let local = 0;
     while (local < entry.capacity) {

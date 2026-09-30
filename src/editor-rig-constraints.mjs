@@ -1,10 +1,11 @@
+import {messageError} from './localized-error.mjs';
 import {rigConstraintPlan, clampRig, rigIKAllowed} from './rig-constraints.mjs';
 import {segmentBranchIndices} from './editor-builder.mjs';
 import {animationRotation} from './animation-origin.mjs';
 
 const clone = value => structuredClone(value);
 const finite = (value,min,max,label) => {
-  if(!Number.isFinite(value)||value<min||value>max)throw new Error(`${label} must be between ${min} and ${max}.`);
+  if(!Number.isFinite(value)||value<min||value>max)throw messageError(new Error(''), "errors.cameraMotion.mustBeBetweenAnd", {label: label, min: min, max: max});
   return value;
 };
 /** Validate a proposed shallow definition before publication. History journals
@@ -16,7 +17,7 @@ function change(editor,label,changes) {
   for(const [i,rig] of changes)segments[i]={...segments[i],_stykRig:rig};
   const proposed={...figure,segments};rigConstraintPlan(proposed);
   for(const frame of editor._allSourceFrames())for(const o of frame.objects)if(o.figure_type_id===figure.figure_type_id&&o._stykIK)
-    for(const [id,c] of Object.entries(o._stykIK))if(c.enabled&&!rigIKAllowed(proposed,segments.findIndex(s=>s.segment_id===Number(id))))throw new Error('Disable IK on the affected parts before binding them to a rig driver.');
+    for(const [id,c] of Object.entries(o._stykIK))if(c.enabled&&!rigIKAllowed(proposed,segments.findIndex(s=>s.segment_id===Number(id))))throw messageError(new Error(''), "errors.editorRigConstraints.disableIkOnTheAffectedPartsBeforeBinding", {});
   const before=[],after=[];
   for(const [i,rig] of changes) {
     const old=figure.segments[i]._stykRig;
@@ -36,10 +37,10 @@ function change(editor,label,changes) {
 
 
 function appendRigJoint(editor,definition,label) {
-  const figure=editor.figure;if(!figure)throw new Error('Select a figure before adding a rig joint.');
-  if(figure.segments.length>=30000)throw new Error('Figure segment capacity reached.');
+  const figure=editor.figure;if(!figure)throw messageError(new Error(''), "errors.editorRigConstraints.selectAFigureBeforeAddingARigJoint", {});
+  if(figure.segments.length>=30000)throw messageError(new Error(''), "errors.editorRigConstraints.figureSegmentCapacityReached", {});
   const id=Math.max(0,...figure.segments.map(s=>s.segment_id))+1;
-  if(id>65535)throw new Error('Figure joint capacity reached.');
+  if(id>65535)throw messageError(new Error(''), "errors.editorBuilderBranch.figureJointCapacityReached", {});
   const segment={segment_id:id,bend_rad:0,thickness:0,primitive_code:0,aux_code:0,flags:0,
     segment_type:'line',segment_kind:'line',color_rgb:[13,153,255],transparency:0,visible:true,z_order:figure.segments.length+1,...definition};
   rigConstraintPlan({...figure,segments:[...figure.segments,segment]});
@@ -73,12 +74,12 @@ export const editorRigConstraintMethods = {
     return change(this,'Enable Smart Stretch',changes);
   },
   addConnector(start,end,{position=.5,thickness=6}={}) {
-    const figure=this.figure;if(!figure)throw new Error('Select a figure before connecting its joints.');
+    const figure=this.figure;if(!figure)throw messageError(new Error(''), "errors.editorRigConstraints.selectAFigureBeforeConnectingItsJoints", {});
     finite(position,0,1,'Slide position');finite(thickness,0,1e6,'Thickness');
     const g=this.geometry.objects.get(this.selectedSlot), a=g?.joints.get(start),b=g?.joints.get(end);
-    if(!a||!b||start===end)throw new Error('Choose two different joints in this figure.');
+    if(!a||!b||start===end)throw messageError(new Error(''), "errors.editorRigConstraints.chooseTwoDifferentJointsInThisFigure", {});
     const span=Math.hypot(b.x-a.x,b.y-a.y)/Math.max(1e-8,Math.abs(this.object.scale));
-    if(span<1e-8)throw new Error('Separate the anchors before creating a connector. They can overlap when animated.');
+    if(span<1e-8)throw messageError(new Error(''), "errors.editorRigConstraints.separateTheAnchorsBeforeCreatingAConnectorThey", {});
     return appendRigJoint(this,{parent_id:start,length:position,angle_rad:Math.atan2(b.y-a.y,b.x-a.x),thickness,
       _stykRig:{connector:{start,end,restLength:span}}},'Connect joints');
   },
@@ -89,12 +90,12 @@ export const editorRigConstraintMethods = {
   setRigBehavior(patch) {
     const figure=this.figure,index=this.selectedJoint,seg=figure?.segments[index];if(!seg)return false;
     const r={...seg._stykRig}, changes=new Map();
-    for(const key of Object.keys(patch))if(!['connector','stretch','follow','orientation','response','angleLock','anglePath','weighted','spatial'].includes(key))throw new Error('Unknown rig behavior.');
+    for(const key of Object.keys(patch))if(!['connector','stretch','follow','orientation','response','angleLock','anglePath','weighted','spatial'].includes(key))throw messageError(new Error(''), "errors.editorRigConstraints.unknownRigBehavior", {});
     for(const key of ['response','angleLock','anglePath','weighted','spatial'])if(key in patch){if(patch[key])r[key]={...r[key],...patch[key]};else delete r[key];}
     if('orientation' in patch)r.orientation=patch.orientation;
     if('connector' in patch) {
-      if(!r.connector)throw new Error('Create a connector with Connect joints.');
-      if(!patch.connector)throw new Error('Delete the connector to remove it, or reconnect its anchors.');
+      if(!r.connector)throw messageError(new Error(''), "errors.editorRigConstraints.createAConnectorWithConnectJoints", {});
+      if(!patch.connector)throw messageError(new Error(''), "errors.editorRigConstraints.deleteTheConnectorToRemoveItOrReconnect", {});
       r.connector={...r.connector,...patch.connector};
     }
     if('stretch' in patch) {
@@ -122,7 +123,7 @@ export const editorRigConstraintMethods = {
         const parent=this.figure.segments[index],isStatic=parent.aux_code!==undefined?Boolean(parent.aux_code&1):Boolean(parent.static_raw??parent.flag_bits?.is_static??parent.is_static??(parent.flags&256));
         if(!isStatic)break;index=plan.ids.get(parent.parent_id);
       }
-      if(index===undefined)throw new Error('This joint has no movable parent. Use World angle lock.');
+      if(index===undefined)throw messageError(new Error(''), "errors.editorRigConstraints.thisJointHasNoMovableParentUseWorld", {});
       lock.reference=this.figure.segments[index].segment_id;lock.restAngle=geometry.segments[index].angle;
       lock.figureRestAngle=animationRotation(this.figure,this.object);
     }
@@ -130,10 +131,10 @@ export const editorRigConstraintMethods = {
   },
   setSecondaryAngleReference(reference) {
     const lock=this.figure?.segments[this.selectedJoint]?._stykRig?.angleLock;
-    if(lock?.mode!=='parent')throw new Error('Choose a parent angle lock first.');
+    if(lock?.mode!=='parent')throw messageError(new Error(''), "errors.editorRigConstraints.chooseAParentAngleLockFirst", {});
     if(reference===0)return this.setRigBehavior({angleLock:{secondary:null}});
     const index=this.figure.segments.findIndex(s=>s.segment_id===reference);
-    if(index<0)throw new Error('Choose an existing second angle reference.');
+    if(index<0)throw messageError(new Error(''), "errors.editorRigConstraints.chooseAnExistingSecondAngleReference", {});
     const shape=this.geometry.objects.get(this.selectedSlot).segments[index];
     const angle=lock.space==='authored'?(shape.authoredAngle??shape.angle):shape.angle;
     const figureDelta=lock.figureRestAngle===undefined?0:animationRotation(this.figure,this.object)-lock.figureRestAngle;

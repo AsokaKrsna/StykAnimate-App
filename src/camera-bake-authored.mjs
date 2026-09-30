@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {assignKeyEasing, keyEasing, easingMode, autoKeyRange} from './keyframe-easing.mjs';
 /** Apply the camera at selected display ticks using sparse affine property keys.
  * Native pose curves remain untouched, so their easing/topology is not resampled.
@@ -87,7 +88,7 @@ function guardedChannels(before, points, endTick) {
         let identity;
         do {
           if (!Number.isSafeInteger(after.nextKeyId) || after.nextKeyId < 1)
-            throw new Error("Animation key identity capacity exceeded.");
+            throw messageError(new Error(''), "errors.cameraBakeAuthored.animationKeyIdentityCapacityExceeded", {});
           identity = `key-${after.nextKeyId++}`;
         } while (ids.has(identity));
         ids.add(identity);
@@ -118,13 +119,13 @@ function guardedChannels(before, points, endTick) {
       if (!right) continue;
       const [start, end] = autoKeyRange(original.keys, index, index + 1);
       const startTick = original.keys[start].tick, endTick = original.keys[end].tick;
-      if (endTick - startTick > 10000) throw new Error('Split this easing span before baking the camera; at most 10,000 guard samples are supported.');
+      if (endTick - startTick > 10000) throw messageError(new Error(''), "errors.cameraBakeAuthored.splitThisEasingSpanBeforeBakingTheCamera", {});
       if (sampledSpans.has(startTick)) continue;
       sampledSpans.add(startTick);
       for (let sample = startTick; sample < endTick; sample++) if (!entry.values.has(sample)) {
         sampledGuards.add(sample); guards.add(sample);
       }
-      if (guards.size > 10000) throw new Error('Bake a smaller camera range; at most 10,000 guard samples are supported.');
+      if (guards.size > 10000) throw messageError(new Error(''), "errors.cameraBakeAuthored.bakeASmallerCameraRangeAtMost10", {});
     }
     for (const tick of guards) {
       const value = sampleAnimationChannel(original, tick),
@@ -161,7 +162,7 @@ export function applyAuthoredCameraToFigures(editor, indices, { ticks } = {}) {
   if (
     times.some((tick) => !Number.isInteger(tick) || tick < 0 || tick >= endTick)
   )
-    throw new Error("Choose whole display frames inside this animation.");
+    throw messageError(new Error(''), "errors.cameraBakeAuthored.chooseWholeDisplayFramesInsideThisAnimation", {});
   const points = new Map(),
     changedTicks = [],
     changedFrames = new Set(),

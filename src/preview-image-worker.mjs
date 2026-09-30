@@ -1,3 +1,4 @@
+import {errorMessageData} from './localized-error.mjs';
 import {ImageResources} from './image-resources.mjs';
 
 const moduleReadyMs = performance.now();
@@ -25,6 +26,6 @@ self.onmessage = async ({data}) => {
       images: images.length, decodedBytes: resources.bytes};
     self.postMessage({id: data.id, images, reduced: resources.pressureReduced, timings}, images.map(image => image.bitmap));
     sent = true;
-  } catch (error) { self.postMessage({id: data.id, error: error.message}); }
+  } catch (error) { self.postMessage({id: data.id, error: error.message, ...errorMessageData(error)}); }
   finally {if (!sent) for (const image of images) image.bitmap.close();}
 };

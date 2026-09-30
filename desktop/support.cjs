@@ -1,32 +1,34 @@
 'use strict';
+const { messageError } = require('./localization.cjs');
+
 const crypto = require('node:crypto');
 const { WorkspacePreferences } = require('./preferences.cjs');
 const config = require('./service-config.json');
 const MAX_FILE = 8 * 1024 * 1024;
 function siteOrigin(value, development) {
   const url = new URL(value);
-  if (url.username || url.password || url.pathname !== '/' || url.search || url.hash || !(url.protocol === 'https:' || development && url.protocol === 'http:' && ['127.0.0.1','localhost'].includes(url.hostname))) throw new Error('Invalid support service origin.');
+  if (url.username || url.password || url.pathname !== '/' || url.search || url.hash || !(url.protocol === 'https:' || development && url.protocol === 'http:' && ['127.0.0.1','localhost'].includes(url.hostname))) throw messageError(new Error(''), 'desktop.support.errors.invalidSupportServiceOrigin', {});
   return url.origin;
 }
 function validateRequest(value) {
-  if (!value || typeof value !== 'object') throw new Error('Invalid support request.');
+  if (!value || typeof value !== 'object') throw messageError(new Error(''), 'desktop.support.errors.invalidSupportRequest', {});
   const path = value.path, method = value.method || 'GET';
-  if (typeof path !== 'string' || path.length > 400 || !['GET','POST','DELETE'].includes(method)) throw new Error('Invalid support request.');
+  if (typeof path !== 'string' || path.length > 400 || !['GET','POST','DELETE'].includes(method)) throw messageError(new Error(''), 'desktop.support.errors.invalidSupportRequest', {});
   const url = new URL(path, 'https://support.invalid');
-  if (url.origin !== 'https://support.invalid' || url.hash || !/^\/(?:config|threads(?:\/[a-f0-9]{32}(?:\/(?:messages|seen|files|live)(?:\/[a-f0-9]{32})?)?)?)$/.test(url.pathname)) throw new Error('Invalid support route.');
+  if (url.origin !== 'https://support.invalid' || url.hash || !/^\/(?:config|threads(?:\/[a-f0-9]{32}(?:\/(?:messages|seen|files|live)(?:\/[a-f0-9]{32})?)?)?)$/.test(url.pathname)) throw messageError(new Error(''), 'desktop.support.errors.invalidSupportRoute', {});
   const valid = method === 'GET' || method === 'DELETE' && /^\/threads\/[a-f0-9]{32}(?:\/files\/[a-f0-9]{32})?$/.test(url.pathname) || method === 'POST' && (url.pathname === '/threads' || /^\/threads\/[a-f0-9]{32}\/(messages|seen|files|live)$/.test(url.pathname));
-  if (!valid) throw new Error('Invalid support operation.');
-  for (const [key, item] of url.searchParams) if (!['after','before','cursor','message','upload'].includes(key) || !/^[a-z0-9.-]{0,90}$/.test(item)) throw new Error('Invalid support query.');
+  if (!valid) throw messageError(new Error(''), 'desktop.support.errors.invalidSupportOperation', {});
+  for (const [key, item] of url.searchParams) if (!['after','before','cursor','message','upload'].includes(key) || !/^[a-z0-9.-]{0,90}$/.test(item)) throw messageError(new Error(''), 'desktop.support.errors.invalidSupportQuery', {});
   const upload = /\/files$/.test(url.pathname) && method === 'POST';
-  if (upload) { if (!(value.bytes instanceof Uint8Array) || value.bytes.byteLength > MAX_FILE || !value.bytes.length || typeof value.fileName !== 'string' || value.fileName.length > 200) throw new Error('Invalid attachment.'); }
-  else if (value.body != null && Buffer.byteLength(JSON.stringify(value.body)) > 40000) throw new Error('Support message is too large.');
+  if (upload) { if (!(value.bytes instanceof Uint8Array) || value.bytes.byteLength > MAX_FILE || !value.bytes.length || typeof value.fileName !== 'string' || value.fileName.length > 200) throw messageError(new Error(''), 'desktop.main.errors.invalidAttachment', {}); }
+  else if (value.body != null && Buffer.byteLength(JSON.stringify(value.body)) > 40000) throw messageError(new Error(''), 'desktop.support.errors.supportMessageIsTooLarge', {});
   return { path: url.pathname + url.search, method, upload };
 }
 async function boundedResponse(response, max) {
-  if (Number(response.headers.get('content-length') || 0) > max) throw new Error('Support response is too large.');
+  if (Number(response.headers.get('content-length') || 0) > max) throw messageError(new Error(''), 'desktop.support.errors.supportResponseIsTooLarge', {});
   if (!response.body) return Buffer.alloc(0);
   const reader = response.body.getReader(), chunks = []; let length = 0;
-  try { while (true) { const { done, value } = await reader.read(); if (done) break; length += value.byteLength; if (length > max) { await reader.cancel(); throw new Error('Support response is too large.'); } chunks.push(value); } }
+  try { while (true) { const { done, value } = await reader.read(); if (done) break; length += value.byteLength; if (length > max) { await reader.cancel(); throw messageError(new Error(''), 'desktop.support.errors.supportResponseIsTooLarge', {}); } chunks.push(value); } }
   finally { reader.releaseLock(); }
   return Buffer.concat(chunks, length);
 }
@@ -49,21 +51,21 @@ class SupportService {
   }
   async saveState(value) {
     await this.init();
-    if (!value || value.inboxId !== this.inboxId() || !value.drafts || typeof value.drafts !== 'object' || Array.isArray(value.drafts)) throw new Error('Invalid support state.');
-    if (value.lastThread && !/^[a-f0-9]{32}$/.test(value.lastThread)) throw new Error('Invalid conversation.');
+    if (!value || value.inboxId !== this.inboxId() || !value.drafts || typeof value.drafts !== 'object' || Array.isArray(value.drafts)) throw messageError(new Error(''), 'desktop.support.errors.invalidSupportState', {});
+    if (value.lastThread && !/^[a-f0-9]{32}$/.test(value.lastThread)) throw messageError(new Error(''), 'desktop.support.errors.invalidConversation', {});
     const fields = { category: 40, title: 120, description: 4000, steps: 2000, expected: 1000, actual: 1000, frequency: 40, version: 40, platform: 80, displayName: 50, requestId: 36, message: 4000 };
     const drafts = Object.create(null), entries = Object.entries(value.drafts);
-    if (entries.length > 12) throw new Error('Too many drafts.');
+    if (entries.length > 12) throw messageError(new Error(''), 'desktop.support.errors.tooManyDrafts', {});
     for (const [id, draft] of entries) {
-      if (id !== 'create' && !/^[a-f0-9]{32}$/.test(id) || !draft || typeof draft !== 'object' || Array.isArray(draft)) throw new Error('Invalid draft.');
+      if (id !== 'create' && !/^[a-f0-9]{32}$/.test(id) || !draft || typeof draft !== 'object' || Array.isArray(draft)) throw messageError(new Error(''), 'desktop.support.errors.invalidDraft', {});
       drafts[id] = Object.create(null);
       for (const [key, text] of Object.entries(draft)) {
-        if (!Object.hasOwn(fields, key) || typeof text !== 'string' || text.length > fields[key]) throw new Error('Invalid draft field.');
+        if (!Object.hasOwn(fields, key) || typeof text !== 'string' || text.length > fields[key]) throw messageError(new Error(''), 'desktop.support.errors.invalidDraftField', {});
         drafts[id][key] = text;
       }
     }
     const saved = { drafts, lastThread: value.lastThread || '' }, inboxId = value.inboxId;
-    if (Buffer.byteLength(JSON.stringify(saved)) > 384 * 1024) throw new Error('Drafts are too large.');
+    if (Buffer.byteLength(JSON.stringify(saved)) > 384 * 1024) throw messageError(new Error(''), 'desktop.support.errors.draftsAreTooLarge', {});
     const pending = this.uiPending.then(async () => {
       const all = await this.uiStore.get(); delete all[inboxId];
       await this.uiStore.set(Object.fromEntries([...Object.entries(all).slice(-1), [inboxId, saved]]));
@@ -72,19 +74,19 @@ class SupportService {
   }
   async accessLink() { await this.init(); return this.siteUrl + '/feedback/#key=' + this.key; }
   async restore(key) {
-    if (!/^[a-f0-9]{64}$/.test(key || '') || this.inflight) throw new Error('The private inbox cannot be changed right now.');
+    if (!/^[a-f0-9]{64}$/.test(key || '') || this.inflight) throw messageError(new Error(''), 'desktop.support.errors.thePrivateInboxCannotBeChangedRightNow', {});
     this.closeLive(); await this.init(); await this.store.set({ key }); this.key = key; return { restored: true };
   }
   closeLive(expected) { if (expected != null && expected !== this.liveGeneration) return; this.liveGeneration = (this.liveGeneration || 0) + 1; this.liveSocket?.close(); this.liveSocket = null; }
   async connectLive(id, emit) {
-    if (!/^[a-f0-9]{32}$/.test(id || '')) throw new Error('Invalid conversation');
+    if (!/^[a-f0-9]{32}$/.test(id || '')) throw messageError(new Error(''), 'desktop.support.errors.invalidConversation2', {});
     this.closeLive(); const generation = this.liveGeneration;
     const ticket = await this.request({ path: `/threads/${id}/live`, method: 'POST' });
     if (generation !== this.liveGeneration) return { available: false };
     if (!ticket.ok) return { available: false, error: ticket.error, status: ticket.status };
     if (!ticket.value.available) return { available: false };
     const url = new URL(ticket.value.path, this.siteUrl);
-    if (url.origin !== this.siteUrl || url.pathname !== '/api/v1/support/live') throw new Error('Invalid live endpoint');
+    if (url.origin !== this.siteUrl || url.pathname !== '/api/v1/support/live') throw messageError(new Error(''), 'desktop.support.errors.invalidLiveEndpoint', {});
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(url); this.liveSocket = socket;
     const send = type => { if (generation === this.liveGeneration) emit({ threadId: id, type }); };
@@ -95,7 +97,7 @@ class SupportService {
   }
   async request(value) {
     const { path, method, upload } = validateRequest(value); await this.init();
-    if (this.inflight >= 2 || upload && this.uploading) throw new Error('Please wait for the current support request.');
+    if (this.inflight >= 2 || upload && this.uploading) throw messageError(new Error(''), 'desktop.support.errors.pleaseWaitForTheCurrentSupportRequest', {});
     this.inflight++; if (upload) this.uploading = true;
     try {
       let body = value.body;

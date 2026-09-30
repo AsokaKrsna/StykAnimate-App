@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {validateObjectChanges, validateScene} from './pivot/model.mjs';
 import {animationPropertyValue} from './animation-channels.mjs';
 import {buildGeometry} from './pivot/geometry.mjs';
@@ -17,7 +18,7 @@ export const editorAuthoredPoseMethods = {
       // Legacy callbacks may replace a frame instead of mutating its fields.
       if (this.report.keyframes[index] !== native) { this._authoredPoseEdit.frame = this.report.keyframes[index]; this.report.keyframes[index] = native; }
       this._synchronizeAnimationOrigins(this.frame,source.objects,{includeNew:true});
-      if (timing || this.frame.duration_raw !== source.duration_raw) throw new Error('Edit keyframe exposure through the timeline duration control.');
+      if (timing || this.frame.duration_raw !== source.duration_raw) throw messageError(new Error(''), "errors.editorAuthoredPose.editKeyframeExposureThroughTheTimelineDurationControl", {});
       this._authoredPoseEdit.structural = structural; this._invalidate();
       return this.commitAuthoredPoseDrag();
     } catch (error) { this.report.keyframes[index] = native; this.report.figure_types.length = definitionCount; this.cancelAuthoredPoseDrag(); throw error; }

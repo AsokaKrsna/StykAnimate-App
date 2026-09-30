@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {easingMode, keyEasing} from './keyframe-easing.mjs';
 /** One chosen pose per selected native key; this command never bakes a movie. */
 import {evaluatedNativeFrame, evaluatedFrame, nativeTimeline, buildGeometry} from './pivot/geometry.mjs';
@@ -11,7 +12,7 @@ const clone = value => structuredClone(value);
 const MAX_TICK = 10000000;
 function checkRatio(ratio) {
   if (typeof ratio !== 'number' || !Number.isFinite(ratio) || ratio < 0 || ratio > 1)
-    throw new Error('Choose an interpolation ratio from zero to one.');
+    throw messageError(new Error(''), "errors.editorInbetweenAsync.chooseAnInterpolationRatioFromZeroToOne", {});
 }
 /** Native frames can store at most two backgrounds. Do not silently reduce a
  * three/four-image blend to the evaluator's dominant-background approximation. */
@@ -26,7 +27,7 @@ export function canInsertBackgroundTransition(start, end, ratio) {
 }
 function checkBackground(start, end, ratio) {
   if (!canInsertBackgroundTransition(start, end, ratio))
-    throw new Error('This inbetween needs more than two background images. Choose an endpoint ratio, or simplify the neighboring background blends before inserting.');
+    throw messageError(new Error(''), "errors.editorInbetween.thisInbetweenNeedsMoreThanTwoBackgroundImages", {});
 }
 function cleanFrame(frame, frameId, duration = 1) {
   const result = clone({...frame,objects:[]});
@@ -41,7 +42,7 @@ function identityPlan(editor) {
     get next() { return next; },
     take() {
       if (!Number.isSafeInteger(next) || next < 1 || !Number.isSafeInteger(next + 1))
-        throw new Error('Frame identity capacity exceeded.');
+        throw messageError(new Error(''), "errors.clipboardLegacyUpgrade.frameIdentityCapacityExceeded", {});
       return `frame-${next++}`;
     },
   };
@@ -52,7 +53,7 @@ function allocationBudget() {
     objects += frame.objects.length;
     for (const object of frame.objects) values += (object.angles?.length ?? 0) + (object.lengths?.length ?? 0) + (object.bends?.length ?? 0);
     if (objects > INBETWEEN_LIMITS.objectPoses || values > INBETWEEN_LIMITS.segmentValues)
-      throw new Error('Insert fewer inbetweens at once: a command supports 250,000 captured figure poses and 3,000,000 segment values.');
+      throw messageError(new Error(''), "errors.editorInbetween.insertFewerInbetweensAtOnceACommandSupports", {});
   };
 }
 function animationPatch(before, after) {
@@ -80,7 +81,7 @@ function shiftedTick(tick, entries) {
   while (low < high) { const mid = (low + high) >>> 1; if (entries[mid].originalTick <= tick) low = mid + 1; else high = mid; }
   const shifted = tick + (entries[low - 1]?.cumulativeDuration ?? 0);
   if (!Number.isSafeInteger(shifted) || shifted > MAX_TICK)
-    throw new Error('Inserting here would move an authored key beyond frame 10,000,000.');
+    throw messageError(new Error(''), "errors.editorInbetween.insertingHereWouldMoveAnAuthoredKeyBeyond", {});
   return shifted;
 }
 function* planAnimation(editor, entries, identities, budget) {
@@ -92,7 +93,7 @@ function* planAnimation(editor, entries, identities, budget) {
   const maximumKeys = before.channels.reduce((count, channel) => count + channel.keys.length +
     (channel.property === 'pose' ? entries.length : visibleInsertions), 0);
   if (maximumKeys > 1000000)
-    throw new Error('Insert fewer inbetweens to stay within the one-million authored-key limit.');
+    throw messageError(new Error(''), "errors.editorInbetween.insertFewerInbetweensToStayWithinTheOne", {});
   const poseReport = {...report, version: 5, auto_easing: false, _styk: {...report._styk, animation: {...before, channels: poseChannels}}};
   let completed=0;
   for (const entry of entries) {
@@ -137,7 +138,7 @@ function* planAnimation(editor, entries, identities, budget) {
       let id;
       do {
         if (!Number.isSafeInteger(after.nextKeyId) || after.nextKeyId < 1 || !Number.isSafeInteger(after.nextKeyId + 1))
-          throw new Error('Animation key identity capacity exceeded.');
+          throw messageError(new Error(''), "errors.cameraBakeAuthored.animationKeyIdentityCapacityExceeded", {});
         id = `key-${after.nextKeyId++}`;
       } while (used.has(id));
       used.add(id);
@@ -164,10 +165,10 @@ export function planInsertInbetweens(editor, ratio = 0.5, indices = [editor.fram
 export function* planInsertInbetweenSteps(editor, ratio = 0.5, indices = [editor.frameIndex]) {
   checkRatio(ratio);
   const report=editor.report;
-  if(!Array.isArray(indices)||indices.some(index=>!Number.isInteger(index)||index<0||index>=report.keyframes.length))throw new Error('Choose existing source frames.');
+  if(!Array.isArray(indices)||indices.some(index=>!Number.isInteger(index)||index<0||index>=report.keyframes.length))throw messageError(new Error(''), "errors.editorInbetween.chooseExistingSourceFrames", {});
   const targets = [...new Set(indices)].sort((a,b)=>a-b), skippedIndices = [];
   if (targets.length > INBETWEEN_LIMITS.insertedFrames || report.keyframes.length + targets.length > 100000)
-    throw new Error('Insert at most 10,000 inbetweens at once, within the 100,000-keyframe document limit.');
+    throw messageError(new Error(''), "errors.editorInbetween.insertAtMost10000InbetweensAtOnce", {});
   const identities = identityPlan(editor), budget = allocationBudget(), rows = nativeTimeline(report);
   // Native TTweener.FForceLinear is explicitly set for this command, even if
   // animation playback uses automatic easing. Existing project mode is kept.
@@ -177,7 +178,7 @@ export function* planInsertInbetweenSteps(editor, ratio = 0.5, indices = [editor
   for (const [ordinal,index] of targets.entries()) {
     const originalTick = rows[index].start, tick = originalTick + cumulativeDuration;
     if (tick > MAX_TICK && report._styk.animation?.channels.length)
-      throw new Error('The inserted authored pose would exceed frame 10,000,000.');
+      throw messageError(new Error(''), "errors.editorInbetween.theInsertedAuthoredPoseWouldExceedFrame10", {});
     const sourceIndex = Math.max(0, index - 1), sampleRatio = index === 0 ? 0 : ratio;
     if (index > 0) checkBackground(report.keyframes[index - 1], report.keyframes[index], ratio);
     const sampled = evaluatedNativeFrame(samplingReport, sourceIndex, sampleRatio);
@@ -207,7 +208,7 @@ export function* planInsertInbetweenSteps(editor, ratio = 0.5, indices = [editor
 /** Lightweight worker-safe sampler: no history planning or source snapshots. */
 export function sampleInbetweenPreview(report, ratio = 0.5, index = 0) {
     checkRatio(ratio);
-    if (!Number.isInteger(index) || !report.keyframes[index]) throw new Error('Choose an existing source frame.');
+    if (!Number.isInteger(index) || !report.keyframes[index]) throw messageError(new Error(''), "errors.editorFrames.chooseAnExistingSourceFrame", {});
     const rows = nativeTimeline(report), sourceIndex = Math.max(0, index - 1), sampleRatio = index === 0 ? 0 : ratio;
     const sourceTick = rows[sourceIndex].start + (rows[index].start - rows[sourceIndex].start) * sampleRatio;
     if (index > 0) checkBackground(report.keyframes[index - 1], report.keyframes[index], ratio);

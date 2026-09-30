@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {assignKeyEasing, easingMode, keyEasing, autoKeyRange} from './keyframe-easing.mjs';
 import {animationChannelId, animationPropertyValue, sampleAnimationChannel, validateAnimationDocument} from './animation-channels.mjs';
 import {samplePoseTrack} from './animation-pose.mjs';
@@ -19,25 +20,25 @@ export function planAuthoredClipboard(editor, {frames, assets, index, nextFrameI
   const rows = nativeTimeline(report), last = rows.at(-1);
   const at = index < rows.length ? rows[index].start : last ? last.start + report.keyframes.at(-1).duration_raw : 0;
   if (append && (index !== report.keyframes.length || before.channels.some(channel => channel.keys.some(key => key.tick >= at))))
-    throw new Error('An appended pose must follow all existing animation keys.');
+    throw messageError(new Error(''), "errors.frameClipboardAuthored.anAppendedPoseMustFollowAllExistingAnimation", {});
   let insertedTicks = 0;
   const entries = frames.map((frame, i) => {
     const count = index === report.keyframes.length && i === frames.length - 1 ? Math.min(1, frame.duration_raw) : frame.duration_raw;
     const entry = {frame, tick: at + insertedTicks, count}; insertedTicks += count; return entry;
   });
-  if (at + insertedTicks > 10000000) throw new Error('Pasting these frames exceeds the ten-million-tick timeline limit.');
+  if (at + insertedTicks > 10000000) throw messageError(new Error(''), "errors.frameClipboardAuthored.pastingTheseFramesExceedsTheTenMillionTick", {});
   for (const channel of before.channels) {
     const end = channel.keys.at(-1)?.tick;
-    if (end >= at && end + insertedTicks > 10000000) throw new Error('Moving these animation keys exceeds the ten-million-tick timeline limit.');
+    if (end >= at && end + insertedTicks > 10000000) throw messageError(new Error(''), "errors.frameClipboardAuthored.movingTheseAnimationKeysExceedsTheTenMillion", {});
   }
   const after = {...before, channels: [], nextKeyId: before.nextKeyId ?? 1}, sources = [], pending = new Map();
   const usedFrames = new Set([...report.keyframes, ...Object.values(report._styk.frameSources ?? {}), ...frames].map(frame => frame._styk?.frameId));
   let ticks = 0, objects = 0, values = 0;
   function budget(frame) {
-    if (++ticks > MAX_TICKS) throw new Error('This paste needs more than 10,000 local interpolation samples. Paste a smaller frame interval.');
+    if (++ticks > MAX_TICKS) throw messageError(new Error(''), "errors.frameClipboardAuthored.thisPasteNeedsMoreThan10000Local", {});
     objects += frame?.objects?.length ?? 0;
     for (const object of frame?.objects ?? []) values += (object.angles?.length ?? 0) + (object.lengths?.length ?? 0) + (object.bends?.length ?? 0);
-    if (objects > MAX_OBJECTS || values > MAX_VALUES) throw new Error('This paste exceeds the local pose preservation budget. Paste into a shorter tween run.');
+    if (objects > MAX_OBJECTS || values > MAX_VALUES) throw messageError(new Error(''), "errors.frameClipboardAuthored.thisPasteExceedsTheLocalPosePreservationBudget", {});
   }
   const keyIndexes = new WeakMap(), changedKeys = new Set();
   function sortChannel(channel) { sorted(channel.keys); keyIndexes.delete(channel); }
@@ -52,7 +53,7 @@ export function planAuthoredClipboard(editor, {frames, assets, index, nextFrameI
     if (position !== undefined && !extra.hidden) { const existing = {...channel.keys[position], value, ...extra}; channel.keys[position] = existing; assignKeyEasing(existing, {interpolation, ...(interpolation === "bezier" ? {bezier: extra.bezier ?? existing.bezier} : {})}); if (!extra.passthrough) delete existing.passthrough; changedKeys.add(existing); return existing; }
     let id;
     do {
-      if (!Number.isSafeInteger(after.nextKeyId) || after.nextKeyId < 1) throw new Error('Animation key identity capacity exceeded.');
+      if (!Number.isSafeInteger(after.nextKeyId) || after.nextKeyId < 1) throw messageError(new Error(''), "errors.cameraBakeAuthored.animationKeyIdentityCapacityExceeded", {});
       id = `key-${after.nextKeyId++}`;
     } while (lookup.ids.has(id));
     const result = {id, tick, value, interpolation, ...extra}; if (!extra.hidden) lookup.ticks.set(tick, channel.keys.length); channel.keys.push(result); lookup.ids.add(id); changedKeys.add(result); return result;
@@ -66,7 +67,7 @@ export function planAuthoredClipboard(editor, {frames, assets, index, nextFrameI
     const frame = clone({...sampled, objects: sampled.objects.map(({runtime_segments, ...object}) => object)});
     let id;
     do {
-      if (!Number.isSafeInteger(nextFrameIdentity) || nextFrameIdentity < 1) throw new Error('Frame identity capacity exceeded.');
+      if (!Number.isSafeInteger(nextFrameIdentity) || nextFrameIdentity < 1) throw messageError(new Error(''), "errors.clipboardLegacyUpgrade.frameIdentityCapacityExceeded", {});
       id = `frame-${nextFrameIdentity++}`;
     } while (usedFrames.has(id));
     usedFrames.add(id); frame._styk = {...frame._styk, frameId: id}; frame.duration_raw = 1;
@@ -99,7 +100,7 @@ export function planAuthoredClipboard(editor, {frames, assets, index, nextFrameI
       const previous = [...oldKeys].reverse().find(value => value.tick < at), next = oldKeys.find(value => value.tick >= at);
       const [left, right] = autoKeyRange(oldKeys, Math.max(0, oldKeys.indexOf(previous)), next ? oldKeys.indexOf(next) : oldKeys.length - 1);
       const start = Math.min(at, oldKeys[left].tick), end = Math.max(at, oldKeys[right].tick);
-      if (end - start > MAX_TICKS) throw new Error('This paste needs more than 10,000 color samples. Split the color tween before pasting.');
+      if (end - start > MAX_TICKS) throw messageError(new Error(''), "errors.frameClipboardAuthored.thisPasteNeedsMoreThan10000Color", {});
       for (let tick = start; tick < end; tick++) {
         const value = sampleAnimationChannel(original, tick);
         if (value !== undefined) { budget(); key(channel, tick >= at ? tick + insertedTicks : tick, value); }
@@ -138,7 +139,7 @@ export function planAuthoredClipboard(editor, {frames, assets, index, nextFrameI
           while (right < oldKeys.length - 1 && oldKeys[right + 1].tick - oldKeys[right].tick > 1) right++;
         }
         const start = oldKeys[left].tick, end = Math.max(at, oldKeys[right].tick);
-        if (end - start > MAX_TICKS) throw new Error('This paste needs more than 10,000 local pose samples. Split the connected tween run before pasting.');
+        if (end - start > MAX_TICKS) throw messageError(new Error(''), "errors.frameClipboardAuthored.thisPasteNeedsMoreThan10000Local2", {});
         const visibleKeys = new Map(oldKeys.filter(value => !value.hidden).map(value => [value.tick, value]));
         for (let tick = start; tick <= end; tick++) {
           const targetTick = tick >= at ? tick + insertedTicks : tick;
@@ -207,7 +208,7 @@ export function planAuthoredClipboard(editor, {frames, assets, index, nextFrameI
     // visible ticks and allocates collision-free IDs. Validate new/changed keys
     // and the complete resulting table/key limits without rescanning every curve.
     if (after.channels.reduce((sum, channel) => sum + channel.keys.length, 0) > 1000000)
-      throw new Error('Authored animation exceeds the one-million-key limit.');
+      throw messageError(new Error(''), "errors.animationChannels.authoredAnimationExceedsTheOneMillionKeyLimit", {});
     validateAnimationDocument({...preview, _styk: {...preview._styk, animation: {...after,
       channels: after.channels.map(channel => ({...channel, keys: channel.keys.filter(key => changedKeys.has(key))}))}}});
   } else validateAnimationDocument(preview);

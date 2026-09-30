@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Set Origin changes construction topology while authored transforms retain
  * their original pivot and the native tween retains its original joint basis. */
 import {originSupportLayout, originSupportPose, originSupportOffset, initializeOriginSupport} from './animation-origin-support.mjs';
@@ -23,7 +24,7 @@ export function animationOriginLayout(figure) {
     queue.push({handle:edge.handle,parent:edge.index});
   }
   const path=[];let handle=origin.handleId;
-  while(handle!==0){const index=ids.get(handle);if(index===undefined||path.length>=segments.length)throw new Error('The animation pivot no longer belongs to its rig.');path.push(index);handle=segments[index].parent_id;}
+  while(handle!==0){const index=ids.get(handle);if(index===undefined||path.length>=segments.length)throw messageError(new Error(''), "errors.animationOrigin.theAnimationPivotNoLongerBelongsToIts", {});path.push(index);handle=segments[index].parent_id;}
   cached={origin,segments,count:segments.length,ids,ready,parents,reversed,endpoints,path:path.reverse()};layouts.set(figure,cached);return cached;
 }
 /** Retimed attachments retain the original physical vertex's tangent, even

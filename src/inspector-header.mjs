@@ -1,3 +1,7 @@
+import {localizedText, localizedAttribute, appendLocalized, localizedMarkup} from './localization-bindings.mjs';
+import {messageError} from './localized-error.mjs';
+import {t as interfaceText} from './localization.mjs';
+
 /**
  * The inspector's header (architecture.md §3.13, experience.md §5.1): the one
  * writer of the target line ([data-slot=inspector-target]: the kind glyph, the
@@ -45,7 +49,7 @@ const glyphMarkup = (icon, name) => (name ? icon(name, 'ui-icon') : '');
  */
 export function createInspectorHeader({target, head, inspector, registry = () => null, commandContext = null, icon = appIcon, t = null,
   pins = () => [], document: doc = target?.ownerDocument ?? globalThis.document} = {}) {
-  if (!target) throw new TypeError('The inspector header needs its target slot.');
+  if (!target) throw messageError(new TypeError(''), "errors.inspectorHeader.theInspectorHeaderNeedsItsTargetSlot", {});
   const abort = new AbortController(), {signal} = abort;
   const context = doc.getElementById('inspector-context') ?? target.querySelector('#inspector-context');
   const menu = doc.getElementById('object-actions') ?? target.querySelector('#object-actions');
@@ -65,18 +69,18 @@ export function createInspectorHeader({target, head, inspector, registry = () =>
     name.id = 'inspector-name';
     if (context) {
       context.classList.add('ui-visually-hidden');
-      name.append(context, ' ');
+      appendLocalized(name, context, ' ');
     }
     text = doc.createElement('span');
     text.className = 'ui-target-text';
-    name.append(text);
+    appendLocalized(name, text);
     line.prepend(kind, name);
   }
   if (menu && !menu.classList.contains('ui-icon-button')) {
     menu.className = 'ui-icon-button';
     menu.dataset.size = 'sm';
     if (menu.hasAttribute('title')) menu.removeAttribute('title');
-    menu.innerHTML = glyphMarkup(icon, 'more');
+    localizedMarkup(menu, glyphMarkup(icon, 'more'));
   }
 
   let current = null, quick = null, editing = null, glyph = null;
@@ -103,7 +107,8 @@ export function createInspectorHeader({target, head, inspector, registry = () =>
     input.className = 'ui-target-input';
     if (how.id) input.id = how.id;
     for (const [key, value] of Object.entries(how.data ?? {})) input.setAttribute(`data-${key}`, value === true ? '' : String(value));
-    input.setAttribute('aria-label', how.description ?? 'Name');
+    input.setAttribute('aria-label', how.description ?? interfaceText("inspectorHeader.name"));
+    if (how.descriptionKey) localizedAttribute(input, 'aria-label', how.descriptionKey, how.descriptionParams);
     if (how.maxlength) input.maxLength = how.maxlength;
     input.spellcheck = false;
     input.value = input.defaultValue = current.target.name ?? '';
@@ -132,15 +137,15 @@ export function createInspectorHeader({target, head, inspector, registry = () =>
     const renamable = Boolean(info.rename);
     if (!editing) setText(text, info.name ?? '');
     setAttr(text, 'tabindex', renamable ? '0' : null);
-    setAttr(text, 'data-tooltip', renamable ? info.rename.tip ?? 'Double-click to rename' : null);
+    setAttr(text, 'data-tooltip', renamable ? info.rename.tip ?? interfaceText("inspectorHeader.doubleClickToRename") : null);
     setAttr(name, 'data-renamable', renamable);
     if (editing && !renamable) finish(false);
     if (glyph !== (info.glyph ?? null)) {
       glyph = info.glyph ?? null;
-      kind.innerHTML = glyphMarkup(icon, glyph);
+      localizedMarkup(kind, glyphMarkup(icon, glyph));
       kind.hidden = !glyph;
     }
-    setText(context, info.label ?? '');
+    if (info.labelKey) localizedText(context, info.labelKey, info.labelParams); else setText(context, info.label ?? '');
     setAttr(inspector, 'data-selection-kind', info.selection ?? descriptor?.kind ?? null);
     if (!head) return;
     const env = {icon, t};

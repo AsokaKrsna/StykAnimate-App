@@ -1,3 +1,4 @@
+import {messageError} from '../localized-error.mjs';
 /**
  * The runtime command registry: one view of every command for menus, the
  * command palette, the rail and tooltips, so none of them hand-writes a label,
@@ -237,7 +238,7 @@ export class CommandRegistry extends EventTarget {
     const meta = this.#meta.get(id) ?? {id};
     const parts = this.shortcutParts(id, context);
     const result = {
-      id, label: this.label(id), icon: meta.icon ?? null, category: meta.category ?? 'app', keywords: meta.keywords ?? [],
+      id, label: this.label(id), labelKey: meta.labelKey, icon: meta.icon ?? null, category: meta.category ?? 'app', keywords: meta.keywords ?? [],
       shortcut: parts[0] ?? '', shortcutParts: parts, keyshortcuts: parts.length ? this.keyShortcuts(id, context) : '',
       enabled: true, reason: '', hidden: false, mode: null,
       checked: undefined, toggle: Boolean(meta.toggle), danger: Boolean(meta.danger), palette: meta.palette !== false,
@@ -384,7 +385,7 @@ export class CommandRegistry extends EventTarget {
   #reportMissing(name) {
     if (this.#missing.has(name)) return;
     this.#missing.add(name);
-    this.onError(new Error(`The command requirement "${name}" has no test in the registry's requirements`));
+    this.onError(messageError(new Error(''), "errors.commandRegistry.theCommandRequirementHasNoTestInThe", {name: name}));
   }
 }
 

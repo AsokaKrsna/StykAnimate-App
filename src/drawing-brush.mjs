@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {DrawingSmoother} from './drawing-smoother.mjs';
 import {TEXTURE_TIPS,TEXTURE_GRAINS} from './drawing-brush-textures.mjs';
 
@@ -35,7 +36,7 @@ const NUMBERS=['size','opacity','flow','hardness','sizeCurve','opacityCurve','st
 export function normalizeBrush(settings={}){
   const b={...BRUSH_DEFAULTS,color:[0,0,0],erase:false,seed:0,pixelsPerUnit:1,pressureCurve:LINEAR_PRESSURE};
   for(const key in settings)if(settings[key]!==undefined)b[key]=settings[key];
-  if(!NUMBERS.every(key=>Number.isFinite(b[key]))||!Array.isArray(b.color)||b.color.length!==3||!b.color.every(Number.isFinite))throw new Error('Invalid brush settings.');
+  if(!NUMBERS.every(key=>Number.isFinite(b[key]))||!Array.isArray(b.color)||b.color.length!==3||!b.color.every(Number.isFinite))throw messageError(new Error(''), "errors.drawingBrush.invalidBrushSettings", {});
   const curve=Array.isArray(b.pressureCurve)&&b.pressureCurve.length===4&&b.pressureCurve.every(Number.isFinite)?b.pressureCurve.map(n=>clamp(n)):LINEAR_PRESSURE;
   const blend=BRUSH_BLENDS.includes(b.blend)?b.blend:'normal',smudge=blend==='smudge'&&!b.erase;
   return {
@@ -119,7 +120,7 @@ export class StrokePath {
   out(p,dist){this.lastDab=p;this.count++;p=lerp(p,p,0);p.dir=this.dir??0;p.dist=dist;this.emit(p);}
   smoothed(){return this.smoother.value();}
   sample(input) {
-    if(this.closed)throw new Error('The stroke has already ended.');
+    if(this.closed)throw messageError(new Error(''), "errors.drawingBrush.theStrokeHasAlreadyEnded", {});
     if(![input.x,input.y,input.pressure??1,input.time??0].every(Number.isFinite))return;
     const p={x:input.x,y:input.y,pressure:input.pressure??1,time:input.time??0,ax:Number.isFinite(input.ax)?input.ax:0,ay:Number.isFinite(input.ay)?input.ay:0};
     this.rawLast=p;
@@ -192,7 +193,7 @@ export class BrushStroke {
   taperIn(dist){return this.brush.taperIn>0?taperCurve(dist/this.brush.taperIn):1;}
   /** Map one input sample through the pressure curve into the path. */
   sample(input){
-    if(this.closed)throw new Error('The stroke has already ended.');
+    if(this.closed)throw messageError(new Error(''), "errors.drawingBrush.theStrokeHasAlreadyEnded", {});
     this.path.sample(this.pressure&&input.pressure!=null?{...input,pressure:this.pressure(input.pressure)}:input);
   }
   emit(p){

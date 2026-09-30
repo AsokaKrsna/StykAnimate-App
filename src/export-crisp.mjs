@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Deterministic aliased SVG rasterization in the export worker. */
 let initialized;
 async function engine() {
@@ -19,9 +20,7 @@ export async function rasterizeCrispSVG(svg, canvas) {
   try {
     rendered = tree.render();
     if (rendered.width !== canvas.width || rendered.height !== canvas.height)
-      throw new Error(
-        "Crisp export dimensions do not match the requested frame.",
-      );
+      throw messageError(new Error(''), "errors.exportCrisp.crispExportDimensionsDoNotMatchTheRequested", {});
     // tiny-skia exposes premultiplied RGBA. Canvas ImageData takes straight RGBA;
     // convert once in this worker, preserving every alpha value and group overlap.
     const pixels = rendered.pixels;

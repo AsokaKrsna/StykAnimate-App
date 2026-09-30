@@ -14,6 +14,8 @@
     "check": "node scripts/check.mjs",
     "locales:build": "node scripts/build-locales.mjs",
     "locales:check": "node scripts/build-locales.mjs --check",
+    "locales:validate": "node scripts/build-locales.mjs --validate-only",
+    "test:localization:browser": "node tests/localization-settings.browser.mjs && node tests/localization-app.browser.mjs && node tests/localization-native-app.browser.mjs && node tests/localization-foundation.browser.mjs",
     "test": "node --test tests/*.test.mjs",
     "test:hotkeys": "node --test tests/hotkeys.test.mjs",
     "test:hotkeys:ui": "node tests/hotkeys-timeline.browser.mjs",

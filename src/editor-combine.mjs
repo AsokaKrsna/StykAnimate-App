@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {remapRigReferences,hasRigConstraints} from './rig-constraints.mjs';
 import {hasSpatialRig} from './rig-spatial.mjs';
 import {remapSurface} from './pivot/surfaces.mjs';
@@ -10,14 +11,14 @@ const floatBits = bits => new Float32Array(new Uint32Array([bits ?? 0]).buffer)[
 const alphaByte = alpha => {
   const byte = Math.round((1 - alpha) * 255);
   if (byte < 0 || byte > 255 || Math.abs(1 - byte / 255 - alpha) > 1e-10)
-    throw new Error('This opacity cannot be represented exactly in a combined figure.');
+    throw messageError(new Error(''), "errors.editorCombine.thisOpacityCannotBeRepresentedExactlyInA", {});
   return byte;
 };
 const sourceAssetIndex = segment => Number(segment.extra_u16 ?? segment.extra?.[0] ?? segment.image_asset_index ?? segment.sprite_index ?? 0);
 
 function joinedGroup(editor, uid) {
   const frame = editor.frame, slot = frame.objects.findIndex(o => o.unique_id === uid);
-  if (slot < 0) throw new Error('Select a figure with attached children.');
+  if (slot < 0) throw messageError(new Error(''), "errors.editorCombine.selectAFigureWithAttachedChildren", {});
   const children = new Map(), queue = [slot], selected = new Set(queue);
   frame.objects.forEach((o, i) => { if (o.join) { const list = children.get(o.join.target_object_slot) ?? [];
     list.push(i); children.set(o.join.target_object_slot, list); } });
@@ -32,7 +33,7 @@ export const editorCombineMethods = {
   /** Collapse a connected subtree into one native figure in the active keyframe. */
   combineJoinedFigure(uid = this.selectedUid, {name, authored = false} = {}) {
     if(joinedGroup(this,uid).slots.some(slot=>hasSpatialRig(this.report.figure_types.find(f=>f.figure_type_id===this.frame.objects[slot].figure_type_id))))
-      throw new Error('Keep spatial rigs joined to preserve their skin bindings and independent rotation spaces.');
+      throw messageError(new Error(''), "errors.editorCombine.keepSpatialRigsJoinedToPreserveTheirSkin", {});
     if (!authored && this.dragging) this.commitDrag();
     if (!authored && this.animationChannels.length) {
       const figureIndex = this.report.figure_types.length, beforeSelection = this._selectionState();
@@ -54,28 +55,28 @@ export const editorCombineMethods = {
       this._invalidate(); this._emit('edit', {label:'Combine connected figures', structural:true, definition:true, animation:true});
       return this.object;
     }
-    const group = joinedGroup(this, uid); if (group.slots.length < 2) throw new Error('Join at least two figures before combining.');
-    if ([...group.ids].some(id => this.getLayer(this.layerForUid(id))?.locked)) throw new Error('Unlock every connected figure before combining.');
+    const group = joinedGroup(this, uid); if (group.slots.length < 2) throw messageError(new Error(''), "errors.editorCombine.joinAtLeastTwoFiguresBeforeCombining", {});
+    if ([...group.ids].some(id => this.getLayer(this.layerForUid(id))?.locked)) throw messageError(new Error(''), "errors.editorCombine.unlockEveryConnectedFigureBeforeCombining", {});
     const frame = this.frame, geometry = buildGeometry(this.report, frame), order = frameOrder(frame);
     const positions = order.flatMap((id, i) => group.ids.has(id) ? [i] : []);
     if (positions.at(-1) - positions[0] + 1 !== positions.length)
-      throw new Error('Move the joined figures to adjacent layers before combining, so their paint order can be preserved.');
+      throw messageError(new Error(''), "errors.editorCombine.moveTheJoinedFiguresToAdjacentLayersBefore", {});
     let totalSegments = 0, totalPolygons = 0, scale = null;
     for (const slot of group.slots) {
       const g = geometry.objects.get(slot), style = g.fig.segment_decode?.global_style;
-      if(g.obj._stykVfx)throw new Error('Combine cannot preserve separate effect stacks. Convert the selection to a movieclip to keep its effects editable.');
+      if(g.obj._stykVfx)throw messageError(new Error(''), "errors.editorCombine.combineCannotPreserveSeparateEffectStacksConvertThe", {});
       if (Number(g.obj.field28 ?? g.obj.transparency ?? 0) !== 0)
-        throw new Error('Reset figure opacity to 100% before combining. Per-figure compositing cannot be flattened exactly.');
+        throw messageError(new Error(''), "errors.editorCombine.resetFigureOpacityTo100BeforeCombiningPer", {});
       if (Number(style?.outline_thickness ?? floatBits(style?.u28)) > 0)
-        throw new Error('Remove figure outlines before combining. Separate outline passes cannot be flattened exactly.');
+        throw messageError(new Error(''), "errors.editorCombine.removeFigureOutlinesBeforeCombiningSeparateOutlinePasses", {});
       totalSegments += g.fig.segments.length; totalPolygons += g.fig.polyfills?.length ?? 0;
       if (g.segments.some(s => s.seg.segment_type === 'text') && g.obj.scale > 0) {
         if (scale !== null && Math.abs(scale - g.obj.scale) > 1e-10)
-          throw new Error('Text figures must have the same scale before combining, to preserve their vertical glyph scale.');
+          throw messageError(new Error(''), "errors.editorCombine.textFiguresMustHaveTheSameScaleBefore", {});
         scale = g.obj.scale;
       }
     }
-    if (totalSegments > 30000 || totalPolygons > 20000) throw new Error('The combined figure exceeds the supported 30,000-segment or 20,000-polygon capacity.');
+    if (totalSegments > 30000 || totalPolygons > 20000) throw messageError(new Error(''), "errors.editorCombine.theCombinedFigureExceedsTheSupported30000", {});
     scale ??= 1;
     const typeId = Math.max(0, ...this.report.figure_types.map(f => f.figure_type_id)) + 1;
     const figure = {figure_type_id: typeId, name: String(name ?? `${geometry.objects.get(group.slots[0]).fig.name || 'Figure'} combined`).slice(0, 255),
@@ -98,7 +99,7 @@ export const editorCombineMethods = {
     const installAsset = (g, render) => {
       const kind = render.seg.segment_type, index = sourceAssetIndex(render.seg), key = `${g.obj.unique_id}:${kind}:${index}`;
       if (assets.has(key)) return assets.get(key);
-      if (!render.asset) throw new Error('An attached media segment is missing its decoded asset.');
+      if (!render.asset) throw messageError(new Error(''), "errors.editorCombine.anAttachedMediaSegmentIsMissingItsDecoded", {});
       const list = kind === 'image' ? figure.image_assets : figure.text_assets, asset = clone(render.asset), next = list.length;
       Object.assign(asset, {kind, asset_index: next, table_index: next});
       for (const alias of ['image_index', 'sprite_index']) if (alias in asset) asset[alias] = next;

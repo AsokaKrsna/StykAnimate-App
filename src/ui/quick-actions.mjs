@@ -1,4 +1,7 @@
-import { messageText } from '../localization.mjs';
+import {replaceLocalized, localizedText, localizedAttribute, appendLocalized} from '../localization-bindings.mjs';
+
+import {t as interfaceText, messageText} from '../localization.mjs';
+
 /**
  * Quick actions: the selection's most used commands, one quiet row of 28px
  * buttons under the inspector's name (components.md "Quick actions",
@@ -38,8 +41,6 @@ import {installRovingFocus} from './roving-focus.mjs';
 export const QUICK_LIMITS = Object.freeze({defaults: 5, slots: 6, groups: 3});
 /** The group pinned commands form, after the defaults. */
 export const PIN_GROUP = 'pins';
-
-
 
 export function quickText(t, key, fallback = null, params = {}) {
   return key ? messageText(t, key, params) : fallback ?? '';
@@ -83,43 +84,44 @@ const entry = (id, quick) => Object.freeze({id, quick: Object.freeze(Array.isArr
  */
 /** The one short word under a glyph command's tile (its tooltip and accessible name keep the whole name). */
 const SHORT_WORDS = Object.freeze({
-  mirror: 'Flip', duplicate: 'Duplicate', delete: 'Delete', 'segment-values': 'Values', 'mirror-segment': 'Flip H',
-  'mirror-segment-vertical': 'Flip V', 'delete-single-segment': 'Delete', 'camera-reset': 'Reset', copy: 'Copy', paste: 'Paste',
-  'delete-frame': 'Delete',
+  mirror: interfaceText("quickActions.flip"), duplicate: interfaceText("quickActions.duplicate"), delete: "Delete", 'segment-values': interfaceText("quickActions.values"), 'mirror-segment': interfaceText("quickActions.flipH"),
+  'mirror-segment-vertical': interfaceText("quickActions.flipV"), 'delete-single-segment': "Delete", 'camera-reset': interfaceText("quickActions.reset"), copy: interfaceText("quickActions.copy"), paste: interfaceText("quickActions.paste"),
+  'delete-frame': "Delete",
 });
 /** Commands that remove something: their tile turns red on hover. */
+const SHORT_WORD_KEYS = Object.freeze({mirror:'quickActions.flip', duplicate:'common.duplicate', delete:'common.delete', 'segment-values':'quickActions.values', 'mirror-segment':'quickActions.flipH', 'mirror-segment-vertical':'quickActions.flipV', 'delete-single-segment':'common.delete', 'camera-reset':'common.reset', copy:'common.copy', paste:'common.paste', 'delete-frame':'common.delete'});
 const DANGER = new Set(['delete', 'delete-single-segment', 'delete-frame', 'clear-keys']);
 const shortWord = item => SHORT_WORDS[item.id] ?? (item.label.length <= 10 ? item.label : item.label.split(' ')[0]);
 
 export const QUICK_ACTIONS = Object.freeze([
-  entry('mirror', [...place(FIGURES, {group: 'flip'}), Object.freeze({context: 'joint', group: 'flip', label: 'Flip limb', labelKey: 'quick.flipLimb'})]),
-  entry('layer-front', place(FIGURES, {group: 'order', word: 'Front', wordKey: 'quick.front', shift: 'layer-up', shiftHint: 'one step', shiftHintKey: 'quick.oneStep'})),
-  entry('layer-back', place(FIGURES, {group: 'order', word: 'Back', wordKey: 'quick.back', shift: 'layer-down', shiftHint: 'one step', shiftHintKey: 'quick.oneStep'})),
-  entry('movieclip-edit', {context: 'movieclip', group: 'clip', word: 'Edit clip', wordKey: 'quick.editClip'}),
-  entry('movieclip-unique', {context: 'movieclip', group: 'clip', word: 'Make unique', wordKey: 'quick.makeUnique'}),
+  entry('mirror', [...place(FIGURES, {group: 'flip'}), Object.freeze({context: 'joint', group: 'flip', label: interfaceText("quickActions.flipLimb"), labelKey: 'quick.flipLimb'})]),
+  entry('layer-front', place(FIGURES, {group: 'order', word: interfaceText("quickActions.front"), wordKey: 'quick.front', shift: 'layer-up', shiftHint: 'one step', shiftHintKey: 'quick.oneStep'})),
+  entry('layer-back', place(FIGURES, {group: 'order', word: interfaceText("quickActions.back"), wordKey: 'quick.back', shift: 'layer-down', shiftHint: 'one step', shiftHintKey: 'quick.oneStep'})),
+  entry('movieclip-edit', {context: 'movieclip', group: 'clip', word: interfaceText("quickActions.editClip"), wordKey: 'quick.editClip'}),
+  entry('movieclip-unique', {context: 'movieclip', group: 'clip', word: interfaceText("quickActions.makeUnique"), wordKey: 'quick.makeUnique'}),
   entry('duplicate', place([...FIGURES, 'movieclip'], {group: 'edit'})),
   entry('delete', place([...FIGURES, 'movieclip'], {group: 'edit'})),
-  entry('selection-front', {context: 'joint', group: 'order', word: 'Front', wordKey: 'quick.front',
+  entry('selection-front', {context: 'joint', group: 'order', word: interfaceText("quickActions.front"), wordKey: 'quick.front',
     shift: 'selection-up', shiftHint: 'one step', shiftHintKey: 'quick.oneStep'}),
-  entry('selection-back', {context: 'joint', group: 'order', word: 'Back', wordKey: 'quick.back',
+  entry('selection-back', {context: 'joint', group: 'order', word: interfaceText("quickActions.back"), wordKey: 'quick.back',
     shift: 'selection-down', shiftHint: 'one step', shiftHintKey: 'quick.oneStep'}),
-  entry('split-segment', {context: 'part', group: 'make', word: 'Split', wordKey: 'quick.split'}),
-  entry('duplicate-segment', {context: 'part', group: 'make', word: 'Duplicate', wordKey: 'quick.duplicatePart',
+  entry('split-segment', {context: 'part', group: 'make', word: interfaceText("quickActions.split"), wordKey: 'quick.split'}),
+  entry('duplicate-segment', {context: 'part', group: 'make', word: interfaceText("quickActions.duplicate"), wordKey: 'quick.duplicatePart',
     shift: 'duplicate-branch', shiftHint: 'the branch', shiftHintKey: 'quick.theBranch'}),
   entry('mirror-segment', {context: 'part', group: 'flip', shift: 'mirror-branch', shiftHint: 'the branch', shiftHintKey: 'quick.theBranch'}),
   entry('mirror-segment-vertical', {context: 'part', group: 'flip', shift: 'mirror-branch-vertical', shiftHint: 'the branch', shiftHintKey: 'quick.theBranch'}),
   entry('delete-single-segment', {context: 'part', group: 'delete', shift: 'delete-segment', shiftHint: 'the branch', shiftHintKey: 'quick.theBranch'}),
-  entry('add-sprite-segment', {context: 'build', group: 'add', word: 'Image', wordKey: 'quick.imagePart'}),
-  entry('rig-connect', {context: 'build', group: 'rig', word: 'Connect', wordKey: 'quick.connect'}),
-  entry('rig-examples', {context: 'build', group: 'add', word: 'Examples', wordKey: 'quick.examples'}),
-  entry('zoom-selection', {context: 'build', group: 'view', word: 'Fit', wordKey: 'quick.fit'}),
-  entry('camera-level', {context: 'camera', group: 'frame', word: 'Level', wordKey: 'quick.level'}),
-  entry('camera-center', {context: 'camera', group: 'frame', word: 'Center', wordKey: 'quick.center'}),
+  entry('add-sprite-segment', {context: 'build', group: 'add', word: interfaceText("quickActions.image"), wordKey: 'quick.imagePart'}),
+  entry('rig-connect', {context: 'build', group: 'rig', word: interfaceText("quickActions.connect"), wordKey: 'quick.connect'}),
+  entry('rig-examples', {context: 'build', group: 'add', word: interfaceText("quickActions.examples"), wordKey: 'quick.examples'}),
+  entry('zoom-selection', {context: 'build', group: 'view', word: interfaceText("quickActions.fit"), wordKey: 'quick.fit'}),
+  entry('camera-level', {context: 'camera', group: 'frame', word: interfaceText("quickActions.level"), wordKey: 'quick.level'}),
+  entry('camera-center', {context: 'camera', group: 'frame', word: interfaceText("quickActions.center"), wordKey: 'quick.center'}),
   entry('camera-reset', {context: 'camera', group: 'reset'}),
-  entry('copy', {context: 'range', group: 'clipboard', label: 'Copy frames', labelKey: 'quick.copyFrames'}),
-  entry('paste', {context: 'range', group: 'clipboard', label: 'Paste frames', labelKey: 'quick.pasteFrames'}),
+  entry('copy', {context: 'range', group: 'clipboard', label: interfaceText("quickActions.copyFrames"), labelKey: 'quick.copyFrames'}),
+  entry('paste', {context: 'range', group: 'clipboard', label: interfaceText("quickActions.pasteFrames"), labelKey: 'quick.pasteFrames'}),
   // Labelled: the poses go and the time stays; Delete frames (the trash) takes the time too.
-  entry('clear-keys', {context: 'range', group: 'remove', word: 'Remove keys', wordKey: 'quick.removeKeys'}),
+  entry('clear-keys', {context: 'range', group: 'remove', word: interfaceText("quickActions.removeKeys"), wordKey: 'quick.removeKeys'}),
   entry('delete-frame', {context: 'range', group: 'remove'}),
 ]);
 
@@ -199,6 +201,7 @@ export function resolveQuickActions({entries = QUICK_ACTIONS, context, pins = []
     const icon = row.icon ?? command?.icon ?? null;
     const kind = row.tile ? 'tile' : row.word || !icon ? 'word' : 'glyph';
     return {
+      labelKey: row.labelKey ?? command?.labelKey, labelParams: row.labelParams, wordKey: row.wordKey ?? SHORT_WORD_KEYS[row.id] ?? row.labelKey ?? command?.labelKey, wordParams: row.wordParams,
       id: row.id, group: row.group ?? row.id, pinned: isPinned, kind, label, word: kind === 'word' ? word ?? label : null,
       tile: row.tile ? quickText(t, row.tileKey, row.tile) : null, icon, menu: Boolean(row.menu),
       shift: row.shift ?? null, shiftHint: row.shift ? quickText(t, row.shiftHintKey, row.shiftHint ?? info(row.shift)?.label ?? row.shift) : null,
@@ -230,7 +233,7 @@ export function resolveQuickActions({entries = QUICK_ACTIONS, context, pins = []
 /** The row's accessible name for a context. */
 export function quickLabel(context, {t = null, contexts = QUICK_CONTEXTS} = {}) {
   const meta = contexts?.[context];
-  return meta ? quickText(t, meta.labelKey, meta.label) : quickText(t, null, 'Actions');
+  return meta ? quickText(t, meta.labelKey, meta.label) : quickText(t, null, interfaceText("quickActions.actions"));
 }
 
 /** Pins as stored per workspace ({context: [ids]}): `id` pinned last in `context`, at most `max` kept (the newest). */
@@ -321,7 +324,7 @@ export function createQuickActions({host = null, context = null, label = null, e
     if (!name || typeof icon !== 'function') return false;
     const glyph = icon(name, className);
     if (typeof glyph === 'string' && glyph) parent.insertAdjacentHTML('beforeend', glyph);
-    else if (glyph?.nodeType) parent.append(glyph);
+    else if (glyph?.nodeType) appendLocalized(parent, glyph);
     else return false;
     return true;
   }
@@ -352,11 +355,13 @@ export function createQuickActions({host = null, context = null, label = null, e
       const text = doc.createElement('span');
       text.className = 'ui-label';
       text.textContent = word ? item.word : shortWord(item);
-      control.append(text);
+      if (item.wordKey) localizedText(text, item.wordKey, item.wordParams);
+      appendLocalized(control, text);
       // A glyph command keeps its whole name as its accessible name; a word command is named by its word.
       if (!word) control.setAttribute('aria-label', item.label);
       if (item.menu) { control.setAttribute('aria-haspopup', 'menu'); appendGlyph(control, 'chevron-down', 'ui-icon ui-button-chev'); }
     }
+    if (item.labelKey && (small || !word)) localizedAttribute(control, 'aria-label', item.labelKey, item.labelParams);
     sync(control, item);
     return control;
   }
@@ -371,6 +376,7 @@ export function createQuickActions({host = null, context = null, label = null, e
     const tip = disabled && item.reason ? quickText(t, 'quick.unavailable', null, {label: item.label, reason: item.reason})
       : item.label;
     setAttribute(control, 'data-tooltip', tip);
+    if (item.labelKey) localizedAttribute(control, 'data-tooltip', disabled && item.reason ? 'quick.unavailable' : item.labelKey, disabled && item.reason ? {label: {messageKey: item.labelKey, messageParams: item.labelParams}, reason: item.reason} : item.labelParams);
   }
 
   function render() {
@@ -396,13 +402,13 @@ export function createQuickActions({host = null, context = null, label = null, e
           text.className = 'ui-quick-label';
           text.setAttribute('aria-hidden', 'true');
           text.textContent = item.tile;
-          tile.append(text);
+          appendLocalized(tile, text);
           children.push(tile);
         }
-        tile.append(button(item, {small: true}));
+        appendLocalized(tile, button(item, {small: true}));
       }
     });
-    element.replaceChildren(...children);
+    replaceLocalized(element, ...children);
     element.hidden = resolved.items.length === 0;
     roving.refresh();
     if (focused) [...element.querySelectorAll('button')].find(control => control.dataset.action === focused)?.focus({preventScroll: true});
@@ -459,7 +465,7 @@ export function createQuickActions({host = null, context = null, label = null, e
     get resolved() { return resolved; },
     destroy() {
       controller.abort();
-      if (created) element.remove(); else element.replaceChildren();
+      if (created) element.remove(); else replaceLocalized(element);
     },
   };
 }

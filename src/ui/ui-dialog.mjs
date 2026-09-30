@@ -1,3 +1,7 @@
+import {clearTranslation, replaceLocalized, appendLocalized, localizedMarkup, localizedText, localizedAttribute} from '../localization-bindings.mjs';
+
+import english from '../locales/en.mjs';
+
 /**
  * Modal dialogs: a native <dialog> opened with showModal() around a
  * <form method="dialog">, so Enter submits the primary action and Escape asks
@@ -66,8 +70,8 @@ const nodeFrom = (doc, value, argument) => {
  * resolves with the submitted value, or null when cancelled. Menus and
  * popovers opened inside the dialog close with it.
  */
-export function createDialog({size = 'sm', variant = null, title = '', description = '', body = null, actions = [], beforeClose = null, onSubmit = null,
-  className = '', closeLabel = null, overlays = null, mount = null, icon = null, pointer = null, id = null, t = null, typing = false,
+export function createDialog({size = 'sm', variant = null, title = '', titleKey, titleParams, description = '', descriptionKey, descriptionParams, body = null, bodyKey, bodyParams, actions = [], beforeClose = null, onSubmit = null,
+  className = '', closeLabel = null, closeLabelKey, closeLabelParams, overlays = null, mount = null, icon = null, pointer = null, id = null, t = null, typing = false,
   document: doc = globalThis.document} = {}) {
   const dialogId = id ?? `ui-dialog-${++dialogCount}`;
   const element = doc.createElement('dialog');
@@ -89,39 +93,43 @@ export function createDialog({size = 'sm', variant = null, title = '', descripti
   titleNode.className = 'ui-dialog-title';
   titleNode.id = `${dialogId}-title`;
   titleNode.textContent = title;
-  heading.append(titleNode);
+  if (titleKey) localizedText(titleNode, titleKey, titleParams);
+  appendLocalized(heading, titleNode);
   element.setAttribute('aria-labelledby', titleNode.id);
   if (description) {
     const text = doc.createElement('p');
     text.className = 'ui-dialog-desc';
     text.id = `${dialogId}-desc`;
     text.textContent = description;
-    heading.append(text);
+    if (descriptionKey) localizedText(text, descriptionKey, descriptionParams);
+    appendLocalized(heading, text);
     element.setAttribute('aria-describedby', text.id);
   }
   const closeButton = doc.createElement('button');
   closeButton.type = 'button';
   closeButton.className = 'ui-icon-button ui-dialog-close';
   closeButton.setAttribute('aria-label', closeLabel ?? kitText(t, 'common.close'));
+  if (closeLabelKey || !closeLabel) localizedAttribute(closeButton, 'aria-label', closeLabelKey ?? 'common.close', closeLabelParams);
   const glyph = icon?.('close');
-  if (typeof glyph === 'string') closeButton.insertAdjacentHTML('beforeend', glyph); else if (glyph) closeButton.append(glyph); else closeButton.textContent = '×';
-  head.append(heading, closeButton);
+  if (typeof glyph === 'string') closeButton.insertAdjacentHTML('beforeend', glyph); else if (glyph) appendLocalized(closeButton, glyph); else closeButton.textContent = '×';
+  appendLocalized(head, heading, closeButton);
 
   const bodyNode = doc.createElement('div');
   bodyNode.className = 'ui-dialog-body';
   const content = nodeFrom(doc, body, form);
-  if (content) bodyNode.append(content);
+  if (content && bodyKey) localizedText(content, bodyKey, bodyParams);
+  if (content) appendLocalized(bodyNode, content);
   const error = doc.createElement('div');
   error.className = 'ui-dialog-error';
   error.setAttribute('role', 'alert');
   error.hidden = true;
-  bodyNode.append(error);
+  appendLocalized(bodyNode, error);
 
   const foot = doc.createElement('footer');
   foot.className = 'ui-dialog-foot';
   const meta = doc.createElement('span');
   meta.className = 'ui-dialog-meta';
-  foot.append(meta);
+  appendLocalized(foot, meta);
   const values = new Map();
   const submitting = actions.filter(action => !action.cancel);
   const primaryAction = submitting.find(action => action.variant === 'primary' || action.variant === 'danger') ?? submitting.at(-1) ?? null;
@@ -134,14 +142,15 @@ export function createDialog({size = 'sm', variant = null, title = '', descripti
     if (action.tone) button.dataset.tone = action.tone;
     if (action.id) button.id = action.id;
     button.textContent = action.label;
+    if (action.labelKey) localizedText(button, action.labelKey, action.labelParams);
     if (action.cancel) button.addEventListener('click', () => requestClose('cancel'));
-    else values.set(button, action.value === undefined ? action.label : action.value);
+    else values.set(button, action.value === undefined ? action.labelKey && typeof english[action.labelKey] === 'string' ? english[action.labelKey] : action.label : action.value);
     if (action === primaryAction) { button.dataset.primary = ''; primary = button; }
     if (action.autofocus) button.autofocus = true;
-    foot.append(button);
+    appendLocalized(foot, button);
   }
-  form.append(head, bodyNode, foot);
-  element.append(form);
+  appendLocalized(form, head, bodyNode, foot);
+  appendLocalized(element, form);
 
   let resolve, open = false, settled = false, handle = null, submitted, busy = false;
   const result = new Promise(done => { resolve = done; });
@@ -191,7 +200,7 @@ export function createDialog({size = 'sm', variant = null, title = '', descripti
       const outcome = onSubmit(value, form, event.submitter);
       if (outcome === false || outcome?.error) {
         event.preventDefault();
-        if (outcome?.error) setError(String(outcome.error));
+        if (outcome?.error) setError(outcome.error);
         return;
       }
       if (outcome && typeof outcome === 'object' && 'value' in outcome) value = outcome.value;
@@ -200,7 +209,8 @@ export function createDialog({size = 'sm', variant = null, title = '', descripti
   });
 
   function setError(message = '') {
-    error.textContent = message;
+    if (message?.messageKey) localizedText(error, message.messageKey, message.messageParams);
+    else { clearTranslation(error); error.textContent = String(message?.message ?? message); }
     error.hidden = !message;
   }
 
@@ -211,7 +221,7 @@ export function createDialog({size = 'sm', variant = null, title = '', descripti
       if (open || settled) return result;
       const invoker = doc.activeElement;
       const host = mount ?? doc.body;
-      host.append(element);
+      appendLocalized(host, element);
       let target = initialFocusTarget(element);
       const shy = keepsKeyboardDown(target, {typing});
       if (shy) target = null;
@@ -239,7 +249,7 @@ export function createDialog({size = 'sm', variant = null, title = '', descripti
       for (const button of foot.querySelectorAll('button[type=submit]')) button.disabled = busy;
     },
     setError,
-    setMeta(text = '') { meta.textContent = text; },
+    setMeta(text = '') { if (text?.messageKey) localizedText(meta, text.messageKey, text.messageParams); else { clearTranslation(meta); meta.textContent = text; } },
     get open() { return open; },
   };
 }
@@ -252,8 +262,8 @@ export function createDialog({size = 'sm', variant = null, title = '', descripti
 export async function confirm({title, body = '', description = '', confirmLabel = null, cancelLabel = null, danger = false, alternatives = [], size = 'sm', ...options} = {}) {
   const dialog = createDialog({size, title, description, body, ...options, actions: [
     ...alternatives.map(action => ({label: action.label, value: action.value, id: action.id, variant: 'ghost', tone: action.danger ? 'danger' : undefined})),
-    {label: cancelLabel ?? kitText(options.t, 'common.cancel'), cancel: true, variant: 'ghost'},
-    {label: confirmLabel ?? kitText(options.t, 'overlays.ok'), value: true, variant: danger ? 'danger' : 'primary', autofocus: true, id: options.confirmId},
+    {label: cancelLabel ?? kitText(options.t, 'common.cancel'), labelKey: options.cancelLabelKey ?? (cancelLabel === null ? 'common.cancel' : undefined), labelParams: options.cancelLabelParams, cancel: true, variant: 'ghost'},
+    {label: confirmLabel ?? kitText(options.t, 'overlays.ok'), labelKey: options.confirmLabelKey ?? (confirmLabel === null ? 'overlays.ok' : undefined), labelParams: options.confirmLabelParams, value: true, variant: danger ? 'danger' : 'primary', autofocus: true, id: options.confirmId},
   ]});
   const value = await dialog.showModal();
   return value === null ? false : value;
@@ -280,12 +290,14 @@ export async function prompt({title, label = '', value = '', placeholder = '', v
   caption.htmlFor = input.id;
   caption.className = 'ui-field-label';
   caption.textContent = label;
-  if (label) row.append(caption); else input.setAttribute('aria-label', title);
-  row.append(input);
+  if (options.labelKey) localizedText(caption, options.labelKey, options.labelParams);
+  if (options.placeholderKey) localizedAttribute(input, 'placeholder', options.placeholderKey, options.placeholderParams);
+  if (label) appendLocalized(row, caption); else if (options.titleKey) localizedAttribute(input, 'aria-label', options.titleKey, options.titleParams); else input.setAttribute('aria-label', title);
+  appendLocalized(row, input);
   input.addEventListener('input', () => input.removeAttribute('aria-invalid'));
   const dialog = createDialog({size, title, body: row, typing: true, ...options, actions: [
-    {label: cancelLabel ?? kitText(options.t, 'common.cancel'), cancel: true, variant: 'ghost'},
-    {label: confirmLabel ?? kitText(options.t, 'overlays.ok'), value: true, variant: 'primary'},
+    {label: cancelLabel ?? kitText(options.t, 'common.cancel'), labelKey: options.cancelLabelKey ?? (cancelLabel === null ? 'common.cancel' : undefined), labelParams: options.cancelLabelParams, cancel: true, variant: 'ghost'},
+    {label: confirmLabel ?? kitText(options.t, 'overlays.ok'), labelKey: options.confirmLabelKey ?? (confirmLabel === null ? 'overlays.ok' : undefined), labelParams: options.confirmLabelParams, value: true, variant: 'primary'},
   ], onSubmit: () => {
     const problem = validate?.(input.value);
     if (problem) { input.setAttribute('aria-invalid', 'true'); input.focus(); return {error: problem}; }
@@ -312,19 +324,20 @@ export async function choose({title, description = '', options: choices = [], ca
     button.type = 'submit';
     button.className = 'ui-dialog-choice';
     if (choice.id) button.id = choice.id;
-    if (choice.icon && icon) { const glyph = icon(choice.icon); if (typeof glyph === 'string') button.insertAdjacentHTML('beforeend', glyph); else if (glyph) button.append(glyph); }
+    if (choice.icon && icon) { const glyph = icon(choice.icon); if (typeof glyph === 'string') button.insertAdjacentHTML('beforeend', glyph); else if (glyph) appendLocalized(button, glyph); }
     const text = doc.createElement('span'), name = doc.createElement('b');
     text.className = 'ui-dialog-choice-text';
     name.textContent = choice.label;
-    text.append(name);
-    if (choice.description) { const detail = doc.createElement('small'); detail.textContent = choice.description; text.append(detail); }
-    button.append(text);
+    if (choice.labelKey) localizedText(name, choice.labelKey, choice.labelParams);
+    appendLocalized(text, name);
+    if (choice.description) { const detail = doc.createElement('small'); detail.textContent = choice.description; if (choice.descriptionKey) localizedText(detail, choice.descriptionKey, choice.descriptionParams); appendLocalized(text, detail); }
+    appendLocalized(button, text);
     if (choice.danger) button.dataset.tone = 'danger';
     values.set(button, choice.value);
-    list.append(button);
+    appendLocalized(list, button);
   }
   const dialog = createDialog({size, title, description, body: list, icon, ...options,
-    actions: [{label: cancelLabel ?? kitText(options.t, 'common.cancel'), cancel: true, variant: 'ghost'}],
+    actions: [{label: cancelLabel ?? kitText(options.t, 'common.cancel'), labelKey: options.cancelLabelKey ?? (cancelLabel === null ? 'common.cancel' : undefined), labelParams: options.cancelLabelParams, cancel: true, variant: 'ghost'}],
     onSubmit: (value, form, submitter) => (values.has(submitter) ? {value: values.get(submitter)} : false)});
   return dialog.showModal();
 }
@@ -349,7 +362,7 @@ const LEGACY_PRIMARY = '[data-primary]:not(:disabled), button.primary:not(:disab
  *
  * Returns {dialog, form, body, handle}.
  */
-export function showLegacyDialog(title, bodyHTML, {dialog, content = null, overlays = null, icon = null, closeLabel = null, pointer = null, t = null} = {}) {
+export function showLegacyDialog(title, bodyHTML, {titleKey, titleParams, dialog, content = null, overlays = null, icon = null, closeLabel = null, pointer = null, t = null} = {}) {
   const doc = dialog.ownerDocument, host = content ?? dialog.querySelector('#dialog-content') ?? dialog;
   const form = doc.createElement('form');
   form.method = 'dialog';
@@ -358,16 +371,18 @@ export function showLegacyDialog(title, bodyHTML, {dialog, content = null, overl
   const head = doc.createElement('div'), heading = doc.createElement('h2'), close = doc.createElement('button');
   head.className = 'dialog-head';
   heading.textContent = title;
+  if (titleKey) localizedText(heading, titleKey, titleParams);
   close.type = 'button';
   close.className = 'icon-button';
   close.dataset.action = 'close-dialog';
   close.setAttribute('aria-label', closeLabel ?? kitText(t, 'overlays.closeDialog'));
+  if (!closeLabel) localizedAttribute(close, 'aria-label', 'overlays.closeDialog');
   const glyph = icon?.('close');
-  if (typeof glyph === 'string') close.insertAdjacentHTML('beforeend', glyph); else if (glyph) close.append(glyph); else close.textContent = '×';
-  head.append(heading, close);
+  if (typeof glyph === 'string') close.insertAdjacentHTML('beforeend', glyph); else if (glyph) appendLocalized(close, glyph); else close.textContent = '×';
+  appendLocalized(head, heading, close);
   const body = doc.createElement('div');
   body.className = 'dialog-body';
-  body.innerHTML = bodyHTML;
+  localizedMarkup(body, bodyHTML);
   for (const button of body.querySelectorAll('button:not([type])')) button.type = 'button';
   // The form's default button (the first submit button in tree order): Enter in a field clicks it.
   const enter = doc.createElement('button');
@@ -375,7 +390,7 @@ export function showLegacyDialog(title, bodyHTML, {dialog, content = null, overl
   enter.hidden = true;
   enter.tabIndex = -1;
   enter.setAttribute('aria-hidden', 'true');
-  form.append(enter, head, body);
+  appendLocalized(form, enter, head, body);
   // The body's own buttons act on click; the form only turns Enter in a field into the primary.
   form.addEventListener('submit', event => {
     // A form of the body's own (Reference joints) submits by itself; its event only bubbles through here.
@@ -385,7 +400,7 @@ export function showLegacyDialog(title, bodyHTML, {dialog, content = null, overl
     if (event.submitter && event.submitter !== enter) return;
     body.querySelector(LEGACY_PRIMARY)?.click();
   });
-  host.replaceChildren(form);
+  replaceLocalized(host, form);
 
   let handle = legacyHandles.get(dialog) ?? null;
   const byPointer = pointer ?? overlays?.openedByPointer?.() ?? false;

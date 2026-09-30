@@ -1,16 +1,17 @@
+import {messageError} from './localized-error.mjs';
 import {TILE,TILE_BYTES,TileStore,tileTransparent,assertTileCoordinates} from './drawing-tiles.mjs';
 
 export const DRAWING_PREPARATION_BYTES=1024*1024;
 const BATCH_TILES=DRAWING_PREPARATION_BYTES/TILE_BYTES;
-const aborted=()=>new DOMException('Drawing preparation cancelled or superseded.','AbortError');
+const aborted=()=>messageError(new DOMException('', 'AbortError'), "errors.drawingPreparation.drawingPreparationCancelledOrSuperseded", {});
 
 /** Takes exclusive ownership of transferred input. Full tiles already have
  * their final allocation; only compact uniform colors need expansion. */
 export function materializeDrawingTiles(input){
-  if(!Array.isArray(input)||input.length>BATCH_TILES)throw new Error('Drawing preparation batch is too large.');
+  if(!Array.isArray(input)||input.length>BATCH_TILES)throw messageError(new Error(''), "errors.drawingPreparation.drawingPreparationBatchIsTooLarge", {});
   const store=new TileStore(),tiles=[];
   for(const t of input){
-    if(t.pixels!=null&&(!(t.pixels instanceof ArrayBuffer)||t.pixels.byteLength!==4&&t.pixels.byteLength!==TILE_BYTES))throw new Error('Invalid drawing preparation pixels.');
+    if(t.pixels!=null&&(!(t.pixels instanceof ArrayBuffer)||t.pixels.byteLength!==4&&t.pixels.byteLength!==TILE_BYTES))throw messageError(new Error(''), "errors.drawingPreparation.invalidDrawingPreparationPixels", {});
     if(t.pixels?.byteLength===TILE_BYTES)store.adopt(t.tx,t.ty,new Uint8ClampedArray(t.pixels));
     else store.set(t.tx,t.ty,t.pixels==null?null:new Uint8ClampedArray(t.pixels));
     const tile=store.get(t.tx,t.ty),visible=tile&&!tileTransparent(tile);
@@ -26,7 +27,7 @@ export function* drawingPixelCommands(root,direction='after'){
 export function validateDrawingChanges(tiles){
   for(const tile of tiles){
     assertTileCoordinates(tile.tx,tile.ty);
-    for(const side of [tile.before,tile.after])if(side!=null&&(!(side instanceof Uint8ClampedArray||side instanceof Uint8Array)||side.byteLength!==4&&side.byteLength!==TILE_BYTES))throw new Error('Invalid drawing history tile.');
+    for(const side of [tile.before,tile.after])if(side!=null&&(!(side instanceof Uint8ClampedArray||side instanceof Uint8Array)||side.byteLength!==4&&side.byteLength!==TILE_BYTES))throw messageError(new Error(''), "errors.drawingHistoryCodec.invalidDrawingHistoryTile", {});
   }
 }
 export function needsDrawingPreparation(root,direction){
@@ -52,11 +53,11 @@ class DrawingPreparation {
   }
   validate(root,direction){
     this.checkSources();const commands=[...drawingPixelCommands(root,direction)];
-    if(direction!==this.direction||this.index||commands.length!==this.plans.length||commands.some((c,i)=>c.tiles!==this.plans[i].changes||c.celId!==this.plans[i].celId||c.tiles.length!==this.plans[i].tiles.length))throw new Error('Prepared pixels do not match this drawing transaction.');
+    if(direction!==this.direction||this.index||commands.length!==this.plans.length||commands.some((c,i)=>c.tiles!==this.plans[i].changes||c.celId!==this.plans[i].celId||c.tiles.length!==this.plans[i].tiles.length))throw messageError(new Error(''), "errors.drawingPreparation.preparedPixelsDoNotMatchThisDrawingTransaction", {});
   }
   plan(changes,direction,celId){
     this.check();const plan=this.plans[this.index];
-    if(direction!==this.direction||plan?.changes!==changes||plan.celId!==celId)throw new Error('Prepared pixels do not match this drawing command.');
+    if(direction!==this.direction||plan?.changes!==changes||plan.celId!==celId)throw messageError(new Error(''), "errors.drawingPreparation.preparedPixelsDoNotMatchThisDrawingCommand", {});
     return plan;
   }
   consume(plan){this.index++;this.bytes-=plan.bytes;plan.tiles=null;this.owner.hold(this,this.bytes);}
@@ -74,10 +75,10 @@ export function adoptDrawingPreparation(owner,root,direction,tiles){
   const prepared=new DrawingPreparation(owner,root,direction);
   try{
     const plan=prepared.plans[0];
-    if(prepared.plans.length!==1||plan.changes.length!==tiles.length)throw new Error('Prepared pixels do not match this drawing transaction.');
+    if(prepared.plans.length!==1||plan.changes.length!==tiles.length)throw messageError(new Error(''), "errors.drawingPreparation.preparedPixelsDoNotMatchThisDrawingTransaction", {});
     for(let i=0;i<tiles.length;i++){
       const t=tiles[i],c=plan.changes[i],b=t.alphaBounds;
-      if(t.tx!==c.tx||t.ty!==c.ty||t.pixels!=null&&(!(t.pixels instanceof Uint8ClampedArray)||t.pixels.byteLength!==TILE_BYTES||!b||![b.x,b.y,b.width,b.height].every(Number.isInteger)||b.x<0||b.y<0||b.width<1||b.height<1||b.x+b.width>TILE||b.y+b.height>TILE))throw new Error('Invalid prepared drawing tile.');
+      if(t.tx!==c.tx||t.ty!==c.ty||t.pixels!=null&&(!(t.pixels instanceof Uint8ClampedArray)||t.pixels.byteLength!==TILE_BYTES||!b||![b.x,b.y,b.width,b.height].every(Number.isInteger)||b.x<0||b.y<0||b.width<1||b.height<1||b.x+b.width>TILE||b.y+b.height>TILE))throw messageError(new Error(''), "errors.drawingPreparation.invalidPreparedDrawingTile", {});
       plan.tiles.push({tx:t.tx,ty:t.ty,pixels:t.pixels??null,alphaBounds:t.pixels?b:null,shared:Boolean(t.pixels&&t.shared)});
     }
     plan.bytes=prepared.bytes=plan.tiles.reduce((n,t)=>n+(t.pixels?.byteLength??0),0);
@@ -101,10 +102,10 @@ export function prepareDrawingChanges(owner,root,direction,{signal,checkCurrent=
           check();const input=plan.changes.slice(start,start+BATCH_TILES);
           const tiles=input.map(t=>({tx:t.tx,ty:t.ty,pixels:t[direction]?.slice().buffer??null}));
           const result=await owner.worker.request('prepare-tiles',{tiles},{signal,transfer:tiles.flatMap(t=>t.pixels?[t.pixels]:[])});
-          check();if(result.tiles?.length!==input.length)throw new Error('Incomplete prepared drawing tiles.');
+          check();if(result.tiles?.length!==input.length)throw messageError(new Error(''), "errors.drawingPreparation.incompletePreparedDrawingTiles", {});
           for(let i=0;i<input.length;i++){
             const t=result.tiles[i],b=t.alphaBounds;
-            if(t.tx!==input[i].tx||t.ty!==input[i].ty||t.pixels!=null&&(!(t.pixels instanceof ArrayBuffer)||t.pixels.byteLength!==TILE_BYTES)||t.pixels!=null&&(!b||![b.x,b.y,b.width,b.height].every(Number.isInteger)||b.x<0||b.y<0||b.width<1||b.height<1||b.x+b.width>TILE||b.y+b.height>TILE))throw new Error('Invalid prepared drawing tile.');
+            if(t.tx!==input[i].tx||t.ty!==input[i].ty||t.pixels!=null&&(!(t.pixels instanceof ArrayBuffer)||t.pixels.byteLength!==TILE_BYTES)||t.pixels!=null&&(!b||![b.x,b.y,b.width,b.height].every(Number.isInteger)||b.x<0||b.y<0||b.width<1||b.height<1||b.x+b.width>TILE||b.y+b.height>TILE))throw messageError(new Error(''), "errors.drawingPreparation.invalidPreparedDrawingTile", {});
             plan.tiles.push({tx:t.tx,ty:t.ty,pixels:t.pixels==null?null:new Uint8ClampedArray(t.pixels),alphaBounds:b});
           }
         }

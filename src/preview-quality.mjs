@@ -1,3 +1,4 @@
+import {t as interfaceText} from './localization.mjs';
 export const previewQualityLevels = [1, 0.75, 0.5, 0.25];
 // WebGPU supports one or four samples, never two.
 export const previewMsaaLevels = [4, 1, 1, 1];
@@ -5,11 +6,11 @@ export const previewMsaaLevels = [4, 1, 1, 1];
 // Saved playback preferences select the existing renderer quality levels.
 // Editing and export do not use this setting. Automatic is explicitly opt-in.
 export const playbackQualityOptions = Object.freeze([
-  {id:'normal', label:'Normal (100%)', index:0},
-  {id:'medium', label:'Medium (75%)', index:1},
-  {id:'low', label:'Low (50%)', index:2},
-  {id:'draft', label:'Draft (25%)', index:3},
-  {id:'auto', label:'Automatic', index:0},
+  {id:'normal', label:interfaceText("previewQuality.normal100"), labelKey: "previewQuality.normal100", index:0},
+  {id:'medium', label:interfaceText("previewQuality.medium75"), labelKey: "previewQuality.medium75", index:1},
+  {id:'low', label:interfaceText("previewQuality.low50"), labelKey: "previewQuality.low50", index:2},
+  {id:'draft', label:interfaceText("previewQuality.draft25"), labelKey: "previewQuality.draft25", index:3},
+  {id:'auto', label:interfaceText("previewQuality.automatic"), labelKey: "previewQuality.automatic", index:0},
 ]);
 export function normalizePlaybackQuality(value) {
   return playbackQualityOptions.some(option=>option.id===value) ? value : 'normal';

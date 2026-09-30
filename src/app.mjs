@@ -1,3 +1,10 @@
+import {tupleMessages, messageTuple, messageHTML, localizedAttribute, localizedText, appendLocalized, localizedMarkup, clearTranslation, AppLocalization, menuLabelKey} from './localization-bindings.mjs';
+
+import {messageError} from './localized-error.mjs';
+import {errorText, presentError} from './error-presentation.mjs';
+
+import {t as interfaceText} from './localization.mjs';
+
 import {installSpatialControls,drawSpatialGizmo,spatialGizmoDrag,updateSpatialGizmo,spatialControlMode} from './spatial-controls.mjs';
 import {drawingBarrier,drawingResourcesFor} from './drawing-resources.mjs';
 import {drawingMetadata} from './drawing-model.mjs';
@@ -126,7 +133,7 @@ import { EditorSettings, normalizeEditorSettings } from "./settings.mjs";
 import { HotkeyManager, HOTKEY_BY_ID, isHotkeyInput } from "./hotkeys.mjs";
 import { hotkeyCommandId, refreshHotkeyHints } from "./hotkey-hints.mjs";
 import { runTimelineHotkey } from "./timeline-hotkeys.mjs";
-import { AppLocalization, menuLabelKey } from "./localization-bindings.mjs";
+
 import { layerIdForUid, layerVisible, layerLocked } from "./layers.mjs";
 import { DocumentExporter } from "./document-export.mjs";
 import { writeNativeBlob as writeNativeBlobRaw, readNativeRecovery } from "./native-files.mjs";
@@ -207,7 +214,7 @@ async function runDocumentExport(format, consume, { recovery = false, controller
   let stage = 'serialize';
   telemetry.count(metric + '_started');
   try {
-    const drawingRevision=editor.revision;await drawingBarrier(editor.report,{signal:controller.signal});if(drawingRevision!==editor.revision)throw new DOMException('The drawing changed during export.','AbortError');
+    const drawingRevision=editor.revision;await drawingBarrier(editor.report,{signal:controller.signal});if(drawingRevision!==editor.revision)throw messageError(new DOMException('', 'AbortError'), "errors.app.theDrawingChangedDuringExport", {});
     const blob = await documentExporter.export(recovery ? editor.movieclipProjectReport() : editor.report, {
       format,
       name: recovery ? editor._movieclipScopes?.[0]?.parent.name ?? editor.name : editor.name,
@@ -320,7 +327,7 @@ const viewport = $("viewport"),
       renderer.clearArtwork?.();
     }
     requestRender();
-  }, onError: error => status(error.message, true)});
+  }, onError: error => status(error, true)});
 hydrateIcons();
 // One owner for dialogs, menus and messages (src/ui/overlay-manager.mjs): the
 // hotkey gate, focus return, and the message slot that stays above every modal.
@@ -347,7 +354,7 @@ const toasts = createToasts({
   topInset: () => bandBottom(document),
   t: (key, params) => appLocalization?.t(key, params),
   feedback: desktop?.sendTelemetryFeedback
-    ? { label: "Send feedback", run: () => feedbackUI.open({ category: "bug" }) }
+    ? { label: interfaceText("app.sendFeedback"), labelKey: "app.sendFeedback", run: () => feedbackUI.open({ category: "bug" }) }
     : null,
 });
 let drawingController, timelineUI, timelineHost,
@@ -433,7 +440,7 @@ const editablePreparation = new EditableScenePreparation(editor, {
       requestRender();
     }
   },
-  onReady(){state.editingPacket=null;status('Ready');warmPlayback();},
+  onReady(){state.editingPacket=null;status({messageKey: "app.ready", messageParams: {}});warmPlayback();},
   onError:fail,
 });
 let lastFpsUI = 0;
@@ -473,7 +480,7 @@ function sceneBackground() {
   const frame = editor.frame, background = editor.report.backgrounds?.find((item) => item.background_id === frame?.background_id);
   const override = frame?._stykBackgroundColor;
   const paint = backgroundPaint(override === undefined ? background : { kind: 2, color: override });
-  return { css: paintCSS(paint), label: paint.type === "solid" ? hexColor(paint.stops[0].color).toUpperCase() : `${paint.type[0].toUpperCase()}${paint.type.slice(1)} gradient` };
+  return { css: paintCSS(paint), label: paint.type === "solid" ? hexColor(paint.stops[0].color).toUpperCase() : interfaceText('app.valueValue1Gradient', {value: paint.type[0].toUpperCase(), value1: paint.type.slice(1)}) };
 }
 /** The stage header (experience.md §4.2-4.4): the crumb or scope path, the workspace's view toggles and their states, a mode's message. */
 function syncStageHead() {
@@ -495,7 +502,7 @@ function syncStageHead() {
   });
   // The tool's options are written when the tool or its values change (the bar syncs its own pressed states).
   const optionsKey = `${drawingController?.active ? "draw" : state.tool}|${state.rigMode}`;
-  if (optionsKey !== shownToolOptions) { shownToolOptions = optionsKey; stageHead.setToolOptions(toolOptionDescriptors(), { tool: state.tool, label: "Tool options" }); }
+  if (optionsKey !== shownToolOptions) { shownToolOptions = optionsKey; stageHead.setToolOptions(toolOptionDescriptors(), { tool: state.tool, label: interfaceText("app.toolOptions"), labelKey: "app.toolOptions" }); }
   syncModeMessage();
 }
 let shownToolOptions = "";
@@ -507,8 +514,8 @@ let shownToolOptions = "";
 function toolOptionDescriptors() {
   if (state.tool !== "rig" || drawingController?.active) return [];
   return [
-    { id: "rig-mode", kind: "select", label: "Drag", showLabel: true, description: "Rig edit mode", elementId: "rig-mode", value: state.rigMode,
-      options: [{ value: "move", label: "Move joint" }, { value: "rotate", label: "Rotate branch" }] },
+    { id: "rig-mode", kind: "select", label: interfaceText("app.drag"), labelKey: "app.drag", showLabel: true, description: interfaceText("app.rigEditMode"), descriptionKey: "app.rigEditMode", elementId: "rig-mode", value: state.rigMode,
+      options: [{ value: "move", label: interfaceText("app.moveJoint"), labelKey: "app.moveJoint" }, { value: "rotate", label: interfaceText("app.rotateBranch"), labelKey: "app.rotateBranch" }] },
   ];
 }
 /**
@@ -517,25 +524,25 @@ function toolOptionDescriptors() {
  * written to the hidden #viewport-hint (R16).
  */
 function modeMessage() {
-  if (state.spritePlacement) return { key: "sprite", icon: "image", title: "Choose an attachment joint", message: "for the image", cancel: cancelSpritePlacement };
-  if (state.duplicatePlacement) return { key: "duplicate", icon: "duplicate", title: "Choose a parent joint", message: "for the copy", cancel: cancelSpritePlacement };
+  if (state.spritePlacement) return { key: "sprite", icon: "image", title: interfaceText("app.chooseAnAttachmentJoint"), titleKey: "app.chooseAnAttachmentJoint", message: interfaceText("app.forTheImage"), messageKey: "app.forTheImage", cancel: cancelSpritePlacement };
+  if (state.duplicatePlacement) return { key: "duplicate", icon: "duplicate", title: interfaceText("app.chooseAParentJoint"), titleKey: "app.chooseAParentJoint", message: interfaceText("app.forTheCopy"), messageKey: "app.forTheCopy", cancel: cancelSpritePlacement };
   const pick = state.rigAnchorPick;
   if (pick) return { key: `connect-${pick.key ?? ""}`, icon: "link", cancel: () => { state.rigAnchorPick = null; syncModeMessage(); requestRender(); },
-    ...(pick.key === "driver" ? { title: "Click a Smart Stretch joint", message: "on this figure" }
-      : pick.key ? { title: "Click the new anchor", message: "on this figure" } : { title: "Click the second joint", message: "to connect it" }) };
+    ...(pick.key === "driver" ? { title: interfaceText("app.clickASmartStretchJoint"), titleKey: "app.clickASmartStretchJoint", message: interfaceText("app.onThisFigure"), messageKey: "app.onThisFigure" }
+      : pick.key ? { title: interfaceText("app.clickTheNewAnchor"), titleKey: "app.clickTheNewAnchor", message: interfaceText("app.onThisFigure"), messageKey: "app.onThisFigure" } : { title: interfaceText("app.clickTheSecondJoint"), titleKey: "app.clickTheSecondJoint", message: interfaceText("app.toConnectIt"), messageKey: "app.toConnectIt" }) };
   if (drawingController?.active) return null;
-  if (state.tool === "attach" && state.figureJoin) return { key: "join", icon: "join-figure", title: "Click the joint", message: "to join to", cancel: () => setTool("select") };
-  if (state.tool === "chain") return { key: "chain", icon: "builder-chain", title: "Click to add points", message: "· Enter finishes · Backspace removes the last" };
+  if (state.tool === "attach" && state.figureJoin) return { key: "join", icon: "join-figure", title: interfaceText("app.clickTheJoint"), titleKey: "app.clickTheJoint", message: interfaceText("app.toJoinTo"), messageKey: "app.toJoinTo", cancel: () => setTool("select") };
+  if (state.tool === "chain") return { key: "chain", icon: "builder-chain", title: interfaceText("app.clickToAddPoints"), titleKey: "app.clickToAddPoints", message: interfaceText("app.enterFinishesBackspaceRemovesTheLast"), messageKey: "app.enterFinishesBackspaceRemovesTheLast" };
   // Build's drawing tools say what a drag does, so a new figure never starts from a blank guess.
   const started = Boolean(builderMode?.session?.figure);
   if (builderMode?.active && state.tool === "line")
-    return { key: `build-line-${started}`, icon: "line", title: started ? "Drag from a joint" : "Drag on the canvas", message: started ? "to add a line" : "to draw the figure's first line" };
+    return { key: `build-line-${started}`, icon: "line", title: started ? interfaceText("app.dragFromAJoint") : interfaceText("app.dragOnTheCanvas"), titleKey: (started ? "app.dragFromAJoint" : "app.dragOnTheCanvas"), titleParams: (started ? {} : {}), message: started ? interfaceText('app.toAddALine') : interfaceText("app.toDrawTheFigureSFirstLine"), messageKey: (started ? 'app.toAddALine' : "app.toDrawTheFigureSFirstLine"), messageParams: (started ? {} : {}) };
   if (builderMode?.active && state.tool === "circle")
-    return { key: `build-circle-${started}`, icon: "circle", title: started ? "Drag from a joint" : "Drag on the canvas", message: started ? "to add a circle" : "to draw the figure's first circle" };
-  if (state.tool === "polygon") return { key: "polygon", icon: "polygon", title: "Click joints to trace", message: "· Shift-click an area to fill · Enter finishes" };
+    return { key: `build-circle-${started}`, icon: "circle", title: started ? interfaceText("app.dragFromAJoint") : interfaceText("app.dragOnTheCanvas"), titleKey: (started ? "app.dragFromAJoint" : "app.dragOnTheCanvas"), titleParams: (started ? {} : {}), message: started ? interfaceText('app.toAddACircle') : interfaceText("app.toDrawTheFigureSFirstCircle"), messageKey: (started ? 'app.toAddACircle' : "app.toDrawTheFigureSFirstCircle"), messageParams: (started ? {} : {}) };
+  if (state.tool === "polygon") return { key: "polygon", icon: "polygon", title: interfaceText("app.clickJointsToTrace"), titleKey: "app.clickJointsToTrace", message: interfaceText("app.shiftClickAnAreaToFillEnterFinishes"), messageKey: "app.shiftClickAnAreaToFillEnterFinishes" };
   if (state.tool === "tweener" && !builderMode?.active) {
-    const type = tweenerControls?.button?.getAttribute("aria-label")?.replace(/ tweener$/, "") ?? "Breakdown";
-    return { key: "tweener", icon: "tween", title: "Drag across the canvas", message: `to tween · ${type} · Shift for precision · Esc cancels` };
+    const type = tweenerControls?.button?.getAttribute("aria-label")?.replace(/ tweener$/, "") ?? interfaceText("app.breakdown");
+    return { key: "tweener", icon: "tween", title: interfaceText("app.dragAcrossTheCanvas"), titleKey: "app.dragAcrossTheCanvas", message: interfaceText("app.toTweenShiftForPrecisionEscCancels", {type: type}), messageKey: "app.toTweenShiftForPrecisionEscCancels", messageParams: {type: type} };
   }
   return null;
 }
@@ -544,7 +551,7 @@ function falloffModeMessage() {
   if (!state.motionPaths || !["select", "pose"].includes(state.tool) || builderMode?.active) return null;
   const falloff = editor.motionPathFalloff();
   if (!falloff) return null;
-  return { key: "falloff", icon: "motion-path", title: `Reshaping ±${falloff.radius} frames`, message: "· scroll to resize · Esc cancels" };
+  return { key: "falloff", icon: "motion-path", title: interfaceText("app.reshapingFrames", {radius: falloff.radius}), titleKey: "app.reshapingFrames", titleParams: {radius: falloff.radius}, message: interfaceText("app.scrollToResizeEscCancels"), messageKey: "app.scrollToResizeEscCancels" };
 }
 function syncModeMessage() {
   stageHead.showMode(modeMessage() ?? falloffModeMessage());
@@ -816,7 +823,7 @@ function selectTrack(track) {
   }
   const trackUid = track.target?.uid ?? track.uid;
   if (builderMode?.active && trackUid !== undefined && !builderMode.boundUids.has(trackUid)) {
-    toast('Finish the figure or return to Animate to select other figures.');
+    toast(interfaceText("app.finishTheFigureOrReturnToAnimateTo"), "app.finishTheFigureOrReturnToAnimateTo", {});
     return;
   }
   const target = track.target || track;
@@ -1086,31 +1093,35 @@ const activityLog = [];
 let activityTask = null, compatibilityNoticed = false;
 /** Records a line of activity: #status, the log, and the slow-work message while `busy`. */
 function logActivity(text, error = false, busy = false) {
-  setText($("status"), text);
+  const messageKey = text?.messageKey, messageParams = text?.messageParams;
+  text = messageKey ? interfaceText(messageKey, messageParams) : errorText(text);
+  if (messageKey) localizedText($("status"), messageKey, messageParams);
+  else setText($("status"), text);
   setAttr($("status-dot"), "class", `status-dot${error ? " error" : busy ? " busy" : ""}`);
   activityLog.unshift({ time: Date.now(), text: String(text), error: Boolean(error) });
   if (activityLog.length > 40) activityLog.length = 40;
   if (busy) {
-    if (activityTask) activityTask.update({ title: text });
-    else activityTask = toasts.task({ title: text, cancellable: false, delay: 400 });
+    if (activityTask) activityTask.update({ title: text, titleKey: messageKey, titleParams: messageParams });
+    else activityTask = toasts.task({ title: text, titleKey: messageKey, titleParams: messageParams, cancellable: false, delay: 400 });
   } else if (activityTask) {
     activityTask.done();
     activityTask = null;
   }
+  return {message: text, messageKey, messageParams};
 }
 /** Activity; a problem (error) is also a warning in the message slot that goes after 8 seconds. */
 function status(text, error = false, busy = false) {
-  logActivity(text, error, busy);
-  if (error) toasts.show({ message: text, tone: "warning", timeout: 8000, dismissible: true });
+  const message = logActivity(text, error, busy);
+  if (error) toasts.show({ ...message, tone: "warning", timeout: 8000, dismissible: true });
 }
 /** A short message in the stage's message slot, above any open dialog. */
-function toast(text) {
-  toasts.show({ message: text });
+function toast(text, messageKey, messageParams = {}) {
+  toasts.show({ message: text, messageKey, messageParams });
 }
 /** A result worth seeing (an import, a copy): the activity line and a short message. */
-function notify(text) {
-  logActivity(text);
-  toast(text);
+function notify(text, messageKey, messageParams = {}) {
+  logActivity(messageKey ? {messageKey, messageParams} : text);
+  toast(text, messageKey, messageParams);
 }
 /** Failed saves, exports and imports (see persistentFailure): their message stays until dismissed. */
 const persistentFailures = new WeakSet();
@@ -1126,8 +1137,7 @@ const FAILURE_MESSAGE_MS = 8000;
  * stays until dismissed; any other error goes after 8 seconds. */
 function fail(error) {
   telemetry.error(error);
-  const message = error?.message || String(error);
-  logActivity(message, true);
+  logActivity(error, true);
   toasts.fail(error, error instanceof UserActionError || persistentFailures.has(error) ? {} : { timeout: FAILURE_MESSAGE_MS, dismissible: true });
   console.error(error);
 }
@@ -1144,16 +1154,16 @@ function guarded(fn) {
 }
 let pendingColorSample;
 function sampleCanvasColor(clientX,clientY,signal,radius=0) {
-  if(signal.aborted)return Promise.reject(new Error('Color sampling cancelled.'));
-  pendingColorSample?.finish(new Error('Color sampling superseded.'));
+  if(signal.aborted)return Promise.reject(messageError(new Error(''), "errors.app.colorSamplingCancelled", {}));
+  pendingColorSample?.finish(messageError(new Error(''), "errors.app.colorSamplingSuperseded", {}));
   return new Promise((resolve,reject)=>{
     const finish=(error,color)=>{
       clearTimeout(timeout);signal.removeEventListener('abort',cancel);
       if(pendingColorSample?.finish===finish)pendingColorSample=null;
       if(error)reject(error);else resolve(color);
     };
-    const cancel=()=>finish(new Error('Color sampling cancelled.'));
-    const timeout=setTimeout(()=>finish(new Error('Canvas is not ready. Try again.')),2000);
+    const cancel=()=>finish(messageError(new Error(''), "errors.app.colorSamplingCancelled", {}));
+    const timeout=setTimeout(()=>finish(messageError(new Error(''), "errors.app.canvasIsNotReadyTryAgain", {})),2000);
     signal.addEventListener('abort',cancel,{once:true});
     pendingColorSample={clientX,clientY,finish,radius};
     requestRender();
@@ -1262,9 +1272,7 @@ function syncPathTooltip() {
   const hover = state.hoverPathPoint;
   if (!hover) { overlay.title = ""; return; }
   const frame = `Frame ${hover.tick + 1}${hover.tick === editor.tick ? " (current)" : ""}`;
-  overlay.title = editor.motionPathFalloff()
-    ? `${frame} — drag to reshape ±${state.settings.motionPathFalloffRadius} frames of the arc`
-    : `${frame} — drag to repose${hover.tick === editor.tick ? "" : " without leaving this frame, double-click to go there"}; right-drag to reshape the arc`;
+  localizedAttribute(overlay, "title", (editor.motionPathFalloff() ? 'app.frameDragToReshapeMotionpathfalloffradiusFramesOfTheArc' : 'app.frameDragToReposeValue1RightDragToReshape'), (editor.motionPathFalloff() ? {frame: frame, motionPathFalloffRadius: state.settings.motionPathFalloffRadius} : {frame: frame, value1: hover.tick === editor.tick ? "" : interfaceText("app.withoutLeavingThisFrameDoubleClickToGo")}));
 }
 /** Double-clicking a trail point goes to its frame. */
 function seekMotionPathTick(tick) {
@@ -1348,7 +1356,7 @@ function commitPreviewQuality() {
   const pending = state.renderer?.setMsaa?.(previewMsaaLevels[index]);
   pending?.catch(error => {
     telemetry.error(error, 'gpu');
-    status('The previous antialiasing setting was retained after a graphics error.', true);
+    status({messageKey: "app.thePreviousAntialiasingSettingWasRetainedAfterA", messageParams: {}}, true);
     requestRender();
   });
 }
@@ -1824,15 +1832,15 @@ function loop(now) {
           playStarted = true;
           if (state.buffering) {
             state.buffering = false;
-            status("Playing");
-            setText($("preview-badge"), "PLAYING");
+            status({messageKey: "app.playing", messageParams: {}});
+            localizedText($("preview-badge"), "app.playing2", {});
           }
           prepareAhead(next + 1, 48);
           state.dirtyRender = true;
         } else {
           audioEngine.stop();
           state.buffering = true;
-          setText($("preview-badge"), "PREPARING");
+          localizedText($("preview-badge"), "app.preparing", {});
           if (
             packet &&
             !backgroundsReady &&
@@ -1974,11 +1982,10 @@ function loop(now) {
     state.drawCalls++;
     if (now - lastUI > 200) {
       ui.update("transport");
-      setText($("render-time"), `${elapsed.toFixed(1)} ms`);
-      setText($("renderer-label"),
-        state.renderer.stats?.backend === "Canvas 2D fallback"
-          ? "Compatibility mode"
-          : state.renderer.stats?.backend || "WebGPU");
+      localizedText($("render-time"), "app.ms", {value:{format:'number',value:elapsed,options:{minimumFractionDigits:1,maximumFractionDigits:1}}});
+      if (state.renderer.stats?.backend === "Canvas 2D fallback") localizedText($("renderer-label"), "app.compatibilityMode");
+      else if (state.renderer.stats?.backend === "WebGPU device lost") localizedText($("renderer-label"), "rendererStatus.deviceLost");
+      else setText($("renderer-label"), state.renderer.stats?.backend || "WebGPU");
       lastUI = now;
     }
   }
@@ -2005,9 +2012,9 @@ function loop(now) {
     playbackMetrics.buffering(state.buffering, measuredAt);
     if (measuredAt - lastFpsUI >= 250) {
       const sample = playbackMetrics.snapshot(measuredAt), badge = $("playback-fps");
-      setText(badge, sample.fps === null ? "— fps" : `${sample.fps.toFixed(1)} fps`);
+      localizedText(badge, (sample.fps === null ? 'app.fps' : 'app.valueFps'), (sample.fps === null ? {} : {value: sample.fps.toFixed(1)}));
       setAttr(badge, "data-health", sample.coherent === null ? "pending" : sample.coherent ? "good" : "low");
-      setAttr(badge, "title", `Scene target: ${sample.targetFps.toFixed(1)} fps`);
+      setAttr(badge, "title", interfaceText('app.sceneTargetValueFps', {value: sample.targetFps.toFixed(1)}));
       setHidden($('preview-quality'), !(state.playbackPacket?.previewQuality?.reduced || state.previewGovernor?.index));
       adaptPreviewQuality(sample, measuredAt);
       lastFpsUI = measuredAt;
@@ -2026,7 +2033,7 @@ async function play() {
   if(!state.playing){try{await drawingController?.barrier();}catch(error){fail(error);return;}}
   if (!$("renderer-error").hidden) return;
   if (state.playing) return pause();
-  if ([...exportJobs].some(job => job.raster)) return notify('Finish or cancel the export before playing.');
+  if ([...exportJobs].some(job => job.raster)) return notify(interfaceText("app.finishOrCancelTheExportBeforePlaying"), "app.finishOrCancelTheExportBeforePlaying", {});
   editablePreparation.cancel();
   state.previewing = false;
   if (editor.totalTicks < 1) return;
@@ -2046,7 +2053,7 @@ async function play() {
     ? 1000 / editor.report.frame_delay_ms : editor.report.fps);
   telemetry.playbackStart(telemetry.consent.diagnostics ? workload({ report: editor.report, fps: playbackMetrics.targetFps }) : {});
   lastFpsUI = playStart;
-  setText($("playback-fps"), "— fps");
+  localizedText($("playback-fps"), "app.fps", {});
   setAttr($("playback-fps"), "data-health", "pending");
   setHidden($("playback-fps"), false);
   playStarted = false;
@@ -2122,7 +2129,7 @@ function pause() {
   if (wasPlaying) {
     reconcileSelectedSegmentTrack();
     queueUI();
-    status(state.editablePreparing?'Preparing canvas':'Ready');
+    status(state.editablePreparing?{messageKey: "app.preparingCanvas", messageParams: {}}:{messageKey: "app.ready", messageParams: {}});
   }
 }
 function previewFrame() {
@@ -2130,7 +2137,7 @@ function previewFrame() {
   editablePreparation.cancel();
   cancelDrag();
   state.previewing = true;
-  setText($("preview-badge"), "PREVIEW");
+  localizedText($("preview-badge"), "app.preview", {});
   setHidden($("preview-badge"), false);
   timelineHost?.syncPlayButton();
   requestRender();
@@ -2140,24 +2147,24 @@ let shownTitle = { name: null, dirty: null, revision: null, words: null };
 // A save in progress, and the last save of this document ("Saved 12:04", formatted once when it lands).
 let savingDocument = false, lastSave = null;
 /** The document's state in the band (experience.md §2): Saving…, Edited, Saved 12:04 after a save, else Saved. */
-function saveStateWords(dirty) {
-  if (savingDocument) return "Saving…";
-  if (dirty) return "Edited";
-  return lastSave?.report === editor.report ? lastSave.words : "Saved";
+function saveStateMessage(dirty) {
+  if (savingDocument) return {key: 'app.saving'};
+  if (dirty) return {key: 'app.edited'};
+  return lastSave?.report === editor.report ? {key: 'app.savedAt', params: {time: {format: 'date', value: lastSave.time, options: {hour: 'numeric', minute: '2-digit'}}}} : {key: 'app.saved'};
 }
 function updateTitle() {
-  const name = editor.name || "Untitled", dirty = editor.dirty, words = saveStateWords(dirty),
+  const name = editor.name || "Untitled", dirty = editor.dirty, message = saveStateMessage(dirty), words = interfaceText(message.key, message.params),
     revision = `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}`;
   if (name === shownTitle.name && dirty === shownTitle.dirty && revision === shownTitle.revision && words === shownTitle.words) return;
   if (name !== shownTitle.name || dirty !== shownTitle.dirty || words !== shownTitle.words) {
-    document.title = `${dirty ? "• " : ""}${name} — StykAnimate`;
+    localizedText(document.querySelector("title"), "app.stykanimate", {value: dirty ? "• " : "", name: name});
     if ($("project-name").textContent !== name) $("project-name").textContent = name;
     // One dot: neutral while there are unsaved changes (never red), the success tone once saved.
     $("dirty-dot").classList.toggle("dirty", dirty);
     $("dirty-dot").dataset.tone = dirty || savingDocument ? "neutral" : "success";
-    $("save-state").textContent = words;
+    localizedText($("save-state"), message.key, message.params);
     $("save-state").dataset.dirty = String(dirty);
-    $("project-name").closest("button")?.setAttribute("title", `${name} · Rename`);
+    localizedAttribute($("project-name").closest("button"), "title", "app.renameProject", {name});
   }
   const documentChanged = name !== shownTitle.name || dirty !== shownTitle.dirty || revision !== shownTitle.revision;
   shownTitle = { name, dirty, revision, words };
@@ -2173,9 +2180,7 @@ function syncSelectionControls() {
   timelineHost.syncRangeEdit();
   touchModifiers?.sync();
   if (state.tool === 'select' && !builderMode?.active && !drawingController?.active)
-    setText($('viewport-hint'), editor.object?.join
-      ? 'Alt-drag a joint around the attachment · Ctrl: rotate only · Shift: scale only'
-      : 'Drag to select · Ctrl / Shift-click to toggle · Alt-drag a joint to transform');
+    localizedText($('viewport-hint'), editor.object?.join ? 'app.joinedDragHint' : 'app.dragToSelectCtrlShiftClickToToggle');
 }
 /** Every chrome surface now (startup, a restored document); queueUI() marks them for the next frame instead. */
 function updateUI() {
@@ -2183,8 +2188,7 @@ function updateUI() {
 }
 /** The scene's size and the figure count. (#selection-summary is the shell's: studio-shell writes the scope there.) */
 function updateStatus() {
-  setText($("object-count"),
-    `${editor.frame.objects.length.toLocaleString()} ${editor.frame.objects.length === 1 ? "figure" : "figures"}`);
+  localizedText($("object-count"), 'counts.figures', {count: editor.frame.objects.length});
 }
 function renderLayers() {
   if ($("layer-count"))
@@ -2197,14 +2201,14 @@ function renderAssets() {
   const figures = editor.report.figure_types;
   assetLibrary?.setVisible(state.activeTab === "assets");
   assetLibrary?.update(figures, { selectedId: editor.object?.figure_type_id });
-  setMarkup($("sample-list"), '<button class="sample-item" data-action="rig-examples"><span>Rig examples</span></button>' + (state.samples.length
+  setMarkup($("sample-list"), `<button class="sample-item" data-action="rig-examples"><span data-i18n="app.rigExamples">${messageHTML("app.rigExamples", {})}</span></button>` + (state.samples.length
     ? state.samples
         .map(
           (s) =>
-            `<button class="sample-item" data-sample="${esc(s.path)}">${icon(s.kind === "stk" ? "person" : "file")}<span>${esc(s.name)}</span><small>${esc(s.kind?.toUpperCase() || "PIV")}</small></button>`,
+            `<button class="sample-item" data-sample="${esc(s.path)}">${icon(s.kind === "stk" ? "person" : "file")}<span>${esc(s.name)}</span><small>${esc(s.kind?.toUpperCase() || interfaceText("app.piv"))}</small></button>`,
         )
         .join("")
-    : '<p class="property-note" style="padding:0 15px">Open StykAnimate, Pivot or Stick Nodes projects, figures and movie clips.</p>'));
+    : `<p class="property-note" style="padding:0 15px" data-i18n="app.openStykanimatePivotOrStickNodesProjectsFigures">${messageHTML("app.openStykanimatePivotOrStickNodesProjectsFigures", {})}</p>`));
 }
 function renderInspector() {
   vfxInspector?.sync();
@@ -2257,7 +2261,7 @@ function renderProperties() {
       "input,select,textarea,button",
     )) {
       input.disabled = true;
-      input.title = "Finish or cancel the polygon first.";
+      localizedAttribute(input, "title", "app.finishOrCancelThePolygonFirst", {});
     }
   }
   for (const section of $("inspector").querySelectorAll('details[data-section]')) {
@@ -2313,19 +2317,19 @@ function setTool(tool) {
     ["line", "chain", "circle", "polygon"].includes(tool),
   );
   $("viewport-hint").textContent = {
-    select: "Drag to select · Ctrl / Shift-click to toggle · Alt-drag a joint to transform",
-    pose: "Drag to pose · Ctrl-drag to stretch · Shift + right-drag to bend",
-    rig: "Edit figure joints · Changes update every instance",
+    select: interfaceText("app.dragToSelectCtrlShiftClickToToggle"),
+    pose: interfaceText("app.dragToPoseCtrlDragToStretchShift"),
+    rig: interfaceText("app.editFigureJointsChangesUpdateEveryInstance"),
     hand: state.settings.canvasZoomGesture === 'scroll'
-      ? "Drag to pan · Scroll to zoom"
-      : "Drag or scroll to pan · Ctrl-scroll to zoom",
-    chain: "Click to extend · Enter to finish · Backspace to remove · Esc to cancel",
-    line: "Drag anywhere to draw · Start on a joint to extend a figure",
-    circle: "Drag anywhere to draw · Start on a joint to extend a figure",
+      ? interfaceText("app.dragToPanScrollToZoom")
+      : interfaceText("app.dragOrScrollToPanCtrlScrollTo"),
+    chain: interfaceText("app.clickToExtendEnterToFinishBackspaceTo"),
+    line: interfaceText("app.dragAnywhereToDrawStartOnAJoint"),
+    circle: interfaceText("app.dragAnywhereToDrawStartOnAJoint"),
     polygon:
-      "Click joints to trace · Shift-click an enclosed area to fill · Enter to finish",
-    attach: "Click the parent joint · Esc to cancel",
-    tweener: "Drag horizontally to tween · Shift for precision · Esc / right-click cancels",
+      interfaceText("app.clickJointsToTraceShiftClickAnEnclosed"),
+    attach: interfaceText("app.clickTheParentJointEscToCancel"),
+    tweener: interfaceText("app.dragHorizontallyToTweenShiftForPrecisionEsc"),
   }[tool];
   if (["rig", "line", "chain", "circle", "polygon"].includes(tool)) {
     state.inspectorTab = "design";
@@ -2375,7 +2379,7 @@ function refreshPolygonDraft() {
   if (!state.polygon) return;
   state.polygon.handles = state.polygon.draft.handles;
   $("polygon-controls").hidden = false;
-  $("polygon-count").textContent = `${state.polygon.handles.length} joints`;
+  localizedText($("polygon-count"), "app.joints", {length: state.polygon.handles.length});
   $("finish-polygon").disabled = state.polygon.handles.length < 3;
   requestRender();
 }
@@ -2384,11 +2388,11 @@ function polygonClick(p, event = {}) {
     const g=editor.geometry.objects.get(editor.selectedSlot),existing=pickFigureFill(g,p);
     if(existing){cancelPolygonDraft();editor.selectPolygon(editor.selectedUid,existing.index);return;}
     const region=bucketRegion(g,p);
-    if(!region)return toast('No closed region here. Close the outline at its joints first.');
+    if(!region)return toast(interfaceText("app.noClosedRegionHereCloseTheOutlineAt"), "app.noClosedRegionHereCloseTheOutlineAt", {});
     cancelPolygonDraft();
     const polygon=editor.addPolygon(region.ids,{color:g.segments[editor.selectedJoint]?.rgb??g.segments[0]?.rgb??[43,43,43]});
     editor.selectPolygon(editor.selectedUid,editor.figure.polyfills.indexOf(polygon));
-    state.bucketPreview=null;status('Fill added');return;
+    state.bucketPreview=null;status({messageKey: "app.fillAdded", messageParams: {}});return;
   }
   if (!state.polygon && builderMode?.active && !pick(p)) {
     const fill=pickFigureFill(editor.geometry.objects.get(editor.selectedSlot),p);
@@ -2400,7 +2404,7 @@ function polygonClick(p, event = {}) {
       )
     : pick(p)?.g;
   if (!g) {
-    toast("Choose a figure joint to begin a polygon.");
+    toast(interfaceText("app.chooseAFigureJointToBeginAPolygon"), "app.chooseAFigureJointToBeginAPolygon", {});
     return;
   }
   const maxDistance = 10 / state.view.scale;
@@ -2417,7 +2421,7 @@ function polygonClick(p, event = {}) {
     !closest ||
     Math.hypot(closest[1].x - p.x, closest[1].y - p.y) > maxDistance
   ) {
-    toast("Polygons attach to joints. Click a red, orange, or gray joint.");
+    toast(interfaceText("app.polygonsAttachToJointsClickARedOrange"), "app.polygonsAttachToJointsClickARedOrange", {});
     return;
   }
   if (!state.polygon) {
@@ -2428,7 +2432,7 @@ function polygonClick(p, event = {}) {
       draft: new PolygonDraft(g),
     };
   }
-  state.polygon.draft.append(closest[0], {
+  appendLocalized(state.polygon.draft, closest[0], {
     chain: Boolean(event.ctrlKey || event.metaKey),
   });
   refreshPolygonDraft();
@@ -2436,7 +2440,7 @@ function polygonClick(p, event = {}) {
 }
 function finishPolygon() {
   if (!state.polygon || state.polygon.handles.length < 3) {
-    toast("Choose at least three different joints.");
+    toast(interfaceText("app.chooseAtLeastThreeDifferentJoints"), "app.chooseAtLeastThreeDifferentJoints", {});
     return;
   }
   const draft = state.polygon;
@@ -2445,7 +2449,7 @@ function finishPolygon() {
   state.polygon = null;
   $("polygon-controls").hidden = true;
   setTool("select");
-  status("Polygon added");
+  status({messageKey: "app.polygonAdded", messageParams: {}});
 }
 function pick(p, {preferSelected = false, artwork = false} = {}) {
   const geometry = editor.geometry;
@@ -2560,9 +2564,9 @@ overlay.addEventListener(
       if (!target) {
         toast(
           duplicate
-            ? "Choose a joint on the source figure."
-            : "Choose an unlocked figure joint to attach the sprite.",
-        );
+            ? interfaceText("app.chooseAJointOnTheSourceFigure")
+            : interfaceText("app.chooseAnUnlockedFigureJointToAttachThe"),
+         (duplicate ? "app.chooseAJointOnTheSourceFigure" : "app.chooseAnUnlockedFigureJointToAttachThe"), (duplicate ? {} : {}));
         return;
       }
       if (pending.document !== editor._documentToken)
@@ -2593,7 +2597,7 @@ overlay.addEventListener(
             (segment) => segment.segment_id === added.selectedHandleId,
           ),
         );
-        status(duplicate.branch ? "Branch duplicated" : "Segment duplicated");
+        status(duplicate.branch ? {messageKey: "app.branchDuplicated", messageParams: {}} : {messageKey: "app.segmentDuplicated", messageParams: {}});
       } else {
         editor.select(target.g.obj.unique_id);
         const added = editor.addSpriteSegment(pending.figure, {
@@ -2601,7 +2605,7 @@ overlay.addEventListener(
         });
         cancelSpritePlacement();
         editor.select(target.g.obj.unique_id, added.segmentIndex);
-        status("Sprite attached");
+        status({messageKey: "app.spriteAttached", messageParams: {}});
       }
       queueUI();
       return;
@@ -2617,7 +2621,7 @@ overlay.addEventListener(
       const geometry = editor.geometry;
       editor.beginCameraDrag({
         indices: rangeFrames(),
-        label: `${camera.kind === "position" ? "Move" : camera.kind === "rotation" ? "Rotate" : "Scale"} camera`,
+        label: interfaceText("app.camera", {value: camera.kind === "position" ? {messageKey: "app.move"} : camera.kind === "rotation" ? interfaceText("app.rotate") : interfaceText("app.scale")}), labelKey: "app.camera", labelParams: {value: camera.kind === "position" ? {messageKey: "app.move"} : camera.kind === "rotation" ? interfaceText("app.rotate") : interfaceText("app.scale")},
       });
       state.drag = {
         kind: "camera",
@@ -2671,11 +2675,11 @@ overlay.addEventListener(
       const pending=state.rigAnchorPick,target=closestHandle(p);
       releaseCanvasPointer();
       if(pending.token!==editor._documentToken||pending.uid!==editor.selectedUid){state.rigAnchorPick=null;syncModeMessage();return;}
-      if(!target||target.g.obj.unique_id!==pending.uid){toast('Choose a joint on this figure. Escape cancels.');return;}
+      if(!target||target.g.obj.unique_id!==pending.uid){toast(interfaceText("app.chooseAJointOnThisFigureEscapeCancels"), "app.chooseAJointOnThisFigureEscapeCancels", {});return;}
       if(pending.key==='driver')editor.bindStretchParts(target.id);
       else if(pending.key)editor.setRigBehavior({connector:{[pending.key]:target.id}});
       else editor.addConnector(pending.start,target.id);
-      state.rigAnchorPick=null;syncModeMessage();toast(pending.key==='driver'?'Stretch driver connected.':pending.key?'Connector anchor updated.':'Connector added. Drag its middle joint to slide.');requestRender();return;
+      state.rigAnchorPick=null;syncModeMessage();toast(pending.key==='driver'?interfaceText("app.stretchDriverConnected"):pending.key?interfaceText("app.connectorAnchorUpdated"):interfaceText("app.connectorAddedDragItsMiddleJointToSlide"), (pending.key==='driver' ? "app.stretchDriverConnected" : (pending.key ? "app.connectorAnchorUpdated" : "app.connectorAddedDragItsMiddleJointToSlide")), (pending.key==='driver' ? {} : (pending.key ? {} : {})));requestRender();return;
     }
     if (state.tool === "attach") {
       releaseCanvasPointer();
@@ -2684,13 +2688,13 @@ overlay.addEventListener(
       const target = pickCanvasHandle(editor.geometry, p, {handles: canvasHandles(editor.geometry),
         project: screenPoint, projectionScale: state.view.scale, minRadius: 8, nearest: true});
       if (!target || isHidden(target.uid) || isLocked(target.uid)) {
-        toast("Click a joint on the parent figure.");
+        toast(interfaceText("app.clickAJointOnTheParentFigure"), "app.clickAJointOnTheParentFigure", {});
         return;
       }
       editor.joinFiguresInFrames(target.uid, target.id, pending.indices,
         {uids: [pending.uid], atPlayhead: !pending.indices});
       setTool("select");
-      status("Figures attached");
+      status({messageKey: "app.figuresAttached", messageParams: {}});
       return;
     }
     if (state.tool === "chain") { releaseCanvasPointer(); if(e.button===0)construction.click(p,e); return; }
@@ -3152,13 +3156,13 @@ function endDrag(event, {keepPointer = false} = {}) {
       length = Math.hypot(q.x - p.x, q.y - p.y);
     if (length > 1) {
       if (!editor.addSegment)
-        throw new Error("Segment authoring is unavailable.");
+        throw messageError(new Error(''), "errors.app.segmentAuthoringIsUnavailable", {});
       editor.addSegment({
         ...strokeSegments([p,q],editor.object?.scale??1)[0],
         type: state.tool,
         start: p,
       });
-      status("Segment added");
+      status({messageKey: "app.segmentAdded", messageParams: {}});
     }
   } else if (drag.kind === "marquee") {
     const a = screenPoint(drag.start),
@@ -3260,10 +3264,10 @@ overlay.addEventListener("dblclick", guarded((event) => {
     state.builderBranch = false;
     editor.selectConnected(hit.uid, {add: event.shiftKey, candidates: editor.selectionFrame.objects
       .filter(o => !isHidden(o.unique_id) && !isLocked(o.unique_id)).map(o => o.unique_id)});
-    status(`${editor.selectedUids.size} connected figures selected`);
+    status({messageKey: "app.connectedFiguresSelected", messageParams: {size: editor.selectedUids.size}});
   } else {
     editor.selectBranch(hit.uid, hit.joint);
-    notify("Branch selected — copy or edit the complete branch");
+    notify(interfaceText("app.branchSelectedCopyOrEditTheCompleteBranch"), "app.branchSelectedCopyOrEditTheCompleteBranch", {});
   }
   queueUI();
 }));
@@ -3361,7 +3365,7 @@ async function acceptImport(
   if (kind === "stk" || kind === "stkz" || kind === "stykmov") {
     finishCurrentEdit();
     editor.importFigure(report);
-    notify(`Imported ${result.filename || name || "figure"}`);
+    notify(interfaceText("app.imported", {value: result.filename || name || "figure"}), "app.imported", {value: result.filename || name || "figure"});
   } else {
     const approvalCurrent =
       replaceApproved &&
@@ -3396,10 +3400,7 @@ async function acceptImport(
                   checkCurrent: () => {
                     incoming.checkCurrent();
                     if (state.renderer !== renderer)
-                      throw new DOMException(
-                        "The graphics device changed while importing.",
-                        "AbortError",
-                      );
+                      throw messageError(new DOMException('', "AbortError"), "errors.app.theGraphicsDeviceChangedWhileImporting", {});
                   },
                 });
                 preparedScenes.set(incoming.report, initialScene);
@@ -3437,11 +3438,11 @@ async function acceptImport(
     }
   }
   state.lastImportWarnings = [...(result.warnings || report._styk?.sticknodes?.warnings || []), ...(report.import_warnings || [])];
-  if(state.lastImportWarnings.length)dialogs.showImportNotes(state.lastImportWarnings, {pivot: Boolean(report.import_warnings?.length)});
+  if(state.lastImportWarnings.length)dialogs.showImportNotes(state.lastImportWarnings, {pivot: Boolean(report.import_warnings?.length),report});
   state.lastImport = result.timings || null;
   const ms = result.timings?.total_ms ?? result.timings?.decode_ms;
   status(
-    `Opened ${result.filename || name || editor.name}${ms !== undefined ? ` · ${Math.round(ms)} ms${result.timings?.cache_hit ? " · cached" : ""}` : ""}`,
+    {messageKey: "app.opened", messageParams: {value: result.filename || name || editor.name, value2: ms !== undefined ? ` · ${Math.round(ms)} ms${result.timings?.cache_hit ? " · cached" : ""}` : ""}},
   );
   warmPlayback({immediate:true});
   return true;
@@ -3484,8 +3485,7 @@ function beginDuplicatePlacement({ branch = false, flip = false } = {}) {
   };
   viewport.classList.add("sprite-placement");
   overlay.style.cursor = "copy";
-  $("viewport-hint").textContent =
-    "Choose a parent joint for the copy · Esc to cancel";
+  localizedText($("viewport-hint"), "app.chooseAParentJointForTheCopyEsc", {});
   syncModeMessage();
   viewport.focus({ preventScroll: true });
   requestRender();
@@ -3533,8 +3533,7 @@ async function beginSpritePlacement(file) {
       previousHint: $("viewport-hint").textContent,
     };
     viewport.classList.add("sprite-placement");
-    $("viewport-hint").textContent =
-      "Choose an attachment joint · Esc to cancel";
+    localizedText($("viewport-hint"), "app.chooseAnAttachmentJointEscToCancel", {});
     syncModeMessage();
     viewport.focus({ preventScroll: true });
     requestRender();
@@ -3558,7 +3557,7 @@ async function importMediaFile(
     if (editor.report !== destination) controller.abort();
   };
   editor.addEventListener("change", changed);
-  status("Importing image…", false, true);
+  status({messageKey: "app.importingImage", messageParams: {}}, false, true);
   try {
     const media = await (
       background ? imageFileToBackground : imageFileToFigure
@@ -3573,7 +3572,7 @@ async function importMediaFile(
     if (editor.report !== destination) return false;
     if (background) editor.importBackground(media);
     else editor.importFigure(media);
-    notify(`Imported ${file.name}`);
+    notify(interfaceText("app.imported2", {name: file.name}), "app.imported2", {name: file.name});
     return true;
   } catch (error) {
     if (error.name === "AbortError") return false;
@@ -3583,7 +3582,7 @@ async function importMediaFile(
   }
 }
 async function chooseSticknodesFile(file,isCurrent=()=>true) {
-  const onProgress=p=>{if(isCurrent())status(`${p.phase || 'Importing'}…`,false,true);};
+  const onProgress=p=>{if(isCurrent())status(`${p.phase || interfaceText("app.importing2")}…`,false,true);};
   let result=await importer.importFile(file,{onProgress});
   if(!isCurrent())return null;
   if(result.kind==='sticknodes-archive'){
@@ -3613,7 +3612,7 @@ async function importFilesTracked(files) {
   const seq = ++importSequence;
   importer.cancelPending();
   state.importing = true;
-  status("Importing…", false, true);
+  status({messageKey: "app.importing", messageParams: {}}, false, true);
   try {
     for (const file of files) {
       recordImportKind(file.name);
@@ -3651,10 +3650,10 @@ async function importFilesTracked(files) {
 async function openFile() {
   pause();
   if (desktop) {
-    status("Opening file…", false, true);
+    status({messageKey: "app.openingFile", messageParams: {}}, false, true);
     const result = await desktop.openFile();
     if (result) await acceptNativeFile(result);
-    else status("Ready");
+    else status({messageKey: "app.ready", messageParams: {}});
   } else {
     $("file-input").value = "";
     $("file-input").click();
@@ -3693,7 +3692,7 @@ async function acceptNativeFileTracked(result) {
 }
 async function openSample(path) {
   pause();
-  status("Decoding Pivot file…", false, true);
+  status({messageKey: "app.decodingPivotFile", messageParams: {}}, false, true);
   try { await acceptImport(await importer.openSample(path)); } catch (error) { throw persistentFailure(error); }
 }
 async function saveNative({ saveAs = false } = {}) {
@@ -3710,13 +3709,13 @@ async function saveNative({ saveAs = false } = {}) {
   let sink, downloaded = false;
   try {
     sink = await destination;
-    if (!desktop && !sink) { status("Save cancelled"); return false; }
-    if (targetReport !== editor.report || targetToken !== state.documentToken) { status("Save cancelled · the project changed"); return false; }
+    if (!desktop && !sink) { status({messageKey: "app.saveCancelled", messageParams: {}}); return false; }
+    if (targetReport !== editor.report || targetToken !== state.documentToken) { status({messageKey: "app.saveCancelledTheProjectChanged", messageParams: {}}); return false; }
     await drawingController?.barrier();
-    if (targetReport !== editor.report || targetToken !== state.documentToken) { status("Save cancelled · the project changed"); return false; }
+    if (targetReport !== editor.report || targetToken !== state.documentToken) { status({messageKey: "app.saveCancelledTheProjectChanged", messageParams: {}}); return false; }
     while(editor._movieclipScopes?.length){await drawingBarrier(editor.report);editor.leaveMovieclip();}
     interruptRecovery();
-    status("Saving project…", false, true);
+    status({messageKey: "app.savingProject", messageParams: {}}, false, true);
     const revision = editor.revision,
       draftRevision = editor.frameDraftRevision,
       report = editor.report,
@@ -3742,15 +3741,15 @@ async function saveNative({ saveAs = false } = {}) {
         // An anchor download has no completion acknowledgement. Keep both the
         // unsaved state and a recovery copy, including when timed autosave is off.
         try { await browserRecovery.write(blob, name, signal); }
-        catch (error) { if (error.name === "AbortError") throw error; status(`Recovery copy could not be written: ${error.message}`, true); }
-        if (signal.aborted) throw new DOMException("Save cancelled", "AbortError");
+        catch (error) { if (error.name === "AbortError") throw error; status({messageKey: "app.recoveryCopyCouldNotBeWritten", messageParams: {message: error.message}}, true); }
+        if (signal.aborted) throw messageError(new DOMException('', "AbortError"), "errors.app.saveCancelled", {});
         await exportFlow.saveBlob(blob, `${name || "Untitled"}.styk`, signal);
         downloaded = true;
         return false;
       }, {controller});
     } catch (error) {
       if (error.name === "AbortError") {
-        status("Save cancelled");
+        status({messageKey: "app.saveCancelled", messageParams: {}});
         return false;
       }
       throw error;
@@ -3765,17 +3764,16 @@ async function saveNative({ saveAs = false } = {}) {
           editor.frameDraftRevision === draftRevision
         ) {
           editor.markSaved();
-          const time = new Intl.DateTimeFormat(document.documentElement.lang || undefined, { hour: "numeric", minute: "2-digit" });
-          lastSave = { report, words: `Saved ${time.format(new Date())}` };
+          lastSave = { report, time: Date.now() };
           if (desktop?.deleteRecovery) await desktop.deleteRecovery();
           // A saved project has nothing left to recover; a stale copy would be offered on the next visit.
           else if (!desktop) await browserRecovery.clear();
         }
       }
       updateTitle();
-      if (editor.dirty) notify("Saved a copy · newer changes are still unsaved");
-      else status("Project saved");
-    } else status(downloaded ? "Download started · the project stays edited until a file save is confirmed" : "Save cancelled");
+      if (editor.dirty) notify(interfaceText("app.savedACopyNewerChangesAreStillUnsaved"), "app.savedACopyNewerChangesAreStillUnsaved", {});
+      else status({messageKey: "app.projectSaved", messageParams: {}});
+    } else status(downloaded ? {messageKey: "app.downloadStartedTheProjectStaysEditedUntilA", messageParams: {}} : {messageKey: "app.saveCancelled", messageParams: {}});
     return Boolean(
       saved &&
         editor.report === report &&
@@ -3795,8 +3793,9 @@ async function saveNative({ saveAs = false } = {}) {
  * hooks inside a form: Enter in a field runs the body's primary button, and
  * focus starts on the first field or the primary, never on Close.
  */
-function showDialog(title, body) {
+function showDialog(title, body, {titleKey, titleParams} = {}) {
   showLegacyDialog(title, body, {
+    titleKey, titleParams,
     dialog: $("dialog"),
     content: $("dialog-content"),
     overlays,
@@ -3862,13 +3861,13 @@ function showTextDialog(editExisting = false) {
     initialOptions,
     onApply: async (definition) => {
       if (editor.report !== report)
-        throw new Error("The document changed. Open the text editor again.");
+        throw messageError(new Error(''), "errors.app.theDocumentChangedOpenTheTextEditorAgain", {});
       if (editExisting)
         editor.replaceFigureDefinition(typeId, definition, {
-          label: "Edit text",
+          label: interfaceText("app.editText"), labelKey: "app.editText",
         });
       else editor.importFigure(definition);
-      status(editExisting ? "Text updated" : "Text added");
+      status(editExisting ? {messageKey: "app.textUpdated", messageParams: {}} : {messageKey: "app.textAdded", messageParams: {}});
     },
   });
 }
@@ -3887,7 +3886,7 @@ function showBackgroundDialog() {
     report = editor.report;
   const apply = (operation) => {
     if (editor.report !== report)
-      throw new Error("The document changed. Open background settings again.");
+      throw messageError(new Error(''), "errors.app.theDocumentChangedOpenBackgroundSettingsAgain", {});
     return operation();
   };
   backgroundDialog.open({
@@ -3927,7 +3926,7 @@ function menuItems(rows) {
     if (!Array.isArray(row)) return row && Array.isArray(row.submenu) ? { ...row, submenu: menuItems(row.submenu) } : row ?? null;
     const [command, glyph, label, shortcut = "", disabled = false] = row;
     return {
-      command, icon: glyph, label, labelKey: menuLabelKey(command),
+      command, icon: glyph, label, labelKey: menuLabelKey(command) ?? tupleMessages(row)[2]?.key, labelParams: tupleMessages(row)[2]?.params,
       shortcut: menuShortcut(command, shortcut), disabled: Boolean(disabled), danger: DANGER_COMMANDS.has(command),
     };
   });
@@ -3936,7 +3935,7 @@ const menuOptions = {
   host: menuHost,
   overlays,
   icon: (name) => icon(name),
-  t: (key) => appLocalization?.t(key),
+  t: (key, params) => appLocalization?.t(key, params),
   topInset: menuTopInset,
 };
 /**
@@ -3952,8 +3951,8 @@ function appMenuItems(name) {
   if (name !== "animation" || workspaceLayout?.tier !== "minimal") return items;
   const audio = $("timeline-audio"), range = $("range-edit");
   const folded = [
-    { command: "toggle-audio", icon: "music", label: "Audio", checked: audio?.getAttribute("aria-expanded") === "true", hidden: !audio },
-    { command: "toggle-range-edit", icon: "frame", label: "Edit together", checked: range?.getAttribute("aria-pressed") === "true",
+    { command: "toggle-audio", icon: "music", label: interfaceText("app.audio"), labelKey: "app.audio", checked: audio?.getAttribute("aria-expanded") === "true", hidden: !audio },
+    { command: "toggle-range-edit", icon: "frame", label: interfaceText("app.editTogether"), labelKey: "app.editTogether", checked: range?.getAttribute("aria-pressed") === "true",
       disabled: Boolean(range?.disabled), hidden: !range || builderMode?.active || drawingController?.active },
   ];
   items.splice(items.findIndex((item) => item?.command === "toggle-loop") + 1, 0, ...folded);
@@ -3966,8 +3965,8 @@ function panelsMenu() {
     return { label, icon: glyph, checked: shown, hidden: shell.presentation(id) === "unavailable", shortcut: menuShortcut(`panel-toggle-${id}`),
       run: () => (id === "timeline" ? shell.togglePanel(id) : shown ? shell.workspace.fold(id) : shell.showPanel(id)) };
   };
-  return { label: "Panels", icon: "layout", submenu: [row("properties", "Properties", "inspector"), row("vfx", "VFX", "fx"),
-    row("library", "Library", "library"), row("structure", "Structure", "structure"), row("timeline", "Timeline", "timeline")] };
+  return { label: interfaceText("app.panels"), labelKey: "app.panels", icon: "layout", submenu: [row("properties", interfaceText("app.properties"), "inspector"), row("vfx", "VFX", "fx"),
+    row("library", interfaceText("app.library"), "library"), row("structure", interfaceText("app.structure"), "structure"), row("timeline", interfaceText("app.timeline"), "timeline")] };
 }
 installMenuBar(document.querySelector(".app-menubar"), {
   ...menuOptions,
@@ -3995,24 +3994,24 @@ function showMenu(anchor) {
     { command: "command-palette", icon: "search", label: commands.label("command-palette"), labelKey: "overlays.palette.open",
       shortcut: commands.shortcut("command-palette"), keyshortcuts: commands.keyShortcuts("command-palette") },
     null,
-    ["new", "plus", "New animation", "Ctrl N"],
-    ["open", "folder", "Open project…", "Ctrl O"],
-    ["open-recent", "clock", "Open recent…", "", !desktop?.listRecentFiles],
-    ["save", "save", "Save", "Ctrl S"],
-    ["save-as", "save", "Save as…", "Ctrl Shift S"],
+    messageTuple(["new", "plus", interfaceText("app.newAnimation"), "Ctrl N"], {2: {key: "app.newAnimation", params: {}}}),
+    messageTuple(["open", "folder", interfaceText("app.openProject"), "Ctrl O"], {2: {key: "app.openProject", params: {}}}),
+    messageTuple(["open-recent", "clock", interfaceText("app.openRecent"), "", !desktop?.listRecentFiles], {2: {key: "app.openRecent", params: {}}}),
+    messageTuple(["save", "save", interfaceText("common.save"), "Ctrl S"], {2: {key: "common.save", params: {}}}),
+    messageTuple(["save-as", "save", interfaceText("common.saveAs"), "Ctrl Shift S"], {2: {key: "common.saveAs", params: {}}}),
     null,
-    ["undo", "undo", "Undo", "Ctrl Z"],
-    ["redo", "redo", "Redo", "Ctrl Shift Z"],
+    messageTuple(["undo", "undo", interfaceText("common.undo"), "Ctrl Z"], {2: {key: "common.undo", params: {}}}),
+    messageTuple(["redo", "redo", interfaceText("common.redo"), "Ctrl Shift Z"], {2: {key: "common.redo", params: {}}}),
     null,
-    ["import", "import", "Import figures…", ""],
-    ["import-sprite", "frame", "Import sprite image…", ""],
-    ["import-background", "frame", "Import background image…", ""],
-    ["add-text", "text", "Create text…", "T"],
-    ["export", "export", "Export…", ""],
+    messageTuple(["import", "import", interfaceText("app.importFigures"), ""], {2: {key: "app.importFigures", params: {}}}),
+    messageTuple(["import-sprite", "frame", interfaceText("app.importSpriteImage"), ""], {2: {key: "app.importSpriteImage", params: {}}}),
+    messageTuple(["import-background", "frame", interfaceText("app.importBackgroundImage"), ""], {2: {key: "app.importBackgroundImage", params: {}}}),
+    messageTuple(["add-text", "text", interfaceText("app.createText"), "T"], {2: {key: "app.createText", params: {}}}),
+    messageTuple(["export", "export", interfaceText("common.export"), ""], {2: {key: "common.export", params: {}}}),
     null,
-    ["settings", "settings", "Settings…", "Ctrl ,"],
-    ["help", "help", "Keyboard shortcuts", "?"],
-    ["performance", "activity", "Performance", ""],
+    messageTuple(["settings", "settings", interfaceText("app.settings"), "Ctrl ,"], {2: {key: "app.settings", params: {}}}),
+    messageTuple(["help", "help", interfaceText("app.keyboardShortcuts"), "?"], {2: {key: "app.keyboardShortcuts", params: {}}}),
+    messageTuple(["performance", "activity", interfaceText("app.performance"), ""], {2: {key: "app.performance", params: {}}}),
   ];
   showCommandMenu(items, anchor);
 }
@@ -4021,7 +4020,7 @@ function showMenu(anchor) {
  * it again) or at a point ({left, bottom}, a context menu; `invoker` is where
  * focus returns). Returns the menu, or null when the press closed it.
  */
-function showCommandMenu(items, anchor, { label, placement } = {}) {
+function showCommandMenu(items, anchor, { label, labelKey, labelParams, placement } = {}) {
   const element = anchor?.nodeType === 1 ? anchor : null;
   const open = element && menuFor(element);
   if (open) {
@@ -4038,7 +4037,7 @@ function showCommandMenu(items, anchor, { label, placement } = {}) {
     ...(inPopover ? { host: undefined } : {}),
     items: menuItems(items),
     ...(element ? { anchor: element } : { point: { x: anchor.left ?? anchor.x ?? 0, y: anchor.bottom ?? anchor.y ?? 0 } }),
-    ...(label ? { label } : {}),
+    ...(label ? { label, labelKey, labelParams } : {}),
     ...(placement ? { placement } : {}),
     invoker,
   });
@@ -4046,7 +4045,7 @@ function showCommandMenu(items, anchor, { label, placement } = {}) {
 /** Adds another copy of a figure or clip already in the project (the Add menu's In this project, the Insert dialog). */
 function addProjectFigure(id) {
   pause();
-  if (builderMode?.active) return toast("Finish the figure or return to Animate to insert figures.");
+  if (builderMode?.active) return toast(interfaceText("app.finishTheFigureOrReturnToAnimateTo2"), "app.finishTheFigureOrReturnToAnimateTo2", {});
   if (rangeFrames()) editor.addFigureInFrames(id, rangeFrames());
   else editor.addFigure(id);
   if ($("insert-dialog").open) $("insert-dialog").close();
@@ -4066,36 +4065,36 @@ function addMenuItems({ draw = false } = {}) {
     label: String(figure.name || `Figure ${figure.figure_type_id}`), icon: figureIcon(figure), run: () => addProjectFigure(figure.figure_type_id),
   }));
   const samples = (state.samples ?? []).map((sample) => ({ label: sample.name, icon: sample.kind === "stk" ? "person" : "file",
-    run: () => { if (builderMode?.active) return toast("Finish the figure or return to Animate to open samples."); openSample(sample.path).catch(fail); } }));
+    run: () => { if (builderMode?.active) return toast(interfaceText("app.finishTheFigureOrReturnToAnimateTo3"), "app.finishTheFigureOrReturnToAnimateTo3", {}); openSample(sample.path).catch(fail); } }));
   return [
-    ...(draw ? [{ label: "New drawing layer", icon: "brush", run: () => drawingController?.run(() => drawingController.action("new")) }, null] : []),
-    ["add-figure", "person", "Stick figure"],
+    ...(draw ? [{ label: interfaceText("app.newDrawingLayer"), labelKey: "app.newDrawingLayer", icon: "brush", run: () => drawingController?.run(() => drawingController.action("new")) }, null] : []),
+    messageTuple(["add-figure", "person", interfaceText("app.stickFigure")], {2: {key: "app.stickFigure", params: {}}}),
     // The Add menu's own short names (today's Insert dialog: Text, Image), not the File menu's longer ones.
-    { command: "add-text", icon: "text", label: "Text…", shortcut: menuShortcut("add-text", "T") },
-    { command: "import-sprite", icon: "image", label: "Image…", shortcut: "" },
-    ["import", "import", "Import figures…"],
-    ["movieclip-new", "frame", "Movieclip…"],
-    ["movieclip-create", "frame", "Movieclip from selection…", "", !editor.object],
-    ["movieclip-range", "frame", "Movieclip from frames…"],
+    { command: "add-text", icon: "text", label: interfaceText("app.text"), labelKey: "app.text", shortcut: menuShortcut("add-text", "T") },
+    { command: "import-sprite", icon: "image", label: interfaceText("app.image"), labelKey: "app.image", shortcut: "" },
+    messageTuple(["import", "import", interfaceText("app.importFigures")], {2: {key: "app.importFigures", params: {}}}),
+    messageTuple(["movieclip-new", "frame", interfaceText("app.movieclip")], {2: {key: "app.movieclip", params: {}}}),
+    messageTuple(["movieclip-create", "frame", interfaceText("app.movieclipFromSelection"), "", !editor.object], {2: {key: "app.movieclipFromSelection", params: {}}}),
+    messageTuple(["movieclip-range", "frame", interfaceText("app.movieclipFromFrames")], {2: {key: "app.movieclipFromFrames", params: {}}}),
     null,
-    ...(project.length ? [{ label: "In this project" }, ...project] : []),
-    { label: figures.length > ADD_MENU_PROJECT_ROWS ? `All ${figures.length} in this project…` : "All in this project…", icon: "layers",
+    ...(project.length ? [{ label: interfaceText("app.inThisProject"), labelKey: "app.inThisProject" }, ...project] : []),
+    { label: figures.length > ADD_MENU_PROJECT_ROWS ? interfaceText('app.allLengthInThisProject', {length: figures.length}) : interfaceText("app.allInThisProject"), labelKey: (figures.length > ADD_MENU_PROJECT_ROWS ? 'app.allLengthInThisProject' : "app.allInThisProject"), labelParams: (figures.length > ADD_MENU_PROJECT_ROWS ? {length: figures.length} : {}), icon: "layers",
       run: () => studioShell?.showInsertDialog() },
     null,
-    { label: "Examples", icon: "layers", submenu: [{ command: "rig-examples", icon: "person", label: "Rig examples…" }, ...(samples.length ? [{ label: "Animations" }, ...samples] : [])] },
+    { label: interfaceText("app.examples"), labelKey: "app.examples", icon: "layers", submenu: [{ command: "rig-examples", icon: "person", label: interfaceText("app.rigExamples2"), labelKey: "app.rigExamples2" }, ...(samples.length ? [{ label: interfaceText("app.animations"), labelKey: "app.animations" }, ...samples] : [])] },
   ];
 }
 /** Opens the Add menu beside the rail's +. */
 function showAddMenu(anchor) {
   if (builderMode?.active) return;
-  return showCommandMenu(addMenuItems({ draw: Boolean(drawingController?.active) }), anchor, { label: "Add", placement: "right-start" });
+  return showCommandMenu(addMenuItems({ draw: Boolean(drawingController?.active) }), anchor, { label: interfaceText("app.add"), labelKey: "app.add", placement: "right-start" });
 }
 /** The variants a rail tool's corner tick lists (experience.md §3.2): Select pixels' shapes, and Shapes' kinds. */
 const RAIL_VARIANTS = {
-  lasso: { tool: "drawing-lasso", setting: "selectShape", label: "Selection shape",
-    items: [["lasso", "lasso", "Lasso"], ["rect", "sel-rect", "Rectangle"], ["ellipse", "sel-ellipse", "Ellipse"], ["wand", "wand", "Wand"]] },
-  shape: { tool: "drawing-shape", setting: "shapeKind", label: "Shape",
-    items: [["line", "line", "Line"], ["rect", "shape-rect", "Rectangle"], ["ellipse", "shape-ellipse", "Ellipse"]] },
+  lasso: { tool: "drawing-lasso", setting: "selectShape", label: interfaceText("app.selectionShape"), labelKey: "app.selectionShape",
+    items: [messageTuple(["lasso", "lasso", interfaceText("app.lasso")], {2: {key: "app.lasso", params: {}}}), messageTuple(["rect", "sel-rect", interfaceText("app.rectangle")], {2: {key: "app.rectangle", params: {}}}), messageTuple(["ellipse", "sel-ellipse", interfaceText("app.ellipse")], {2: {key: "app.ellipse", params: {}}}), messageTuple(["wand", "wand", interfaceText("app.wand")], {2: {key: "app.wand", params: {}}})] },
+  shape: { tool: "drawing-shape", setting: "shapeKind", label: interfaceText("app.shape"), labelKey: "app.shape",
+    items: [messageTuple(["line", "line", interfaceText("app.line")], {2: {key: "app.line", params: {}}}), messageTuple(["rect", "shape-rect", interfaceText("app.rectangle")], {2: {key: "app.rectangle", params: {}}}), messageTuple(["ellipse", "shape-ellipse", interfaceText("app.ellipse")], {2: {key: "app.ellipse", params: {}}})] },
 };
 /** Lists a rail tool's variants (or the Add menu for the +); choosing one switches to the tool with that variant. */
 function showRailMenu(kind, anchor) {
@@ -4103,19 +4102,19 @@ function showRailMenu(kind, anchor) {
   const variants = RAIL_VARIANTS[kind], drawing = drawingController;
   if (!variants || !drawing) return;
   const current = drawing.settings[variants.setting];
-  return showCommandMenu(variants.items.map(([value, glyph, label]) => ({
-    label, icon: glyph, radio: true, checked: current === value,
+  return showCommandMenu(variants.items.map((_tuple) => {const [value, glyph, label] = _tuple; const _messages = tupleMessages(_tuple); return {
+    label, ...(_messages[2] ? {labelKey: _messages[2].key, labelParams: _messages[2].params} : {}), icon: glyph, radio: true, checked: current === value,
     run: () => { drawing.settings[variants.setting] = value; setTool(variants.tool); drawing.onUI(); drawing.onRender(); },
-  })), anchor, { label: variants.label, placement: "right-start" });
+  };}), anchor, { label: variants.label, placement: "right-start" });
 }
 function showZoomMenu(anchor) {
   showCommandMenu(
     [
-      ["zoom-in", "plus", "Zoom in", "+"],
-      ["zoom-out", "minus", "Zoom out", "−"],
+      messageTuple(["zoom-in", "plus", interfaceText("app.zoomIn"), "+"], {2: {key: "app.zoomIn", params: {}}}),
+      messageTuple(["zoom-out", "minus", interfaceText("app.zoomOut"), "−"], {2: {key: "app.zoomOut", params: {}}}),
       null,
-      ["zoom-reset", "frame", "Fit canvas", "Shift 1"],
-      ["zoom-selection", "center", "Fit selection", "Shift 2", !editor.object],
+      messageTuple(["zoom-reset", "frame", interfaceText("app.fitCanvas"), "Shift 1"], {2: {key: "app.fitCanvas", params: {}}}),
+      messageTuple(["zoom-selection", "center", interfaceText("app.fitSelection"), "Shift 2", !editor.object], {2: {key: "app.fitSelection", params: {}}}),
       null,
       ...[25, 50, 100, 200].map((n) => ["zoom-" + n, "zoom", n + "%", ""]),
     ],
@@ -4134,7 +4133,7 @@ overlay.addEventListener(
       state.drag.contextMenuOnPress = true;
       return;
     }
-    if(construction?.active) {showCommandMenu([["chain-finish","check","Finish chain","Enter"],["chain-cancel","close","Cancel chain","Esc"]],{left:e.clientX,bottom:e.clientY});return;}
+    if(construction?.active) {showCommandMenu([messageTuple(["chain-finish","check",interfaceText("app.finishChain"),"Enter"], {2: {key: "app.finishChain", params: {}}}),messageTuple(["chain-cancel","close",interfaceText("app.cancelChain"),interfaceText("app.esc")], {2: {key: "app.cancelChain", params: {}}, 3: {key: "app.esc", params: {}}})],{left:e.clientX,bottom:e.clientY});return;}
     pause();
     const hit = pick(worldPoint(e), {artwork: true});
     if (builderMode?.active) {
@@ -4148,36 +4147,36 @@ overlay.addEventListener(
       editor.select(hit.g.obj.unique_id, hit.joint);
     // The canvas's menus (revision 5): named groups, the rarer paste kinds in a submenu, and Delete last.
     const pasteKinds = [
-      ["paste-in-place", "clipboard", "Paste in place", "Ctrl Shift V"],
-      ["paste-instance", "clipboard", "Paste instance"],
-      ["paste-unique", "duplicate", "Paste unique copy"],
+      messageTuple(["paste-in-place", "clipboard", interfaceText("app.pasteInPlace"), "Ctrl Shift V"], {2: {key: "app.pasteInPlace", params: {}}}),
+      messageTuple(["paste-instance", "clipboard", interfaceText("app.pasteInstance")], {2: {key: "app.pasteInstance", params: {}}}),
+      messageTuple(["paste-unique", "duplicate", interfaceText("app.pasteUniqueCopy")], {2: {key: "app.pasteUniqueCopy", params: {}}}),
     ];
     const joint = hit && hit.joint >= 0 && !editor.figure?._styk?.movieclip && selection().size <= 1;
     const items = !hit ? [
-      { label: "Paste" },
-      ["paste", "clipboard", "Paste", "Ctrl V"],
+      { label: interfaceText("common.paste"), labelKey: "common.paste" },
+      messageTuple(["paste", "clipboard", interfaceText("common.paste"), "Ctrl V"], {2: {key: "common.paste", params: {}}}),
       ...pasteKinds,
       null,
-      ["select-all", "cursor", "Select all", "Ctrl A"],
+      messageTuple(["select-all", "cursor", interfaceText("app.selectAll"), "Ctrl A"], {2: {key: "app.selectAll", params: {}}}),
       null,
-      ["scene-settings", "scene", "Scene properties…"],
-      ["zoom-reset", "fit", "Fit canvas", "Shift 1"],
+      messageTuple(["scene-settings", "scene", interfaceText("app.sceneProperties")], {2: {key: "app.sceneProperties", params: {}}}),
+      messageTuple(["zoom-reset", "fit", interfaceText("app.fitCanvas"), "Shift 1"], {2: {key: "app.fitCanvas", params: {}}}),
     ] : [
-      { label: selection().size > 1 ? `${selection().size} figures` : editor.figure?.name || "Figure" },
-      ["copy", "duplicate", "Copy", "Ctrl C"],
-      ["paste", "clipboard", "Paste", "Ctrl V"],
-      { label: "Paste as", icon: "clipboard", submenu: pasteKinds },
-      ["duplicate", "duplicate", "Duplicate", "Ctrl D"],
+      { label: selection().size > 1 ? interfaceText('counts.figures', {count: selection().size}) : editor.figure?.name || interfaceText("app.figure") },
+      messageTuple(["copy", "duplicate", interfaceText("common.copy"), "Ctrl C"], {2: {key: "common.copy", params: {}}}),
+      messageTuple(["paste", "clipboard", interfaceText("common.paste"), "Ctrl V"], {2: {key: "common.paste", params: {}}}),
+      { label: interfaceText("app.pasteAs"), labelKey: "app.pasteAs", icon: "clipboard", submenu: pasteKinds },
+      messageTuple(["duplicate", "duplicate", interfaceText("common.duplicate"), "Ctrl D"], {2: {key: "common.duplicate", params: {}}}),
       null,
-      ["mirror", "flip", "Flip horizontally", "Shift H"],
-      ["mirror-vertical", "flip-vertical", "Flip vertically", "Shift V"],
+      messageTuple(["mirror", "flip", interfaceText("app.flipHorizontally"), "Shift H"], {2: {key: "app.flipHorizontally", params: {}}}),
+      messageTuple(["mirror-vertical", "flip-vertical", interfaceText("app.flipVertically"), "Shift V"], {2: {key: "app.flipVertically", params: {}}}),
       joinMenuItem(),
-      ["camera-follow", "camera", "Follow with camera", "", Boolean(builderMode?.active)],
-      ...(joint ? [["segment-values", "sliders", "Exact values…", "I"]] : []),
-      ["selection-more", "more", "More figure actions…"],
+      messageTuple(["camera-follow", "camera", interfaceText("app.followWithCamera"), "", Boolean(builderMode?.active)], {2: {key: "app.followWithCamera", params: {}}}),
+      ...(joint ? [messageTuple(["segment-values", "sliders", interfaceText("app.exactValues"), "I"], {2: {key: "app.exactValues", params: {}}})] : []),
+      messageTuple(["selection-more", "more", interfaceText("app.moreFigureActions")], {2: {key: "app.moreFigureActions", params: {}}}),
       ...(!builderMode?.active && !editor.figure?._styk?.movieclip ? [
         null,
-        ["edit-in-build-mode", "nodes", "Edit in Build", "", selection().size !== 1],
+        messageTuple(["edit-in-build-mode", "nodes", interfaceText("app.editInBuild"), "", selection().size !== 1], {2: {key: "app.editInBuild", params: {}}}),
       ] : []),
       null,
       ["delete", "trash", "Delete", "Delete"],
@@ -4190,8 +4189,8 @@ const rigHost=()=>({editor,showDialog,closeDialog,resources,finish:()=>{pause();
   addToAnimate:document=>{
     pause();finishCurrentEdit();
     const layer=editor.getLayer(editor.activeLayerId);
-    if(layer?.locked)throw new Error('Unlock the destination layer before adding an asset.');
-    if(layer?.visible===false)throw new Error('Choose a visible destination layer before adding an asset.');
+    if(layer?.locked)throw messageError(new Error(''), "errors.app.unlockTheDestinationLayerBeforeAddingAnAsset", {});
+    if(layer?.visible===false)throw messageError(new Error(''), "errors.app.chooseAVisibleDestinationLayerBeforeAddingAn", {});
     builderMode?.keepChangesAndLeave();
     const object=editor.importFigure(document),figure=editor.figure;
     const control=figure._styk?.rigExample?.control;
@@ -4199,18 +4198,18 @@ const rigHost=()=>({editor,showDialog,closeDialog,resources,finish:()=>{pause();
     editor.select(object.unique_id,figure.segments.findIndex(s=>s.segment_id===control));
     window.styk?.library?.showView('properties');
     fitSelection();queueUI();
-    toast(`${figure.name} added to Animate.`);
+    toast(interfaceText("app.addedToAnimate", {name: figure.name}), "app.addedToAnimate", {name: figure.name});
     return object;
   }});
 const beginRigAnchorPick=key=>{
-  const s=editor.figure?.segments[editor.selectedJoint];if(!editor.figure||(!s&&key))return toast('Select a joint first.');
+  const s=editor.figure?.segments[editor.selectedJoint];if(!editor.figure||(!s&&key))return toast(interfaceText("app.selectAJointFirst"), "app.selectAJointFirst", {});
   const ids=[...editor.selectedSegmentIds];
-  if(!key&&ids.length===2){editor.addConnector(ids[0],ids[1]);toast('Connector added. Drag its middle joint to slide.');return;}
+  if(!key&&ids.length===2){editor.addConnector(ids[0],ids[1]);toast(interfaceText("app.connectorAddedDragItsMiddleJointToSlide"), "app.connectorAddedDragItsMiddleJointToSlide", {});return;}
   setTool('rig');state.rigAnchorPick={key,start:s?.segment_id??0,uid:editor.selectedUid,token:editor._documentToken};
   syncModeMessage();
 };
 function pasteFigures(pasteMode = 'default', offset) {
-  if (builderMode?.active) return toast("Finish the figure or return to Animate to paste.");
+  if (builderMode?.active) return toast(interfaceText("app.finishTheFigureOrReturnToAnimateTo4"), "app.finishTheFigureOrReturnToAnimateTo4", {});
   return sharedClipboard.paste('figures', () => {
     finishCurrentEdit();
     const options = {pasteMode, offset, pasteDepth: state.settings.pasteDepth};
@@ -4226,7 +4225,7 @@ function selectedFigureJoinAction() {
 function joinMenuItem() {
   const action = selectedFigureJoinAction();
   return ['join-figure', action?.kind === 'unjoin' ? 'detach' : 'link',
-    state.figureJoin ? 'Cancel joining' : action?.kind === 'unjoin' ? 'Unjoin figure' : 'Join figure…',
+    state.figureJoin ? interfaceText("app.cancelJoining") : action?.kind === 'unjoin' ? interfaceText("app.unjoinFigure") : interfaceText("app.joinFigure"),
     '', !action];
 }
 function toggleFigureJoin() {
@@ -4237,12 +4236,12 @@ function toggleFigureJoin() {
   const indices = rangeFrames();
   if (action.kind === 'unjoin') {
     editor.detachFiguresInFrames(indices, {uids: [action.uid], atPlayhead: !indices});
-    status('Figure unjoined');
+    status({messageKey: "app.figureUnjoined", messageParams: {}});
     return;
   }
   const targets = joinTargetUids(editor.selectionFrame, action.uid);
   for (const uid of targets) if (isHidden(uid) || isLocked(uid)) targets.delete(uid);
-  if (!targets.size) {toast('Add or unlock another figure to join to.'); return;}
+  if (!targets.size) {toast(interfaceText("app.addOrUnlockAnotherFigureToJoinTo"), "app.addOrUnlockAnotherFigureToJoinTo", {}); return;}
   state.figureJoin = {uid: action.uid, token: editor._documentToken, tick: editor.tick,
     frameIndex: editor.frameIndex, revision: editor.revision, indices, targets};
   setTool('attach');
@@ -4252,14 +4251,14 @@ const actions = {
   'join-figure': toggleFigureJoin,
   /** A follow clip for the selected figures from the playhead, opened in Camera → Motion. */
   'camera-follow': () => {
-    if (builderMode?.active) return toast("Finish the figure or return to Animate to follow it.");
-    if (!selection().size) return toast("Select the figures the camera should follow.");
+    if (builderMode?.active) return toast(interfaceText("app.finishTheFigureOrReturnToAnimateTo5"), "app.finishTheFigureOrReturnToAnimateTo5", {});
+    if (!selection().size) return toast(interfaceText("app.selectTheFiguresTheCameraShouldFollow"), "app.selectTheFiguresTheCameraShouldFollow", {});
     pause(); finishCurrentEdit();
     editor._selectedCameraMotion = editor.addCameraMotion('follow');
     editor._cameraInspectorTab = 'motion'; editor._cameraMotionAdding = false;
     state.selectedTrackId = 'camera'; state.inspectorContext = 'camera'; state.inspectorTab = 'design';
     if (!state.settings.showCamera) editorSettings?.commit({ showCamera: true });
-    status(selection().size > 1 ? 'The camera follows the selected figures' : 'The camera follows this figure');
+    status(selection().size > 1 ? {messageKey: "app.theCameraFollowsTheSelectedFigures", messageParams: {}} : {messageKey: "app.theCameraFollowsThisFigure", messageParams: {}});
     queueUI(); requestRender();
   },
   'rig-connect':()=>beginRigAnchorPick(),
@@ -4275,25 +4274,25 @@ const actions = {
       studioShell?.changeMode('rig');
   },
   "selection-more": () => showCommandMenu([
-    { label: "Select" },
-    ["select-same", "person", "Select same figure"],
-    ["select-invert", "cursor", "Invert selection"],
+    { label: interfaceText("app.select"), labelKey: "app.select" },
+    messageTuple(["select-same", "person", interfaceText("app.selectSameFigure")], {2: {key: "app.selectSameFigure", params: {}}}),
+    messageTuple(["select-invert", "cursor", interfaceText("app.invertSelection")], {2: {key: "app.invertSelection", params: {}}}),
     null,
-    { label: "Pose" },
-    ["locate-previous", "match-prev", "Match previous pose", "L"],
-    ["locate-next", "match-next", "Match next pose", "Shift L"],
+    { label: interfaceText("app.pose"), labelKey: "app.pose" },
+    messageTuple(["locate-previous", "match-prev", interfaceText("app.matchPreviousPose"), "L"], {2: {key: "app.matchPreviousPose", params: {}}}),
+    messageTuple(["locate-next", "match-next", interfaceText("app.matchNextPose"), "Shift L"], {2: {key: "app.matchNextPose", params: {}}}),
     joinMenuItem(),
     null,
-    ["add-to-library", "plus", "Add to library"],
-    ["zoom-selection", "center", "Fit selection", "Shift 2"],
-  ], lastMenuAnchor || viewport, { label: "More figure actions" }),
+    messageTuple(["add-to-library", "plus", interfaceText("app.addToLibrary")], {2: {key: "app.addToLibrary", params: {}}}),
+    messageTuple(["zoom-selection", "center", interfaceText("app.fitSelection"), "Shift 2"], {2: {key: "app.fitSelection", params: {}}}),
+  ], lastMenuAnchor || viewport, { label: interfaceText("app.moreFigureActions2"), labelKey: "app.moreFigureActions2" }),
   "segment-values": () => showSegmentValues(),
   menu: (e) =>
     showMenu(e?.closest?.("button") || document.querySelector(".brand")),
   open: openFile,
   'new-window': () => desktop?.newWindow(),
   import: () => {
-    if (builderMode?.active) return toast("Finish the figure or return to Animate to import figures.");
+    if (builderMode?.active) return toast(interfaceText("app.finishTheFigureOrReturnToAnimateTo6"), "app.finishTheFigureOrReturnToAnimateTo6", {});
     $("file-input").value = "";
     $("file-input").click();
   },
@@ -4412,12 +4411,12 @@ const actions = {
   },
   "add-figure": () => {
     pause();
-    if (builderMode?.active) return toast("Finish the figure or return to Animate to add figures.");
+    if (builderMode?.active) return toast(interfaceText("app.finishTheFigureOrReturnToAnimateTo7"), "app.finishTheFigureOrReturnToAnimateTo7", {});
     if (rangeFrames()) editor.addFigureInFrames(undefined, rangeFrames());
     else editor.addFigure();
   },
   "add-text": () => {
-    if (builderMode?.active) return toast("Finish the figure or return to Animate to add text.");
+    if (builderMode?.active) return toast(interfaceText("app.finishTheFigureOrReturnToAnimateTo8"), "app.finishTheFigureOrReturnToAnimateTo8", {});
     showTextDialog();
   },
   "edit-text": () => showTextDialog(true),
@@ -4426,7 +4425,7 @@ const actions = {
   "combine-figures": () => {
     const roots = editor.resolveTranslationSelection().rootUids;
     if (roots.length !== 1)
-      throw new Error("Select figures in one connected group.");
+      throw messageError(new Error(''), "errors.app.selectFiguresInOneConnectedGroup", {});
     editor.combineJoinedFigure(roots[0]);
   },
   "segment-order-back": (button, event) => actions["builder-order"]({dataset: {kind: 'segment', direction: 'back'}}, event),
@@ -4469,11 +4468,11 @@ const actions = {
     if (!builderMode?.active) return;
     state.builderAppearance = copyBuilderAppearance(editor);
     builderMode.sync();
-    if (state.builderAppearance) notify("Appearance copied");
+    if (state.builderAppearance) notify(interfaceText("app.appearanceCopied"), "app.appearanceCopied", {});
   },
   "paste-builder-appearance": (button, event) => {
     if (!builderMode?.active) return;
-    if (pasteBuilderAppearance(editor, state.builderAppearance, {branch:usesBuilderBranch(event)})) notify("Appearance pasted");
+    if (pasteBuilderAppearance(editor, state.builderAppearance, {branch:usesBuilderBranch(event)})) notify(interfaceText("app.appearancePasted"), "app.appearancePasted", {});
   },
   "unsplit-segment": () => editor.unsplitSegment(),
   "delete-single-segment": () => editor.selectedSegmentIds.size > 1
@@ -4509,7 +4508,7 @@ const actions = {
     if (builderMode?.active || state.tool === 'rig') {
       if (editor.selectedJoint >= 0)
         return usesBuilderBranch() ? actions['delete-segment']() : actions['delete-single-segment']();
-      if (builderMode?.active) return toast('Select a segment or branch to delete.');
+      if (builderMode?.active) return toast(interfaceText("app.selectASegmentOrBranchToDelete"), "app.selectASegmentOrBranchToDelete", {});
     }
     if (editor.branchSelected) return editor.deleteSelection();
     if (rangeFrames()) editor.deleteFiguresInFrames(rangeFrames());
@@ -4680,15 +4679,15 @@ const actions = {
   "toggle-motion-paths": () => {
     editorSettings.commit({ motionPaths: !state.motionPaths });
     if (!state.motionPaths) state.hoverPathPoint = null;
-    status(state.motionPaths ? "Motion paths on" : "Motion paths off");
+    status(state.motionPaths ? {messageKey: "app.motionPathsOn", messageParams: {}} : {messageKey: "app.motionPathsOff", messageParams: {}});
     requestRender();
   },
   // The timeline header's Audio button (the Animation menu's row where the header folds it).
   "toggle-audio": () => $("timeline-audio")?.click(),
   "toggle-auto-key": () => {
-    if (state.settings.timelineMode === "simple") return toast("Auto key works in the Advanced timeline.");
+    if (state.settings.timelineMode === "simple") return toast(interfaceText("app.autoKeyWorksInTheAdvancedTimeline"), "app.autoKeyWorksInTheAdvancedTimeline", {});
     editorSettings.commit({ autoKey: !state.settings.autoKey });
-    status(state.settings.autoKey ? "Auto key on: edits add keyframes at the playhead" : "Auto key off");
+    status(state.settings.autoKey ? {messageKey: "app.autoKeyOnEditsAddKeyframesAtThe", messageParams: {}} : {messageKey: "app.autoKeyOff", messageParams: {}});
   },
   "toggle-loop": () => {
     editorSettings.commit({ loopPlayback: !state.loop });
@@ -4839,7 +4838,7 @@ for (const [name, action] of Object.entries(actions)) {
         !name.startsWith("zoom-") &&
         !name.startsWith("toggle-")
       ) {
-        toast("Finish or cancel the polygon first.");
+        toast(interfaceText("app.finishOrCancelThePolygonFirst"), "app.finishOrCancelThePolygonFirst", {});
         return false;
       }
     }
@@ -4868,14 +4867,14 @@ document.addEventListener(
     if (tool) setTool(tool.dataset.tool);
     const asset = e.target.closest("[data-figure]");
     if (asset) {
-      if (builderMode?.active) return toast("Finish the figure or return to Animate to insert figures.");
+      if (builderMode?.active) return toast(interfaceText("app.finishTheFigureOrReturnToAnimateTo2"), "app.finishTheFigureOrReturnToAnimateTo2", {});
       if (rangeFrames())
         editor.addFigureInFrames(Number(asset.dataset.figure), rangeFrames());
       else editor.addFigure(Number(asset.dataset.figure));
     }
     const sample = e.target.closest("[data-sample]");
     if (sample) {
-      if (builderMode?.active) return toast("Finish the figure or return to Animate to open samples.");
+      if (builderMode?.active) return toast(interfaceText("app.finishTheFigureOrReturnToAnimateTo3"), "app.finishTheFigureOrReturnToAnimateTo3", {});
       openSample(sample.dataset.sample).catch(fail);
     }
     const joint = e.target.closest("[data-joint]");
@@ -4990,7 +4989,7 @@ function keyboardHandle(event, key) {
       pause();
       interruptRecovery();
       const geometry = editor.geometry;
-      editor.beginCameraDrag({ indices: rangeFrames(), label: "Nudge camera" });
+      editor.beginCameraDrag({ indices: rangeFrames(), label: interfaceText("app.nudgeCamera"), labelKey: "app.nudgeCamera" });
       keyboardHandleGesture = {
         camera: true,
         target,
@@ -5226,7 +5225,7 @@ const commandRequirements = {
   "movieclip-session": () => Boolean(editor._movieclipScopes?.length) || requirementReason("movieclipSession"),
   "camera-session": () => cameraSelected() || requirementReason("cameraSession"),
   pixels: () => Boolean(drawingController?.selection || drawingController?.marquee) || requirementReason("pixels"),
-  appearance: () => Boolean(state.builderAppearance) || "Copy an appearance first",
+  appearance: () => Boolean(state.builderAppearance) || interfaceText("app.copyAnAppearanceFirst"),
 };
 /** The on/off state of the toggle commands the stage header and the menus show as pressed or checked. */
 const TOGGLE_STATES = {
@@ -5254,7 +5253,7 @@ const commands = createCommandRegistry({
   requirements: commandRequirements,
   checked: (id) => TOGGLE_STATES[id]?.(),
   runHotkey: (id) => {
-    if (state.polygon && !polygonCommands.has(id)) { toast("Finish or cancel the polygon first."); return false; }
+    if (state.polygon && !polygonCommands.has(id)) { toast(interfaceText("app.finishOrCancelThePolygonFirst"), "app.finishOrCancelThePolygonFirst", {}); return false; }
     return runKeyboardCommand(id, { target: viewport, shiftKey: false }, { shift: false });
   },
   onError: fail,
@@ -5275,7 +5274,7 @@ const projectProvider = {
     for (const layer of editor.layers ?? []) {
       if (layer.kind !== "layer") continue;
       const match = fuzzyMatch(query, layer.name);
-      if (match) rows.push({ id: `layer:${layer.id}`, label: layer.name, icon: "layers", meta: kitText(kitT, "overlays.palette.layer"), match,
+      if (match) rows.push({ id: `layer:${layer.id}`, label: layer.name, icon: "layers", meta: kitText(kitT, "overlays.palette.layer"), metaKey: "overlays.palette.layer", metaParams: {}, match,
         ranges: match.ranges, run: () => { selectTrack({ id: layer.id, target: { kind: "layer", id: layer.id } }); timelineUI?.selectTrack?.(layer.id); } });
     }
     if (context?.mode !== "draw") {
@@ -5286,7 +5285,7 @@ const projectProvider = {
         if (!match) continue;
         const layer = editor.getLayer(editor.layerForUid(object.unique_id))?.name ?? "";
         rows.push({ id: `figure:${object.unique_id}`, label: name, icon: isMovieclip(figure) ? "frame" : "person",
-          meta: kitText(kitT, isMovieclip(figure) ? "overlays.palette.movieclipIn" : "overlays.palette.figureIn", { layer }), match, ranges: match.ranges,
+          meta: kitText(kitT, isMovieclip(figure) ? "overlays.palette.movieclipIn" : "overlays.palette.figureIn", { layer }), metaKey: isMovieclip(figure) ? "overlays.palette.movieclipIn" : "overlays.palette.figureIn", metaParams: { layer }, match, ranges: match.ranges,
           run: () => selectTrack({ uid: object.unique_id, target: { kind: "figure", uid: object.unique_id } }) });
       }
     }
@@ -5303,7 +5302,7 @@ const settingsProvider = {
     const locale = appLocalization?.localization.locale;
     if (settingsIndex?.locale !== locale) settingsIndex = { locale, entries: editorSettings.searchIndex() };
     return settingsIndex.entries.map((entry) => ({ entry, match: fuzzyMatch(query, entry.label) })).filter((row) => row.match).sort(byScore)
-      .map(({ entry, match }) => ({ id: entry.setting, label: entry.label, icon: "settings", meta: kitText(kitT, "overlays.palette.settingIn", { tab: entry.tabLabel }),
+      .map(({ entry, match }) => ({ id: entry.setting, label: entry.label, icon: "settings", meta: kitText(kitT, "overlays.palette.settingIn", { tab: entry.tabLabel }), metaKey: "overlays.palette.settingIn", metaParams: { tab: entry.tabLabel },
         ranges: match.ranges, run: () => editorSettings.open(entry.tab, { setting: entry.setting }) }));
   },
 };
@@ -5628,7 +5627,7 @@ function scheduleRecovery(delay = state.settings.autosaveSeconds * 1000 * (state
       if (error.name !== "AbortError") {
         // A full or blocked store fails on every edit: say so once, then retry less often.
         state.recoveryBackoff = Math.min(12, (state.recoveryBackoff || 1) * 2);
-        if (!state.recoveryFailed) status(`Recovery copy could not be written: ${error.message}`, true);
+        if (!state.recoveryFailed) status({messageKey: "app.recoveryCopyCouldNotBeWritten", messageParams: {message: error.message}}, true);
         state.recoveryFailed = true;
       }
     }
@@ -5646,27 +5645,29 @@ function offerRecovery() {
         });
       })
       .catch((error) =>
-        status(`Recovery could not be read: ${error.message}`, true),
+        status({messageKey: "app.recoveryCouldNotBeRead", messageParams: {message: error.message}}, true),
       );
     return;
   }
   void browserRecovery.list().then(records => {
     if (records.length === 1) showRecovery(records[0]);
     else if (records.length > 1) showRecovery(null, records);
-  }).catch(error => status(`Recovery could not be read: ${error.message}`, true));
+  }).catch(error => status({messageKey: "app.recoveryCouldNotBeRead", messageParams: {message: error.message}}, true));
 }
 /** The recovery offer: the stage header's recovery message (experience.md §4.3), with the snapshot's file name and time. */
 function showRecovery(record, records = [record]) {
   if (!records.length || !records[0]) return;
-  const time = Number.isFinite(record?.savedAt) ? new Date(record.savedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+  const time = Number.isFinite(record?.savedAt) ? {format: "date", value: record.savedAt, options: {hour: "2-digit", minute: "2-digit"}} : "";
+  const messageKey = record ? "app.recoveryOffer" : "app.recoveryCopies";
+  const messageParams = record ? {name: record.name || editor.name, time} : {count: records.length};
   const offer = toasts.show({
-    slot: "recovery", icon: "clock", title: "Restore unsaved work", key: "recovery",
-    message: record ? `${[record.name && `in ${record.name}`, time && `from ${time}`].filter(Boolean).join(" ")}?` : `${records.length} recovery copies are available.`,
+    slot: "recovery", icon: "clock", title: interfaceText("app.restoreUnsavedWork"), titleKey: "app.restoreUnsavedWork", key: "recovery",
+    message: interfaceText(messageKey, messageParams), messageKey, messageParams,
     timeout: 0, dismissible: false,
     actions: [
-      { label: "Not now", id: "dismiss-recovery" },
-      ...(browserRecovery ? [{ label: "Manage copies", id: "manage-recovery", dismiss: false, run: guarded(() => restore({choose: true})) }] : []),
-      { label: "Restore", id: "restore-recovery", variant: "outline", dismiss: false, run: guarded(() => restore()) },
+      { label: interfaceText("app.notNow"), labelKey: "app.notNow", id: "dismiss-recovery" },
+      ...(browserRecovery ? [{ label: interfaceText("app.manageCopies"), labelKey: "app.manageCopies", id: "manage-recovery", dismiss: false, run: guarded(() => restore({choose: true})) }] : []),
+      { label: interfaceText("app.restore"), labelKey: "app.restore", id: "restore-recovery", variant: "outline", dismiss: false, run: guarded(() => restore()) },
     ],
   });
   const restore = async ({choose = false} = {}) => {
@@ -5677,7 +5678,7 @@ function showRecovery(record, records = [record]) {
     }
     if (await dialogs.confirmReplace()) {
       const reservation = browserRecovery ? await browserRecovery.reserve(record) : null;
-      if (browserRecovery && !reservation) throw new Error("This recovery copy is open in another tab.");
+      if (browserRecovery && !reservation) throw messageError(new Error(''), "errors.app.thisRecoveryCopyIsOpenInAnotherTab", {});
       let adopted = false;
       try {
         const replaceApproved = {
@@ -5688,12 +5689,12 @@ function showRecovery(record, records = [record]) {
         if (record.native) {
           const native = await readNativeRecovery(desktop);
           if (!native)
-            throw new Error("The recovery file is no longer available.");
+            throw messageError(new Error(''), "errors.app.theRecoveryFileIsNoLongerAvailable", {});
           record = { ...record, ...native };
         }
         if (browserRecovery) {
           const current = await readBrowserRecovery(undefined, {id: record.id});
-          if (!current || current.savedAt !== record.savedAt || current.token !== record.token) throw new Error("The recovery copy changed. Reopen StykAnimate to see the latest copy.");
+          if (!current || current.savedAt !== record.savedAt || current.token !== record.token) throw messageError(new Error(''), "errors.app.theRecoveryCopyChangedReopenStykanimateToSee", {});
           record = current;
         }
         if (record.blob) {
@@ -5793,7 +5794,7 @@ window.styk = {
   ready: false,
 };
 let thumbnailRenderer, nativeFrameClipboard, sharedClipboard;
-async function changeFigureLayer(label, operation) {
+async function changeFigureLayer(label, operation, {labelKey} = {}) {
   pause();
   finishKeyboardHandle();
   cancelDrag();
@@ -5816,10 +5817,7 @@ async function changeFigureLayer(label, operation) {
       controller.signal.aborted
     )
       return;
-    $("layer-progress-label").textContent =
-      latest.phase === "staging"
-        ? "Applying layer changes"
-        : "Preserving animation";
+    localizedText($("layer-progress-label"), (latest.phase === "staging" ? "app.applyingLayerChanges" : "app.preservingAnimation"), (latest.phase === "staging" ? {} : {}));
     const progress = progressElement;
     if (Number.isFinite(latest.total) && latest.total > 0) {
       progress.max = latest.total;
@@ -5838,7 +5836,8 @@ async function changeFigureLayer(label, operation) {
     dialogShown = true;
     showDialog(
       label,
-      '<p id="layer-progress-label">Preserving animation</p><progress id="layer-progress" style="width:100%;accent-color:#0d99ff"></progress><div class="dialog-actions"><button class="button" id="cancel-layer-change">Cancel</button></div>',
+      `<p id="layer-progress-label" data-i18n="app.preservingAnimation">${messageHTML("app.preservingAnimation", {})}</p><progress id="layer-progress" style="width:100%;accent-color:#0d99ff"></progress><div class="dialog-actions"><button class="button" id="cancel-layer-change" data-i18n="common.cancel">${messageHTML("app.cancel", {})}</button></div>`,
+      {titleKey: labelKey},
     );
     progressElement = $("layer-progress");
     $("cancel-layer-change").onclick = cancel;
@@ -5855,7 +5854,7 @@ async function changeFigureLayer(label, operation) {
     });
   } catch (error) {
     if (error.name !== "AbortError") throw error;
-    status("Layer change cancelled");
+    status({messageKey: "app.layerChangeCancelled", messageParams: {}});
     return false;
   } finally {
     clearTimeout(timer);
@@ -5885,9 +5884,9 @@ async function performClipboardOperation(kind, execute) {
     originalContent = $("dialog-content").firstChild,
     originalOpen = dialog.open;
   const labels = {
-    copy: "Copying frames",
-    cut: "Cutting frames",
-    paste: "Pasting frames",
+    copy: interfaceText("app.copyingFrames"),
+    cut: interfaceText("app.cuttingFrames"),
+    paste: interfaceText("app.pastingFrames"),
   };
   let progressElement, latest;
   const cancel = () => controller.abort();
@@ -5915,8 +5914,9 @@ async function performClipboardOperation(kind, execute) {
       return;
     }
     showDialog(
-      labels[kind] || "Updating frames",
-      '<progress id="clipboard-progress" style="width:100%;accent-color:#0d99ff"></progress><div class="dialog-actions"><button class="button" id="cancel-clipboard">Cancel</button></div>',
+      labels[kind] || interfaceText("app.updatingFrames"),
+      `<progress id="clipboard-progress" style="width:100%;accent-color:#0d99ff"></progress><div class="dialog-actions"><button class="button" id="cancel-clipboard" data-i18n="common.cancel">${messageHTML("app.cancel", {})}</button></div>`,
+      {titleKey: ({copy: "app.copyingFrames", cut: "app.cuttingFrames", paste: "app.pastingFrames"})[kind] ?? "app.updatingFrames"},
     );
     progressElement = $("clipboard-progress");
     $("cancel-clipboard").onclick = cancel;
@@ -5932,11 +5932,11 @@ async function performClipboardOperation(kind, execute) {
       },
     });
     if (count && kind === "copy")
-      notify(`${count} frame${count === 1 ? "" : "s"} copied`);
+      notify(interfaceText("app.frameCopied", {count}), "app.frameCopied", {count});
     return count;
   } catch (error) {
     if (error.name !== "AbortError") throw error;
-    status("Clipboard operation cancelled");
+    status({messageKey: "app.clipboardOperationCancelled", messageParams: {}});
     return 0;
   } finally {
     clearTimeout(timer);
@@ -6048,7 +6048,7 @@ async function init() {
     desktop,
     legacy: { builderOutlinerWidth: state.settings.builderOutlinerWidth },
     platform: desktop ? "desktop" : "web",
-    onError: (error) => status(error.message, true),
+    onError: (error) => status(error, true),
     onBeforeChange: () => finishCurrentEdit(),
     // The painter's rows until M5 draws 24px Camera and Scene rows (dock-host.mjs).
     timelineRows: { ruler: TIMELINE_RULER, pinnedRow: TIMELINE_ROW, row: TIMELINE_ROW },
@@ -6090,7 +6090,7 @@ async function init() {
   const shellAnnouncer = document.createElement("div");
   shellAnnouncer.className = "ui-visually-hidden";
   shellAnnouncer.setAttribute("role", "status");
-  document.body.append(shellAnnouncer);
+  appendLocalized(document.body, shellAnnouncer);
   const announceShell = (text) => { shellAnnouncer.textContent = text; };
   const shellKeyboard = createDockKeyboard({ host: shell, announce: announceShell });
   installDockTabs({ host: shell, openMenu: (items, at, options) => showCommandMenu(items, at, options), announce: announceShell });
@@ -6194,7 +6194,7 @@ async function init() {
   assetLibrary = new AssetLibrary($("asset-list"), {
     onAdd: (id) => {
       pause();
-      if (builderMode?.active) return toast("Finish the figure or return to Animate to insert figures.");
+      if (builderMode?.active) return toast(interfaceText("app.finishTheFigureOrReturnToAnimateTo2"), "app.finishTheFigureOrReturnToAnimateTo2", {});
       if (rangeFrames()) editor.addFigureInFrames(id, rangeFrames());
       else editor.addFigure(id);
       $("insert-dialog").close();
@@ -6210,7 +6210,7 @@ async function init() {
     activate: id => shell.showPanel(id, {focus: false})});
   shell.define({id: 'library', root: () => $('user-library'), onVisibility: visible => window.styk.library.panelVisible(visible)});
   const libraryInsert = (asset, point) =>
-    builderMode?.active ? toast("Finish the figure or return to Animate to insert figures.") : window.styk.library.insert(asset, point);
+    builderMode?.active ? toast(interfaceText("app.finishTheFigureOrReturnToAnimateTo2"), "app.finishTheFigureOrReturnToAnimateTo2", {}) : window.styk.library.insert(asset, point);
   installLibraryDrop(viewport, {position: worldPoint, insert: libraryInsert, onError: fail});
   installLibraryDrag(window.styk.library.grid, viewport, {
     getAsset: card => window.styk.library.assetFor(card),
@@ -6277,7 +6277,7 @@ async function init() {
   window.styk.clipboard = sharedClipboard;
   window.styk.thumbnails = thumbnailRenderer;
   timelineHost.mount();
-  status("Preparing canvas and effects…", false, true);
+  status({messageKey: "app.preparingCanvasAndEffects", messageParams: {}}, false, true);
   try {
     state.renderer = await createRenderer(canvas, rendererOptions());
   } catch (error) {
@@ -6290,7 +6290,7 @@ async function init() {
   resize();
   fit();
   updateUI();
-  status("Ready");
+  status({messageKey: "app.ready", messageParams: {}});
   window.styk.ready = true;
   markEditorReady();
   window.styk.telemetry = telemetry;
@@ -6307,7 +6307,7 @@ async function init() {
   // failure is reported by the import or export that hit it.
   if (codecMode() === "browser") {
     browserCodecHost().subscribe(({ state, stage }) => {
-      if (state === "loading") status(stage === "runtime" ? "Loading the Pivot converter (first use only)…" : "Starting the Pivot converter…", false, true);
+      if (state === "loading") status(stage === "runtime" ? {messageKey: "app.loadingThePivotConverterFirstUseOnly", messageParams: {}} : {messageKey: "app.startingThePivotConverter", messageParams: {}}, false, true);
     });
   }
   try {
@@ -6316,7 +6316,7 @@ async function init() {
     state.samples = data.samples || [];
     renderAssets();
   } catch (error) {
-    status("Editor ready · File service unavailable", true);
+    status({messageKey: "app.editorReadyFileServiceUnavailable", messageParams: {}}, true);
     console.warn(error);
   }
 }
@@ -6363,8 +6363,8 @@ function scheduleGpuRecovery() {
   gpuRecoveryTimer = setTimeout(() => {
     gpuRecoveryTimer = undefined;
     recoverCanvas().catch(error => {
-      $("renderer-error").querySelector('p').textContent = 'The canvas could not reconnect. Your animation is still here and can be saved.';
-      status(error.message, true);
+      localizedText($("renderer-error").querySelector('p'), "app.theCanvasCouldNotReconnectYourAnimationIs", {});
+      status(error, true);
     });
   }, delay);
 }
@@ -6394,7 +6394,8 @@ function recoverCanvas(refreshGpuBudget) {
       // Initialization may fail after acquiring a WebGPU canvas context.
       replaceCanvas();
       state.renderer = await createRenderer(canvas, {...rendererOptions(), forceCanvas2D: true,
-        fallbackReason: `Graphics reconnection failed: ${error.message}`});
+        fallbackReason: `Graphics reconnection failed: ${error.message}`, fallbackReasonKey:'rendererStatus.reconnectionFailed',
+        fallbackReasonParams:{detail:error.messageKey ? error : error.message}});
     }
     clearTimeout(gpuStableTimer);
     telemetry.performance.recovery('gpu','recovered');
@@ -6418,24 +6419,22 @@ function rendererOptions() {
     onStatus: (message) => {
       const compatibility = message.backend === "Canvas 2D fallback";
       $("renderer-label").classList.toggle("compatibility", compatibility);
-      $("renderer-label").textContent = compatibility
-        ? "Compatibility mode"
-        : message.backend || "WebGPU";
-      $("renderer-label").title = compatibility
-        ? `${message.reason || "WebGPU is unavailable."} Canvas compatibility rendering is active.`
-        : "";
-      status(
-        typeof message === "string" ? message : message.message || "Ready",
-      );
+      if (compatibility) localizedText($("renderer-label"), "app.compatibilityMode");
+      else if (message.backend === "WebGPU device lost") localizedText($("renderer-label"), "rendererStatus.deviceLost");
+      else setText($("renderer-label"), message.backend || "WebGPU");
+      const reason = message.reasonKey ? {messageKey:message.reasonKey, messageParams:message.reasonParams} : message.reason || {messageKey:"app.webgpuIsUnavailable"};
+      if (compatibility) localizedAttribute($("renderer-label"), 'title', 'app.valueCanvasCompatibilityRenderingIsActive', {value:reason});
+      else { clearTranslation($("renderer-label"), 'title'); $("renderer-label").title = ""; }
+      status(typeof message === "string" ? message : message.messageKey ? message : message.message || {messageKey:"app.ready"});
       // Compatibility rendering is slower: say so once, unless Canvas was chosen in Settings.
       if (compatibility && !compatibilityNoticed && state.settings.rendererMode !== "canvas") {
         compatibilityNoticed = true;
-        toasts.show({ message: `${message.reason || "WebGPU is unavailable."} The canvas uses compatibility rendering, which can be slower.`, tone: "warning", timeout: 12000, dismissible: true });
+        toasts.show({ message: interfaceText("app.theCanvasUsesCompatibilityRenderingWhichCanBe", {value:reason}), messageKey: "app.theCanvasUsesCompatibilityRenderingWhichCanBe", messageParams: {value:reason}, tone: "warning", timeout: 12000, dismissible: true });
       }
       if (message.backend === "WebGPU device lost") {
         telemetry.performance.recovery('gpu','started');telemetry.performance.incident('gpu');
         telemetry.count('gpu_errors');
-        telemetry.error(Object.assign(new Error('The graphics device was lost.'), { name: 'GPUError', telemetryCode: 'device_lost' }), 'gpu');
+        telemetry.error(Object.assign(messageError(new Error(''), "errors.app.theGraphicsDeviceWasLost", {}), { name: 'GPUError', telemetryCode: 'device_lost' }), 'gpu');
         pause();
         propertyControls?.cancel();
         cancelDrag();
@@ -6452,8 +6451,7 @@ function rendererOptions() {
         state.hoverCameraHandle = null;
         viewport.classList.toggle("panning", state.tool === "hand");
         $("renderer-error").hidden = false;
-        $("renderer-error").innerHTML =
-          '<p>The graphics device was reset. Reconnecting your canvas…</p><button class="button" id="retry-renderer">Reconnect canvas</button>';
+        localizedMarkup($("renderer-error"), `<p data-i18n="app.theGraphicsDeviceWasResetReconnectingYourCanvas">${messageHTML("app.theGraphicsDeviceWasResetReconnectingYourCanvas", {})}</p><button class="button" id="retry-renderer" data-i18n="app.reconnectCanvas">${messageHTML("app.reconnectCanvas", {})}</button>`);
         $("retry-renderer").onclick = guarded(() => recoverCanvas(true));
         scheduleGpuRecovery();
       }
@@ -6462,7 +6460,7 @@ function rendererOptions() {
 }
 init().catch((error) => {
   $("renderer-error").hidden = false;
-  $("renderer-error").textContent = error.message;
+  presentError($("renderer-error"), error);
   fail(error);
 });
 
@@ -6477,21 +6475,21 @@ installColorPickers((input, event) => {
     const entry=editor.figurePalette().find(entry=>entry.color===input.dataset.paletteColor);
     if(!entry)return false;
     return {anchor:input,paint:{type:'solid',stops:[{offset:0,color:parseColor(entry.color).color,opacity:1}]},gradients:false,alpha:false,onChange:paint=>{
-      if(editor.report!==report||editor.selectedUid!==uid||editor.figure!==figure||editor.tick!==tick)throw new Error('Selection changed. Reopen the palette.');
+      if(editor.report!==report||editor.selectedUid!==uid||editor.figure!==figure||editor.tick!==tick)throw messageError(new Error(''), "errors.app.selectionChangedReopenThePalette", {});
       pause();editor.replaceFigureColor(entry.color,paint.stops[0].color,{targets:entry,indices:rangeFrames()});
     }};
   }
   if(input.id==='figure-color'){
     const report=editor.report,tick=editor.tick,uids=[...editor.selectedUids].join(',');let previous=input.value,previousOpacity=1-(editor.object.field28??0)/255;
     return {anchor:input,paint:{type:'solid',stops:[{offset:0,color:parseColor(input.value).color,opacity:1-(editor.object.field28??0)/255}]},gradients:false,onChange:paint=>{
-      if(editor.report!==report||editor.tick!==tick||[...editor.selectedUids].join(',')!==uids)throw new Error('Selection changed. Reopen the color picker.');
+      if(editor.report!==report||editor.tick!==tick||[...editor.selectedUids].join(',')!==uids)throw messageError(new Error(''), "errors.app.selectionChangedReopenTheColorPicker", {});
       const value=hexColor(paint.stops[0].color),opacity=paint.stops[0].opacity;pause();editor.setFigureColor(value===previous&&opacity!==previousOpacity?undefined:value,{indices:rangeFrames(),opacity});previous=value;previousOpacity=opacity;
     }};
   }
   if (input.id === 'segment-color') {
     const uid=editor.selectedUid, joint=editor.selectedJoint, figure=editor.figure;
     return {anchor:input, paint:displayedSegmentPaint(editor.report,figure,editor.object,resolveInstanceFigure(figure,editor.object).segments[joint]), onChange:paint=>{
-      if(editor.selectedUid!==uid || editor.selectedJoint!==joint || editor.figure!==figure) throw new Error('Selection changed. Reopen the color picker.');
+      if(editor.selectedUid!==uid || editor.selectedJoint!==joint || editor.figure!==figure) throw messageError(new Error(''), "errors.app.selectionChangedReopenTheColorPicker", {});
       pause(); updateBuilderStyle({paint},event);
     }};
   }

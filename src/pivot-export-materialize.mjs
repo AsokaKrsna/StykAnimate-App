@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {documentHasRigConstraints} from './rig-constraints.mjs';
 import {documentHasSurfaces} from './pivot/surfaces.mjs';
 import {cameraAtTime} from './camera-motion.mjs';
@@ -110,18 +111,18 @@ function sampleAt(report, rows, tick, hidden) {
 }
 
 export function materializePivotDocument(report) {
-  if(documentHasSurfaces(report))throw new Error('Pivot cannot preserve one-sided fills. Save as .styk or .stkz, or export images/video.');
-  if(documentHasRigConstraints(report))throw new Error('Pivot cannot preserve connectors or Smart Stretch. Save as .styk or .stkz, or export images/video.');
+  if(documentHasSurfaces(report))throw messageError(new Error(''), "errors.pivotExportMaterialize.pivotCannotPreserveOneSidedFillsSaveAs", {});
+  if(documentHasRigConstraints(report))throw messageError(new Error(''), "errors.pivotExportMaterialize.pivotCannotPreserveConnectorsOrSmartStretchSave", {});
   report = withoutNativeSheet(materializeSimpleFrameDraftForPivot(report));
   if (report.keyframes.length && movieclipTypes(report).size) {
     const materializer=createMovieclipMaterializer(report),rows=timeline(report),total=rows.at(-1).start+rows.at(-1).count;
-    if(total>MAX_FRAMES)throw new Error('Movieclip export exceeds the 100,000-frame limit.');
+    if(total>MAX_FRAMES)throw messageError(new Error(''), "errors.pivotExportMaterialize.movieclipExportExceedsThe100000FrameLimit", {});
     const frames=[];let index=0,objects=0;
     for(let tick=0;tick<total;tick++){
       while(index+1<rows.length&&rows[index+1].start<=tick)index++;
       const row=rows[index],sample=evaluatedFrame(report,index,row.count?(tick-row.start)/row.count:0,tick),offset=parallaxResolver(report,sample),frame=materializer.frame({...sample,camera:cameraAtTime(report,sample),objects:sample.objects.map(o=>{const d=offset(o.unique_id);return d.x||d.y?{...o,root_x:o.root_x+d.x,root_y:o.root_y+d.y}:o;})});
       delete frame._cameraMotionTick;
-      frame.duration_raw=1;objects+=frame.objects.length;if(objects>MAX_OBJECTS)throw new Error('Movieclip export exceeds the object limit.');frames.push(frame);
+      frame.duration_raw=1;objects+=frame.objects.length;if(objects>MAX_OBJECTS)throw messageError(new Error(''), "errors.pivotExportMaterialize.movieclipExportExceedsTheObjectLimit", {});frames.push(frame);
     }
     const metadata={...report._styk};delete metadata.animation;delete metadata.frameSources;delete metadata.movieclipSource;delete metadata.layerSheet;
     const fixed=metadata.layers?.fixed;delete metadata.layers;delete metadata.cameraMotion;
@@ -147,7 +148,7 @@ export function materializePivotDocument(report) {
   const totalTicks = outputRows.at(-1).start + outputRows.at(-1).count;
   const {events: hidden, extraSources} = authored && !report._styk?.layerSheet ? hiddenExposures(report, rows, channels) : {events: [], extraSources: {}};
   const outputCount = authored ? totalTicks + hidden.length : report.keyframes.length;
-  if (outputCount < 1 || outputCount > MAX_FRAMES) throw new Error(`Native Pivot export needs ${outputCount.toLocaleString()} keys; the supported limit is ${MAX_FRAMES.toLocaleString()}. Reduce the authored duration before exporting.`);
+  if (outputCount < 1 || outputCount > MAX_FRAMES) throw messageError(new Error(''), "errors.pivotExportMaterialize.nativePivotExportNeedsKeysTheSupportedLimit", {value: outputCount.toLocaleString(), value1: MAX_FRAMES.toLocaleString()});
   const output = {...report, backgrounds: [...(report.backgrounds ?? [])], keyframes: []};
   // Materialized per-segment styles use Pivot 5. Convert the untouched legacy
   // colors too, before changing their interpretation in the output document.
@@ -167,7 +168,7 @@ export function materializePivotDocument(report) {
   const usedBackgroundIds = new Set(output.backgrounds.map(bg => bg.background_id)); let nextBackgroundId = 1, objectCount = 0;
   const colorId = color => {
     if (colorIds.has(color)) return colorIds.get(color);
-    if (output.backgrounds.length >= MAX_BACKGROUNDS) throw new Error('Animated scene colors exceed the native Pivot background table capacity.');
+    if (output.backgrounds.length >= MAX_BACKGROUNDS) throw messageError(new Error(''), "errors.pivotExportMaterialize.animatedSceneColorsExceedTheNativePivotBackground", {});
     while (usedBackgroundIds.has(nextBackgroundId)) nextBackgroundId++;
     const id = nextBackgroundId++; usedBackgroundIds.add(id); colorIds.set(color, id);
     output.backgrounds.push({background_id: id, kind: 2, color, name: `Color #${(color & 0xffffff).toString(16).padStart(6, '0')}`}); return id;
@@ -188,7 +189,7 @@ export function materializePivotDocument(report) {
       next.figure_type_id = styleTypeId(object); delete next._stykStyle;
       if (object.join) {
         const root = geometry.objects.get(slot)?.root;
-        if (!root) throw new Error('An exported figure has unresolved joined geometry.');
+        if (!root) throw messageError(new Error(''), "errors.pivotExportMaterialize.anExportedFigureHasUnresolvedJoinedGeometry", {});
         next.root_x = root.x; next.root_y = root.y;
       }
       const depth=parallax(object.unique_id);next.root_x+=depth.x;next.root_y+=depth.y;
@@ -199,7 +200,7 @@ export function materializePivotDocument(report) {
       object.join = parent === undefined ? null : {...object.join, target_object_slot: parent, target_unique_id: objects[parent].unique_id};
     }
     objectCount += objects.length;
-    if (objectCount > MAX_OBJECTS) throw new Error('The composed Pivot export exceeds the two-million-object limit. Reduce the authored duration or scene size.');
+    if (objectCount > MAX_OBJECTS) throw messageError(new Error(''), "errors.pivotExportMaterialize.theComposedPivotExportExceedsTheTwoMillion", {});
     const order = (frame.object_draw_order ?? frame.objects.map((_, slot) => slot)).filter(slot => oldToNew.has(slot)).map(slot => oldToNew.get(slot));
     const next = withoutFrameIdentity({...frame, duration_raw: duration, objects, object_count: objects.length,
       keyframe_index: output.keyframes.length, object_draw_order: order, object_draw_order_unique_ids: order.map(slot => objects[slot].unique_id)});

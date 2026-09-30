@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Small synchronous zlib (RFC 1950/1951) for drawing tiles. Per-tile
  * CompressionStream/DecompressionStream calls cost about a millisecond of
  * stream overhead each; tiles are 16 KB, so a synchronous codec is an order
@@ -121,7 +122,7 @@ const FAST=9;
 function huffman(lengths){
   const counts=new Uint16Array(16),offsets=new Uint16Array(16),symbols=new Uint16Array(lengths.length);
   for(const l of lengths)counts[l]++;counts[0]=0;
-  let left=1;for(let l=1;l<16;l++){left<<=1;left-=counts[l];if(left<0)throw new Error('Invalid deflate Huffman table.');}
+  let left=1;for(let l=1;l<16;l++){left<<=1;left-=counts[l];if(left<0)throw messageError(new Error(''), "errors.zlibSync.invalidDeflateHuffmanTable", {});}
   for(let l=1;l<15;l++)offsets[l+1]=offsets[l]+counts[l];
   for(let s=0;s<lengths.length;s++)if(lengths[s])symbols[offsets[lengths[s]]++]=s;
   const fast=new Int32Array(1<<FAST).fill(-1),next=new Uint16Array(16);let code=0;
@@ -134,28 +135,28 @@ const FIXED_LIT=huffman(Array.from({length:288},(_,v)=>v<144?8:v<256?9:v<280?7:8
 /** Inflate a zlib stream. `expected`, when given, must match the output size
  * exactly; `limit` bounds allocation for untrusted input. */
 export function inflateZlib(data,{expected,limit=64*1024*1024}={}){
-  if(data.length<6||(data[0]&15)!==8||((data[0]<<8)|data[1])%31||data[1]&32)throw new Error('Invalid zlib header.');
+  if(data.length<6||(data[0]&15)!==8||((data[0]<<8)|data[1])%31||data[1]&32)throw messageError(new Error(''), "errors.zlibSync.invalidZlibHeader", {});
   let pos=2,bitBuf=0,bitCount=0,out=new Uint8Array(expected??Math.min(limit,Math.max(1024,data.length*4))),len=0;
-  const need=n=>{while(bitCount<n){if(pos>=data.length)throw new Error('Truncated deflate stream.');bitBuf|=data[pos++]<<bitCount;bitCount+=8;}};
+  const need=n=>{while(bitCount<n){if(pos>=data.length)throw messageError(new Error(''), "errors.zlibSync.truncatedDeflateStream", {});bitBuf|=data[pos++]<<bitCount;bitCount+=8;}};
   const bits=n=>{if(!n)return 0;need(n);const v=bitBuf&((1<<n)-1);bitBuf>>>=n;bitCount-=n;return v;};
-  const ensure=n=>{if(len+n<=out.length)return;if(expected!==undefined||len+n>limit)throw new Error('Deflate stream expands beyond its bound.');let size=out.length*2;while(size<len+n)size*=2;const next=new Uint8Array(Math.min(limit,size));next.set(out.subarray(0,len));out=next;};
+  const ensure=n=>{if(len+n<=out.length)return;if(expected!==undefined||len+n>limit)throw messageError(new Error(''), "errors.zlibSync.deflateStreamExpandsBeyondItsBound", {});let size=out.length*2;while(size<len+n)size*=2;const next=new Uint8Array(Math.min(limit,size));next.set(out.subarray(0,len));out=next;};
   // Peeking past the deflate data reads into the Adler-32 trailer, which always
   // follows; pre-fetched whole bytes are handed back before reading it.
   const fill=()=>{while(bitCount<=24){bitBuf|=(pos<data.length?data[pos]:0)<<bitCount;pos++;bitCount+=8;}};
   const decode=table=>{
     if(bitCount<FAST)fill();
     const hit=table.fast[bitBuf&((1<<FAST)-1)];
-    if(hit>=0){const l=hit&15;bitBuf>>>=l;bitCount-=l;if(pos-(bitCount>>3)>data.length)throw new Error('Truncated deflate stream.');return hit>>4;}
+    if(hit>=0){const l=hit&15;bitBuf>>>=l;bitCount-=l;if(pos-(bitCount>>3)>data.length)throw messageError(new Error(''), "errors.zlibSync.truncatedDeflateStream", {});return hit>>4;}
     const {counts,symbols}=table;let code=0,first=0,index=0;
     for(let l=1;l<16;l++){code|=bits(1);const count=counts[l];if(code-count<first)return symbols[index+(code-first)];index+=count;first+=count;first<<=1;code<<=1;}
-    throw new Error('Invalid deflate code.');
+    throw messageError(new Error(''), "errors.zlibSync.invalidDeflateCode", {});
   };
   for(let final=0;!final;){
     final=bits(1);const type=bits(2);
     if(type===0){
-      pos-=bitCount>>3;bitBuf=0;bitCount=0;if(pos+4>data.length)throw new Error('Truncated stored block.');
-      const n=data[pos]|(data[pos+1]<<8),nn=data[pos+2]|(data[pos+3]<<8);pos+=4;if((n^0xffff)!==nn)throw new Error('Invalid stored block length.');
-      if(pos+n>data.length)throw new Error('Truncated stored block.');ensure(n);out.set(data.subarray(pos,pos+n),len);len+=n;pos+=n;continue;
+      pos-=bitCount>>3;bitBuf=0;bitCount=0;if(pos+4>data.length)throw messageError(new Error(''), "errors.zlibSync.truncatedStoredBlock", {});
+      const n=data[pos]|(data[pos+1]<<8),nn=data[pos+2]|(data[pos+3]<<8);pos+=4;if((n^0xffff)!==nn)throw messageError(new Error(''), "errors.zlibSync.invalidStoredBlockLength", {});
+      if(pos+n>data.length)throw messageError(new Error(''), "errors.zlibSync.truncatedStoredBlock", {});ensure(n);out.set(data.subarray(pos,pos+n),len);len+=n;pos+=n;continue;
     }
     let lit,dist;
     if(type===1){lit=FIXED_LIT;dist=FIXED_DIST;}
@@ -166,27 +167,27 @@ export function inflateZlib(data,{expected,limit=64*1024*1024}={}){
       while(lengths.length<hlit+hdist){
         const sym=decode(clTable);
         if(sym<16)lengths.push(sym);
-        else if(sym===16){if(!lengths.length)throw new Error('Invalid deflate repeat.');const r=3+bits(2),v=lengths.at(-1);for(let i=0;i<r;i++)lengths.push(v);}
+        else if(sym===16){if(!lengths.length)throw messageError(new Error(''), "errors.zlibSync.invalidDeflateRepeat", {});const r=3+bits(2),v=lengths.at(-1);for(let i=0;i<r;i++)lengths.push(v);}
         else{const r=sym===17?3+bits(3):11+bits(7);for(let i=0;i<r;i++)lengths.push(0);}
       }
-      if(lengths.length>hlit+hdist)throw new Error('Invalid deflate code lengths.');
+      if(lengths.length>hlit+hdist)throw messageError(new Error(''), "errors.zlibSync.invalidDeflateCodeLengths", {});
       lit=huffman(lengths.slice(0,hlit));dist=huffman(lengths.slice(hlit));
-    }else throw new Error('Invalid deflate block type.');
+    }else throw messageError(new Error(''), "errors.zlibSync.invalidDeflateBlockType", {});
     for(;;){
       const sym=decode(lit);
       if(sym<256){ensure(1);out[len++]=sym;continue;}
       if(sym===256)break;
-      const s=sym-257;if(s>=29)throw new Error('Invalid deflate length.');
-      const length=LENGTH_BASE[s]+bits(LENGTH_EXTRA[s]),d=decode(dist);if(d>=30)throw new Error('Invalid deflate distance.');
-      const distance=DIST_BASE[d]+bits(DIST_EXTRA[d]);if(distance>len)throw new Error('Deflate distance exceeds output.');
+      const s=sym-257;if(s>=29)throw messageError(new Error(''), "errors.zlibSync.invalidDeflateLength", {});
+      const length=LENGTH_BASE[s]+bits(LENGTH_EXTRA[s]),d=decode(dist);if(d>=30)throw messageError(new Error(''), "errors.zlibSync.invalidDeflateDistance", {});
+      const distance=DIST_BASE[d]+bits(DIST_EXTRA[d]);if(distance>len)throw messageError(new Error(''), "errors.zlibSync.deflateDistanceExceedsOutput", {});
       ensure(length);for(let k=0;k<length;k++,len++)out[len]=out[len-distance];
     }
   }
   pos-=bitCount>>3;bitBuf=0;bitCount=0;
-  if(pos+4>data.length)throw new Error('Missing zlib checksum.');
+  if(pos+4>data.length)throw messageError(new Error(''), "errors.zlibSync.missingZlibChecksum", {});
   const sum=((data[pos]<<24)|(data[pos+1]<<16)|(data[pos+2]<<8)|data[pos+3])>>>0;
   const result=len===out.length?out:out.slice(0,len);
-  if(adler32(result)!==sum)throw new Error('Zlib checksum mismatch.');
-  if(expected!==undefined&&len!==expected)throw new Error('Deflate stream size mismatch.');
+  if(adler32(result)!==sum)throw messageError(new Error(''), "errors.zlibSync.zlibChecksumMismatch", {});
+  if(expected!==undefined&&len!==expected)throw messageError(new Error(''), "errors.zlibSync.deflateStreamSizeMismatch", {});
   return result;
 }

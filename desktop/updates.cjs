@@ -1,4 +1,6 @@
 'use strict';
+const { messageError } = require('./localization.cjs');
+
 
 // Keep the release feed and filesystem access in the main process. The renderer
 // receives only status, never installer paths or a configurable download URL.
@@ -49,7 +51,7 @@ class UpdateService {
     try {
       const result = await this.updater.checkForUpdates();
       if (this.state.status === 'downloading') await this.updater.downloadUpdate(result?.cancellationToken);
-      else if (!result && this.state.status === 'checking') throw new Error('Update check did not run.');
+      else if (!result && this.state.status === 'checking') throw messageError(new Error(''), 'desktop.updates.errors.updateCheckDidNotRun', {});
     } catch (error) { this.fail(error); }
     finally { this.busy = false; }
     return this.snapshot();

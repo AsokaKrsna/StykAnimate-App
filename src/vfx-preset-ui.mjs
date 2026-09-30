@@ -1,3 +1,6 @@
+
+import {t as interfaceText} from './localization.mjs';
+import {messageAttributes, messageHTML} from './localization-bindings.mjs';
 /**
  * The VFX panel's side of the person's own presets (vfx-user-presets.mjs):
  * saving the selected effect under a name, the My presets cards in the
@@ -17,9 +20,9 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;
 export const MINE='mine:';
 
 /** A preset's glyph: its one effect's, or the group glyph. */
-export const presetTile=(preset,className)=>{const d=preset.effects.length===1&&VFX_REGISTRY[preset.effects[0].type];return d?vfxTile(d.icon,d.category,className):vfxTile('effects','Looks',className);};
+export const presetTile=(preset,className)=>{const d=preset.effects.length===1&&VFX_REGISTRY[preset.effects[0].type];return d?vfxTile(d.icon,d.category,className):vfxTile('effects',interfaceText("vfxPresetUi.looks"),className);};
 /** What a preset holds, in a few words: "Glow", "3 effects", with "animated" when it has keys. */
-export const presetSummary=preset=>{const count=preset.effects.length,animated=Object.keys(preset.keys).length>0;return `${count===1?VFX_REGISTRY[preset.effects[0].type]?.name??'Effect':`${count} effects`}${animated?' · animated':''}`;};
+export const presetSummary=preset=>{const count=preset.effects.length,animated=Object.keys(preset.keys).length>0;return `${count===1?VFX_REGISTRY[preset.effects[0].type]?.name??interfaceText("vfxPresetUi.effect"):`${count} effects`}${animated?' · animated':''}`;};
 /** The presets that can go on this kind of target (scene-only effects need the scene). */
 export const usablePresets=scene=>vfxPresetStore.presets.filter(preset=>preset.effects.every(effect=>effectAvailable(effect.type,scene)));
 
@@ -28,9 +31,9 @@ export function myPresetsSection(scene,query,{disabled=false}={}){
  const presets=usablePresets(scene).filter(p=>(p.name+' '+presetSummary(p)).toLowerCase().includes(query));
  if(query&&!presets.length)return '';
  const body=presets.length
-  ?`<div class="vfx-catalog-grid vfx-my-presets">${presets.map(p=>`<div class="vfx-my-preset"><button type="button" class="vfx-catalog-card" data-choice="${MINE}${esc(p.id)}" ${disabled?'disabled':''}>${presetTile(p,'vfx-catalog-art')}<span class="vfx-my-preset-text"><span>${esc(p.name)}</span><small>${esc(presetSummary(p))}</small></span></button><button type="button" class="ui-icon-button vfx-my-preset-more" data-size="xs" data-preset-menu="${esc(p.id)}" aria-label="${esc(p.name)} preset actions" aria-haspopup="menu">${icon('more')}</button></div>`).join('')}</div>`
-  :`<p class="vfx-my-presets-empty">${icon('library')}<span>Save an effect you like with <b>Save as preset</b> under its settings, and it waits here for any figure or project.</span></p>`;
- return `<section class="vfx-my-presets-section"><h3>My presets</h3>${body}</section>`;
+  ?`<div class="vfx-catalog-grid vfx-my-presets">${presets.map(p=>`<div class="vfx-my-preset"><button type="button" class="vfx-catalog-card" data-choice="${MINE}${esc(p.id)}" ${disabled?'disabled':''}>${presetTile(p,'vfx-catalog-art')}<span class="vfx-my-preset-text"><span>${esc(p.name)}</span><small>${esc(presetSummary(p))}</small></span></button><button type="button" class="ui-icon-button vfx-my-preset-more" data-size="xs" data-preset-menu="${esc(p.id)}" aria-label="${esc(p.name)} preset actions" aria-haspopup="menu" ${messageAttributes("vfxPresetUi.presetActions", {name: p.name}, "aria-label")}>${icon('more')}</button></div>`).join('')}</div>`
+  :`<p class="vfx-my-presets-empty">${icon('library')}<span>${messageHTML("vfxPresetUi.saveAnEffectYouLikeWith", {})}<b data-i18n="vfxPresetUi.saveAsPreset">${messageHTML("vfxPresetUi.saveAsPreset", {})}</b>${messageHTML("vfxPresetUi.underItsSettingsAndItWaitsHereFor", {})}</span></p>`;
+ return `<section class="vfx-my-presets-section"><h3 data-i18n="vfxPresetUi.myPresets">${messageHTML("vfxPresetUi.myPresets", {})}</h3>${body}</section>`;
 }
 
 /**
@@ -40,13 +43,13 @@ export function myPresetsSection(scene,query,{disabled=false}={}){
 export async function savePresetFromClip(host,id,button){
  const clip=host.editor.getVfxClips().find(c=>c.id===id);if(!clip)return;
  await vfxPresetStore.load();
- const name=await prompt({title:'Save as preset',label:'Name',value:clip.name||VFX_REGISTRY[clip.effects[0]?.type]?.name||'Effects',maxLength:USER_PRESET_NAME_LENGTH,confirmLabel:'Save',
-  description:'Keeps its effects, settings, timing and keys, ready to add to any figure or the scene.',validate:text=>presetName(text)?null:'Name the preset.'});
+ const name=await prompt({title:interfaceText("vfxPresetUi.saveAsPreset"), titleKey: "vfxPresetUi.saveAsPreset",label:interfaceText("common.name"), labelKey: "common.name",value:clip.name||VFX_REGISTRY[clip.effects[0]?.type]?.name||interfaceText("vfxPresetUi.effects"),maxLength:USER_PRESET_NAME_LENGTH,confirmLabel:interfaceText("vfxPresetUi.save"), confirmLabelKey: "vfxPresetUi.save", confirmLabelParams: {},
+  description:interfaceText("vfxPresetUi.keepsItsEffectsSettingsTimingAndKeysReady"), descriptionKey: "vfxPresetUi.keepsItsEffectsSettingsTimingAndKeysReady",validate:text=>presetName(text)?null:interfaceText("vfxPresetUi.nameThePreset")});
  if(name==null)return;
  const existing=vfxPresetStore.named(name);
- if(existing&&!await confirm({title:`Replace “${existing.name}”?`,description:'That preset takes this effect’s settings. Figures that already use it keep theirs.',confirmLabel:'Replace'}))return;
+ if(existing&&!await confirm({title:interfaceText("vfxPresetUi.replace", {name: existing.name}), titleKey: "vfxPresetUi.replace", titleParams: {name: existing.name},description:interfaceText("vfxPresetUi.thatPresetTakesThisEffectSSettingsFigures"), descriptionKey: "vfxPresetUi.thatPresetTakesThisEffectSSettingsFigures",confirmLabel:interfaceText("vfxPresetUi.replace2"), confirmLabelKey: "vfxPresetUi.replace2", confirmLabelParams: {}}))return;
  try{await vfxPresetStore.save(clip,name);}catch(error){host.onError(error);return;}
- if(button?.isConnected)flash(button,'Saved to My presets');
+ if(button?.isConnected)flash(button,interfaceText("vfxPresetUi.savedToMyPresets"));
 }
 function flash(button,text){
  const label=button.querySelector('.ui-label');if(!label)return;
@@ -61,7 +64,7 @@ export function openPresetMenu(host,id,event,{onDone=()=>{}}={}){
  if(!menu){menu=host.presetMenu={editor:host.editor,_run:fn=>host.run(fn)};host.abort.signal.addEventListener('abort',()=>{menu.menuEvents?.abort();menu.menu?.remove();},{once:true});}
  const run=fn=>()=>{host.closePopup();void fn().catch(error=>host.onError(error)).finally(onDone);};
  showTimelineMenu(menu,event,[
-  [{label:'Rename…',symbol:'text',action:run(async()=>{const name=await prompt({title:'Rename preset',label:'Name',value:preset.name,maxLength:USER_PRESET_NAME_LENGTH,confirmLabel:'Rename',validate:text=>{const title=presetName(text),other=title&&vfxPresetStore.named(title);return !title?'Name the preset.':other&&other.id!==id?`A preset named “${other.name}” already exists.`:null;}});if(name!=null)await vfxPresetStore.rename(id,name);})}],
-  [{label:'Delete…',symbol:'trash',danger:true,action:run(async()=>{if(await confirm({title:`Delete “${preset.name}”?`,description:'Effects already added from it stay as they are.',confirmLabel:'Delete',danger:true}))await vfxPresetStore.remove(id);})}],
+  [{label:interfaceText("vfxPresetUi.rename"), labelKey: "vfxPresetUi.rename",symbol:'text',action:run(async()=>{const name=await prompt({title:interfaceText("vfxPresetUi.renamePreset"), titleKey: "vfxPresetUi.renamePreset",label:interfaceText("common.name"), labelKey: "common.name",value:preset.name,maxLength:USER_PRESET_NAME_LENGTH,confirmLabel:interfaceText("vfxPresetUi.rename2"), confirmLabelKey: "vfxPresetUi.rename2", confirmLabelParams: {},validate:text=>{const title=presetName(text),other=title&&vfxPresetStore.named(title);return !title?interfaceText("vfxPresetUi.nameThePreset"):other&&other.id!==id?`A preset named “${other.name}” already exists.`:null;}});if(name!=null)await vfxPresetStore.rename(id,name);})}],
+  [{label:interfaceText("vfxPresetUi.delete"), labelKey: "vfxPresetUi.delete",symbol:'trash',danger:true,action:run(async()=>{if(await confirm({title:interfaceText("vfxPresetUi.delete2", {name: preset.name}), titleKey: "vfxPresetUi.delete2", titleParams: {name: preset.name},description:interfaceText("vfxPresetUi.effectsAlreadyAddedFromItStayAsThey"), descriptionKey: "vfxPresetUi.effectsAlreadyAddedFromItStayAsThey",confirmLabel:interfaceText('vfxPresetUi.delete3'), confirmLabelKey: 'vfxPresetUi.delete3', confirmLabelParams: {},danger:true}))await vfxPresetStore.remove(id);})}],
  ]);
 }

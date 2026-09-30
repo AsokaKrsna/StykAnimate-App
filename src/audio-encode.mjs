@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Encodes an offline soundtrack with WebCodecs for the browser's video exports:
  * AAC for MP4 and Opus for WebM. The mix comes from the same worker mixer that
  * plays it (audio-engine.mjs exportChunks: stereo Float32 at 48 kHz, in 250 ms
@@ -35,7 +36,7 @@ export function opusHead({preSkip = OPUS_PRE_SKIP, channels = CHANNELS, sampleRa
   return head;
 }
 
-const cancelled = () => new DOMException('Video export cancelled.', 'AbortError');
+const cancelled = () => messageError(new DOMException('', 'AbortError'), "errors.audioEncode.videoExportCancelled", {});
 
 /**
  * @param {{codec: 'aac'|'opus', chunks: AsyncIterable<Float32Array>|Iterable<Float32Array>, signal?: AbortSignal,
@@ -45,13 +46,13 @@ const cancelled = () => new DOMException('Video export cancelled.', 'AbortError'
  */
 export async function encodeAudio({codec, chunks, signal, maxBytes = 256 * 1024 * 1024, bitrate, seconds}) {
   const definition = AUDIO_CODECS[codec];
-  if (!definition) throw new TypeError(`Unknown audio codec: ${codec}`);
-  if (seconds > MAX_AUDIO_SECONDS) throw new Error('Video exports with sound support up to one hour.');
-  if (typeof AudioEncoder === 'undefined' || typeof AudioData === 'undefined') throw new Error('This browser cannot encode sound. Turn off Include sound for a silent video, or use the desktop app.');
+  if (!definition) throw messageError(new TypeError(''), "errors.audioEncode.unknownAudioCodec", {codec: codec});
+  if (seconds > MAX_AUDIO_SECONDS) throw messageError(new Error(''), "errors.audioEncode.videoExportsWithSoundSupportUpToOne", {});
+  if (typeof AudioEncoder === 'undefined' || typeof AudioData === 'undefined') throw messageError(new Error(''), "errors.audioEncode.thisBrowserCannotEncodeSoundTurnOffInclude", {});
   const config = definition.config(bitrate ?? definition.bitrate);
   let supported = false;
   try { supported = (await AudioEncoder.isConfigSupported(config)).supported; } catch { /* Reported below. */ }
-  if (!supported) throw new Error(`This browser cannot encode ${definition.label} sound. Turn off Include sound for a silent video, or use the desktop app.`);
+  if (!supported) throw messageError(new Error(''), "errors.audioEncode.thisBrowserCannotEncodeSoundTurnOffInclude2", {label: definition.label});
   if (signal?.aborted) throw cancelled();
 
   const packets = [];
@@ -64,7 +65,7 @@ export async function encodeAudio({codec, chunks, signal, maxBytes = 256 * 1024 
         const data = new Uint8Array(chunk.byteLength);
         chunk.copyTo(data);
         bytes += data.byteLength;
-        if (bytes > maxBytes) throw new Error('The encoded sound exceeds the export size limit.');
+        if (bytes > maxBytes) throw messageError(new Error(''), "errors.audioEncode.theEncodedSoundExceedsTheExportSizeLimit", {});
         packets.push({timestamp: chunk.timestamp, duration: chunk.duration || definition.frameMicroseconds, data});
       } catch (error) { failure ||= error; wake?.(); }
     },
@@ -78,7 +79,7 @@ export async function encodeAudio({codec, chunks, signal, maxBytes = 256 * 1024 
     let frames = 0;
     for await (const pcm of chunks) {
       check();
-      if (!(pcm instanceof Float32Array) || pcm.length === 0 || pcm.length % CHANNELS) throw new Error('The soundtrack mix returned invalid samples.');
+      if (!(pcm instanceof Float32Array) || pcm.length === 0 || pcm.length % CHANNELS) throw messageError(new Error(''), "errors.audioEncode.theSoundtrackMixReturnedInvalidSamples", {});
       const data = new AudioData({format: 'f32', sampleRate: AUDIO_RATE, numberOfFrames: pcm.length / CHANNELS, numberOfChannels: CHANNELS,
         timestamp: Math.round(frames * 1e6 / AUDIO_RATE), data: pcm});
       try { encoder.encode(data); } finally { data.close(); }
@@ -100,9 +101,9 @@ export async function encodeAudio({codec, chunks, signal, maxBytes = 256 * 1024 
     signal?.removeEventListener('abort', abort);
     if (encoder.state !== 'closed') encoder.close();
   }
-  if (!packets.length) throw new Error('The audio encoder produced no sound.');
+  if (!packets.length) throw messageError(new Error(''), "errors.audioEncode.theAudioEncoderProducedNoSound", {});
   if (!description) {
-    if (codec === 'aac') throw new Error('The audio encoder did not describe its AAC stream.');
+    if (codec === 'aac') throw messageError(new Error(''), "errors.audioEncode.theAudioEncoderDidNotDescribeItsAac", {});
     description = opusHead();
   }
   const preSkip = codec === 'opus' ? new DataView(description.buffer, description.byteOffset, description.byteLength).getUint16(10, true) : 0;

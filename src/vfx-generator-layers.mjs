@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Vocabulary of generated-effect layers: the sub-emitters that effect styles
  * compile into and vfx-generators.mjs packs into GPU records. Sizes and speeds
  * are stage pixels and pixels per frame; lives are frames. */
@@ -26,7 +27,7 @@ const LAYER={placement:'front',start:0,emitDur:0,count:0,rate:0,lifeMin:10,lifeM
 export function layer(options){
  const spec={...LAYER,...options};
  if(spec.material&&!('shape' in options))spec.shape=SHAPE.sprite;
- if(spec.material&&!MATERIALS[spec.material])throw new Error(`Unknown particle material ${spec.material}.`);
+ if(spec.material&&!MATERIALS[spec.material])throw messageError(new Error(''), "errors.vfxGeneratorLayers.unknownParticleMaterial", {material: spec.material});
  return spec;
 }
 

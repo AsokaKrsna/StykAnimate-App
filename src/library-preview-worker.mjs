@@ -1,3 +1,4 @@
+import {errorMessageData} from './localized-error.mjs';
 import {drawGeometry} from './pivot/geometry.mjs';
 import {objectBounds} from './renderer-geometry.mjs';
 import {PlaybackResources} from './playback-resources.mjs';
@@ -38,7 +39,7 @@ async function frame(elapsed = 0, first = false) {
   self.postMessage({bitmap, tick, fps: scene.fps, duration: scene.duration, matte}, [bitmap]);
 }
 self.onmessage = async ({data}) => {
-  if (data.operation === 'frame') { try { await frame(data.elapsed); } catch (error) { self.postMessage({error: error.message}); } return; }
+  if (data.operation === 'frame') { try { await frame(data.elapsed); } catch (error) { self.postMessage({error: error.message, ...errorMessageData(error)}); } return; }
   const {baseURL} = data;
   const resources = new PlaybackResources({baseURL, maxBytes: 8 * 1024 * 1024, preview: true});
   try {
@@ -75,6 +76,6 @@ self.onmessage = async ({data}) => {
     const canvas = new OffscreenCanvas(size, size); paint(canvas, geometry, resources, bounds ?? {x: 0, y: 0, width: 1, height: 1}, generators);
     const blob = await canvas.convertToBlob({type:'image/png'});
     self.postMessage({blob});
-  } catch (error) { self.postMessage({error: error.message}); }
+  } catch (error) { self.postMessage({error: error.message, ...errorMessageData(error)}); }
   finally { if (animation?.resources !== resources) resources.dispose(); }
 };

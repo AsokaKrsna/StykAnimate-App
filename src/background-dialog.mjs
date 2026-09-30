@@ -1,3 +1,8 @@
+import {presentError} from './error-presentation.mjs';
+import {messageError} from './localized-error.mjs';
+import {t as interfaceText} from './localization.mjs';
+
+import {appendLocalized, localizedMarkup, messageHTML, localizedAttribute} from './localization-bindings.mjs';
 import {backgroundPaint, paintBackground, paintCSS} from './paint.mjs';
 import {
   drawBackground,
@@ -30,7 +35,7 @@ export class BackgroundDialog {
       style.id = "background-dialog-style";
       style.textContent =
         "@layer legacy{.background-dialog input:not([type=color]),.background-dialog select{box-sizing:border-box;font:inherit;font-size:11px;min-width:0;border:1px solid transparent;border-radius:4px;background:var(--theme-field, #f2f2f2);padding:7px 9px;color:var(--theme-text, #2c2c2c);height:32px}.background-dialog input:focus,.background-dialog select:focus{outline:1px solid var(--theme-accent, #0d99ff)}.background-dialog .text-options label{min-width:0}.background-dialog .text-options input{width:100%}.background-dialog input[type=color]{height:32px;border:0;border-radius:4px;background:var(--theme-field, #f2f2f2);padding:5px}.background-dialog .text-options{gap:10px}.background-dialog [hidden]{display:none!important}}";
-      document.head.append(style);
+      appendLocalized(document.head, style);
     }
   }
   open({ report, frame, onUse, onCreate, onRename }) {
@@ -50,27 +55,27 @@ export class BackgroundDialog {
     const original = report.backgrounds?.find(
       (bg) => bg.background_id === frame.background_id,
     );
-    this.content.innerHTML = `<div class="dialog-head"><h2>Background</h2><button class="icon-button" data-bg-close aria-label="Close dialog">${icon("close")}</button></div>
+    localizedMarkup(this.content, `<div class="dialog-head"><h2 data-i18n="backgroundDialog.background">${messageHTML("backgroundDialog.background", {})}</h2><button class="icon-button" data-bg-close aria-label="Close dialog" data-i18n-aria-label="backgroundDialog.closeDialog">${icon("close")}</button></div>
       <div class="dialog-body background-dialog">
-        <label class="field-label" for="background-search">Library</label>
-        <input id="background-search" class="inline-select" type="search" placeholder="Search backgrounds" aria-label="Search backgrounds">
-        <select id="background-library" class="inline-select" aria-label="Background library"></select>
-        <div class="text-options"><label>Name<input id="background-name" maxlength="160" aria-label="Background name"></label><button class="button" id="rename-background">Rename</button></div>
-        <canvas id="background-preview" height="110" aria-label="Background preview" style="display:block;max-width:100%;margin:12px auto;border:1px solid #dedede;background:repeating-conic-gradient(#eee 0% 25%,#fff 0% 50%) 0 / 12px 12px"></canvas>
-        <div class="text-options"><label>Fill<select id="background-kind"><option value="1">Image</option><option value="2">Solid</option><option value="3">Linear gradient</option><option value="4">Radial gradient</option></select></label><label data-bg-linear>Angle<input id="background-angle" type="number" step="any" aria-label="Gradient angle"></label></div>
-        <div class="text-options" data-bg-fill><label>Color<input type="color" id="background-first"></label><label>Opacity %<input id="background-alpha" type="number" min="0" max="100" step="any"></label><label data-bg-gradient>Second color<input type="color" id="background-second"></label><label data-bg-gradient>Opacity %<input id="background-alpha-b" type="number" min="0" max="100" step="any"></label></div>
-        <div data-bg-gradient><div class="text-options"><label><span data-bg-coordinate="x1">Start X</span><input id="background-x1" type="number" step="any"></label><label><span data-bg-coordinate="y1">Start Y</span><input id="background-y1" type="number" step="any"></label></div><div class="text-options"><label><span data-bg-coordinate="x2">End X</span><input id="background-x2" type="number" step="any"></label><label><span data-bg-coordinate="y2">End Y</span><input id="background-y2" type="number" step="any"></label></div></div>
+        <label class="field-label" for="background-search" data-i18n="backgroundDialog.library">${messageHTML("backgroundDialog.library", {})}</label>
+        <input id="background-search" class="inline-select" type="search" placeholder="Search backgrounds" aria-label="Search backgrounds" data-i18n-placeholder="backgroundDialog.searchBackgrounds" data-i18n-aria-label="backgroundDialog.searchBackgrounds">
+        <select id="background-library" class="inline-select" aria-label="Background library" data-i18n-aria-label="backgroundDialog.backgroundLibrary"></select>
+        <div class="text-options"><label>${messageHTML("common.name", {})}<input id="background-name" maxlength="160" aria-label="Background name" data-i18n-aria-label="backgroundDialog.backgroundName"></label><button class="button" id="rename-background" data-i18n="common.rename">${messageHTML("backgroundDialog.rename", {})}</button></div>
+        <canvas id="background-preview" height="110" aria-label="Background preview" style="display:block;max-width:100%;margin:12px auto;border:1px solid #dedede;background:repeating-conic-gradient(#eee 0% 25%,#fff 0% 50%) 0 / 12px 12px" data-i18n-aria-label="backgroundDialog.backgroundPreview"></canvas>
+        <div class="text-options"><label>${messageHTML("backgroundDialog.fill", {})}<select id="background-kind"><option value="1" data-i18n="backgroundDialog.image">${messageHTML("backgroundDialog.image", {})}</option><option value="2" data-i18n="backgroundDialog.solid">${messageHTML("backgroundDialog.solid", {})}</option><option value="3" data-i18n="backgroundDialog.linearGradient">${messageHTML("backgroundDialog.linearGradient", {})}</option><option value="4" data-i18n="backgroundDialog.radialGradient">${messageHTML("backgroundDialog.radialGradient", {})}</option></select></label><label data-bg-linear>${messageHTML("backgroundDialog.angle", {})}<input id="background-angle" type="number" step="any" aria-label="Gradient angle" data-i18n-aria-label="backgroundDialog.gradientAngle"></label></div>
+        <div class="text-options" data-bg-fill><label>${messageHTML("backgroundDialog.color", {})}<input type="color" id="background-first"></label><label>${messageHTML("backgroundDialog.opacity", {})}<input id="background-alpha" type="number" min="0" max="100" step="any"></label><label data-bg-gradient>${messageHTML("backgroundDialog.secondColor", {})}<input type="color" id="background-second"></label><label data-bg-gradient>${messageHTML("backgroundDialog.opacity", {})}<input id="background-alpha-b" type="number" min="0" max="100" step="any"></label></div>
+        <div data-bg-gradient><div class="text-options"><label><span data-bg-coordinate="x1" data-i18n="backgroundDialog.startX">${messageHTML("backgroundDialog.startX", {})}</span><input id="background-x1" type="number" step="any"></label><label><span data-bg-coordinate="y1" data-i18n="backgroundDialog.startY">${messageHTML("backgroundDialog.startY", {})}</span><input id="background-y1" type="number" step="any"></label></div><div class="text-options"><label><span data-bg-coordinate="x2" data-i18n="backgroundDialog.endX">${messageHTML("backgroundDialog.endX", {})}</span><input id="background-x2" type="number" step="any"></label><label><span data-bg-coordinate="y2" data-i18n="backgroundDialog.endY">${messageHTML("backgroundDialog.endY", {})}</span><input id="background-y2" type="number" step="any"></label></div></div>
         <p id="background-error" class="form-error" role="alert" hidden></p>
-        <div class="dialog-actions"><button class="button" id="use-background">Use selected</button><button class="button primary" id="create-background">Apply fill</button></div>
-      </div>`;
+        <div class="dialog-actions"><button class="button" id="use-background" data-i18n="backgroundDialog.useSelected">${messageHTML("backgroundDialog.useSelected", {})}</button><button class="button primary" id="create-background" data-i18n="backgroundDialog.applyFill">${messageHTML("backgroundDialog.applyFill", {})}</button></div>
+      </div>`);
     this.$ = (id) => this.content.querySelector("#" + id);
     this.selection = original?.background_id ?? 0;
     this.populate();
     this.select(this.selection);
-    const trigger=document.createElement('button');trigger.type='button';trigger.className='paint-trigger';trigger.id='background-paint';trigger.dataset.paintPicker='';trigger.setAttribute('aria-label','Background fill');
+    const trigger=document.createElement('button');trigger.type='button';trigger.className='paint-trigger';trigger.id='background-paint';trigger.dataset.paintPicker='';localizedAttribute(trigger, 'aria-label', "backgroundDialog.backgroundFill", {});
     this.$('background-preview').after(trigger);
     this.paintTrigger=trigger;
-    const refresh=()=>{trigger.textContent=this.paint.type==='solid'?'Solid color':this.paint.type[0].toUpperCase()+this.paint.type.slice(1)+' gradient';trigger.style.borderLeft='24px solid '+(this.paint.type==='solid'?paintCSS(this.paint):'#0d99ff');};
+    const refresh=()=>{trigger.textContent=this.paint.type==='solid'?interfaceText("backgroundDialog.solidColor"):this.paint.type[0].toUpperCase()+this.paint.type.slice(1)+' gradient';trigger.style.borderLeft='24px solid '+(this.paint.type==='solid'?paintCSS(this.paint):'#0d99ff');};
     trigger.paintPicker=()=>({anchor:trigger,paint:this.paint,onChange:paint=>{this.paint=paint;this.paintDirty=true;this.$("background-kind").value=paintBackground(paint).kind;refresh();this.preview();}});refresh();
     for(const node of [this.$('background-kind').closest('.text-options'),this.$('background-first').closest('.text-options'),this.content.querySelector('div[data-bg-gradient]')])node.style.display='none';
     this.content.addEventListener(
@@ -142,8 +147,7 @@ export class BackgroundDialog {
   populate() {
     const query = this.$("background-search").value.toLowerCase();
     const backgrounds = this.report.backgrounds || [];
-    this.$("background-library").innerHTML =
-      `<option value="0">White</option>` +
+    localizedMarkup(this.$("background-library"), `<option value="0" data-i18n="backgroundDialog.white">${messageHTML("backgroundDialog.white", {})}</option>` +
       backgrounds
         .filter(
           (bg) =>
@@ -154,7 +158,7 @@ export class BackgroundDialog {
           (bg) =>
             `<option value="${bg.background_id}">${esc(bg.name || `Background ${bg.background_id}`)}</option>`,
         )
-        .join("");
+        .join(""));
     this.$("background-library").value = this.selection;
   }
   select(id) {
@@ -164,7 +168,7 @@ export class BackgroundDialog {
     );
     const bg = this.selected || { kind: 2, color: 0xffffffff, name: "White" };
     this.paint=backgroundPaint(bg);this.paintDirty=Boolean(bg.paint);
-    if(this.paintTrigger?.isConnected)this.paintTrigger.textContent=this.paint.type==='solid'?'Solid color':this.paint.type+' gradient';
+    if(this.paintTrigger?.isConnected)this.paintTrigger.textContent=this.paint.type==='solid'?interfaceText("backgroundDialog.solidColor"):this.paint.type+' gradient';
     const kind = [2, 3, 4].includes(bg.kind) ? bg.kind : 1;
     this.$("background-kind").value = kind;
     this.$("background-kind").querySelector('[value="1"]').disabled =
@@ -196,12 +200,12 @@ export class BackgroundDialog {
     const labels =
       kind === 4
         ? [
-            "Center X · px",
-            "Center Y · px",
-            "Inner radius · px",
-            "Outer radius · px",
+            interfaceText("backgroundDialog.centerXPx"),
+            interfaceText("backgroundDialog.centerYPx"),
+            interfaceText("backgroundDialog.innerRadiusPx"),
+            interfaceText("backgroundDialog.outerRadiusPx"),
           ]
-        : ["Start X · px", "Start Y · px", "End X · px", "End Y · px"];
+        : [interfaceText("backgroundDialog.startXPx"), interfaceText("backgroundDialog.startYPx"), interfaceText("backgroundDialog.endXPx"), interfaceText("backgroundDialog.endYPx")];
     ["x1", "y1", "x2", "y2"].forEach(
       (key, index) =>
         (this.content.querySelector(
@@ -229,7 +233,7 @@ export class BackgroundDialog {
         ? Number(input.dataset.raw)
         : input.valueAsNumber / Number(input.dataset.factor || 1);
     if (!Number.isFinite(value))
-      throw new Error("Enter finite gradient coordinates.");
+      throw messageError(new Error(''), "errors.backgroundDialog.enterFiniteGradientCoordinates", {});
     return value;
   }
   rotateEndpoints() {
@@ -250,13 +254,13 @@ export class BackgroundDialog {
       this.setNumber("background-" + key, value, this.coordinateScale(3, key));
   }
   draft() {
-    if(this.paintDirty && this.paint && Number(this.$('background-kind').value)!==1)return {...paintBackground(this.paint),name:this.$('background-name').value.trim()||'Background fill'};
+    if(this.paintDirty && this.paint && Number(this.$('background-kind').value)!==1)return {...paintBackground(this.paint),name:this.$('background-name').value.trim()||interfaceText("backgroundDialog.backgroundFill")};
     const kind = Number(this.$("background-kind").value);
     if (kind === 1) return this.selected;
     const argb = (colorId, opacityId) => {
       const opacity = this.number(opacityId);
       if (opacity < 0 || opacity > 100)
-        throw new Error("Opacity must be between 0 and 100.");
+        throw messageError(new Error(''), "errors.backgroundDialog.opacityMustBeBetween0And100", {});
       return (
         ((Math.round((opacity * 255) / 100) << 24) |
           parseInt(this.$(colorId).value.slice(1), 16)) >>>
@@ -266,10 +270,10 @@ export class BackgroundDialog {
     const name =
       this.$("background-name").value.trim() ||
       (kind === 2
-        ? "Solid color"
+        ? interfaceText("backgroundDialog.solidColor")
         : kind === 3
-          ? "Linear gradient"
-          : "Radial gradient");
+          ? interfaceText("backgroundDialog.linearGradient")
+          : interfaceText("backgroundDialog.radialGradient"));
     const result = {
       kind,
       name,
@@ -282,7 +286,7 @@ export class BackgroundDialog {
       for (const key of ["x1", "y1", "x2", "y2"])
         result[key] = this.number("background-" + key);
       if (kind === 4 && (result.x2 < 0 || result.y2 < 0))
-        throw new Error("Radial gradient radii must be zero or greater.");
+        throw messageError(new Error(''), "errors.backgroundDialog.radialGradientRadiiMustBeZeroOrGreater", {});
     }
     return result;
   }
@@ -319,7 +323,7 @@ export class BackgroundDialog {
             () => {
               if (canvas.isConnected && this.dialog.open)
                 this.error(
-                  new Error("The background image could not be decoded."),
+                  messageError(new Error(''), "errors.backgroundDialog.theBackgroundImageCouldNotBeDecoded", {}),
                 );
             },
             { once: true, signal: this.events.signal },
@@ -339,7 +343,7 @@ export class BackgroundDialog {
     this.$("background-error").hidden = true;
   }
   error(error) {
-    this.$("background-error").textContent = error.message;
+    presentError(this.$("background-error"), error);
     this.$("background-error").hidden = false;
   }
   async run(action, close = true) {

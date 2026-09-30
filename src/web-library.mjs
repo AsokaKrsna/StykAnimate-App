@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** My library in the browser: saved figures, sets and movieclips, with folders, kept in this browser.
  *
  * The Library panel talks to the desktop's library through a small interface (listLibrary,
@@ -26,7 +27,7 @@ export const OUT_OF_SPACE = 'This browser has no more room for the library. Remo
 
 export function validName(value, max = 120) {
   if (typeof value !== 'string' || !value.trim() || value.length > max || /[<>:"/\\|?*\x00-\x1f]/.test(value) || /[. ]$/.test(value) || value.startsWith('.') || /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(value))
-    throw new Error('Use a name of 1–120 characters without reserved filename characters.');
+    throw messageError(new Error(''), "errors.webLibrary.useANameOf1120CharactersWithout", {});
   return value.trim();
 }
 /** A display name made safe for a file name (the panel does the same for Add to library). */
@@ -40,21 +41,21 @@ const parentOf = path => path.slice(0, Math.max(0, path.lastIndexOf('/')));
 const baseOf = path => path.slice(path.lastIndexOf('/') + 1);
 const join = (folder, name) => folder ? `${folder}/${name}` : name;
 const extensionOf = name => { const dot = name.lastIndexOf('.'); return dot > 0 ? name.slice(dot).toLowerCase() : ''; };
-const missing = () => new Error('ENOENT: this library item is no longer here.');
+const missing = () => messageError(new Error(''), "errors.webLibrary.enoentThisLibraryItemIsNoLongerHere", {});
 const same = (a, b) => a.toLocaleLowerCase() === b.toLocaleLowerCase();
 
 function checkPath(relative) {
   if (typeof relative !== 'string' || relative.length > 2000 || relative.includes('\\') || relative.startsWith('/') || relative.split('/').some(part => part && (part === '.' || part === '..' || /[:\x00-\x1f]/.test(part))))
-    throw new Error('Invalid library path.');
+    throw messageError(new Error(''), "errors.webLibrary.invalidLibraryPath", {});
   return relative.split('/').filter(Boolean).join('/');
 }
 
 function checkThumbnail(thumbnail) {
   const match = typeof thumbnail === 'string' && thumbnail.length <= MAX_THUMBNAIL ? PNG_URL.exec(thumbnail) : null;
-  if (!match) throw new Error('A PNG thumbnail is required.');
+  if (!match) throw messageError(new Error(''), "errors.webLibrary.aPngThumbnailIsRequired", {});
   let head;
-  try { head = atob(match[1].slice(0, 16)); } catch { throw new Error('Invalid PNG thumbnail.'); }
-  if (!PNG_MAGIC.every((byte, i) => head.charCodeAt(i) === byte)) throw new Error('Invalid PNG thumbnail.');
+  try { head = atob(match[1].slice(0, 16)); } catch { throw messageError(new Error(''), "errors.webLibrary.invalidPngThumbnail", {}); }
+  if (!PNG_MAGIC.every((byte, i) => head.charCodeAt(i) === byte)) throw messageError(new Error(''), "errors.webLibrary.invalidPngThumbnail", {});
   return thumbnail;
 }
 
@@ -95,7 +96,7 @@ export class IndexedDbBackend {
   constructor({factory = globalThis.indexedDB, name = 'stykanimate-library'} = {}) { this.factory = factory; this.name = name; this.opening = null; }
   open() {
     this.opening ??= new Promise((resolve, reject) => {
-      if (!this.factory) { reject(new Error('This browser does not allow the library to keep files (private browsing can block it).')); return; }
+      if (!this.factory) { reject(messageError(new Error(''), "errors.webLibrary.thisBrowserDoesNotAllowTheLibraryTo", {})); return; }
       let request;
       try { request = this.factory.open(this.name, 1); } catch (error) { reject(error); return; }
       request.onupgradeneeded = () => {
@@ -110,8 +111,8 @@ export class IndexedDbBackend {
         db.onclose = () => { this.opening = null; };
         resolve(db);
       };
-      request.onerror = () => { this.opening = null; reject(request.error ?? new Error('The library could not be opened.')); };
-      request.onblocked = () => reject(new Error('Close the other StykAnimate tabs to open the library.'));
+      request.onerror = () => { this.opening = null; reject(request.error ?? messageError(new Error(''), "errors.webLibrary.theLibraryCouldNotBeOpened", {})); };
+      request.onblocked = () => reject(messageError(new Error(''), "errors.webLibrary.closeTheOtherStykanimateTabsToOpenThe", {}));
     });
     return this.opening;
   }
@@ -133,7 +134,7 @@ export class IndexedDbBackend {
       };
       let value, failure;
       transaction.oncomplete = () => resolve(value);
-      transaction.onabort = () => reject(failure ?? transaction.error ?? new Error('The library could not be written.'));
+      transaction.onabort = () => reject(failure ?? transaction.error ?? messageError(new Error(''), "errors.webLibrary.theLibraryCouldNotBeWritten", {}));
       transaction.onerror = () => { failure ??= transaction.error; };
       // The work must only wait on the tx's own requests, or the transaction would finish under it.
       Promise.resolve().then(() => work(tx)).then(result => { value = result; }, error => { failure = error; try { transaction.abort(); } catch { /* already finished */ } });
@@ -142,7 +143,7 @@ export class IndexedDbBackend {
 }
 
 /** A storage failure the person can act on; everything else passes through. */
-const friendly = error => error?.name === 'QuotaExceededError' ? new Error(OUT_OF_SPACE) : error;
+const friendly = error => error?.name === 'QuotaExceededError' ? messageError(new Error(''), 'errors.webLibrary.outOfSpace') : error;
 
 // --- The library ----------------------------------------------------------------------------
 
@@ -167,7 +168,7 @@ export class LocalLibrary {
     if (allow) taken.delete(allow.toLocaleLowerCase());
     let candidate = `${stem}${suffix}`, n = 2;
     while (taken.has(candidate.toLocaleLowerCase())) {
-      if (!unique) throw new Error('An item with this name already exists.');
+      if (!unique) throw messageError(new Error(''), "errors.webLibrary.anItemWithThisNameAlreadyExists", {});
       candidate = `${stem} (${n++})${suffix}`;
     }
     return candidate;
@@ -197,15 +198,15 @@ export class LocalLibrary {
   async thumbnail(path) {
     path = checkPath(path);
     const item = await this.run(tx => tx.get(path));
-    if (item?.type !== 'file') throw new Error('Choose a saved figure or movieclip.');
+    if (item?.type !== 'file') throw messageError(new Error(''), "errors.webLibrary.chooseASavedFigureOrMovieclip", {});
     return item.thumbnail ?? null;
   }
 
   // -- Saving: begin, write chunks, finish (the desktop's streamed transfer, kept so the panel is unchanged).
   async beginSave({folder = '', name, extension, size, thumbnail, kind} = {}) {
     folder = checkPath(folder);
-    if (!EXTENSIONS.has(extension)) throw new Error('Unsupported library format.');
-    if (!Number.isSafeInteger(size) || size < 0 || size > MAX_FILE_BYTES) throw new Error('This asset is too large for the library.');
+    if (!EXTENSIONS.has(extension)) throw messageError(new Error(''), "errors.webLibrary.unsupportedLibraryFormat", {});
+    if (!Number.isSafeInteger(size) || size < 0 || size > MAX_FILE_BYTES) throw messageError(new Error(''), "errors.webLibrary.thisAssetIsTooLargeForTheLibrary", {});
     name = validName(name); checkThumbnail(thumbnail);
     await this.run(tx => this.folderExists(tx, folder));
     const token = this.randomId();
@@ -214,17 +215,17 @@ export class LocalLibrary {
   }
   async write(token, bytes) {
     const transfer = this.transfers.get(token);
-    if (transfer?.mode !== 'save') throw new Error('Library save is no longer active.');
+    if (transfer?.mode !== 'save') throw messageError(new Error(''), "errors.webLibrary.librarySaveIsNoLongerActive", {});
     const length = bytes?.byteLength;
-    if (!Number.isSafeInteger(length) || length < 0 || transfer.received + length > transfer.size) throw new Error('The library file is larger than announced.');
+    if (!Number.isSafeInteger(length) || length < 0 || transfer.received + length > transfer.size) throw messageError(new Error(''), "errors.webLibrary.theLibraryFileIsLargerThanAnnounced", {});
     transfer.parts.push(bytes); transfer.received += length;
     return {written: transfer.received, total: transfer.size};
   }
   async finish(token) {
     const transfer = this.transfers.get(token);
-    if (transfer?.mode !== 'save') throw new Error('Library save is no longer active.');
+    if (transfer?.mode !== 'save') throw messageError(new Error(''), "errors.webLibrary.librarySaveIsNoLongerActive", {});
     try {
-      if (transfer.received !== transfer.size) throw new Error('The library file was not received completely.');
+      if (transfer.received !== transfer.size) throw messageError(new Error(''), "errors.webLibrary.theLibraryFileWasNotReceivedCompletely", {});
       return await this.commit({...transfer, data: await new Blob(transfer.parts).arrayBuffer()});
     } finally { this.transfers.delete(token); }
   }
@@ -241,8 +242,8 @@ export class LocalLibrary {
   /** Saves bytes that are already here (a community asset), through the same rules. */
   async saveBytes({folder = '', name, extension, kind, thumbnail, bytes}) {
     folder = checkPath(folder);
-    if (!EXTENSIONS.has(extension)) throw new Error('Unsupported library format.');
-    if (bytes.byteLength > MAX_FILE_BYTES) throw new Error('This asset is too large for the library.');
+    if (!EXTENSIONS.has(extension)) throw messageError(new Error(''), "errors.webLibrary.unsupportedLibraryFormat", {});
+    if (bytes.byteLength > MAX_FILE_BYTES) throw messageError(new Error(''), "errors.webLibrary.thisAssetIsTooLargeForTheLibrary", {});
     return this.commit({folder, name: validName(safeName(name)), extension, thumbnail: checkThumbnail(thumbnail),
       kind: kind === 'set' ? 'set' : extension === '.stykmov' ? 'movieclip' : 'figure', data: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)});
   }
@@ -251,14 +252,14 @@ export class LocalLibrary {
   async beginRead(path) {
     path = checkPath(path);
     const {item, data} = await this.run(async tx => ({item: await tx.get(path), data: await tx.blob(path)}));
-    if (item?.type !== 'file' || !data) throw new Error('Choose a saved figure or movieclip.');
+    if (item?.type !== 'file' || !data) throw messageError(new Error(''), "errors.webLibrary.chooseASavedFigureOrMovieclip", {});
     const token = this.randomId();
     this.transfers.set(token, {mode: 'read', data, offset: 0});
     return {token, size: data.byteLength, name: baseOf(path)};
   }
   async read(token) {
     const transfer = this.transfers.get(token);
-    if (transfer?.mode !== 'read') throw new Error('Library read is no longer active.');
+    if (transfer?.mode !== 'read') throw messageError(new Error(''), "errors.webLibrary.libraryReadIsNoLongerActive", {});
     const end = Math.min(transfer.data.byteLength, transfer.offset + CHUNK_BYTES), bytes = transfer.data.slice(transfer.offset, end);
     transfer.offset = end;
     return {bytes, done: end >= transfer.data.byteLength};
@@ -270,7 +271,7 @@ export class LocalLibrary {
     path = checkPath(path); checkThumbnail(thumbnail);
     return this.run(async tx => {
       const item = await tx.get(path);
-      if (item?.type !== 'file') throw new Error('Choose a saved figure or movieclip.');
+      if (item?.type !== 'file') throw messageError(new Error(''), "errors.webLibrary.chooseASavedFigureOrMovieclip", {});
       if (item.modified !== modified) return false;
       await tx.put({...item, thumbnail: item.thumbnail ?? thumbnail, kind: kind === 'set' ? 'set' : item.kind});
       return true;
@@ -281,12 +282,12 @@ export class LocalLibrary {
   async change({path, name, folder} = {}) {
     path = checkPath(path);
     return this.run(async tx => {
-      if (!path) throw new Error('The library root cannot be moved or renamed.');
+      if (!path) throw messageError(new Error(''), "errors.webLibrary.theLibraryRootCannotBeMovedOrRenamed", {});
       const item = await tx.get(path);
       if (!item) throw missing();
       const target = folder === undefined ? item.parent : checkPath(folder);
       await this.folderExists(tx, target);
-      if (item.type === 'folder' && (target === path || target.startsWith(`${path}/`))) throw new Error('A folder cannot be moved into itself.');
+      if (item.type === 'folder' && (target === path || target.startsWith(`${path}/`))) throw messageError(new Error(''), "errors.webLibrary.aFolderCannotBeMovedIntoItself", {});
       const file = item.type === 'file', current = file ? item.name.slice(0, -item.extension.length) : item.name;
       const stem = name === undefined ? current : validName(name), suffix = file ? item.extension : '';
       if (target === item.parent && `${stem}${suffix}` === item.name) return {path};
@@ -309,7 +310,7 @@ export class LocalLibrary {
   async trash(path) {
     path = checkPath(path);
     return this.run(async tx => {
-      if (!path) throw new Error('The library root cannot be removed.');
+      if (!path) throw messageError(new Error(''), "errors.webLibrary.theLibraryRootCannotBeRemoved", {});
       const item = await tx.get(path);
       if (!item) throw missing();
       for (const child of item.type === 'folder' ? await tx.subtree(path) : []) { await tx.remove(child.path); if (child.type === 'file') await tx.removeBlob(child.path); }

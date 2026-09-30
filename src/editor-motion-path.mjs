@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {captureSpatialIK} from './ik-spatial.mjs';
 /** Motion-path edit sessions. A dragged trail point rewrites the pose at its own
  * display tick while the playhead stays put. The session poses a cloned
@@ -22,7 +23,7 @@ import {sheetKeyAt} from './layer-sheet.mjs';
 
 const clone = value => structuredClone(value);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-const finite = (value, label) => { if (!Number.isFinite(value)) throw new Error(`${label} must be finite.`); return value; };
+const finite = (value, label) => { if (!Number.isFinite(value)) throw messageError(new Error(''), "errors.editorCamera.mustBeFinite", {label: label}); return value; };
 
 function rowForTick(rows, tick) {
   let low = 0, high = rows.length - 1;
@@ -34,8 +35,8 @@ function rowForTick(rows, tick) {
 /** Native camera bounds are float32; validate like ordinary camera edits. */
 function checkedCamera(camera) {
   for (const field of ['x', 'y', 'scale', 'angle_rad']) finite(camera[field], `Camera ${field}`);
-  for (const field of ['x', 'y', 'scale']) if (!Number.isFinite(Math.fround(camera[field]))) throw new Error(`Camera ${field} exceeds the native range.`);
-  if (camera.scale <= 0) throw new Error('Camera scale must be positive.');
+  for (const field of ['x', 'y', 'scale']) if (!Number.isFinite(Math.fround(camera[field]))) throw messageError(new Error(''), "errors.editorCamera.cameraExceedsTheNativeRange", {field: field});
+  if (camera.scale <= 0) throw messageError(new Error(''), "errors.editorCamera.cameraScaleMustBePositive", {});
   inverseCameraScale(camera);
   return {...camera, is_default: camera.x === 0 && camera.y === 0 && camera.scale === 1 && camera.angle_rad === 0};
 }
@@ -275,7 +276,7 @@ function applyPathPoint(session, editor, point, options = {}) {
     if (!object.len_flag) object.lengths = figure.segments.map(s => s.length);
     object.len_flag = 1;
     const bend = shape.bend, chord = Math.abs(bend) < 1e-7 ? 1 : Math.abs(2 * Math.sin(bend / 2) / bend);
-    if (chord < 1e-8) throw new Error('Reduce the full-circle bend before stretching this segment.');
+    if (chord < 1e-8) throw messageError(new Error(''), "errors.editorMotionPath.reduceTheFullCircleBendBeforeStretchingThis", {});
     object.lengths[target.joint] = Math.hypot(point.x - shape.start.x, point.y - shape.start.y) / (Math.abs(object.scale) * chord);
     delete object.runtime_segments; session.dirtySlots.add(slot);
   }
@@ -784,7 +785,7 @@ export const editorMotionPathMethods = {
   updateMotionPathEdit(point, options = {}) {
     const session = this._drag;
     if (!session?.motionPath) return false;
-    if (session.documentToken !== this._documentToken) { this.cancelMotionPathEdit(); throw new Error('The document changed during the motion-path gesture.'); }
+    if (session.documentToken !== this._documentToken) { this.cancelMotionPathEdit(); throw messageError(new Error(''), "errors.editorMotionPath.theDocumentChangedDuringTheMotionPathGesture", {}); }
     finite(point.x, 'Motion-path X'); finite(point.y, 'Motion-path Y');
     session.lastPoint = point; session.lastOptions = options;
     if (session.falloff) {

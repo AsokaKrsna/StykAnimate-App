@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {interpolateSpatialPose} from './spatial-projection.mjs';
 import {evaluatedFrame, evaluatedNativeFrame, shortest} from './pivot/geometry.mjs';
 import {sheetKeyAt} from './layer-sheet.mjs';
@@ -51,28 +52,28 @@ function blendReport(report, a, b, uids) {
 
 export const editorTweenerMethods = {
   beginTween() {
-    if (this._drag) throw new Error('Finish the current edit before opening Tweener.');
-    if (!this.selectedUids.size) throw new Error('Select figures to tween.');
-    if (!Number.isInteger(this.tick)) throw new Error('Choose a whole frame before tweening.');
+    if (this._drag) throw messageError(new Error(''), "errors.editorTweener.finishTheCurrentEditBeforeOpeningTweener", {});
+    if (!this.selectedUids.size) throw messageError(new Error(''), "errors.editorTweener.selectFiguresToTween", {});
+    if (!Number.isInteger(this.tick)) throw messageError(new Error(''), "errors.editorTweener.chooseAWholeFrameBeforeTweening", {});
     const sheet = this.report._styk?.layerSheet;
     if (!sheet && this.tick !== this.timeline[this.frameIndex].start)
-      throw new Error('Choose a stored keyframe before tweening this native document.');
+      throw messageError(new Error(''), "errors.editorTweener.chooseAStoredKeyframeBeforeTweeningThisNative", {});
     const current = this.evaluatedFrame, selected = current.objects.filter(o => this.selectedUids.has(o.unique_id));
-    if (!selected.length) throw new Error('Select figures present at this frame.');
+    if (!selected.length) throw messageError(new Error(''), "errors.editorTweener.selectFiguresPresentAtThisFrame", {});
     // Bound interactive pose work; the existing editor owns scene-level caches.
     if (selected.length > 256 || selected.reduce((n, o) => n + o.angles.length, 0) > 100000)
-      throw new Error('Tween a smaller selection (up to 256 figures and 100,000 joints).');
+      throw messageError(new Error(''), "errors.editorTweener.tweenASmallerSelectionUpTo256Figures", {});
     const groups = new Map(), frames = new Map(), indices = new Map(), definitions = new Map(this.report.figure_types.map(f => [f.figure_type_id, f]));
     for (const object of selected) {
       if (object._styk?.locked || layerLocked(this.report, object.unique_id) || !layerVisible(this.report, object.unique_id))
-        throw new Error('Unlock and show all selected figures before tweening.');
+        throw messageError(new Error(''), "errors.editorTweener.unlockAndShowAllSelectedFiguresBeforeTweening", {});
       const id = this.layerForUid(object.unique_id);
       // Legacy authored pose tracks retain their own timing; ordinary sheets
       // use layer keys and never accidentally use another layer's boundaries.
       const keys = sheet?.tracks[id]?.keys ?? this.animationChannel({kind:'figure',uid:object.unique_id},'pose')?.keys ??
         this.animationChannel({kind:'layer',id},'pose')?.keys ?? this.timeline.filter(r => r.count > 0).map(r => ({tick:r.start}));
       const {previous, next} = tweenNeighbors(keys, this.tick);
-      if (!previous || !next) throw new Error('Place the playhead between two keys on every selected layer.');
+      if (!previous || !next) throw messageError(new Error(''), "errors.editorTweener.placeThePlayheadBetweenTwoKeysOnEvery", {});
       for (const key of [previous, next]) if (!frames.has(key.tick)) {
         const frame = sample(this, key.tick);frames.set(key.tick, frame);
         indices.set(key.tick, new Map(frame.objects.map(o => [o.unique_id,o])));
@@ -81,10 +82,10 @@ export const editorTweenerMethods = {
       const from = indices.get(previous.tick).get(object.unique_id), to = indices.get(next.tick).get(object.unique_id);
       if (!from || !to || from.figure_type_id !== object.figure_type_id || to.figure_type_id !== object.figure_type_id ||
           from.angles.length !== object.angles.length || to.angles.length !== object.angles.length)
-        throw new Error('Each selected figure needs the same rig at both neighboring keys. Blank keys cannot be tweened.');
+        throw messageError(new Error(''), "errors.editorTweener.eachSelectedFigureNeedsTheSameRigAt", {});
       const parent = (frame, o) => o.join ? frame.objects[o.join.target_object_slot]?.unique_id : null;
       if (parent(a, from) !== parent(current, object) || parent(b, to) !== parent(current, object))
-        throw new Error('Keep the same figure attachments at both neighboring keys before tweening.');
+        throw messageError(new Error(''), "errors.editorTweener.keepTheSameFigureAttachmentsAtBothNeighboring", {});
       const key = `${previous.tick}:${next.tick}`;
       if (!groups.has(key)) groups.set(key, {a, b, previous:previous.tick, next:next.tick, uids:[]});
       groups.get(key).uids.push(object.unique_id);
@@ -97,7 +98,7 @@ export const editorTweenerMethods = {
         right:blendReport(this.report, current, group.b, group.uids),
         relax:blendReport(this.report, current, breakdown, group.uids)};
     });
-    if (!this.beginDrag('Tween pose')) throw new Error('Select figures to tween.');
+    if (!this.beginDrag('Tween pose')) throw messageError(new Error(''), "errors.editorTweener.selectFiguresToTween", {});
     const selectedIds = new Set(selected.map(o => o.unique_id));
     this._drag.tweener = {plans, definitions, objects:new Map(this.frame.objects.filter(o => selectedIds.has(o.unique_id)).map(o => [o.unique_id,o]))};
     if (this._authoredPoseEdit) {
@@ -110,9 +111,9 @@ export const editorTweenerMethods = {
   },
   updateTween(amount, mode = 'breakdown') {
     if (!TWEENER_MODES.includes(mode) || !Number.isFinite(amount) || amount < (mode === 'neighbor' ? -1 : 0) || amount > 1)
-      throw new Error('Choose a valid Tweener mode and amount.');
+      throw messageError(new Error(''), "errors.editorTweener.chooseAValidTweenerModeAndAmount", {});
     const session = this._drag?.tweener;
-    if (!session) throw new Error('Open Tweener before adjusting the pose.');
+    if (!session) throw messageError(new Error(''), "errors.editorTweener.openTweenerBeforeAdjustingThePose", {});
     const {objects} = session;
     for (const plan of session.plans) {
       const report = mode === 'breakdown' ? plan.between : mode === 'neighbor' ? (amount < 0 ? plan.left : plan.right) : plan.relax;

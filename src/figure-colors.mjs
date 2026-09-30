@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Display colors and copy-on-write recoloring. No geometry or asset copies. */
 import {resolveInstanceFigure, styleColor, polygonIdentity} from './animation-style.mjs';
 import {segmentPaint, normalizePaint, parseColor, hexColor, samplePaint} from './paint.mjs';
@@ -53,33 +54,33 @@ export function attachedFigurePalette(report, frame, uid) {
 }
 const rgb=value=>{
   if(typeof value==='string')return parseColor(value).color;
-  if(!Array.isArray(value)||value.length!==3||value.some(n=>!Number.isInteger(n)||n<0||n>255))throw new Error('Choose three RGB bytes or a hex color.');
+  if(!Array.isArray(value)||value.length!==3||value.some(n=>!Number.isInteger(n)||n<0||n>255))throw messageError(new Error(''), "errors.figureColors.chooseThreeRgbBytesOrAHexColor", {});
   return [...value];
 };
-const opacity=value=>{if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>1)throw new Error('Opacity must be between zero and one.');return value;};
+const opacity=value=>{if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>1)throw messageError(new Error(''), "errors.figureColors.opacityMustBeBetweenZeroAndOne", {});return value;};
 export function validateRecolor(input) {
   const operation={...input};
-  if(!['all','replace','style','reset'].includes(operation.mode))throw new Error('Choose a color operation.');
+  if(!['all','replace','style','reset'].includes(operation.mode))throw messageError(new Error(''), "errors.figureColors.chooseAColorOperation", {});
   if(operation.color!==undefined)operation.color=rgb(operation.color);
   if(operation.from!==undefined)operation.from=rgb(operation.from);
   if(operation.opacity!==undefined)opacity(operation.opacity);
-  if(operation.mode==='replace'&&(!operation.color||!operation.from&&!operation.targets))throw new Error('Choose the color to replace.');
+  if(operation.mode==='replace'&&(!operation.color||!operation.from&&!operation.targets))throw messageError(new Error(''), "errors.figureColors.chooseTheColorToReplace", {});
   if(operation.targets){
     if(operation.targets.instances)for(const [uid,targets] of Object.entries(operation.targets.instances)){
-      if(!Number.isInteger(Number(uid))||Number(uid)<0||Number(uid)>0xffffffff||targets.instances)throw new Error('Choose valid palette instances.');
+      if(!Number.isInteger(Number(uid))||Number(uid)<0||Number(uid)>0xffffffff||targets.instances)throw messageError(new Error(''), "errors.figureColors.chooseValidPaletteInstances", {});
       validateRecolor({...operation,targets});
     }
-    if(!Array.isArray(operation.targets.segments)||!Array.isArray(operation.targets.polygons??[]))throw new Error('Choose valid palette targets.');
-    for(const entry of operation.targets.segments)if(!Number.isInteger(entry.handleId)||entry.handleId<1||entry.handleId>65535||!Array.isArray(entry.stops)||entry.stops.some(index=>!Number.isInteger(index)||index<0||index>=32))throw new Error('Choose valid segment color stops.');
-    for(const id of operation.targets.polygons??[])if(!Number.isInteger(id)||id<1||id>65535)throw new Error('Choose valid fill identities.');
+    if(!Array.isArray(operation.targets.segments)||!Array.isArray(operation.targets.polygons??[]))throw messageError(new Error(''), "errors.figureColors.chooseValidPaletteTargets", {});
+    for(const entry of operation.targets.segments)if(!Number.isInteger(entry.handleId)||entry.handleId<1||entry.handleId>65535||!Array.isArray(entry.stops)||entry.stops.some(index=>!Number.isInteger(index)||index<0||index>=32))throw messageError(new Error(''), "errors.figureColors.chooseValidSegmentColorStops", {});
+    for(const id of operation.targets.polygons??[])if(!Number.isInteger(id)||id<1||id>65535)throw messageError(new Error(''), "errors.figureColors.chooseValidFillIdentities", {});
   }
   if(operation.mode==='style'){
     const patch=operation.patch={...operation.patch};
-    for(const key of Object.keys(patch))if(!['color','paint','gradient','opacity','thickness'].includes(key))throw new Error(`Unsupported color style: ${key}.`);
+    for(const key of Object.keys(patch))if(!['color','paint','gradient','opacity','thickness'].includes(key))throw messageError(new Error(''), "errors.figureColors.unsupportedColorStyle", {key: key});
     if(patch.color!==undefined)patch.color=rgb(patch.color);
     if(patch.paint)patch.paint=normalizePaint(patch.paint);
     if(patch.opacity!==undefined)opacity(patch.opacity);
-    if(patch.thickness!==undefined&&(!Number.isFinite(patch.thickness)||patch.thickness<0||patch.thickness>1e6))throw new Error('Invalid segment thickness.');
+    if(patch.thickness!==undefined&&(!Number.isFinite(patch.thickness)||patch.thickness<0||patch.thickness>1e6))throw messageError(new Error(''), "errors.figureColors.invalidSegmentThickness", {});
     if(patch.gradient){patch.gradient={...patch.gradient,color:rgb(patch.gradient.color??'#ffffff')};if(patch.gradient.opacity!==undefined)opacity(patch.gradient.opacity);}
   }
   return operation;
@@ -128,7 +129,7 @@ export function recolorObject(report, figure, object, operation) {
     }
     if(operation.mode==='all'&&operation.color)paint.stops.forEach(stop=>stop.color=operation.color);
     if(operation.mode==='replace'&&selected)for(const stop of matches.get(segment.segment_id)){
-      if(!paint.stops[stop])throw new Error('The gradient changed. Reopen the palette.');paint.stops[stop].color=operation.color;
+      if(!paint.stops[stop])throw messageError(new Error(''), "errors.figureColors.theGradientChangedReopenThePalette", {});paint.stops[stop].color=operation.color;
     }
     if(operation.mode==='style'&&selected){
       const patch=operation.patch;

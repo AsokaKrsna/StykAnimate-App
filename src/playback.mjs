@@ -1,3 +1,5 @@
+import {restoreMessageError, messageError} from './localized-error.mjs';
+
 import {drawingBarrier} from './drawing-resources.mjs';
 import { timeline } from './pivot/geometry.mjs';
 import { documentChunks } from './document-transport.mjs';
@@ -52,7 +54,7 @@ export class PlaybackCache {
     // Explicit pool sizes remain controlled overrides. Tests can opt into
     // admission with an explicit allowance without faking global hardware.
     this.maxWorkerBytes=maxWorkerBytes??(workerCount===undefined&&!workerFactory?playbackWorkerAdmissionBudget():Infinity);
-    if(!(this.maxWorkerBytes>0))throw new Error('Playback worker allowance must be positive.');
+    if(!(this.maxWorkerBytes>0))throw messageError(new Error(''), "errors.playback.playbackWorkerAllowanceMustBePositive", {});
     this.workers=[];this.workerMemoryPlan=playbackWorkerMemoryPlan(maxBytes);
     this.stats.workerCaches=[];this.stats.workerCacheTotals={};this._resizeWorkers(count);
     // The primary worker owns one background planning stream across resizes.
@@ -83,8 +85,8 @@ export class PlaybackCache {
         type: 'module', name: `StykAnimate playback preparation ${index + 1}` });
       const client = { worker, index, loadAck: null };
       worker.addEventListener('message', event => this._receive(event.data, client));
-      worker.addEventListener('error', event => { event.preventDefault?.(); if(this.workers[index]===client)this._fail(new Error(event.message || 'The playback worker stopped unexpectedly.')); });
-      worker.addEventListener('messageerror', () => {if(this.workers[index]===client)this._fail(new Error('A prepared playback frame could not be transferred.'));});
+      worker.addEventListener('error', event => { event.preventDefault?.(); if(this.workers[index]===client)this._fail((event.message ? new Error(event.message) : messageError(new Error(''), "errors.playback.thePlaybackWorkerStoppedUnexpectedly"))); });
+      worker.addEventListener('messageerror', () => {if(this.workers[index]===client)this._fail(messageError(new Error(''), "errors.playback.aPreparedPlaybackFrameCouldNotBeTransferred", {}));});
       this.workers.push(client);
       if(this.interactionActive)worker.postMessage({type:'interaction',active:true});
     }
@@ -100,7 +102,7 @@ export class PlaybackCache {
     this.stats.workerAdmission={...plan,maxWorkers:this.workerLimit,reduced:plan.workers<this.workerLimit};
   }
   load(report, { scale = this.scale, revision, cameraEnabled = true, storedFrames = false, softwareFrames = false, hiddenUids, hiddenKey = '' } = {}) {
-    if (this.disposed) throw new Error('The playback cache has been disposed.');
+    if (this.disposed) throw messageError(new Error(''), "errors.playback.thePlaybackCacheHasBeenDisposed", {});
     const available = this._recover(revision);
     report = report?.document ?? report?.report ?? report;
     const staged = this._nativeSnapshot;
@@ -132,7 +134,7 @@ export class PlaybackCache {
     // the frame budget. Suspended requests must not time out during a long drag.
     for(const pending of this.pending.values()){
       clearTimeout(pending.timer);
-      pending.timer=!active&&this.timeoutMs>0?setTimeout(()=>this._fail(new Error('Playback preparation timed out.')),this.timeoutMs):null;
+      pending.timer=!active&&this.timeoutMs>0?setTimeout(()=>this._fail(messageError(new Error(''), "errors.playback.playbackPreparationTimedOut", {})),this.timeoutMs):null;
     }
     if(!this.disposed)for(const client of this.workers)client.worker.postMessage({type:'interaction',active});
     if(!active){this._releaseInteraction?.();this._releaseInteraction=null;this._interactionPromise=null;}
@@ -152,7 +154,7 @@ export class PlaybackCache {
   }
   updateView({ scale = this.scale, cameraEnabled = this.cameraEnabled, storedFrames = this.storedFrames,
     softwareFrames = this.softwareFrames, hiddenUids = this.hiddenUids, hiddenKey = this.hiddenKey } = {}) {
-    if (this.disposed) throw new Error('The playback cache has been disposed.');
+    if (this.disposed) throw messageError(new Error(''), "errors.playback.thePlaybackCacheHasBeenDisposed", {});
     if (scale === this.scale && cameraEnabled === this.cameraEnabled && storedFrames === this.storedFrames &&
       softwareFrames === this.softwareFrames && hiddenKey === this.hiddenKey) return this;
     if (!this.report) { this.scale = scale; this.cameraEnabled = cameraEnabled; this.storedFrames = storedFrames; this.softwareFrames = softwareFrames; this.hiddenUids = hiddenUids; this.hiddenKey = hiddenKey; return this; }
@@ -171,9 +173,9 @@ export class PlaybackCache {
     this._retentionSnapshot = playbackRetentionSnapshot(this.report, this.entries, this); return this;
   }
   updateFrame(index, frame, { revision = this.documentRevision } = {}) {
-    if (this.disposed) throw new Error('The playback cache has been disposed.');
+    if (this.disposed) throw messageError(new Error(''), "errors.playback.thePlaybackCacheHasBeenDisposed", {});
     if (!Number.isInteger(index) || index < 0 || index >= (this.report?.keyframes?.length || 0) || frame !== this.report.keyframes[index])
-      throw new Error('Playback frame updates must reference a frame in the current document.');
+      throw messageError(new Error(''), "errors.playback.playbackFrameUpdatesMustReferenceAFrameIn", {});
     return this.updateDocument({frameIndices: [index], revision, loadKind: 'frame'});
   }
   planLayerMigration(request, options) {return this.planner.planLayerMigration(request, options);}
@@ -196,13 +198,13 @@ export class PlaybackCache {
   updateDocument({frameIndices = [], sourceIds = [], figureIndices = [], revision = this.documentRevision, scale = this.scale,
     cameraEnabled = this.cameraEnabled, storedFrames = this.storedFrames, softwareFrames = this.softwareFrames,
     hiddenUids = this.hiddenUids, hiddenKey = this.hiddenKey, structural = false, definition = false, loadKind = 'patch'} = {}) {
-    if (this.disposed) throw new Error('The playback cache has been disposed.');
-    if (!this.report) throw new Error('Load a document before updating playback.');
+    if (this.disposed) throw messageError(new Error(''), "errors.playback.thePlaybackCacheHasBeenDisposed", {});
+    if (!this.report) throw messageError(new Error(''), "errors.playback.loadADocumentBeforeUpdatingPlayback", {});
     for (const index of frameIndices) if (!Number.isInteger(index) || index < 0 || index >= (this.report?.keyframes.length || 0))
-      throw new Error('Playback frame updates must reference a frame in the current document.');
+      throw messageError(new Error(''), "errors.playback.playbackFrameUpdatesMustReferenceAFrameIn", {});
     for (const index of figureIndices) if (!Number.isInteger(index) || index < 0 || index >= (this.report?.figure_types?.length || 0))
-      throw new Error('Playback figure updates must reference a figure in the current document.');
-    for (const id of sourceIds) if (typeof id !== 'string' || !/^[a-z][a-z0-9-]{0,127}$/.test(id)) throw new Error('Invalid retained playback source ID.');
+      throw messageError(new Error(''), "errors.playback.playbackFigureUpdatesMustReferenceAFigureIn", {});
+    for (const id of sourceIds) if (typeof id !== 'string' || !/^[a-z][a-z0-9-]{0,127}$/.test(id)) throw messageError(new Error(''), "errors.playback.invalidRetainedPlaybackSourceId", {});
     if (!this._mirrorAvailable || this.needsLoad || structural || (definition && !figureIndices.length) || !this._tablesMatch())
       return this.load(this.report, {revision, scale, cameraEnabled, storedFrames, softwareFrames, hiddenUids, hiddenKey});
     for (const index of frameIndices) this._frameUpdates.set(index, {frame: this.report.keyframes[index]});
@@ -366,7 +368,7 @@ export class PlaybackCache {
     // A failed pool never acknowledges; its replacement reloads from scratch.
     if (this.failure) return Promise.reject(this.failure);
     return new Promise((resolve, reject) => {
-      const timer = this.timeoutMs > 0 ? setTimeout(() => this._fail(new Error('Playback snapshot timed out.')), this.timeoutMs) : null;
+      const timer = this.timeoutMs > 0 ? setTimeout(() => this._fail(messageError(new Error(''), "errors.playback.playbackSnapshotTimedOut", {})), this.timeoutMs) : null;
       client.loadAck = { revision: message.revision, sequence: message.sequence, responseType, resolve, reject, timer };
       try {
         const start = performance.now(); client.worker.postMessage(message); const elapsed = performance.now() - start;
@@ -461,7 +463,7 @@ export class PlaybackCache {
     return count > 1 ? ticks.filter(tick => playbackLane(tick, count) === index) : ticks;
   }
   async prepareRange(ticks, { replacePending = false } = {}) {
-    if (this.disposed) throw new Error('The playback cache has been disposed.');
+    if (this.disposed) throw messageError(new Error(''), "errors.playback.thePlaybackCacheHasBeenDisposed", {});
     if (!this._recover()) throw this.failure;
     if (!this.report) return [];
     const revision = this.revision;
@@ -489,7 +491,7 @@ export class PlaybackCache {
         if (this.pending.size >= this.maxPending) break;
         let resolve, reject;
         const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
-        const timer = this.timeoutMs > 0 && !this.interactionActive ? setTimeout(() => this._fail(new Error('Playback preparation timed out.')), this.timeoutMs) : null;
+        const timer = this.timeoutMs > 0 && !this.interactionActive ? setTimeout(() => this._fail(messageError(new Error(''), "errors.playback.playbackPreparationTimedOut", {})), this.timeoutMs) : null;
         const measured=this.diagnostics?.enabled&&Math.random()<1/30;
         pending = { promise, resolve, reject, timer,...(measured?{measuredAt:performance.now(),context:this.diagnostics.context(),diagnosticGeneration:this.diagnostics.generation}: {}) }; this.pending.set(tick, pending); requests.push(tick);
       }
@@ -520,7 +522,7 @@ export class PlaybackCache {
     if (loading && message.type === loading.responseType && message.sequence === loading.sequence) {
       clearTimeout(loading.timer); client.loadAck = null; loading.resolve(); return;
     }
-    if (message.type === 'load-error') { this._fail(new Error(message.message)); return; }
+    if (message.type === 'load-error') { this._fail(restoreMessageError(new Error(message.message), message)); return; }
     if (message.type === 'loaded') return;
     // Every current packet updates its owner, including packets discarded after
     // a prefetch trim. These snapshots describe the worker cache, not CPU LRU
@@ -535,7 +537,7 @@ export class PlaybackCache {
     const pending = this.pending.get(message.tick);
     if (!pending) { closePacket(message.packet); return; }
     clearTimeout(pending.timer); this.pending.delete(message.tick); this.stats.pendingFrames = this.pending.size;
-    if (message.type === 'error') { const error = new Error(message.message); if (message.code) error.code = message.code; pending.reject(error); this.onError?.(error); return; }
+    if (message.type === 'error') { const error = restoreMessageError(new Error(message.message), message); if (message.code) error.code = message.code; pending.reject(error); this.onError?.(error); return; }
     const packet = message.packet;
     if(pending.measuredAt!==undefined&&this.diagnostics?.enabled&&pending.diagnosticGeneration===this.diagnostics.generation&&packet){
       const roundtrip=performance.now()-pending.measuredAt,compute=message.measurement?.computeMs,queued=message.measurement?.queueMs;
@@ -544,7 +546,7 @@ export class PlaybackCache {
       this.diagnostics.record('worker_queue',queued,pending.context);
       if(Number.isFinite(compute)&&Number.isFinite(queued))this.diagnostics.record('worker_transfer',Math.max(0,roundtrip-compute-queued),pending.context);
     }
-    if (!packet) { pending.reject(new Error('The playback worker returned no render packet.')); return; }
+    if (!packet) { pending.reject(messageError(new Error(''), "errors.playback.thePlaybackWorkerReturnedNoRenderPacket", {})); return; }
     this._failures = 0;
     this.diagnostics?.recovery('playback_worker','recovered');
     // Packet keys/revisions identify immutable compilation results. An epoch
@@ -563,7 +565,7 @@ export class PlaybackCache {
     // One frame larger than the budget cannot be retained safely. Surface this
     // explicitly, allowing the application to offer its normal rendering path.
     if (packet.byteLength > this.maxBytes || this.maxFrames < 1) {
-      closePacket(packet); const error = new Error(`A playback frame exceeds the ${Math.round(this.maxBytes / 1024 / 1024)} MB preparation budget.`);
+      closePacket(packet); const error = messageError(new Error(''), "errors.playback.aPlaybackFrameExceedsTheMbPreparationBudget", {value: Math.round(this.maxBytes / 1024 / 1024)});
       error.code = 'playback_frame_budget'; pending.reject(error); this.onError?.(error); return;
     }
     while (this.cache.size && (this.cache.size >= this.maxFrames || this.stats.bytes + this.bitmapPool.incrementalBytes(packet) > this.maxBytes)) {

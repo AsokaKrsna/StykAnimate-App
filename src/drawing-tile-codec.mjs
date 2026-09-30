@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {TILE,TILE_BYTES,tileTransparent,TileStore,tileKey,parseTileKey,assertTileCoordinates} from './drawing-tiles.mjs';
 import {decodeDrawingPNGBytes,encodeRGBAPNG} from './drawing-png.mjs';
 import {base64ToBytes} from './base64.mjs';
@@ -5,14 +6,14 @@ export const TILE_BLOB_PREFIX='data:application/x-styk-tiles;base64,';
 const TILE_BLOB_MAX_BYTES=96*1024*1024,TILE_BLOB_MAX_PIXELS=512*1024*1024;
 export const TILE_BLOB_MAX_TILES=TILE_BLOB_MAX_PIXELS/TILE_BYTES;
 export const TILE_BLOB_MAX_CHARACTERS=4*Math.ceil(TILE_BLOB_MAX_BYTES/3);
-export function tileBlobBytes(url){if(typeof url!=='string'||!url.startsWith(TILE_BLOB_PREFIX))throw new Error('Drawing tiles need an embedded tile blob.');if(url.length>TILE_BLOB_PREFIX.length+TILE_BLOB_MAX_CHARACTERS)throw new Error('Drawing tile blob exceeds its size bound.');const bytes=base64ToBytes(url.slice(TILE_BLOB_PREFIX.length));if(bytes.length>TILE_BLOB_MAX_BYTES)throw new Error('Drawing tile blob exceeds its size bound.');return bytes;}
+export function tileBlobBytes(url){if(typeof url!=='string'||!url.startsWith(TILE_BLOB_PREFIX))throw messageError(new Error(''), "errors.drawingTileCodec.drawingTilesNeedAnEmbeddedTileBlob", {});if(url.length>TILE_BLOB_PREFIX.length+TILE_BLOB_MAX_CHARACTERS)throw messageError(new Error(''), "errors.drawingTileCodec.drawingTileBlobExceedsItsSizeBound", {});const bytes=base64ToBytes(url.slice(TILE_BLOB_PREFIX.length));if(bytes.length>TILE_BLOB_MAX_BYTES)throw messageError(new Error(''), "errors.drawingTileCodec.drawingTileBlobExceedsItsSizeBound", {});return bytes;}
 export {base64ToBytes as base64Bytes};
 /** Assemble the blob bytes from already-encoded per-tile PNGs. */
 export function assembleTileBlobBytes(tiles){
-  if(tiles.length>TILE_BLOB_MAX_TILES)throw new Error('Drawing tile blob exceeds its tile bound.');
-  const seen=new Set();for(const tile of tiles){assertTileCoordinates(tile.tx,tile.ty);const key=tileKey(tile.tx,tile.ty);if(seen.has(key))throw new Error('Drawing tile blob contains duplicate tiles.');seen.add(key);}
+  if(tiles.length>TILE_BLOB_MAX_TILES)throw messageError(new Error(''), "errors.drawingTileCodec.drawingTileBlobExceedsItsTileBound", {});
+  const seen=new Set();for(const tile of tiles){assertTileCoordinates(tile.tx,tile.ty);const key=tileKey(tile.tx,tile.ty);if(seen.has(key))throw messageError(new Error(''), "errors.drawingTileCodec.drawingTileBlobContainsDuplicateTiles", {});seen.add(key);}
   const head=16+12*tiles.length,total=tiles.reduce((n,t)=>n+t.png.length,head);
-  if(total>TILE_BLOB_MAX_BYTES)throw new Error('Drawing tile blob exceeds its size bound.');
+  if(total>TILE_BLOB_MAX_BYTES)throw messageError(new Error(''), "errors.drawingTileCodec.drawingTileBlobExceedsItsSizeBound", {});
   const out=new Uint8Array(total),view=new DataView(out.buffer);
   view.setUint32(0,0x54595453);view.setUint32(4,1,true);view.setUint32(8,TILE,true);view.setUint32(12,tiles.length,true);let offset=16;
   for(const tile of tiles){view.setInt32(offset,tile.tx,true);view.setInt32(offset+4,tile.ty,true);view.setUint32(offset+8,tile.png.length,true);offset+=12;out.set(tile.png,offset);offset+=tile.png.length;}
@@ -38,22 +39,22 @@ export async function encodeTileBlob(store){
 export const inShard=(tx,ty,[index,count])=>((((tx>>3)+(ty>>3))%count)+count)%count===index;
 export async function decodeTileBlob(url,{shard,maxBytes=TILE_BLOB_MAX_PIXELS}={}){
   const bytes=tileBlobBytes(url),view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
-  if(bytes.length<16||view.getUint32(0)!==0x54595453||view.getUint32(4,true)!==1||view.getUint32(8,true)!==TILE)throw new Error('Invalid drawing tile blob.');
-  const count=view.getUint32(12,true);if(count>TILE_BLOB_MAX_TILES)throw new Error('Drawing tile blob exceeds its tile bound.');
-  if(count*TILE_BYTES>maxBytes)throw new Error('Drawing tiles exceed the available decode memory.');
+  if(bytes.length<16||view.getUint32(0)!==0x54595453||view.getUint32(4,true)!==1||view.getUint32(8,true)!==TILE)throw messageError(new Error(''), "errors.drawingModel.invalidDrawingTileBlob", {});
+  const count=view.getUint32(12,true);if(count>TILE_BLOB_MAX_TILES)throw messageError(new Error(''), "errors.drawingTileCodec.drawingTileBlobExceedsItsTileBound", {});
+  if(count*TILE_BYTES>maxBytes)throw messageError(new Error(''), "errors.drawingTileCodec.drawingTilesExceedTheAvailableDecodeMemory", {});
   const tiles=[],seen=new Set();let offset=16,decoded=0;
   for(let i=0;i<count;i++){
-    if(offset+12>bytes.length)throw new Error('Truncated drawing tile blob.');
+    if(offset+12>bytes.length)throw messageError(new Error(''), "errors.drawingTileCodec.truncatedDrawingTileBlob", {});
     const tx=view.getInt32(offset,true),ty=view.getInt32(offset+4,true),length=view.getUint32(offset+8,true);offset+=12;
-    const key=tileKey(tx,ty);if(seen.has(key))throw new Error('Drawing tile blob contains duplicate tiles.');seen.add(key);
-    if(offset+length>bytes.length||length>TILE_BLOB_MAX_BYTES)throw new Error('Truncated drawing tile blob.');
+    const key=tileKey(tx,ty);if(seen.has(key))throw messageError(new Error(''), "errors.drawingTileCodec.drawingTileBlobContainsDuplicateTiles", {});seen.add(key);
+    if(offset+length>bytes.length||length>TILE_BLOB_MAX_BYTES)throw messageError(new Error(''), "errors.drawingTileCodec.truncatedDrawingTileBlob", {});
     if(shard&&!inShard(tx,ty,shard)){offset+=length;continue;}
     const tile=await decodeDrawingPNGBytes(bytes.subarray(offset,offset+length),{width:TILE,height:TILE});offset+=length;
-    if(tile.width!==TILE||tile.height!==TILE)throw new Error('Drawing tile blob carries a non-tile image.');
-    decoded+=tile.pixels.byteLength;if(decoded>TILE_BLOB_MAX_PIXELS)throw new Error('Drawing tile blob expands beyond its pixel bound.');
+    if(tile.width!==TILE||tile.height!==TILE)throw messageError(new Error(''), "errors.drawingTileCodec.drawingTileBlobCarriesANonTileImage", {});
+    decoded+=tile.pixels.byteLength;if(decoded>TILE_BLOB_MAX_PIXELS)throw messageError(new Error(''), "errors.drawingTileCodec.drawingTileBlobExpandsBeyondItsPixelBound", {});
     tiles.push({tx,ty,pixels:tile.pixels,png:bytes.slice(offset-length,offset)});
   }
-  if(offset!==bytes.length)throw new Error('Drawing tile blob has trailing bytes.');
+  if(offset!==bytes.length)throw messageError(new Error(''), "errors.drawingTileCodec.drawingTileBlobHasTrailingBytes", {});
   return tiles;
 }
 /** Decoded tiles keep their published PNG as bytes: workers reply with

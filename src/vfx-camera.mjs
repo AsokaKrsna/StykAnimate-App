@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {drawExportScene} from './export-frame-core.mjs';
 import {effectiveCamera} from './pivot/background.mjs';
 import {layerVisible} from './layers.mjs';
@@ -13,7 +14,7 @@ import {sceneVfxPlan,checkSceneVfxPlan} from './vfx-scene.mjs';
 export class CameraVfx {
  constructor({paint}={}){this.paint=paint;this.canvas=new OffscreenCanvas(1,1);this.context=this.canvas.getContext('2d');}
  #prepare(options,dpr,resources){
-  if(!this.context||this.context.isContextLost?.())throw Object.assign(new Error('The camera effects canvas is unavailable.'),{telemetryCode:'device_lost',telemetryStage:'prepare'});
+  if(!this.context||this.context.isContextLost?.())throw Object.assign(messageError(new Error(''), "errors.vfxCamera.theCameraEffectsCanvasIsUnavailable", {}),{telemetryCode:'device_lost',telemetryStage:'prepare'});
   const {report,frame,view={},geometry,preparedFrame,hiddenUids,dragTranslations}=options;
   const camera=effectiveCamera(report,frame)??{},scale=camera.scale??1,angle=camera.angle_rad??0,cx=report.canvas_width/2,cy=report.canvas_height/2;
   // The software path re-rasterizes the camera image on every change; halve

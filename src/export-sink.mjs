@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Export output sinks: stream encoded bytes to a file while the export runs.
  * Desktop writes go through the chunked IPC file transfer (temporary file +
  * atomic rename on finish). Browsers with the File System Access API write into
@@ -8,7 +9,7 @@ const text = new TextEncoder();
 const DEFAULT_CHUNK = 256 * 1024;
 
 const checkAbort = (signal) => {
-  if (signal?.aborted) throw signal.reason || new DOMException("The export was cancelled.", "AbortError");
+  if (signal?.aborted) throw signal.reason || messageError(new DOMException('', "AbortError"), "errors.exportSink.theExportWasCancelled", {});
 };
 
 const byteLength = (part) =>
@@ -27,7 +28,7 @@ class DesktopSink {
     this.onTiming=onTiming;this.writeMs=0;
   }
   async write(part) {
-    if (this.finished || this.aborted) throw new Error("The export destination is closed.");
+    if (this.finished || this.aborted) throw messageError(new Error(''), "errors.exportSink.theExportDestinationIsClosed", {});
     checkAbort(this.signal);
     if (part instanceof Blob) {
       for await (const chunk of part.stream()) await this.writeBytes(chunk);
@@ -51,15 +52,15 @@ class DesktopSink {
     }
   }
   async patch(offset, bytes) {
-    if (this.finished || this.aborted) throw new Error("The export destination is closed.");
+    if (this.finished || this.aborted) throw messageError(new Error(''), "errors.exportSink.theExportDestinationIsClosed", {});
     const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-    if (data.byteLength > this.chunkSize) throw new Error("The export patch is too large.");
+    if (data.byteLength > this.chunkSize) throw messageError(new Error(''), "errors.exportSink.theExportPatchIsTooLarge", {});
     checkAbort(this.signal);
     const started=this.onTiming?performance.now():0;
     try{await this.desktop.patchFileWrite(this.token, offset, data);}finally{if(this.onTiming)this.writeMs+=performance.now()-started;}
   }
   async finish() {
-    if (this.aborted) throw new Error("The export destination was cancelled.");
+    if (this.aborted) throw messageError(new Error(''), "errors.exportSink.theExportDestinationWasCancelled", {});
     checkAbort(this.signal);
     const started=this.onTiming?performance.now():0;
     const result = await this.desktop.finishFileWrite(this.token);
@@ -85,19 +86,19 @@ class FileSystemSink {
     this.finished = this.aborted = false;
   }
   async write(part) {
-    if (this.finished || this.aborted) throw new Error("The export destination is closed.");
+    if (this.finished || this.aborted) throw messageError(new Error(''), "errors.exportSink.theExportDestinationIsClosed", {});
     checkAbort(this.signal);
     await this.writable.write(part instanceof ArrayBuffer ? new Uint8Array(part) : part);
     this.position += byteLength(part);
   }
   async patch(offset, bytes) {
-    if (this.finished || this.aborted) throw new Error("The export destination is closed.");
+    if (this.finished || this.aborted) throw messageError(new Error(''), "errors.exportSink.theExportDestinationIsClosed", {});
     checkAbort(this.signal);
     await this.writable.write({ type: "write", position: offset, data: bytes });
     await this.writable.write({ type: "seek", position: this.position });
   }
   async finish() {
-    if (this.aborted) throw new Error("The export destination was cancelled.");
+    if (this.aborted) throw messageError(new Error(''), "errors.exportSink.theExportDestinationWasCancelled", {});
     checkAbort(this.signal);
     await this.writable.close();
     this.finished = true;
@@ -122,25 +123,25 @@ export class MemorySink {
     this.finished = this.aborted = false;
   }
   async write(part) {
-    if (this.finished || this.aborted) throw new Error("The export destination is closed.");
+    if (this.finished || this.aborted) throw messageError(new Error(''), "errors.exportSink.theExportDestinationIsClosed", {});
     checkAbort(this.signal);
     this.offsets.push(this.position);
     this.parts.push(part);
     this.position += byteLength(part);
   }
   async patch(offset, bytes) {
-    if (this.finished || this.aborted) throw new Error("The export destination is closed.");
+    if (this.finished || this.aborted) throw messageError(new Error(''), "errors.exportSink.theExportDestinationIsClosed", {});
     const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     const index = this.offsets.findIndex((start, i) => {
       const end = start + byteLength(this.parts[i]);
       return offset >= start && offset + data.byteLength <= end;
     });
     const part = index < 0 ? null : this.parts[index];
-    if (!(part instanceof Uint8Array)) throw new Error("The export output cannot be patched in memory.");
+    if (!(part instanceof Uint8Array)) throw messageError(new Error(''), "errors.exportSink.theExportOutputCannotBePatchedInMemory", {});
     part.set(data, offset - this.offsets[index]);
   }
   async finish() {
-    if (this.aborted) throw new Error("The export destination was cancelled.");
+    if (this.aborted) throw messageError(new Error(''), "errors.exportSink.theExportDestinationWasCancelled", {});
     checkAbort(this.signal);
     this.finished = true;
     const blob = new Blob(this.parts, { type: this.mimeType });

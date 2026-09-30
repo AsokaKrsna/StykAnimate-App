@@ -1,3 +1,6 @@
+import {localizedAttribute, messageHTML, messageAttributes} from './localization-bindings.mjs';
+import {t as interfaceText} from './localization.mjs';
+
 /** Builder mode controller: owns the bounded figure session and its chrome —
  * the outliner (Structure), selection bounding, the context menu and the exit
  * flow. The part commands live where the selection is: Properties' quick tiles
@@ -63,7 +66,7 @@ export function initBuilderMode({editor, state, host}) {
   function syncTimelineToggle() {
     if (!timelineToggle) return;
     timelineToggle.setAttribute('aria-expanded', String(timelineVisible()));
-    timelineToggle.title = timelineVisible() ? 'Hide animation timeline' : 'Show animation timeline';
+    localizedAttribute(timelineToggle, "title", (timelineVisible() ? "builderMode.hideAnimationTimeline" : "builderMode.showAnimationTimeline"), (timelineVisible() ? {} : {}));
   }
   function showContextMenu({hit, entry, x, y, tree = false}) {
     if (!session) return;
@@ -167,7 +170,7 @@ export function initBuilderMode({editor, state, host}) {
     host.onModeChange?.();
     host.status?.(session.mode === 'edit'
       ? `Building ${session.figure?.name || 'figure'} — changes stay scoped to it`
-      : 'New figure — draw a line or circle to start');
+      : interfaceText("builderMode.newFigureDrawALineOrCircleTo"));
     return true;
   }
   /** Ends the session after applying the exit choice to the document. */
@@ -203,13 +206,12 @@ export function initBuilderMode({editor, state, host}) {
     if (!session.changed) { session.resolve(session.mode === 'edit' ? 'update' : 'import'); return leave(); }
     if (document.querySelector('#dialog')?.open) host.closeDialog?.();
     const edit = session.mode === 'edit', name = session.figure?.name || 'the figure';
-    host.showDialog(edit ? `Keep changes to ${esc(name)}?` : 'Add the new figure to the scene?',
-      `<div class="builder-exit-options">${
-        edit ? `<button class="builder-exit-option primary" id="builder-exit-update">${icon('check')}<span><strong>Update figure</strong><small>Apply the changes — every instance of ${esc(name)} in the animation updates.</small></span></button>
-        <button class="builder-exit-option" id="builder-exit-import-new">${icon('duplicate')}<span><strong>Import as new figure</strong><small>Keep ${esc(name)} unchanged and add the edited figure to the scene.</small></span></button>`
-        : `<button class="builder-exit-option primary" id="builder-exit-import">${icon('check')}<span><strong>Import into scene</strong><small>Add the figure to the current frame.</small></span></button>`}
-        <button class="builder-exit-option" id="builder-exit-discard">${icon('reset')}<span><strong>Discard changes</strong><small>Undo everything done in the builder.</small></span></button>
-      </div><div class="dialog-actions"><button type="button" class="ui-button" data-variant="ghost" id="builder-exit-cancel">Keep editing</button></div>`);
+    host.showDialog(edit ? interfaceText("builderMode.keepChangesTo", {name}) : interfaceText("builderMode.addTheNewFigureToTheScene"),
+      `<div class="builder-exit-options">${edit ? `<button class="builder-exit-option primary" id="builder-exit-update">${icon('check')}<span><strong data-i18n="builderMode.updateFigure">${messageHTML("builderMode.updateFigure", {})}</strong><small ${messageAttributes("builderMode.applyTheChangesEveryInstanceOfInThe", {name: name})}>Apply the changes — every instance of ${esc(name)} in the animation updates.</small></span></button>
+        <button class="builder-exit-option" id="builder-exit-import-new">${icon('duplicate')}<span><strong data-i18n="builderMode.importAsNewFigure">${messageHTML("builderMode.importAsNewFigure", {})}</strong><small ${messageAttributes("builderMode.keepUnchangedAndAddTheEditedFigureTo", {name: name})}>Keep ${esc(name)} unchanged and add the edited figure to the scene.</small></span></button>`
+        : `<button class="builder-exit-option primary" id="builder-exit-import">${icon('check')}<span><strong data-i18n="builderMode.importIntoScene">${messageHTML("builderMode.importIntoScene", {})}</strong><small data-i18n="builderMode.addTheFigureToTheCurrentFrame">${messageHTML("builderMode.addTheFigureToTheCurrentFrame", {})}</small></span></button>`}
+        <button class="builder-exit-option" id="builder-exit-discard">${icon('reset')}<span><strong data-i18n="common.discardChanges">${messageHTML("builderMode.discardChanges", {})}</strong><small data-i18n="builderMode.undoEverythingDoneInTheBuilder">${messageHTML("builderMode.undoEverythingDoneInTheBuilder", {})}</small></span></button>
+      </div><div class="dialog-actions"><button type="button" class="ui-button" data-variant="ghost" id="builder-exit-cancel" data-i18n="common.keepEditing">${messageHTML("builderMode.keepEditing", {})}</button></div>`, {titleKey: edit ? "builderMode.keepChangesTo" : "builderMode.addTheNewFigureToTheScene", titleParams: {name}});
     const choose = choice => {
       let imported;
       try {
@@ -223,8 +225,8 @@ export function initBuilderMode({editor, state, host}) {
       host.closeDialog?.();
       leave();
       if (imported) editor.select(imported.unique_id);
-      host.status?.(choice === 'discard' ? 'Builder changes discarded'
-        : choice === 'import-new' ? 'Imported as a new figure' : 'Figure updated');
+      host.status?.(choice === 'discard' ? interfaceText("builderMode.builderChangesDiscarded")
+        : choice === 'import-new' ? interfaceText("builderMode.importedAsANewFigure") : interfaceText("builderMode.figureUpdated"));
     };
     document.getElementById('builder-exit-update')?.addEventListener('click', () => choose('update'));
     document.getElementById('builder-exit-import-new')?.addEventListener('click', () => choose('import-new'));

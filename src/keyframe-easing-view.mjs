@@ -1,24 +1,27 @@
+import {messageError} from './localized-error.mjs';
+import {t as interfaceText} from './localization.mjs';
+import {localizedMarkup, appendLocalized} from './localization-bindings.mjs';
 import {EASING_MODES, DEFAULT_BEZIER, keyEasing, easedProgress} from './keyframe-easing.mjs';
 
 /** Shared easing controls for document frames and independent channel keys. */
 export function createEasingControls(container, {initial, discrete = false, onChange = () => {}, onSelect = () => {}} = {}) {
-  container.innerHTML = `<div class="styk-easing-options" role="radiogroup" aria-label="Easing mode"></div>
+  localizedMarkup(container, `<div class="styk-easing-options" role="radiogroup" aria-label="Easing mode" data-i18n-aria-label="keyframeEasingView.easingMode"></div>
     <svg class="styk-easing-curve" viewBox="0 0 280 160" aria-label="Easing curve preview" role="img">
       <path d="M30 10V140H260 M30 140L260 10" fill="none" stroke="#dce3eb"/>
       <path data-curve fill="none" stroke="#0d99ff" stroke-width="3"/>
       <g data-handles stroke="#8499af"><path data-guides fill="none" stroke-dasharray="3 3"/>
         <circle data-handle="0" r="6" fill="#fff"/><circle data-handle="1" r="6" fill="#fff"/></g>
-      <text x="30" y="156">Time →</text><text x="3" y="12">1</text><text x="3" y="140">0</text>
-    </svg><div class="styk-timeline-fields styk-easing-points"></div>`;
+      <text x="30" y="156" data-i18n="keyframeEasingView.time">Time →</text><text x="3" y="12">1</text><text x="3" y="140">0</text>
+    </svg><div class="styk-timeline-fields styk-easing-points"></div>`);
   let mode = initial?.interpolation ?? null, points = [...(initial?.bezier ?? DEFAULT_BEZIER)];
   const options = container.querySelector('.styk-easing-options');
   const svg = container.querySelector('svg'), fields = container.querySelector('.styk-easing-points');
-  const inputs = ['Control 1 · X', 'Control 1 · Y', 'Control 2 · X', 'Control 2 · Y'].map((name, index) => {
-    const label = document.createElement('label'); label.textContent = ['X₁','Y₁','X₂','Y₂'][index];
+  const inputs = [interfaceText("keyframeEasingView.control1X"), interfaceText("keyframeEasingView.control1Y"), interfaceText("keyframeEasingView.control2X"), interfaceText("keyframeEasingView.control2Y")].map((name, index) => {
+    const label = document.createElement('label'); label.textContent = [interfaceText("keyframeEasingView.x"),interfaceText("keyframeEasingView.y"),interfaceText("keyframeEasingView.x2"),interfaceText("keyframeEasingView.y2")][index];
     const input = document.createElement('input'); input.type = 'number'; input.min = '0'; input.max = '1'; input.step = 'any'; input.value = points[index];
     input.setAttribute('aria-label', name); input.required = true;
     input.addEventListener('input', () => { points[index] = input.valueAsNumber; render(); });
-    label.append(input); fields.append(label); return input;
+    appendLocalized(label, input); appendLocalized(fields, label); return input;
   });
   const buttons = EASING_MODES.map(item => {
     const button = document.createElement('button'); button.type = 'button'; button.textContent = item.label;
@@ -26,15 +29,15 @@ export function createEasingControls(container, {initial, discrete = false, onCh
     button.setAttribute('role', 'radio'); button.dataset.easing = item.id; button.disabled = discrete && item.id !== 'constant';
     button.addEventListener('click', () => { mode = item.id; render(); onSelect(mode); });
     button.addEventListener('keydown', event => {
-      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
       event.preventDefault();
-      const enabled = buttons.filter(item => !item.disabled), direction = ['ArrowLeft','ArrowUp'].includes(event.key) ? -1 : 1;
+      const enabled = buttons.filter(item => !item.disabled), direction = ["ArrowLeft","ArrowUp"].includes(event.key) ? -1 : 1;
       const next = enabled[(enabled.indexOf(button) + direction + enabled.length) % enabled.length]; next.focus();
     });
-    options.append(button); return button;
+    appendLocalized(options, button); return button;
   });
   function read() {
-    if (!mode) throw new Error('Choose an easing mode.');
+    if (!mode) throw messageError(new Error(''), "errors.keyframeEasingView.chooseAnEasingMode", {});
     return keyEasing({interpolation: mode, ...(mode === 'bezier' ? {bezier: points} : {})});
   }
   function render() {
@@ -47,8 +50,8 @@ export function createEasingControls(container, {initial, discrete = false, onCh
     svg.style.display = mode === 'bezier' ? '' : 'none';
     fields.hidden = mode !== 'bezier'; inputs.forEach(input => { input.disabled = mode !== 'bezier'; });
     svg.querySelector('[data-handles]').style.display = mode === 'bezier' && easing ? '' : 'none';
-    const path = !easing ? '' : mode === 'constant' ? 'M30 140H260V10' : Array.from({length: 101}, (_, i) =>
-      `${i ? 'L' : 'M'}${30 + i * 2.3} ${140 - easedProgress(easing, i / 100) * 130}`).join(' ');
+    const path = !easing ? '' : mode === 'constant' ? "M30 140H260V10" : Array.from({length: 101}, (_, i) =>
+      `${i ? "L" : "M"}${30 + i * 2.3} ${140 - easedProgress(easing, i / 100) * 130}`).join(' ');
     svg.querySelector('[data-curve]').setAttribute('d', path);
     if (mode === 'bezier' && easing) {
       const [x1,y1,x2,y2] = points, a = [30 + x1 * 230, 140 - y1 * 130], b = [30 + x2 * 230, 140 - y2 * 130];

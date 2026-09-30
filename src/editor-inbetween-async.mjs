@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Cancellable background planning and bounded, unpublished history staging. */
 import {planInsertInbetweenSteps,INBETWEEN_LIMITS} from './editor-inbetween.mjs';
 import {validateSceneSteps} from './pivot/model.mjs';
@@ -25,38 +26,38 @@ async function drain(iterator,check,options) {
 async function stage(editor,wire,indices,ratio,check,options) {
   const report=editor.report,identity=editor._nextFrameIdentity;
   if(!wire||wire.version!==1||!Array.isArray(wire.entries)||wire.entries.length!==indices.length||
-    !Number.isSafeInteger(wire.nextFrameIdentity)||wire.nextFrameIdentity<identity)throw new Error('The inbetween worker returned an invalid plan.');
+    !Number.isSafeInteger(wire.nextFrameIdentity)||wire.nextFrameIdentity<identity)throw messageError(new Error(''), "errors.editorInbetweenAsync.theInbetweenWorkerReturnedAnInvalidPlan", {});
   const rows=nativeTimeline(report),occupied=new Set([...report.keyframes.map(frame=>frame._styk?.frameId),...Object.keys(report._styk.frameSources??{})]);
   let cumulative=0;
   function checkIdentity(frame) {
     const id=frame?._styk?.frameId,n=Number(id?.slice(6));
-    if(!/^frame-[1-9]\d*$/.test(id)||!Number.isSafeInteger(n)||n<identity||n>=wire.nextFrameIdentity||occupied.has(id))throw new Error('Invalid inserted source identity.');
+    if(!/^frame-[1-9]\d*$/.test(id)||!Number.isSafeInteger(n)||n<identity||n>=wire.nextFrameIdentity||occupied.has(id))throw messageError(new Error(''), "errors.editorInbetweenAsync.invalidInsertedSourceIdentity", {});
     occupied.add(id);
   }
   for(let i=0;i<indices.length;i++) {
     const entry=wire.entries[i],index=indices[i],duration=report.keyframes[index===0||ratio>0?index:index-1].duration_raw;
     if(entry.index!==index||entry.insertedIndex!==index+i||entry.tick!==rows[index].start+cumulative||entry.duration!==duration||entry.frame?.duration_raw!==duration)
-      throw new Error('The inbetween worker returned inconsistent frame positions or durations.');
+      throw messageError(new Error(''), "errors.editorInbetweenAsync.theInbetweenWorkerReturnedInconsistentFramePositionsOr", {});
     checkIdentity(entry.frame);cumulative+=duration;
   }
   const before=report._styk.animation,afterById=new Map((before?.channels??[]).map(channel=>[channel.id,channel]));
   let animation=null;const sourceFrames=wire.animation?.sources??[];
-  if(!Array.isArray(sourceFrames))throw new Error('Invalid inbetween source table.');
-  if(wire.nextFrameIdentity!==identity+wire.entries.length+sourceFrames.length)throw new Error('Invalid inserted source identity counter.');
+  if(!Array.isArray(sourceFrames))throw messageError(new Error(''), "errors.editorInbetweenAsync.invalidInbetweenSourceTable", {});
+  if(wire.nextFrameIdentity!==identity+wire.entries.length+sourceFrames.length)throw messageError(new Error(''), "errors.editorInbetweenAsync.invalidInsertedSourceIdentityCounter", {});
   if(wire.animation){
-    if(!before?.channels?.length||!Array.isArray(wire.animation.channelUpdates)||!Array.isArray(wire.animation.channelOrder))throw new Error('Invalid inbetween animation update.');
+    if(!before?.channels?.length||!Array.isArray(wire.animation.channelUpdates)||!Array.isArray(wire.animation.channelOrder))throw messageError(new Error(''), "errors.editorInbetweenAsync.invalidInbetweenAnimationUpdate", {});
     const changed=new Set();
     for(const update of wire.animation.channelUpdates){
-      if(!update||changed.has(update.id)||!afterById.has(update.id)||update.channel?.id!==update.id)throw new Error('Invalid inbetween channel identity.');
+      if(!update||changed.has(update.id)||!afterById.has(update.id)||update.channel?.id!==update.id)throw messageError(new Error(''), "errors.editorInbetweenAsync.invalidInbetweenChannelIdentity", {});
       changed.add(update.id);afterById.set(update.id,update.channel);
     }
     const order=wire.animation.channelOrder;
-    if(order.length!==afterById.size||new Set(order).size!==order.length||order.some(id=>!afterById.has(id)))throw new Error('Invalid inbetween channel order.');
+    if(order.length!==afterById.size||new Set(order).size!==order.length||order.some(id=>!afterById.has(id)))throw messageError(new Error(''), "errors.editorInbetweenAsync.invalidInbetweenChannelOrder", {});
     const after={...before,nextKeyId:wire.animation.nextKeyId,channels:order.map(id=>afterById.get(id))};
     animation={before,after,sources:sourceFrames,patch:{before:header(before),after:header(after),changes:before.channels.flatMap((channel,index)=>{
       const next=afterById.get(channel.id);return next===channel?[]:[{id:channel.id,before:{exists:true,index,channel},after:{exists:true,index:order.indexOf(channel.id),channel:next}}];
     })}};
-  } else if(before?.channels?.length)throw new Error('The inbetween plan omitted authored animation.');
+  } else if(before?.channels?.length)throw messageError(new Error(''), "errors.editorInbetweenAsync.theInbetweenPlanOmittedAuthoredAnimation", {});
   for(const frame of sourceFrames)checkIdentity(frame);
   const frames=[...wire.entries.map(entry=>entry.frame),...sourceFrames];
   if(frames.length)await drain(validateSceneSteps({...report,keyframes:frames}),check,options);
@@ -72,7 +73,7 @@ async function stage(editor,wire,indices,ratio,check,options) {
     bytes+=JSON.stringify(copy).length*2;
     for(const {runtime_segments,...object} of frame.objects){
       objects++;values+=(object.angles?.length??0)+(object.lengths?.length??0)+(object.bends?.length??0);
-      if(objects>INBETWEEN_LIMITS.objectPoses||values>INBETWEEN_LIMITS.segmentValues)throw new Error('The inbetween plan exceeds the captured-pose budget.');
+      if(objects>INBETWEEN_LIMITS.objectPoses||values>INBETWEEN_LIMITS.segmentValues)throw messageError(new Error(''), "errors.editorInbetweenAsync.theInbetweenPlanExceedsTheCapturedPoseBudget", {});
       copy.objects.push(clone(object));bytes+=JSON.stringify(object).length*2;
       counts.set(object.unique_id,(counts.get(object.unique_id)??0)+1);
       if(performance.now()-lastYield>=4)await pause();
@@ -95,12 +96,12 @@ async function stage(editor,wire,indices,ratio,check,options) {
     prepared:{keyframes,preparedFrameSources,frameUidCounts:{before:[],after:[...nativeCounts]},frameSourceUidCounts:{before:[],after:[...sourceCounts]},precomputedBytes:bytes*2}};
 }
 export const editorInbetweenAsyncMethods={
-  setInbetweenPlanner(planner){if(planner!==null&&typeof planner!=='function')throw new Error('Provide an inbetween planning function.');this._inbetweenPlanner=planner;return this;},
+  setInbetweenPlanner(planner){if(planner!==null&&typeof planner!=='function')throw messageError(new Error(''), "errors.editorInbetweenAsync.provideAnInbetweenPlanningFunction", {});this._inbetweenPlanner=planner;return this;},
   async insertInbetweenFramesAsync(ratio=.5,indices=[this.frameIndex],options={}){
     const started=performance.now();
-    if(typeof ratio!=='number'||!Number.isFinite(ratio)||ratio<0||ratio>1)throw new Error('Choose an interpolation ratio from zero to one.');
+    if(typeof ratio!=='number'||!Number.isFinite(ratio)||ratio<0||ratio>1)throw messageError(new Error(''), "errors.editorInbetweenAsync.chooseAnInterpolationRatioFromZeroToOne", {});
     indices=this._frameIndices(indices);
-    if(indices.length>INBETWEEN_LIMITS.insertedFrames||this.report.keyframes.length+indices.length>100000)throw new Error('Insert fewer inbetweens within the native frame limit.');
+    if(indices.length>INBETWEEN_LIMITS.insertedFrames||this.report.keyframes.length+indices.length>100000)throw messageError(new Error(''), "errors.editorInbetweenAsync.insertFewerInbetweensWithinTheNativeFrameLimit", {});
     if(!indices.length)return this._commitInbetweenPlan({entries:[],skippedIndices:[]},ratio);
     if(this._animationEdit)this.commitAnimationEdit();if(this._drag)this.commitDrag();
     this._beforeFrameDraftGlobalEdit?.();

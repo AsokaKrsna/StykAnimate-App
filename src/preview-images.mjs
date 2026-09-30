@@ -1,3 +1,5 @@
+import {restoreMessageError, messageError} from './localized-error.mjs';
+
 import {previewMemoryPlan} from './playback-budget.mjs';
 import {assetURL} from './image-resources.mjs';
 import {drawingMetadata} from './drawing-model.mjs';
@@ -13,7 +15,7 @@ export class PreviewImages extends Map {
   clear() {
     clearTimeout(this.idleTimer); this.idleTimer = null;
     this.worker?.terminate(); this.worker = null; this.busy = false; this.queued = null; this.signature = null;
-    const error = new DOMException('Preview images were invalidated.', 'AbortError');
+    const error = messageError(new DOMException('', 'AbortError'), "errors.previewImages.previewImagesWereInvalidated", {});
     for (const pending of this.waiters.values()) pending.reject(error);
     this.waiters.clear();
     for (const pending of this.pendingImages.values()) pending.reject(error);
@@ -68,7 +70,7 @@ export class PreviewImages extends Map {
         this.lastPreparation = {...data.timings, roundTripMs: performance.now() - this.requestStarted};
         const pending = this.waiters.get(data.id); this.waiters.delete(data.id);
         if (data.error) {
-          this.signature = null; const error = new Error(data.error); pending?.reject(error);
+          this.signature = null; const error = restoreMessageError(new Error(data.error), data); pending?.reject(error);
           this.rejectPendingImages(error); this.onError(error);
         }
         else {
@@ -109,7 +111,7 @@ export class PreviewImages extends Map {
       };
       worker.onerror = event => {
         if (this.worker !== worker) return;
-        event.preventDefault(); const error = new Error(event.message || 'Preview image worker stopped.');
+        event.preventDefault(); const error = (event.message ? new Error(event.message) : messageError(new Error(''), "errors.previewImages.previewImageWorkerStopped"));
         for (const pending of this.waiters.values()) pending.reject(error);
         this.rejectPendingImages(error);
         this.waiters.clear(); worker.terminate(); this.worker = null; this.busy = false; this.signature = null; this.onError(error);

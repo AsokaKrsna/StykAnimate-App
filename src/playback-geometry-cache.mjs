@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {vfxRenderFrame} from './vfx-clips.mjs';
 import {buildGeometry, buildGeometryAsync} from './pivot/geometry.mjs';
 import {sameData,sameRecord} from './structural-equality.mjs';
@@ -84,7 +85,7 @@ export class RetainedGeometryCache {
     const incremental=this.plan(report,frame,revision);
     const geometry=await buildGeometryAsync(report,frame,incremental,options);
     if(this.geometry!==baseline||this.revision!==baselineRevision||this.report!==baselineReport||this.dirtyVersion!==baselineDirty||options.checkCurrent?.()===false)
-      throw new DOMException('Geometry preparation was superseded.', 'AbortError');
+      throw messageError(new DOMException('', 'AbortError'), "errors.playbackGeometryCache.geometryPreparationWasSuperseded", {});
     return this.publish(report,frame,revision,geometry,incremental);
   }
   plan(report,frame,revision){

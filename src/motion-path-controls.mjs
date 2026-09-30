@@ -1,3 +1,7 @@
+import {tupleMessages, messageTuple, messageAttributes, localizedMarkup, localizedAttribute, appendLocalized, messageHTML} from './localization-bindings.mjs';
+
+import {t as interfaceText} from './localization.mjs';
+
 import {icon} from './icons.mjs';
 import {MOTION_PATH_SPEED_COLORS} from './motion-path.mjs';
 
@@ -8,42 +12,40 @@ export class MotionPathControls {
     const trigger = this.trigger = document.createElement('button');
     trigger.type = 'button';
     trigger.className = 'path-options-button ui-split-more';
-    trigger.innerHTML = icon('chevron-down');
-    trigger.title = 'Motion path settings';
-    trigger.setAttribute('aria-label', 'Motion path settings');
+    localizedMarkup(trigger, icon('chevron-down'));
+    localizedAttribute(trigger, "title", "motionPathControls.motionPathSettings", {});
+    localizedAttribute(trigger, 'aria-label', "motionPathControls.motionPathSettings", {});
     trigger.setAttribute('aria-haspopup', 'dialog');
     trigger.setAttribute('aria-controls', 'path-popover');
     trigger.setAttribute('aria-expanded', 'false');
     const tool = document.createElement('div');
     tool.className = 'motion-path-tool ui-split';
     tool.setAttribute('role', 'group');
-    tool.setAttribute('aria-label', 'Motion paths');
+    localizedAttribute(tool, 'aria-label', "motionPathControls.motionPaths", {});
     button.before(tool);
-    tool.append(button, trigger);
+    appendLocalized(tool, button, trigger);
     const panel = this.panel = document.createElement('div');
     panel.className = 'path-popover ui-popover';
     panel.id = 'path-popover';
     panel.setAttribute('popover', 'auto');
     panel.setAttribute('role', 'dialog');
-    panel.setAttribute('aria-label', 'Motion path settings');
+    localizedAttribute(panel, 'aria-label', "motionPathControls.motionPathSettings", {});
     // The kit's popover (features/view-options.css): the title with its on/off switch (a pressed button drawn as
     // the kit's switch); what the trails follow; the frame range with its exact count; how trails look; then
     // how far a right-button arc drag reaches and how it fades.
-    const choice = (key, label, options) => `<div class="ui-row path-row"><span class="ui-row-label">${label}</span><div class="ui-segmented path-choice" data-size="sm" data-fill role="group" aria-label="${label}">${
-      options.map(([value, text, tip]) => `<button type="button" class="ui-segmented-item" data-choice="${key}" data-value="${value}" title="${tip}">${text}</button>`).join('')}</div></div>`;
-    const toggle = (key, label, tip, extra = '') => `<label class="ui-switch-row path-row" title="${tip}"><span>${label}${extra}</span><input type="checkbox" class="ui-switch" role="switch" data-path="${key}"></label>`;
-    const legend = `<span class="path-speed-legend" aria-hidden="true"><span style="background:linear-gradient(90deg,${MOTION_PATH_SPEED_COLORS.join(',')})"></span>slow → fast</span>`;
-    panel.innerHTML = `<header class="ui-popover-head"><strong class="ui-popover-title">${icon('motion-path')}Motion paths</strong><button type="button" class="path-switch" data-path-toggle aria-label="Show motion paths"></button></header>
-<div class="ui-popover-body path-body">${choice('motionPathAllTargets', 'Figures', [['false', 'Selected', 'Trails for the selected figures'], ['true', 'All', 'Trails for every figure on the stage']])}
-${choice('motionPathJoints', 'Joints', [['selected', 'Selected', 'The selected joint, or each figure’s origin'], ['tips', 'Hands & feet', 'Every limb tip (hands, feet, head) and the origin of each figure']])}
-<fieldset class="path-range"><legend>Frame range</legend><div class="path-presets ui-segmented" data-size="sm" data-fill role="group" aria-label="Frame range presets"><button type="button" class="ui-segmented-item" data-range="12">±12</button><button type="button" class="ui-segmented-item" data-range="24">±24</button><button type="button" class="ui-segmented-item" data-range="48">±48</button><button type="button" class="ui-segmented-item" data-range="0">Full</button></div>
-<label class="ui-row path-row"><span class="ui-row-label">Around playhead</span><span class="path-number"><input type="number" data-path="motionPathRange" min="0" max="4000" step="1" aria-label="Frames either side of playhead" title="0 shows the full animation"><span>frames</span></span></label></fieldset>
-<fieldset class="path-range path-falloff" title="Right-drag a trail point: nearby keys follow, fading out with distance; scroll to resize"><legend>Reshape arc <span class="path-key">Right-drag</span></legend><div class="ui-segmented" data-size="sm" data-fill role="group" aria-label="Falloff shape">${
-  [['smooth', 'Smooth', 'Neighbours follow closely; far frames barely move'], ['linear', 'Linear', 'Fades evenly with distance'], ['sharp', 'Sharp', 'Mostly the dragged frame; neighbours follow a little'], ['flat', 'Flat', 'Moves everything in reach together']]
-    .map(([value, text, tip]) => `<button type="button" class="ui-segmented-item" data-choice="motionPathFalloffShape" data-value="${value}" title="${tip}">${text}</button>`).join('')}</div>
-<label class="ui-row path-row"><span class="ui-row-label">Around dragged point</span><span class="path-number"><input type="number" data-path="motionPathFalloffRadius" min="1" max="240" step="1" aria-label="Frames either side of the dragged point"><span>frames</span></span></label></fieldset>
-<div class="path-display">${toggle('motionPathLabels', 'Frame numbers', 'Number the keys, the ends and the current frame')}${toggle('motionPathDots', 'In-between dots', 'A dot for every in-between; their spacing shows easing')}${toggle('motionPathSpeed', 'Speed colours', 'Colour trails by speed: cool where motion is slow, warm where it is fast', legend)}${toggle('motionPathRelative', 'Relative to body', 'Keep a travelling figure in place so its limb arcs are easy to compare')}</div></div>`;
-    document.body.append(panel);
+    const choice = (key, label, options, _messages = {}) => `<div class="ui-row path-row"><span class="ui-row-label" ${_messages.label ? messageAttributes(_messages.label.key, _messages.label.params) : ''}>${label}</span><div class="ui-segmented path-choice" data-size="sm" data-fill role="group" aria-label="${label}" ${_messages.label ? messageAttributes(_messages.label.key, _messages.label.params, 'aria-label') : ''}>${options.map((_tuple) => {const [value, text, tip] = _tuple; const _messages = tupleMessages(_tuple); return `<button type="button" class="ui-segmented-item" data-choice="${key}" data-value="${value}" title="${tip}" ${_messages.text ? messageAttributes(_messages.text.key, _messages.text.params) : ''}${_messages[2] ? ' ' + messageAttributes(_messages[2].key, _messages[2].params, 'title') : ''}>${text}</button>`;}).join('')}</div></div>`;
+    const toggle = (key, label, tip, extra = '', _messages = {}) => `<label class="ui-switch-row path-row" title="${tip}"><span>${label}${extra}</span><input type="checkbox" class="ui-switch" role="switch" data-path="${key}"></label>`;
+    const legend = `<span class="path-speed-legend" aria-hidden="true"><span style="background:linear-gradient(90deg,${MOTION_PATH_SPEED_COLORS.join(',')})"></span>${messageHTML("motionPathControls.slowFast", {})}</span>`;
+    localizedMarkup(panel, `<header class="ui-popover-head"><strong class="ui-popover-title">${icon('motion-path')}${messageHTML("motionPathControls.motionPaths", {})}</strong><button type="button" class="path-switch" data-path-toggle aria-label="Show motion paths" data-i18n-aria-label="motionPathControls.showMotionPaths"></button></header>
+<div class="ui-popover-body path-body">${choice('motionPathAllTargets', interfaceText("motionPathControls.figures"), [messageTuple(['false', interfaceText("motionPathControls.selected"), interfaceText("motionPathControls.trailsForTheSelectedFigures")], {1: {key: "motionPathControls.selected", params: {}}, 2: {key: "motionPathControls.trailsForTheSelectedFigures", params: {}}}), messageTuple(['true', interfaceText("motionPathControls.all"), interfaceText("motionPathControls.trailsForEveryFigureOnTheStage")], {1: {key: "motionPathControls.all", params: {}}, 2: {key: "motionPathControls.trailsForEveryFigureOnTheStage", params: {}}})], {label: {key: "motionPathControls.figures", params: {}}})}
+${choice('motionPathJoints', interfaceText("motionPathControls.joints"), [messageTuple(['selected', interfaceText("motionPathControls.selected"), interfaceText("motionPathControls.theSelectedJointOrEachFigureSOrigin")], {1: {key: "motionPathControls.selected", params: {}}, 2: {key: "motionPathControls.theSelectedJointOrEachFigureSOrigin", params: {}}}), messageTuple(['tips', interfaceText("motionPathControls.handsFeet"), interfaceText("motionPathControls.everyLimbTipHandsFeetHeadAndThe")], {1: {key: "motionPathControls.handsFeet", params: {}}, 2: {key: "motionPathControls.everyLimbTipHandsFeetHeadAndThe", params: {}}})], {label: {key: "motionPathControls.joints", params: {}}})}
+<fieldset class="path-range"><legend data-i18n="motionPathControls.frameRange">Frame range</legend><div class="path-presets ui-segmented" data-size="sm" data-fill role="group" aria-label="Frame range presets" data-i18n-aria-label="motionPathControls.frameRangePresets"><button type="button" class="ui-segmented-item" data-range="12">±12</button><button type="button" class="ui-segmented-item" data-range="24">±24</button><button type="button" class="ui-segmented-item" data-range="48">±48</button><button type="button" class="ui-segmented-item" data-range="0" data-i18n="motionPathControls.full">Full</button></div>
+<label class="ui-row path-row"><span class="ui-row-label" data-i18n="motionPathControls.aroundPlayhead">Around playhead</span><span class="path-number"><input type="number" data-path="motionPathRange" min="0" max="4000" step="1" aria-label="Frames either side of playhead" title="0 shows the full animation" data-i18n-aria-label="motionPathControls.framesEitherSideOfPlayhead" data-i18n-title="motionPathControls.message0ShowsTheFullAnimation"><span data-i18n="motionPathControls.frames">frames</span></span></label></fieldset>
+<fieldset class="path-range path-falloff" title="Right-drag a trail point: nearby keys follow, fading out with distance; scroll to resize" data-i18n-title="motionPathControls.rightDragATrailPointNearbyKeysFollow"><legend>${messageHTML("motionPathControls.reshapeArc", {})}<span class="path-key" data-i18n="motionPathControls.rightDrag">Right-drag</span></legend><div class="ui-segmented" data-size="sm" data-fill role="group" aria-label="Falloff shape" data-i18n-aria-label="motionPathControls.falloffShape">${[messageTuple(['smooth', interfaceText("motionPathControls.smooth"), interfaceText("motionPathControls.neighboursFollowCloselyFarFramesBarelyMove")], {1: {key: "motionPathControls.smooth", params: {}}, 2: {key: "motionPathControls.neighboursFollowCloselyFarFramesBarelyMove", params: {}}}), messageTuple(['linear', interfaceText("motionPathControls.linear"), interfaceText("motionPathControls.fadesEvenlyWithDistance")], {1: {key: "motionPathControls.linear", params: {}}, 2: {key: "motionPathControls.fadesEvenlyWithDistance", params: {}}}), messageTuple(['sharp', interfaceText("motionPathControls.sharp"), interfaceText("motionPathControls.mostlyTheDraggedFrameNeighboursFollowALittle")], {1: {key: "motionPathControls.sharp", params: {}}, 2: {key: "motionPathControls.mostlyTheDraggedFrameNeighboursFollowALittle", params: {}}}), messageTuple(['flat', interfaceText("motionPathControls.flat"), interfaceText("motionPathControls.movesEverythingInReachTogether")], {1: {key: "motionPathControls.flat", params: {}}, 2: {key: "motionPathControls.movesEverythingInReachTogether", params: {}}})]
+    .map((_tuple) => {const [value, text, tip] = _tuple; const _messages = tupleMessages(_tuple); return `<button type="button" class="ui-segmented-item" data-choice="motionPathFalloffShape" data-value="${value}" title="${tip}"${_messages[2] ? ' ' + messageAttributes(_messages[2].key, _messages[2].params, 'title') : ''}>${text}</button>`;}).join('')}</div>
+<label class="ui-row path-row"><span class="ui-row-label" data-i18n="motionPathControls.aroundDraggedPoint">Around dragged point</span><span class="path-number"><input type="number" data-path="motionPathFalloffRadius" min="1" max="240" step="1" aria-label="Frames either side of the dragged point" data-i18n-aria-label="motionPathControls.framesEitherSideOfTheDraggedPoint"><span data-i18n="motionPathControls.frames">frames</span></span></label></fieldset>
+<div class="path-display">${toggle('motionPathLabels', interfaceText("motionPathControls.frameNumbers"), interfaceText("motionPathControls.numberTheKeysTheEndsAndTheCurrent"), undefined, {label: {key: "motionPathControls.frameNumbers", params: {}}})}${toggle('motionPathDots', interfaceText("motionPathControls.inBetweenDots"), interfaceText("motionPathControls.aDotForEveryInBetweenTheirSpacing"), undefined, {label: {key: "motionPathControls.inBetweenDots", params: {}}})}${toggle('motionPathSpeed', interfaceText("motionPathControls.speedColours"), interfaceText("motionPathControls.colourTrailsBySpeedCoolWhereMotionIs"), legend, {label: {key: "motionPathControls.speedColours", params: {}}})}${toggle('motionPathRelative', interfaceText("motionPathControls.relativeToBody"), interfaceText("motionPathControls.keepATravellingFigureInPlaceSoIts"), undefined, {label: {key: "motionPathControls.relativeToBody", params: {}}})}</div></div>`);
+    appendLocalized(document.body, panel);
     const open = () => { this.sync(); panel.showPopover(); this.position(); };
     trigger.addEventListener('click', event => {
       event.stopPropagation();
@@ -93,8 +95,8 @@ ${choice('motionPathJoints', 'Joints', [['selected', 'Selected', 'The selected j
     for (const preset of this.panel.querySelectorAll('[data-range]')) preset.setAttribute('aria-pressed', String(Number(preset.dataset.range) === settings.motionPathRange));
     const toggle = this.panel.querySelector('[data-path-toggle]');
     toggle.setAttribute('aria-pressed', String(enabled));
-    toggle.title = enabled ? 'Hide motion paths' : 'Show motion paths';
+    localizedAttribute(toggle, "title", (enabled ? "motionPathControls.hideMotionPaths" : "motionPathControls.showMotionPaths"), (enabled ? {} : {}));
     this.button.setAttribute('aria-pressed', String(enabled));
-    this.button.setAttribute('aria-label', 'Motion paths');
+    localizedAttribute(this.button, 'aria-label', "motionPathControls.motionPaths", {});
   }
 }

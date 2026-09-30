@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {evaluatedFrame, buildGeometry, timeline, evaluationGeneration} from './pivot/geometry.mjs';
 import {layerIdForUid} from './layers.mjs';
 
@@ -21,11 +22,11 @@ const RAW = 9, STRIDE = 3, CHECKPOINT = 32;
 const reports = new WeakMap();
 
 export function validateFollowTargets(targets) {
-  if (!Array.isArray(targets) || !targets.length || targets.length > FOLLOW_TARGET_LIMIT) throw new Error(`Follow 1–${FOLLOW_TARGET_LIMIT} figures.`);
+  if (!Array.isArray(targets) || !targets.length || targets.length > FOLLOW_TARGET_LIMIT) throw messageError(new Error(''), "errors.cameraFollow.follow1Figures", {FOLLOW_TARGET_LIMIT: FOLLOW_TARGET_LIMIT});
   const uids = new Set();
   for (const target of targets) {
     if (!target || !Number.isInteger(target.uid) || target.uid < 0 || uids.has(target.uid) || typeof target.weight !== 'number' || !(target.weight >= 0 && target.weight <= 1))
-      throw new Error('Each followed figure needs a unique figure and a 0–100% weight.');
+      throw messageError(new Error(''), "errors.cameraFollow.eachFollowedFigureNeedsAUniqueFigureAnd", {});
     uids.add(target.uid);
   }
 }

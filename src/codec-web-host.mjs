@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Page-side owner of the in-browser Pivot codec worker (web build).
  *
  * It creates the worker on first use, connects one MessagePort per job, and
@@ -28,7 +29,7 @@ export class BrowserCodecHost {
 
   /** A port for the worker running this job. Loading the runtime waits for its first request. */
   link(jobId) {
-    if (!this.#jobs.has(jobId)) throw new DOMException('The codec job was cancelled.', 'AbortError');
+    if (!this.#jobs.has(jobId)) throw messageError(new DOMException('', 'AbortError'), "errors.codecWebHost.theCodecJobWasCancelled", {});
     const {port1, port2} = new MessageChannel();
     const worker = this.#ensure();
     this.#jobs.set(jobId, worker);

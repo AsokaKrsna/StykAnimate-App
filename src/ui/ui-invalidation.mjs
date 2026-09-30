@@ -1,3 +1,4 @@
+import {messageError} from '../localized-error.mjs';
 /**
  * Surface-scoped chrome updates (architecture.md §3.2). The editor chrome is a
  * list of surfaces (the title, the transport, the inspector, …), each with the
@@ -91,9 +92,9 @@ export function createInvalidator({
   return {
     /** Declares a surface; surfaces update in declaration order. */
     surface(name, {on = [], update, quiet = false, playbackInterval = 0, visible = null}) {
-      if (byName.has(name)) throw new Error(`Surface ${name} is already declared.`);
-      if (typeof update !== 'function') throw new TypeError(`Surface ${name} needs an update function.`);
-      for (const reason of on) if (!UI_REASONS.includes(reason)) throw new TypeError(`Unknown invalidation reason: ${reason}`);
+      if (byName.has(name)) throw messageError(new Error(''), "errors.uiInvalidation.surfaceIsAlreadyDeclared", {name: name});
+      if (typeof update !== 'function') throw messageError(new TypeError(''), "errors.uiInvalidation.surfaceNeedsAnUpdateFunction", {name: name});
+      for (const reason of on) if (!UI_REASONS.includes(reason)) throw messageError(new TypeError(''), "errors.uiInvalidation.unknownInvalidationReason", {reason: reason});
       const surface = {name, on: new Set(on), update, quiet, playbackInterval, visible, dirty: false, last: -Infinity, updates: 0};
       surfaces.push(surface);
       byName.set(name, surface);
@@ -115,7 +116,7 @@ export function createInvalidator({
      */
     update(name) {
       const surface = byName.get(name);
-      if (!surface) throw new Error(`Unknown surface: ${name}`);
+      if (!surface) throw messageError(new Error(''), "errors.uiInvalidation.unknownSurface", {name: name});
       surface.dirty = true;
       const state = ready(surface, isPlaying(), now(), false);
       if (state === true) { run(surface, now()); return true; }

@@ -1,3 +1,4 @@
+import {errorMessageData} from './localized-error.mjs';
 import {materializeDrawingTiles} from './drawing-preparation.mjs';
 
 // Preparing a commit needs only the tile kernel. Load codecs, brush/fill and
@@ -7,19 +8,19 @@ self.onmessage=async({data})=>{
     try{
       const tiles=materializeDrawingTiles(data.tiles);
       self.postMessage({id:data.id,tiles},tiles.flatMap(t=>t.pixels?[t.pixels]:[]));
-    }catch(error){self.postMessage({id:data.id,error:error.message});}
+    }catch(error){self.postMessage({id:data.id,error:error.message, ...errorMessageData(error)});}
     return;
   }
   if(data.kind==='preview'){
     let preview;
     try{preview=await import('./drawing-worker-preview.mjs');}
-    catch(error){self.postMessage({id:data.id,error:error.message,fatal:true});return;}
+    catch(error){self.postMessage({id:data.id,error:error.message, ...errorMessageData(error),fatal:true});return;}
     try{const bitmap=preview.drawingWorkerPreview(data);self.postMessage({id:data.id,bitmap},[bitmap]);}
-    catch(error){self.postMessage({id:data.id,error:error.message});}
+    catch(error){self.postMessage({id:data.id,error:error.message, ...errorMessageData(error)});}
     return;
   }
   let operations;
   try{operations=await import('./drawing-worker-operations.mjs');}
-  catch(error){self.postMessage({id:data.id,error:error.message,fatal:true});return;}
+  catch(error){self.postMessage({id:data.id,error:error.message, ...errorMessageData(error),fatal:true});return;}
   await operations.drawingWorkerOperation(data);
 };

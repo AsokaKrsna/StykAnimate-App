@@ -1,23 +1,25 @@
+import {messageError} from './localized-error.mjs';
+import {t as interfaceText} from './localization.mjs';
 /** One outgoing timing curve per key. Native Pivot auto curves are import-only. */
 import {isDiscreteAnimationProperty} from './animation-properties.mjs';
 export const DEFAULT_BEZIER = Object.freeze([0.42, 0, 0.58, 1]);
 const EASE_IN = Object.freeze([0.42, 0, 1, 1]), EASE_OUT = Object.freeze([0, 0, 0.58, 1]);
 export const EASING_MODES = Object.freeze([
-  {id: 'auto', label: 'Auto', sample: t => t * t * (3 - 2 * t)},
-  {id: 'bezier', label: 'Bezier', sample: (t, key) => cubicBezierProgress(t, key?.bezier ?? DEFAULT_BEZIER)},
-  {id: 'ease-in', label: 'Ease in', sample: t => cubicBezierProgress(t, EASE_IN)},
-  {id: 'ease-out', label: 'Ease out', sample: t => cubicBezierProgress(t, EASE_OUT)},
-  {id: 'linear', label: 'Linear', sample: t => t},
-  {id: 'constant', label: 'Constant', sample: t => t < 1 ? 0 : 1},
+  {id: 'auto', label: interfaceText("keyframeEasing.auto"), labelKey: "keyframeEasing.auto", sample: t => t * t * (3 - 2 * t)},
+  {id: 'bezier', label: interfaceText("keyframeEasing.bezier"), labelKey: "keyframeEasing.bezier", sample: (t, key) => cubicBezierProgress(t, key?.bezier ?? DEFAULT_BEZIER)},
+  {id: 'ease-in', label: interfaceText("keyframeEasing.easeIn"), labelKey: "keyframeEasing.easeIn", sample: t => cubicBezierProgress(t, EASE_IN)},
+  {id: 'ease-out', label: interfaceText("keyframeEasing.easeOut"), labelKey: "keyframeEasing.easeOut", sample: t => cubicBezierProgress(t, EASE_OUT)},
+  {id: 'linear', label: interfaceText("keyframeEasing.linear"), labelKey: "keyframeEasing.linear", sample: t => t},
+  {id: 'constant', label: interfaceText("keyframeEasing.constant"), labelKey: "keyframeEasing.constant", sample: t => t < 1 ? 0 : 1},
 ]);
 const modes = new Map(EASING_MODES.map(mode => [mode.id, mode]));
 export function easingMode(key) { return key?.interpolation === 'hold' ? 'constant' : key?.interpolation ?? 'linear'; }
 export function validateKeyEasing(key, property) {
-  if (!modes.has(easingMode(key))) throw new Error('Invalid key interpolation. Choose Auto, Bezier, Ease in, Ease out, Linear, or Constant easing.');
+  if (!modes.has(easingMode(key))) throw messageError(new Error(''), "errors.keyframeEasing.invalidKeyInterpolationChooseAutoBezierEaseIn", {});
   if (key?.bezier !== undefined && (easingMode(key) !== 'bezier' || !Array.isArray(key.bezier) || key.bezier.length !== 4 ||
     !key.bezier.every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1)))
-    throw new Error('Bezier requires four control coordinates between 0 and 1.');
-  if (isDiscreteAnimationProperty(property) && easingMode(key) !== 'constant') throw new Error(`${property === 'paint' ? 'Gradient layouts' : property === 'zIndex' ? 'Z-index values' : 'Background identities'} use Constant easing.`);
+    throw messageError(new Error(''), "errors.keyframeEasing.bezierRequiresFourControlCoordinatesBetween0And", {});
+  if (isDiscreteAnimationProperty(property) && easingMode(key) !== 'constant') throw messageError(new Error(''), "errors.keyframeEasing.useConstantEasing", {value: property === 'paint' ? interfaceText("keyframeEasing.gradientLayouts") : property === 'zIndex' ? interfaceText("keyframeEasing.zIndexValues") : interfaceText("keyframeEasing.backgroundIdentities")});
   return key;
 }
 /** Canonical fields for writes/copies. `hold` is a read-compatible legacy alias. */

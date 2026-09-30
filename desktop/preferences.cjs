@@ -1,17 +1,19 @@
 'use strict';
+const { messageError } = require('./localization.cjs');
+
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { atomicWrite } = require('./recovery.cjs');
 
 function validateJSON(value, depth = 0) {
-  if (depth > 16) throw new Error('Workspace preferences are too deeply nested.');
+  if (depth > 16) throw messageError(new Error(''), 'desktop.preferences.errors.workspacePreferencesAreTooDeeplyNested', {});
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
   if (typeof value === 'number' && Number.isFinite(value)) return;
-  if (typeof value !== 'object') throw new Error('Workspace preferences must contain valid JSON values.');
+  if (typeof value !== 'object') throw messageError(new Error(''), 'desktop.preferences.errors.workspacePreferencesMustContainValidJSONValues', {});
   if (Array.isArray(value)) { for (const item of value) validateJSON(item, depth + 1); return; }
   const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) throw new Error('Workspace preferences must contain plain JSON objects.');
+  if (prototype !== Object.prototype && prototype !== null) throw messageError(new Error(''), 'desktop.preferences.errors.workspacePreferencesMustContainPlainJSONObjects', {});
   for (const item of Object.values(value)) validateJSON(item, depth + 1);
 }
 
@@ -19,7 +21,7 @@ class WorkspacePreferences {
   constructor(directory, { maxBytes = 16 * 1024, filename = 'workspace-preferences.json' } = {}) {
     if (typeof filename !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,119}\.json$/.test(filename) ||
         /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])\.json$/i.test(filename)) {
-      throw new Error('Preferences filename must be a safe JSON basename.');
+      throw messageError(new Error(''), 'desktop.preferences.errors.preferencesFilenameMustBeASafeJSONBasename', {});
     }
     this.directory = directory;
     this.file = path.join(directory, filename);
@@ -28,10 +30,10 @@ class WorkspacePreferences {
   }
 
   serialize(value) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Workspace preferences must be a JSON object.');
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw messageError(new Error(''), 'desktop.preferences.errors.workspacePreferencesMustBeAJSONObject', {});
     validateJSON(value);
     const text = JSON.stringify(value);
-    if (Buffer.byteLength(text, 'utf8') > this.maxBytes) throw new Error(`Workspace preferences exceed the ${Math.round(this.maxBytes / 1024)} KB limit.`);
+    if (Buffer.byteLength(text, 'utf8') > this.maxBytes) throw messageError(new Error(''), 'desktop.preferences.errors.workspacePreferencesExceedTheValueKBLimit', {value: Math.round(this.maxBytes / 1024)});
     return text;
   }
 

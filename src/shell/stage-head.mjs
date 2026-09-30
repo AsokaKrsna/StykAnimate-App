@@ -1,3 +1,5 @@
+import {t as interfaceText} from '../localization.mjs';
+import {appendLocalized, localizedMarkup, localizedAttribute} from '../localization-bindings.mjs';
 /**
  * The stage header (experience.md §4.1-4.4, architecture.md §3.12): the
  * canvas's own 40px line, a sibling of #viewport above it, level with the
@@ -102,7 +104,7 @@ export function createStageHead({root, toasts = () => null, toolOptions = {}, op
   here.className = 'ui-crumb-here';
   here.hidden = true;
   const hereName = doc.createElement('span');
-  here.append(hereName);
+  appendLocalized(here, hereName);
   chip.before(separator, here);
   let bar = null, shownMode = '', modeHandle = null, placed = false;
 
@@ -114,11 +116,11 @@ export function createStageHead({root, toasts = () => null, toolOptions = {}, op
   viewButton.className = 'ui-button stage-view-menu';
   viewButton.dataset.variant = 'ghost';
   viewButton.dataset.size = 'sm';
-  viewButton.innerHTML = `${icon('eye')}<span class="stage-zoom-chevron">${icon('chevron-down')}</span>`;
+  localizedMarkup(viewButton, `${icon('eye')}<span class="stage-zoom-chevron">${icon('chevron-down')}</span>`);
   viewButton.setAttribute('aria-haspopup', 'menu');
   viewButton.setAttribute('aria-expanded', 'false');
-  viewButton.setAttribute('aria-label', 'View options');
-  viewButton.dataset.tooltip = 'View options';
+  localizedAttribute(viewButton, 'aria-label', "stageHead.viewOptions", {});
+  localizedAttribute(viewButton, 'data-tooltip', "stageHead.viewOptions", {});
   viewButton.hidden = true;
   view.before(viewButton);
   const viewItems = () => [...view.querySelectorAll('button')].filter(button => !button.closest('[hidden]') && !button.hidden).map(button => {
@@ -132,7 +134,7 @@ export function createStageHead({root, toasts = () => null, toolOptions = {}, op
       run: () => button.click(),
     };
   });
-  viewButton.addEventListener('click', () => openMenu?.(viewItems(), viewButton, {label: 'View options'}), {signal});
+  viewButton.addEventListener('click', () => openMenu?.(viewItems(), viewButton, {label: interfaceText("stageHead.viewOptions"), labelKey: "stageHead.viewOptions"}), {signal});
   /** Shows the view toggles as one menu (true) or as the cluster (false). */
   function setViewMenu(on) {
     setAttr(root, 'data-view-menu', Boolean(on));
@@ -168,26 +170,26 @@ export function createStageHead({root, toasts = () => null, toolOptions = {}, op
     setText(size, state.size ?? '');
     setHidden(size, Boolean(session));
     setAttr(scene, 'data-action', session?.done ?? 'scene-settings');
-    setAttr(scene, 'data-tooltip', session ? 'Back to the scene (Done)' : 'Scene properties');
+    localizedAttribute(scene, 'data-tooltip', (session ? "stageHead.backToTheSceneDone" : "stageHead.sceneProperties"), (session ? {} : {}));
     // Its words may fold away in a narrow header (the size first, then the name): the accessible name keeps them.
-    setAttr(scene, 'aria-label', session ? 'Scene, back to the scene' : `Scene ${state.size ?? ''}`.trim());
+    setAttr(scene, 'aria-label', session ? interfaceText("stageHead.sceneBackToTheScene") : `Scene ${state.size ?? ''}`.trim());
     setHidden(separator, !session);
     setHidden(here, !session);
     setText(hereName, session?.name ?? '');
     setHidden(chip, Boolean(session) || !state.background);
     if (state.background) {
       setVar(chip.firstElementChild, '--swatch', state.background.css);
-      setAttr(chip, 'aria-label', `Background colour ${state.background.label}, opens the colour picker`);
-      setAttr(chip, 'data-tooltip', `Background colour · ${state.background.label}`);
+      setAttr(chip, 'aria-label', interfaceText('stageHead.backgroundColourLabelOpensTheColourPicker', {label: state.background.label}));
+      setAttr(chip, 'data-tooltip', interfaceText('stageHead.backgroundColourLabel', {label: state.background.label}));
     }
     // A toggle shows its state by looking pressed (and says it through aria-pressed); its tooltip is its name.
-    toggle('#handles-button', state.handles);
-    toggle('#paths-button', state.motionPaths);
+    toggle(interfaceText("stageHead.handlesButton"), state.handles);
+    toggle(interfaceText("stageHead.pathsButton"), state.motionPaths);
     toggle('#canvas-guides-button', state.grid);
-    toggle('#vfx-preview', state.vfx);
-    toggle('[data-action="builder-static-handles"]', state.staticHandles);
-    toggle('[data-action="builder-highlight"]', state.highlight);
-    toggle('[data-action="toggle-isolate"]', state.isolate);
+    toggle(interfaceText("stageHead.vfxPreview"), state.vfx);
+    toggle(interfaceText("stageHead.dataActionBuilderStaticHandles"), state.staticHandles);
+    toggle(interfaceText("stageHead.dataActionBuilderHighlight"), state.highlight);
+    toggle(interfaceText("stageHead.dataActionToggleIsolate"), state.isolate);
     focus.refresh();
   }
   function toggle(selector, pressed) {
@@ -217,7 +219,7 @@ export function createStageHead({root, toasts = () => null, toolOptions = {}, op
 
   /** Re-parents a legacy host (it keeps its id, handlers and state) into the start, after the crumb and the bar. */
   function adopt(element) {
-    if (element && element.parentElement !== start) start.append(element);
+    if (element && element.parentElement !== start) appendLocalized(start, element);
     return element;
   }
 
@@ -283,7 +285,7 @@ export function createStageHead({root, toasts = () => null, toolOptions = {}, op
     let handle = null;
     handle = kit.show({slot: 'mode', variant: 'mode', tone: 'mode', key: `mode:${key}`, title: mode.title ?? '', message: mode.message ?? '', icon: mode.icon ?? null,
       timeout: 0, dismissible: false,
-      actions: mode.cancel ? [{label: mode.cancelLabel ?? 'Cancel', tip: 'Esc', run: () => mode.cancel()}] : [],
+      actions: mode.cancel ? [{label: mode.cancelLabel ?? interfaceText("stageHead.cancel"), tip: interfaceText("stageHead.esc"), tipKey: "stageHead.esc", run: () => mode.cancel()}] : [],
       onDismiss: () => { if (handle && modeHandle === handle) modeHandle = null; }});
     modeHandle = handle;
   }

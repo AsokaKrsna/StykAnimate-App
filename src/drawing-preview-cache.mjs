@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {TILE,tileKey} from './drawing-tiles.mjs';
 
 /** A bounded derived-image cache. Dense viewport rasterization belongs to a
@@ -74,7 +75,7 @@ export class DrawingPreviewCache {
       if(!current()){result.bitmap.close();return;}
       this.source={entry:job.entry,storeRef:new WeakRef(job.store),versions,bytes:workerBytes};this.hold(this,workerBytes);this.lastTransferredTiles=tiles.length;
       this.remove(job.key);const bytes=job.width*job.height*4;
-      if(!this.reserve(bytes)){result.bitmap.close();throw new Error('Drawing preview memory is full.');}
+      if(!this.reserve(bytes)){result.bitmap.close();throw messageError(new Error(''), "errors.drawingPreviewCache.drawingPreviewMemoryIsFull", {});}
       for(const key of this.cache.keys()){if(this.bytes+bytes<=this.budgetBytes)break;this.remove(key);}
       this.cache.set(job.key,{canvas:result.bitmap,bytes,version:job.version,store:job.store,entry:job.entry,key:job.key,id,stamp:++job.entry.stamp,anchorKey:job.anchorKey,x:job.x,y:job.y,width:job.width,height:job.height,level:job.level,scale:job.scale});this.bytes+=bytes;
       published=true;this.onReady();

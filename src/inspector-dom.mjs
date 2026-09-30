@@ -1,13 +1,14 @@
+import {localizedMarkup, appendLocalized, connectTranslations} from './localization-bindings.mjs';
 /** Keep inspector controls alive across frame and selection updates. Events are
  * delegated by the app; retained nodes also preserve focus and disclosure state. */
 export function updateInspectorDOM(root, html, {preserveDisclosure = false} = {}) {
-  const template = root.ownerDocument.createElement('template'); template.innerHTML = html;
+  const template = root.ownerDocument.createElement('template'); localizedMarkup(template, html);
   const identity = node => node.nodeType === 1
-    ? ['id','data-property','data-section','data-polygon-index','data-inspector-owned'].map(name => node.getAttribute(name) ?? '').join('\0') : '';
+    ? ['id','data-property','data-setting','data-section','data-polygon-index','data-inspector-owned'].map(name => node.getAttribute(name) ?? '').join('\0') : '';
   const reconcile = (parent, next) => {
     let current = parent.firstChild;
     for (const desired of [...next.childNodes]) {
-      if (!current) { parent.append(desired); continue; }
+      if (!current) { appendLocalized(parent, desired); continue; }
       const following = current.nextSibling;
       if (current.nodeType !== desired.nodeType || current.nodeName !== desired.nodeName || identity(current) !== identity(desired)) {
         current.replaceWith(desired);
@@ -43,4 +44,5 @@ export function updateInspectorDOM(root, html, {preserveDisclosure = false} = {}
     while (current) { const following = current.nextSibling; current.remove(); current = following; }
   };
   reconcile(root, template.content);
+  connectTranslations(root);
 }

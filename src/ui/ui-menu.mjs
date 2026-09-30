@@ -1,3 +1,6 @@
+import {replaceLocalized, appendLocalized, localizedText} from '../localization-bindings.mjs';
+import {t as interfaceText} from '../localization.mjs';
+
 /**
  * Menus and the menubar: one component for app menus, context menus, the
  * zoom menu, overflow menus and submenus.
@@ -59,8 +62,8 @@ export function normalizeMenu(items = [], {resolve = null, shortcut = null, t = 
   for (const raw of list ?? []) {
     if (raw === null || raw === undefined || raw === '-' || raw?.type === 'separator') { entries.push({type: 'separator'}); continue; }
     const item = typeof raw === 'string' ? {command: raw} : raw;
-    if (item.type === 'label' || (item.type === undefined && Object.keys(item).every(key => key === 'label' || key === 'labelKey'))) {
-      entries.push({type: 'label', label: String(text(item) ?? '')});
+    if (item.type === 'label' || (item.type === undefined && Object.keys(item).every(key => key === 'label' || key === 'labelKey' || key === 'labelParams'))) {
+      entries.push({type: 'label', label: String(text(item) ?? ''), ...(item.labelKey ? {labelKey: item.labelKey, labelParams: item.labelParams} : {})});
       continue;
     }
     const meta = item.command && resolve ? resolve(item.command) ?? null : null;
@@ -74,10 +77,12 @@ export function normalizeMenu(items = [], {resolve = null, shortcut = null, t = 
     const shown = submenu || item.shortcut === false ? '' : automatic ? (item.command ? shortcut?.(item.command) ?? meta?.shortcut ?? '' : '') : String(item.shortcut);
     entries.push({
       type: 'item', command: item.command ?? null, label: String(text(item) ?? meta?.label ?? item.command ?? ''),
+      labelKey: item.labelKey ?? (item.label === undefined ? meta?.labelKey : undefined), labelParams: item.labelParams ?? meta?.labelParams,
       icon: item.icon ?? meta?.icon ?? null,
       shortcut: shown, keyshortcuts: shown && automatic ? String(item.keyshortcuts ?? meta?.keyshortcuts ?? '') : String(item.keyshortcuts ?? ''),
       role, checked: role === 'menuitem' ? undefined : Boolean(checked), disabled,
-      reason: disabled ? String(item.reason ?? meta?.reason ?? '') : '', danger: Boolean(item.danger ?? meta?.danger),
+      reason: disabled ? String(item.reason ?? meta?.reason ?? '') : '',
+      ...(disabled && (item.reasonKey ?? meta?.reasonKey) ? {reasonKey:item.reasonKey ?? meta.reasonKey, reasonParams:item.reasonParams ?? meta?.reasonParams} : {}), danger: Boolean(item.danger ?? meta?.danger),
       submenu, run: typeof item.run === 'function' ? item.run : null, keepOpen: Boolean(item.keepOpen), group: item.group ?? null, id: item.id ?? null,
       swatch: typeof item.swatch === 'string' ? item.swatch : null,
     });
@@ -137,8 +142,9 @@ export function findTypeahead(labels, query, current = -1) {
  * item opens one; `nested`: this menu is a submenu; `menubar`: the menu tree
  * hangs off a menubar. Every key is at least swallowed: none reaches hotkeys.
  */
-export function menuKeyAction(event, {index = -1, count = 0, submenu = false, nested = false, menubar = false} = {}) {
-  const {key = '', ctrlKey = false, metaKey = false, altKey = false, isComposing = false} = event ?? {};
+export function menuKeyAction(event, {index = -1, count = 0, submenu = false, nested = false, menubar = false, direction = 'ltr'} = {}) {
+  const {key: originalKey = '', ctrlKey = false, metaKey = false, altKey = false, isComposing = false} = event ?? {};
+  const key = direction === 'rtl' ? ({ArrowLeft: 'ArrowRight', ArrowRight: 'ArrowLeft'}[originalKey] ?? originalKey) : originalKey;
   const swallow = {type: 'swallow'};
   if (isComposing) return swallow;
   switch (key) {
@@ -171,7 +177,7 @@ function appendGlyph(parent, glyph, className) {
   if (typeof glyph === 'string') {
     parent.insertAdjacentHTML('beforeend', glyph);
     node = parent.lastElementChild;
-  } else parent.append(glyph);
+  } else appendLocalized(parent, glyph);
   if (className) node?.classList?.add(...className.split(' '));
   return node;
 }
@@ -248,7 +254,7 @@ class Menu {
     const focused = this.buttons.indexOf(doc.activeElement);
     this.entries = normalizeMenu(this.options.items, {resolve: root.resolve, shortcut: root.shortcut, t: root.t});
     this.buttons = [];
-    element.replaceChildren();
+    replaceLocalized(element);
     // A submenu shown as a sheet covers its parent: its first row leads back (docs/TOUCH.md).
     if (this.parent && presentsAsSheet(element)) {
       const back = doc.createElement('button');
@@ -258,9 +264,10 @@ class Menu {
       appendGlyph(back, root.icon?.('chevron-left'), 'ui-icon');
       const label = doc.createElement('span');
       label.textContent = this.options.label ?? '';
-      back.append(label);
+      if (this.options.labelKey) localizedText(label,this.options.labelKey,this.options.labelParams);
+      appendLocalized(back, label);
       back.addEventListener('click', event => { event.stopPropagation(); this.close('back', {restore: true}); });
-      element.append(back);
+      appendLocalized(element, back);
     }
     // Items under a group label go into a role=group the label names, until the next separator or label.
     let parent = element;
@@ -270,7 +277,7 @@ class Menu {
         const separator = doc.createElement('div');
         separator.className = 'menu-separator ui-menu-sep';
         separator.setAttribute('role', 'separator');
-        element.append(separator);
+        appendLocalized(element, separator);
         return;
       }
       if (entry.type === 'label') {
@@ -281,9 +288,10 @@ class Menu {
         label.id = `${element.id}-group-${index}`;
         label.setAttribute('aria-hidden', 'true');
         label.textContent = entry.label;
+        if (entry.labelKey) localizedText(label, entry.labelKey, entry.labelParams);
         group.setAttribute('aria-labelledby', label.id);
-        group.append(label);
-        element.append(group);
+        appendLocalized(group, label);
+        appendLocalized(element, group);
         parent = group;
         return;
       }
@@ -304,16 +312,17 @@ class Menu {
         check.className = 'ui-menu-check';
         check.setAttribute('aria-hidden', 'true');
         if (entry.role === 'menuitemcheckbox') appendGlyph(check, root.icon?.('check'), 'ui-icon');
-        button.append(check);
+        appendLocalized(button, check);
       } else if (!(entry.icon && appendGlyph(button, root.icon?.(entry.icon), 'ui-icon'))) {
         const pad = doc.createElement('i');
         pad.className = 'ui-menu-pad';
         pad.setAttribute('aria-hidden', 'true');
-        button.append(pad);
+        appendLocalized(button, pad);
       }
       const label = doc.createElement('span');
       label.id = `${button.id}-label`;
       label.textContent = entry.label;
+      if (entry.labelKey) localizedText(label, entry.labelKey, entry.labelParams);
       // A colour the row stands for (a layer colour): a dot before its name, outside its accessible name.
       if (entry.swatch) {
         const dot = doc.createElement('i');
@@ -322,31 +331,32 @@ class Menu {
         dot.style.setProperty('--swatch', entry.swatch);
         label.prepend(dot);
       }
-      button.append(label);
+      appendLocalized(button, label);
       button.setAttribute('aria-labelledby', label.id);
       if (entry.shortcut) {
         const key = doc.createElement('kbd');
         key.className = 'ui-menu-shortcut';
         key.textContent = entry.shortcut;
-        button.append(key);
+        appendLocalized(button, key);
         // Announced once, as the item's shortcut, rather than read out as text.
         if (entry.keyshortcuts) { button.setAttribute('aria-keyshortcuts', entry.keyshortcuts); key.setAttribute('aria-hidden', 'true'); }
       }
       if (entry.submenu) {
         const chevron = appendGlyph(button, root.icon?.('chevron-right'), 'ui-icon ui-menu-sub');
-        if (!chevron) { const sub = doc.createElement('i'); sub.className = 'ui-menu-sub'; sub.setAttribute('aria-hidden', 'true'); button.append(sub); }
+        if (!chevron) { const sub = doc.createElement('i'); sub.className = 'ui-menu-sub'; sub.setAttribute('aria-hidden', 'true'); appendLocalized(button, sub); }
       }
       if (entry.reason) {
         const reason = doc.createElement('small');
         reason.className = 'ui-menu-reason';
         reason.id = `${button.id}-reason`;
         reason.textContent = entry.reason;
-        button.append(reason);
+        if (entry.reasonKey) localizedText(reason,entry.reasonKey,entry.reasonParams);
+        appendLocalized(button, reason);
         button.setAttribute('aria-describedby', reason.id);
       }
       this.entryByButton.set(button, entry);
       this.buttons.push(button);
-      parent.append(button);
+      appendLocalized(parent, button);
     });
     if (focused >= 0 && this.isOpen) this.focusIndex(Math.min(focused, this.buttons.length - 1));
   }
@@ -359,7 +369,7 @@ class Menu {
     if (!this.parent && this.anchorElement) openMenus.get(this.anchorElement)?.close('replace', {restore: false});
     const mount = options.mount && options.mount !== 'auto' ? options.mount
       : this.parent ? this.parent.element.parentElement : overlayMount(this.anchorElement ?? this.invoker, doc);
-    if (this.created && mount && element.parentElement !== mount) mount.append(element);
+    if (this.created && mount && element.parentElement !== mount) appendLocalized(mount, element);
     element.removeAttribute('hidden');
     const source = this.parent ? this.options.anchor : this.anchorElement;
     showPopoverFrom(element, source);
@@ -419,7 +429,7 @@ class Menu {
       const right = cramped ? Math.max(margin, Math.min(rect.right, view.innerWidth - margin - width - gap)) : rect.right;
       // Line the submenu's first item up with its row (the menu has a 4px padding).
       placeFloating(this.element, {left: cramped ? right : rect.left, right, top: rect.top - 4, bottom: rect.bottom + 4, width: right - (cramped ? right : rect.left), height: rect.height + 8},
-        {placement: 'right-start', offset: gap, topInset: root.topInset, overlap: true, flip: !cramped});
+        {placement: this.document.documentElement.dir === 'rtl' ? 'left-start' : 'right-start', offset: gap, topInset: root.topInset, overlap: true, flip: !cramped});
       return;
     }
     const anchor = this.options.point ?? this.options.anchor ?? this.invoker;
@@ -458,7 +468,7 @@ class Menu {
     const index = menu.buttons.indexOf(doc.activeElement);
     const button = menu.buttons[index], entry = button ? menu.entryByButton.get(button) : null;
     const action = menuKeyAction(event, {index, count: menu.buttons.length, submenu: Boolean(entry?.submenu && !entry.disabled),
-      nested: Boolean(menu.parent), menubar: Boolean(this.options.menubar)});
+      direction: this.document.documentElement.dir, nested: Boolean(menu.parent), menubar: Boolean(this.options.menubar)});
     event.stopImmediatePropagation();
     switch (action.type) {
       case 'move': event.preventDefault(); menu.focusIndex(action.index); break;
@@ -473,7 +483,7 @@ class Menu {
         break;
       case 'typeahead': {
         event.preventDefault();
-        const found = findTypeahead(menu.buttons.map(item => menu.entryByButton.get(item).label), menu.typeahead.push(action.character), index);
+        const found = findTypeahead(menu.buttons.map(item => item.querySelector('.ui-menu-label-text')?.textContent ?? item.querySelector('span')?.textContent ?? menu.entryByButton.get(item).label), menu.typeahead.push(action.character), index);
         if (found >= 0) menu.focusIndex(found);
         break;
       }
@@ -526,7 +536,7 @@ class Menu {
     }
     this.child?.close('replace', {restore: false});
     const items = typeof entry.submenu === 'function' ? entry.submenu() : entry.submenu;
-    const child = this.child = new Menu({items, anchor: button, parent: this, label: entry.label, document: this.document, focus});
+    const child = this.child = new Menu({items, anchor: button, parent: this, label: entry.label, labelKey:entry.labelKey, labelParams:entry.labelParams, document: this.document, focus});
     child.open();
     button.setAttribute('aria-expanded', 'true');
     button.setAttribute('aria-controls', child.element.id);
@@ -605,7 +615,7 @@ export function installMenuBar(nav, {menus, signal, buttons = null, name = butto
     const menu = current = openMenu({...menuOptions, items: typeof model === 'function' ? model() : model, anchor: button, focus,
       label: menuOptions.label ?? button.textContent.trim(),
       menubar: {navigate: delta => {
-        const all = list(), next = nextRovingIndex(delta > 0 ? 'ArrowRight' : 'ArrowLeft', all.indexOf(button), all.length, {skip: skip(all)});
+        const all = list(), next = nextRovingIndex(delta > 0 ? "ArrowRight" : "ArrowLeft", all.indexOf(button), all.length, {skip: skip(all)});
         if (next === null) return;
         roving.focus(all[next]);
         open(all[next], {focus: 'first'});

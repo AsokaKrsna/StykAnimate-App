@@ -1,10 +1,11 @@
+import {messageError} from './localized-error.mjs';
 import {cameraTravelAt} from './camera-motion.mjs';
 /** Camera-relative translations; original geometry, topology and artwork stay immutable. */
 const zero=Object.freeze({x:0,y:0});
-export function validateCameraParallaxOffset(camera){const p=camera?._parallaxMotionOffset;if(p!==undefined&&(!p||![p.x,p.y].every(Number.isFinite)))throw new Error('Invalid baked camera parallax offset.');}
+export function validateCameraParallaxOffset(camera){const p=camera?._parallaxMotionOffset;if(p!==undefined&&(!p||![p.x,p.y].every(Number.isFinite)))throw messageError(new Error(''), "errors.layerParallax.invalidBakedCameraParallaxOffset", {});}
 export function validateParallax(p){
   if(p===undefined)return;
-  if(!p||typeof p.enabled!=='boolean'||typeof p.linked!=='boolean'||![p.x,p.y].every(v=>Number.isFinite(v)&&v>=0&&v<=4)||!p.reference||![p.reference.x,p.reference.y].every(Number.isFinite))throw new Error('Parallax needs a 0–400% response and a finite reference position.');
+  if(!p||typeof p.enabled!=='boolean'||typeof p.linked!=='boolean'||![p.x,p.y].every(v=>Number.isFinite(v)&&v>=0&&v<=4)||!p.reference||![p.reference.x,p.reference.y].every(Number.isFinite))throw messageError(new Error(''), "errors.layerParallax.parallaxNeedsA0400ResponseAndA", {});
 }
 export function parallaxResolver(report,frame,cameraEnabled=true){
   const layers=report?._styk?.layers;

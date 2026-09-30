@@ -1,3 +1,5 @@
+import {restoreMessageError, messageError} from './localized-error.mjs';
+
 import {DrawingPreviewCache} from './drawing-preview-cache.mjs';
 import {DrawingHistory} from './drawing-history.mjs';
 import {DrawingTileMemory} from './drawing-tile-memory.mjs';
@@ -21,30 +23,30 @@ export async function drawingBarrier(report,options={}) {
 class DrawingWorker {
   constructor(url=new URL('./drawing-worker.mjs',import.meta.url),{maxPending=2}={}){this.url=url;this.maxPending=maxPending;this.next=1;this.pending=new Map();}
   request(kind,payload,{signal,transfer}={}) {
-    if(signal?.aborted)return Promise.reject(new DOMException('Drawing operation cancelled.','AbortError'));
-    if(this.pending.size>=this.maxPending)return Promise.reject(new Error('Drawing worker is busy. Wait for the current operation.'));
+    if(signal?.aborted)return Promise.reject(messageError(new DOMException('', 'AbortError'), "errors.drawingResources.drawingOperationCancelled", {}));
+    if(this.pending.size>=this.maxPending)return Promise.reject(messageError(new Error(''), "errors.drawingResources.drawingWorkerIsBusyWaitForTheCurrent", {}));
     if(!this.worker){
       this.worker=new Worker(this.url,{type:'module',name:'StykAnimate drawing pixels'});
-      this.worker.onmessage=({data})=>{const pending=this.pending.get(data.id);if(!pending){data.bitmap?.close();return;}if(data.fatal){this.dispose(new Error(data.error||'Drawing worker could not load. Retry the operation.'));return;}this.pending.delete(data.id);pending.finish(data.error?new Error(data.error):null,data);};
-      this.worker.onerror=e=>{e.preventDefault();this.dispose(new Error(e.message||'Drawing worker stopped. Retry the operation.'));};
-      this.worker.onmessageerror=()=>this.dispose(new Error('Drawing pixels could not be transferred.'));
+      this.worker.onmessage=({data})=>{const pending=this.pending.get(data.id);if(!pending){data.bitmap?.close();return;}if(data.fatal){this.dispose(restoreMessageError((data.error ? new Error(data.error) : messageError(new Error(''), "errors.drawingResources.drawingWorkerCouldNotLoadRetryTheOperation")), data));return;}this.pending.delete(data.id);pending.finish(data.error?restoreMessageError(new Error(data.error), data):null,data);};
+      this.worker.onerror=e=>{e.preventDefault();this.dispose((e.message ? new Error(e.message) : messageError(new Error(''), "errors.drawingResources.drawingWorkerStoppedRetryTheOperation")));};
+      this.worker.onmessageerror=()=>this.dispose(messageError(new Error(''), "errors.drawingResources.drawingPixelsCouldNotBeTransferred", {}));
     }
     return new Promise((resolve,reject)=>{
-      const id=this.next++,abort=()=>this.dispose(new DOMException('Drawing operation cancelled.','AbortError'));
-      const timeout=setTimeout(()=>this.dispose(new Error('Drawing worker timed out. Retry the operation.')),120000);
+      const id=this.next++,abort=()=>this.dispose(messageError(new DOMException('', 'AbortError'), "errors.drawingResources.drawingOperationCancelled", {}));
+      const timeout=setTimeout(()=>this.dispose(messageError(new Error(''), "errors.drawingResources.drawingWorkerTimedOutRetryTheOperation", {})),120000);
       this.pending.set(id,{finish:(error,result)=>{clearTimeout(timeout);signal?.removeEventListener('abort',abort);error?reject(error):resolve(result);}});
       signal?.addEventListener('abort',abort,{once:true});
       this.worker.postMessage({id,kind,...payload},transfer??[]);
     });
   }
-  dispose(error=new DOMException('Drawing resources closed.','AbortError')){this.worker?.terminate();this.worker=null;for(const p of this.pending.values())p.finish(error);this.pending.clear();}
+  dispose(error=messageError(new DOMException('', 'AbortError'), "errors.drawingResources.drawingResourcesClosed", {})){this.worker?.terminate();this.worker=null;for(const p of this.pending.values())p.finish(error);this.pending.clear();}
 }
 
 /** Persistent stroke worker handle: one per DrawingResources so a heavy encode
  * or fill on the pixel worker never blocks painting. The Worker is spawned
  * lazily so this stays safe in non-DOM contexts. */
 export class StrokeWorker {
-  open(){if(!this.worker){this.worker=new Worker(new URL('./drawing-stroke-worker.mjs',import.meta.url),{type:'module',name:'StykAnimate drawing stroke'});this.worker.onmessage=({data})=>this.onmessage?.(data);this.worker.onerror=event=>{event.preventDefault();this.onerror?.(new Error(event.message||'Drawing stroke worker stopped.'));};this.worker.onmessageerror=()=>this.onerror?.(new Error('Stroke pixels could not be transferred.'));}}
+  open(){if(!this.worker){this.worker=new Worker(new URL('./drawing-stroke-worker.mjs',import.meta.url),{type:'module',name:'StykAnimate drawing stroke'});this.worker.onmessage=({data})=>this.onmessage?.(data);this.worker.onerror=event=>{event.preventDefault();this.onerror?.((event.message ? new Error(event.message) : messageError(new Error(''), "errors.drawingResources.drawingStrokeWorkerStopped")));};this.worker.onmessageerror=()=>this.onerror?.(messageError(new Error(''), "errors.drawingResources.strokePixelsCouldNotBeTransferred", {}));}}
   post(message,transfer){if(this.closed)return;this.open();this.worker.postMessage(message,transfer??[]);}
   // dispose() stays respawnable for crash recovery; close() is permanent.
   dispose(){this.worker?.terminate();this.worker=null;}
@@ -130,7 +132,7 @@ export class DrawingResources {
     return [...this.entries.values()].sort((a,b)=>distance?(far(b)-far(a))||(a.used-b.used):a.used-b.used);
   }
   reserve(bytes,except) {
-    if(!Number.isFinite(bytes)||bytes<0)throw new Error('Invalid drawing memory reservation.');
+    if(!Number.isFinite(bytes)||bytes<0)throw messageError(new Error(''), "errors.drawingResources.invalidDrawingMemoryReservation", {});
     const resident=()=>{const s=this.stats;return s.bytes+s.historyBytes+s.deferredBytes+s.workingBytes;},target=Math.min(this.tileBudget,this.hardBudget);
     if(resident()+bytes<=target||this.encoding&&resident()+bytes<=this.hardBudget)return;
     this.history?.trim(0);
@@ -147,7 +149,7 @@ export class DrawingResources {
     // publication pump so those stores become evictable, and hold the required
     // set above the soft budget rather than rejecting the edit.
     this.flush().catch(this.onError);
-    if(resident()+bytes>this.hardBudget)throw new Error('Drawing memory is full. Choose 1× resolution or finish the current edit.');
+    if(resident()+bytes>this.hardBudget)throw messageError(new Error(''), "errors.drawingResources.drawingMemoryIsFullChoose1ResolutionOr", {});
   }
   get workingBytes(){let n=0;for(const bytes of this.working?.values()??[])n+=bytes;return n;}
   hold(key,bytes,entry){this.working??=new Map();const old=this.working.get(key)??0;if(bytes>old)this.reserve(bytes-old,entry);if(bytes)this.working.set(key,bytes);else this.working.delete(key);}
@@ -202,7 +204,7 @@ export class DrawingResources {
   /** `priority` marks a load a pointer is waiting on: it overtakes queued
    * display and prefetch decodes and is never superseded by them. */
   async surface(figure,{priority=false}={}) {
-    if(this.disposed)throw new DOMException('Drawing document closed.','AbortError');
+    if(this.disposed)throw messageError(new DOMException('', 'AbortError'), "errors.drawingResources.drawingDocumentClosed", {});
     const e=this.entry(figure);e.used=performance.now();
     if(e.store)return e;
     if(e.loading){if(priority)this.prioritize(e);return e.loading;}
@@ -215,7 +217,7 @@ export class DrawingResources {
       const url=e.published?e.published.url:asset.styk_tiles;
       // A GPU-resident copy of the published base restores without decoding.
       const result=await this.decode(e,()=>(d.version===2&&this.restoreStore?.(e,base))||(d.version===1?this.decodeWorker.request('decode-legacy',{url:asset.data_url,crop:d.crop}):url?this.decodeTiles(url):Promise.resolve({tiles:[]})),priority);
-      if(this.disposed||e.disposed||generation!==this.generation)throw new DOMException('Drawing changed.','AbortError');
+      if(this.disposed||e.disposed||generation!==this.generation)throw messageError(new DOMException('', 'AbortError'), "errors.drawingResources.drawingChanged", {});
       const store=tileStoreFromList(result.tiles);
       const exact=!e.deferred.length;
       // Intact GPU slots of this published base stay valid for its tiles;
@@ -230,9 +232,9 @@ export class DrawingResources {
   }
   decode(e,request,priority=false){
     return new Promise((resolve,reject)=>{
-      if(this.disposed){reject(new DOMException('Drawing document closed.','AbortError'));return;}
+      if(this.disposed){reject(messageError(new DOMException('', 'AbortError'), "errors.drawingResources.drawingDocumentClosed", {}));return;}
       // A newer request supersedes the oldest background job, never a priority one.
-      if(this.decodeQueue.length>=2){const index=this.decodeQueue.findIndex(job=>!job.priority);if(index>=0)this.decodeQueue.splice(index,1)[0].reject(new DOMException('A newer drawing was requested.','AbortError'));}
+      if(this.decodeQueue.length>=2){const index=this.decodeQueue.findIndex(job=>!job.priority);if(index>=0)this.decodeQueue.splice(index,1)[0].reject(messageError(new DOMException('', 'AbortError'), "errors.drawingResources.aNewerDrawingWasRequested", {}));}
       const job={e,request,resolve,reject,priority};
       if(priority)this.decodeQueue.unshift(job);else this.decodeQueue.push(job);this.pumpDecode();
     });
@@ -376,20 +378,20 @@ export class DrawingResources {
   }
   schedule(){if(this.timer||this.encoding||this.disposed||this._busy)return;this.timer=setTimeout(()=>{this.timer=null;if(this._busy)return;this.flush().catch(this.onError);},80);}
   async flush({signal}={}) {
-    if(this.disposed)throw new DOMException('Drawing document closed.','AbortError');
+    if(this.disposed)throw messageError(new DOMException('', 'AbortError'), "errors.drawingResources.drawingDocumentClosed", {});
     if(this.encoding){await this.encoding;return this.flush({signal});}
     clearTimeout(this.timer);this.timer=null;
     for(const figure of this.report.figure_types){const entry=this.entries.get(drawingMetadata(figure)?.celId);if(entry)this.restorePublication(entry,figure);}
     const e=[...this.entries.values()].find(e=>!e.pinned&&e.published?.revision!==e.revision&&this.report.figure_types.some(f=>drawingMetadata(f)?.celId===e.id));
     if(!e){this.trim();return;}
-    if(signal?.aborted)throw new DOMException('Drawing publication cancelled.','AbortError');
+    if(signal?.aborted)throw messageError(new DOMException('', 'AbortError'), "errors.drawingResources.drawingPublicationCancelled", {});
     if(!e.store){const figure=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===e.id);if(!figure)return;await this.surface(figure);return this.flush({signal});}
     const revision=e.revision,generation=this.generation,reservation={};
     // Register the job before reserving its transfers: reserve() can itself
     // request publication. No pixel copying runs inside the editor commit.
     this.encoding=Promise.resolve().then(async()=>{
       const active=()=>!this.disposed&&!e.disposed&&e.store&&generation===this.generation&&revision===e.revision;
-      const checkAbort=()=>{if(signal?.aborted)throw new DOMException('Drawing publication cancelled.','AbortError');};
+      const checkAbort=()=>{if(signal?.aborted)throw messageError(new DOMException('', 'AbortError'), "errors.drawingResources.drawingPublicationCancelled", {});};
       checkAbort();if(!active())return;
       const store=e.store,storeRevision=store.revision,tiles=[...store].filter(t=>!tileTransparent(t));
       const current=()=>active()&&e.store===store&&store.revision===storeRevision;
@@ -442,7 +444,7 @@ export class DrawingResources {
         const wanted=new Set(result.missing);
         result=await send(tiles.filter(t=>wanted.has(tileKey(t.tx,t.ty))));
         if(!result)return;
-        if(result.missing?.length)throw new Error('The drawing encoder lost its tile cache. Try again.');
+        if(result.missing?.length)throw messageError(new Error(''), "errors.drawingResources.theDrawingEncoderLostItsTileCacheTry", {});
       }
       if(!current())return;
       // Tiles replaced since the snapshot carry stale bytes; publish again.
@@ -469,5 +471,5 @@ export class DrawingResources {
     for(const [id,e] of this.entries)if(!reachable.has(id)&&!retained.has(id)&&!e.pinned){e.disposed=true;this.dropScratch(e);e.store=null;e.levels=null;e.levelKnown=null;this.entries.delete(id);}
     this.residentMemory();
   }
-  dispose(){if(this.disposed)return this.disposal;this.disposed=true;this.disposal=this.history?.dispose().catch(()=>{})??Promise.resolve();this.previews?.dispose();this.generation++;clearTimeout(this.timer);this.worker.dispose();for(const w of this._encoders??[])if(w!==this.worker)w.dispose();this.decodeWorker.dispose();this.thumbnailWorker.dispose();this.compositeWorker.dispose();if(this.strokeWorker.close)this.strokeWorker.close();else this.strokeWorker.dispose();this.thumbnailQueue.clear();for(const t of this.thumbnailCache.values())t.canvas.width=t.canvas.height=1;this.thumbnailCache.clear();for(const job of this.decodeQueue)job.reject(new DOMException('Drawing document closed.','AbortError'));this.decodeQueue=[];for(const e of this.surfaces()){this.dropScratch(e);e.disposed=true;e.store=null;e.levels=null;e.levelKnown=null;}this.transients.clear();this.entries.clear();this.pixelMemory.dispose();this.working?.clear();owners.delete(this.report);return this.disposal;}
+  dispose(){if(this.disposed)return this.disposal;this.disposed=true;this.disposal=this.history?.dispose().catch(()=>{})??Promise.resolve();this.previews?.dispose();this.generation++;clearTimeout(this.timer);this.worker.dispose();for(const w of this._encoders??[])if(w!==this.worker)w.dispose();this.decodeWorker.dispose();this.thumbnailWorker.dispose();this.compositeWorker.dispose();if(this.strokeWorker.close)this.strokeWorker.close();else this.strokeWorker.dispose();this.thumbnailQueue.clear();for(const t of this.thumbnailCache.values())t.canvas.width=t.canvas.height=1;this.thumbnailCache.clear();for(const job of this.decodeQueue)job.reject(messageError(new DOMException('', 'AbortError'), "errors.drawingResources.drawingDocumentClosed", {}));this.decodeQueue=[];for(const e of this.surfaces()){this.dropScratch(e);e.disposed=true;e.store=null;e.levels=null;e.levelKnown=null;}this.transients.clear();this.entries.clear();this.pixelMemory.dispose();this.working?.clear();owners.delete(this.report);return this.disposal;}
 }

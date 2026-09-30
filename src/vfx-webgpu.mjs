@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {activeVfx} from './vfx.mjs';
 import {fitsVfxSurface,vfxSurfaceError} from './vfx-surface.mjs';
 import {vfxPaint} from './vfx-paint.mjs';
@@ -93,7 +94,7 @@ export class VfxWebGPU{
   this.slots=[];this.retired=[];this.pipelines=new Map();this.stats={passes:0,bytes:0,calls:0};
  }
  pipeline(operation){
-  if(!Number.isInteger(operation)||operation<0||operation>27)throw new RangeError('Unknown VFX graphics operation.');
+  if(!Number.isInteger(operation)||operation<0||operation>27)throw messageError(new RangeError(''), "errors.vfxGpu.unknownVfxGraphicsOperation", {});
   let entry=this.pipelines.get(operation);if(!entry){entry=this.device.createRenderPipeline({layout:this.pipelineLayout,vertex:{module:this.module,entryPoint:'vertex'},fragment:{module:this.module,entryPoint:'fragment',constants:{operation},targets:[{format:'rgba8unorm'}]}});this.pipelines.set(operation,entry);}return entry;
  }
  slot(index,width,height){
@@ -110,11 +111,11 @@ export class VfxWebGPU{
   stack=activeVfx(stack);if(!stack.length)return texture?null:source;
   const w=source.width,h=source.height,W=w+2*pad,H=h+2*pad;
   if(!fitsVfxSurface(W,H,this.device.limits.maxTextureDimension2D))throw vfxSurfaceError();
-  if(source.texture&&pad)throw new Error('GPU artwork must include its effect padding.');
+  if(source.texture&&pad)throw messageError(new Error(''), "errors.vfxWebgpu.gpuArtworkMustIncludeItsEffectPadding", {});
   const input=source.texture?{texture:source.texture,view:source.texture.createView(),width:w,height:h}:this.slot(0,W,H);
   if(pad){const clear=this.device.createCommandEncoder(),rp=clear.beginRenderPass({colorAttachments:[{view:input.view,clearValue:{r:0,g:0,b:0,a:0},loadOp:'clear',storeOp:'store'}]});rp.end();this.device.queue.submit([clear.finish()]);}
   if(!source.texture)this.device.queue.copyExternalImageToTexture({source},{texture:input.texture,origin:[pad,pad,0],premultipliedAlpha:true},[w,h]);
-  if(!texture){if(this.canvas.width!==W)this.canvas.width=W;if(this.canvas.height!==H)this.canvas.height=H;if(!this.context){this.context=this.canvas.getContext('webgpu');if(!this.context)throw new Error('VFX require an available WebGPU canvas context.');}if(!this.configured){this.context.configure({device:this.device,format:'rgba8unorm',alphaMode:'premultiplied'});this.configured=true;}}
+  if(!texture){if(this.canvas.width!==W)this.canvas.width=W;if(this.canvas.height!==H)this.canvas.height=H;if(!this.context){this.context=this.canvas.getContext('webgpu');if(!this.context)throw messageError(new Error(''), "errors.vfxWebgpu.vfxRequireAnAvailableWebgpuCanvasContext", {});}if(!this.configured){this.context.configure({device:this.device,format:'rgba8unorm',alphaMode:'premultiplied'});this.configured=true;}}
   this.stats.passes=0;let brushType=0,brushAngle=0,brushStops=1;
   let current=input,encoder=this.device.createCommandEncoder(),uOffset=0;
   const submit=()=>{this.device.queue.submit([encoder.finish()]);encoder=this.device.createCommandEncoder();uOffset=0;};

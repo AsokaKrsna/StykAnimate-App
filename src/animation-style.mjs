@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Small per-instance style overlays; native figure definitions remain shared. */
 import {normalizePaint, segmentPaint} from './paint.mjs';
 import {validateDrawableZIndex} from './animation-properties.mjs';
@@ -10,21 +11,21 @@ export const nativeSegmentOpacity = segment => segment.transparency === undefine
 
 /** Validate the small persisted overlay without inspecting shared assets. */
 export function validateAnimationStyle(object) {
-  if (object?._styk?.colorMode !== undefined && object._styk.colorMode !== 'segments') throw new Error('Invalid instance color mode.');
+  if (object?._styk?.colorMode !== undefined && object._styk.colorMode !== 'segments') throw messageError(new Error(''), "errors.animationStyle.invalidInstanceColorMode", {});
   const style = object?._stykStyle; if (style === undefined) return object;
   const record = value => value && typeof value === 'object' && !Array.isArray(value);
-  const opacity = value => { if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) throw new Error('Instance style opacity must be between zero and one.'); };
-  if (!record(style)) throw new Error('Instance style must be a property record.');
+  const opacity = value => { if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) throw messageError(new Error(''), "errors.animationStyle.instanceStyleOpacityMustBeBetweenZeroAnd", {}); };
+  if (!record(style)) throw messageError(new Error(''), "errors.animationStyle.instanceStyleMustBeAPropertyRecord", {});
   if ('outlineOpacity' in style) opacity(style.outlineOpacity);
-  const color = value => { if (!Number.isInteger(value) || value < 0 || value > 0xffffff) throw new Error('Style color must be an RGB integer.'); };
-  const width = value => { if (!Number.isFinite(value) || value < 0 || value > 1e6) throw new Error('Style width is outside the supported range.'); };
+  const color = value => { if (!Number.isInteger(value) || value < 0 || value > 0xffffff) throw messageError(new Error(''), "errors.animationStyle.styleColorMustBeAnRgbInteger", {}); };
+  const width = value => { if (!Number.isFinite(value) || value < 0 || value > 1e6) throw messageError(new Error(''), "errors.animationStyle.styleWidthIsOutsideTheSupportedRange", {}); };
   if ('outlineColor' in style) color(style.outlineColor);
   if ('outlineWidth' in style) width(style.outlineWidth);
   if (style.segments !== undefined) {
-    if (!record(style.segments)) throw new Error('Instance segment styles must be a handle table.');
+    if (!record(style.segments)) throw messageError(new Error(''), "errors.animationStyle.instanceSegmentStylesMustBeAHandleTable", {});
     for (const [handle, values] of Object.entries(style.segments)) {
       const id = Number(handle);
-      if (!Number.isInteger(id) || id < 1 || id > 65535 || String(id) !== handle || !record(values)) throw new Error('Instance style has an invalid segment handle.');
+      if (!Number.isInteger(id) || id < 1 || id > 65535 || String(id) !== handle || !record(values)) throw messageError(new Error(''), "errors.animationStyle.instanceStyleHasAnInvalidSegmentHandle", {});
       if ('opacity' in values) opacity(values.opacity);
       if ('gradientOpacity' in values) opacity(values.gradientOpacity);
       if ('color' in values) color(values.color);
@@ -35,9 +36,9 @@ export function validateAnimationStyle(object) {
     }
   }
   if (style.polygons !== undefined) {
-    if (!record(style.polygons)) throw new Error('Polygon styles must be an identity table.');
+    if (!record(style.polygons)) throw messageError(new Error(''), "errors.animationStyle.polygonStylesMustBeAnIdentityTable", {});
     for (const [id, values] of Object.entries(style.polygons)) {
-      if (!Number.isInteger(Number(id)) || Number(id) < 1 || Number(id) > 65535 || !record(values)) throw new Error('Invalid polygon style identity.');
+      if (!Number.isInteger(Number(id)) || Number(id) < 1 || Number(id) > 65535 || !record(values)) throw messageError(new Error(''), "errors.animationStyle.invalidPolygonStyleIdentity", {});
       if ('color' in values) color(values.color);
       if ('opacity' in values) opacity(values.opacity);
       if ('zIndex' in values) validateDrawableZIndex(values.zIndex);

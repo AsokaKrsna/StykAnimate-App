@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {audioState, validateAudioState, validateAudioAsset, freshAudioId, rippleAudio, audioFps} from './audio-model.mjs';
 
 function publish(editor, next, label) {
@@ -17,14 +18,14 @@ function publish(editor, next, label) {
 }
 function modifyTrack(editor, id, operation, label) {
   const state = audioState(editor.report), index = state.tracks.findIndex(track => track.id === id);
-  if (index < 0) throw new Error('Select an audio track.');
+  if (index < 0) throw messageError(new Error(''), "errors.editorAudio.selectAnAudioTrack", {});
   const tracks = [...state.tracks]; tracks[index] = operation(tracks[index]);
   if (tracks[index] === state.tracks[index]) return false;
   return publish(editor, {...state, tracks}, label);
 }
 function clipOwner(editor, id) {
   const track = audioState(editor.report).tracks.find(track => track.clips.some(clip => clip.id === id));
-  if (!track) throw new Error('Select an audio clip.');
+  if (!track) throw messageError(new Error(''), "errors.editorAudio.selectAnAudioClip", {});
   return {track, clip: track.clips.find(clip => clip.id === id)};
 }
 export function applyAudioCommand(editor, command, direction) {
@@ -50,7 +51,7 @@ export const editorAudioMethods = {
     publish(this, {...state, assets: {...state.assets, [asset.id]: asset}, tracks}, 'Import audio'); return clip.id;
   },
   setAudioTrack(id, patch) {
-    if (Object.keys(patch).some(key => !['name', 'gain', 'mute', 'solo'].includes(key))) throw new Error('Unsupported audio track property.');
+    if (Object.keys(patch).some(key => !['name', 'gain', 'mute', 'solo'].includes(key))) throw messageError(new Error(''), "errors.editorAudio.unsupportedAudioTrackProperty", {});
     return modifyTrack(this, id, track => Object.entries(patch).every(([key, value]) => track[key] === value) ? track : ({...track, ...patch}), 'Edit audio track');
   },
   deleteAudioTrack(id) {
@@ -59,11 +60,11 @@ export const editorAudioMethods = {
     return publish(this, {...state, tracks, assets: Object.fromEntries(Object.entries(state.assets).filter(([key]) => used.has(key)))}, 'Delete audio track');
   },
   setAudioClip(id, patch, targetTrackId) {
-    if (Object.keys(patch).some(key => !['start', 'offset', 'duration', 'gain', 'fadeIn', 'fadeOut'].includes(key))) throw new Error('Unsupported audio clip property.');
-    if (Object.values(patch).some(value => !Number.isFinite(value))) throw new Error('Audio clip properties must be finite numbers.');
+    if (Object.keys(patch).some(key => !['start', 'offset', 'duration', 'gain', 'fadeIn', 'fadeOut'].includes(key))) throw messageError(new Error(''), "errors.editorAudio.unsupportedAudioClipProperty", {});
+    if (Object.values(patch).some(value => !Number.isFinite(value))) throw messageError(new Error(''), "errors.editorAudio.audioClipPropertiesMustBeFiniteNumbers", {});
     const {track, clip} = clipOwner(this, id), state = audioState(this.report);
     targetTrackId ??= track.id;
-    if (!state.tracks.some(track => track.id === targetTrackId)) throw new Error('Select a destination audio track.');
+    if (!state.tracks.some(track => track.id === targetTrackId)) throw messageError(new Error(''), "errors.editorAudio.selectADestinationAudioTrack", {});
     const next = {...clip, ...patch}; next.fadeIn = Math.min(next.fadeIn, next.duration); next.fadeOut = Math.min(next.fadeOut, next.duration);
     if (targetTrackId === track.id && Object.keys(next).every(key => next[key] === clip[key])) return false;
     const tracks = state.tracks.map(row => row.id === targetTrackId
@@ -73,7 +74,7 @@ export const editorAudioMethods = {
   },
   splitAudioClip(id, time = this.tick / audioFps(this.report)) {
     const {track, clip} = clipOwner(this, id), cut = time - clip.start;
-    if (cut < 1 / 48000 || clip.duration - cut < 1 / 48000) throw new Error('Place the playhead inside the audio clip to split it.');
+    if (cut < 1 / 48000 || clip.duration - cut < 1 / 48000) throw messageError(new Error(''), "errors.editorAudio.placeThePlayheadInsideTheAudioClipTo", {});
     const right = {...clip, id: freshAudioId('clip'), start: time, offset: clip.offset + cut, duration: clip.duration - cut, fadeIn: 0, fadeOut: Math.min(clip.fadeOut, clip.duration - cut)};
     modifyTrack(this, track.id, row => ({...row, clips: row.clips.flatMap(item => item.id === id ? [{...clip, duration: cut, fadeIn: Math.min(clip.fadeIn, cut), fadeOut: 0}, right] : [item])}), 'Split audio clip');
     return right.id;

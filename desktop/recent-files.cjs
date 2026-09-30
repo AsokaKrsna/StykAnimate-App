@@ -1,4 +1,6 @@
 'use strict';
+const { messageError } = require('./localization.cjs');
+
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -22,7 +24,7 @@ function validPath(filename) {
 }
 
 function unavailable(filename) {
-  return new Error(`“${path.basename(filename)}” is no longer available. Locate it using Open file, or remove it from Recent files.`);
+  return messageError(new Error(''), 'desktop.recentFiles.errors.valueIsNoLongerAvailableLocateItUsingOpenFileOrRemoveItFromRecentFiles', {value: path.basename(filename)});
 }
 
 /**
@@ -33,9 +35,9 @@ function unavailable(filename) {
 class RecentFiles {
   constructor({ directory, limit = 20 } = {}) {
     if (typeof directory !== 'string' || !path.isAbsolute(directory))
-      throw new Error('Recent files need an absolute native storage directory.');
+      throw messageError(new Error(''), 'desktop.recentFiles.errors.recentFilesNeedAnAbsoluteNativeStorageDirectory', {});
     if (!Number.isInteger(limit) || limit < 1 || limit > 20)
-      throw new Error('Recent files supports between 1 and 20 entries.');
+      throw messageError(new Error(''), 'desktop.recentFiles.errors.recentFilesSupportsBetween1And20Entries', {});
     this.directory = path.normalize(directory);
     this.file = path.join(this.directory, 'recent-files.json');
     this.limit = limit;
@@ -91,7 +93,7 @@ class RecentFiles {
   async save(entries) {
     const encoded = JSON.stringify({ version: 1, entries });
     if (Buffer.byteLength(encoded, 'utf8') > MAX_RECENT_BYTES)
-      throw new Error('Recent files exceeds its 512 KB storage limit.');
+      throw messageError(new Error(''), 'desktop.recentFiles.errors.recentFilesExceedsIts512KBStorageLimit', {});
     await fs.mkdir(this.directory, { recursive: true });
     await atomicWrite(this.file, encoded);
     this.entries = entries;
@@ -103,7 +105,7 @@ class RecentFiles {
 
   remember(absolutePath) {
     return this.enqueue(async () => {
-      if (!validPath(absolutePath)) throw new Error('Recent files accepts an absolute .piv, .stk, .stkz, .stykmov or .styk filename.');
+      if (!validPath(absolutePath)) throw messageError(new Error(''), 'desktop.recentFiles.errors.recentFilesAcceptsAnAbsolutePivStkStkzStykmovOrStykFilename', {});
       let filename, stat;
       try {
         filename = await fs.realpath(absolutePath);
@@ -113,7 +115,7 @@ class RecentFiles {
         throw error;
       }
       if (!stat.isFile()) throw unavailable(absolutePath);
-      if (!validPath(filename)) throw new Error('Recent files accepts .piv, .stk, .stkz, .stykmov or .styk documents.');
+      if (!validPath(filename)) throw messageError(new Error(''), 'desktop.recentFiles.errors.recentFilesAcceptsPivStkStkzStykmovOrStykDocuments', {});
       const key = canonicalPathKey(filename);
       const previous = this.entries.find(entry => canonicalPathKey(entry.path) === key);
       const entry = { id: previous?.id ?? randomUUID(), path: filename };
@@ -134,7 +136,7 @@ class RecentFiles {
 
   requireEntry(id) {
     const entry = typeof id === 'string' && this.entries.find(item => item.id === id);
-    if (!entry) throw new Error('This recent file is no longer in the list. Open it using Open file.');
+    if (!entry) throw messageError(new Error(''), 'desktop.recentFiles.errors.thisRecentFileIsNoLongerInTheListOpenItUsingOpenFile', {});
     return entry;
   }
 
@@ -146,7 +148,7 @@ class RecentFiles {
       } catch (error) {
         if (error.code === 'ENOENT' || error.code === 'ENOTDIR') throw unavailable(entry.path);
         if (error.code === 'EACCES' || error.code === 'EPERM')
-          throw new Error(`“${path.basename(entry.path)}” cannot be read. Check its file permissions or open it from another location.`);
+          throw messageError(new Error(''), 'desktop.recentFiles.errors.valueCannotBeReadCheckItsFilePermissionsOrOpenItFromAnotherLocation', {value: path.basename(entry.path)});
         throw error;
       }
       return entry.path;

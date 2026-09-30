@@ -1,4 +1,6 @@
 'use strict';
+const { messageError } = require('./localization.cjs');
+
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -126,7 +128,7 @@ async function startBackend({ appRoot, resourcesPath, packaged = false, onError 
     signal?.throwIfAborted();
     attempts.push(`${candidate.command}: ${startupError?.message || output.trim() || 'Startup timed out.'}`);
   }
-  throw new Error(`The Pivot codec could not start. Install Python 3.11 or newer, or set STYK_PYTHON to its executable.\n\n${attempts.join('\n\n')}`);
+  throw messageError(new Error(''), 'desktop.backend.errors.thePivotCodecCouldNotStartInstallPython311OrNewerOrSetSTYKPYTHONToItsExecutableValue', {value: attempts.join('\n\n')});
 }
 
 module.exports = { startBackend, pythonCandidates, availablePort, probeBackend, sessionProof };

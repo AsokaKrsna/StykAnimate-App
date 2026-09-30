@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {portableFigure, portableBackground, modernizeLegacyObjectColor} from './clipboard-assets.mjs';
 import {validateScene} from './pivot/model.mjs';
 import {validateAnimationDocument} from './animation-channels.mjs';
@@ -33,14 +34,14 @@ export function modernizeLegacyFrame(original, segmentColorTypes = new Set()) {
  * authored channels stay on the first key; added terminal holds get fresh IDs. */
 export function planLegacyDestinationUpgrade(report, nextFrameIdentity) {
   const segmentColorTypes = new Set(report.figure_types.filter(fig => fig._styk?.colorMode === 'segments').map(fig => fig.figure_type_id));
-  if (![2,3,4].includes(report.version)) throw new Error('Choose a legacy Pivot 2, 3 or 4 destination.');
+  if (![2,3,4].includes(report.version)) throw messageError(new Error(''), "errors.clipboardLegacyUpgrade.chooseALegacyPivot23Or4", {});
   const upgraded = {...report,version:5,figure_types:report.figure_types.map(figure=>portableFigure(figure,true)),
     backgrounds:(report.backgrounds ?? []).map(portableBackground),keyframes:[],_styk:clone(report._styk ?? {})};
   const indexes = [], used = new Set([...report.keyframes,...Object.values(report._styk?.frameSources ?? {})].map(frame=>frame._styk?.frameId));
   const id = () => {
     let value;
     do {
-      if (!Number.isSafeInteger(nextFrameIdentity) || nextFrameIdentity < 1) throw new Error('Frame identity capacity exceeded.');
+      if (!Number.isSafeInteger(nextFrameIdentity) || nextFrameIdentity < 1) throw messageError(new Error(''), "errors.clipboardLegacyUpgrade.frameIdentityCapacityExceeded", {});
       value = `frame-${nextFrameIdentity++}`;
     } while (used.has(value));
     used.add(value);return value;
@@ -51,7 +52,7 @@ export function planLegacyDestinationUpgrade(report, nextFrameIdentity) {
     const frame = modernizeLegacyFrame(original, segmentColorTypes), hold = frame.duration_raw;
     const added = hold > 1 ? 2 : 1;
     objects += frame.objects.length * added;
-    if (upgraded.keyframes.length + added > 100000 || objects > 2000000) throw new Error('Legacy hold conversion exceeds the frame or object capacity.');
+    if (upgraded.keyframes.length + added > 100000 || objects > 2000000) throw messageError(new Error(''), "errors.clipboardLegacyUpgrade.legacyHoldConversionExceedsTheFrameOrObject", {});
     if (hold > 1) {
       frame.duration_raw = hold - 1;
       const terminal = clone(frame);terminal.duration_raw = 1;terminal._styk={...terminal._styk,frameId:id()};

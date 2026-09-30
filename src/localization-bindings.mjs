@@ -6,40 +6,94 @@ const ATTRIBUTES = Object.freeze({
   placeholder: 'data-i18n-placeholder',
   alt: 'data-i18n-alt',
   'aria-valuetext': 'data-i18n-aria-valuetext',
+  'aria-description': 'data-i18n-aria-description',
   'data-tooltip': 'data-i18n-tooltip',
   'data-hotkey-title': 'data-i18n-hotkey-title',
 });
 const SELECTOR = ['data-i18n', ...Object.values(ATTRIBUTES)].map(name => `[${name}]`).join(',');
 let application = null;
+const textBindings = new WeakMap();
+const runtimeParameters = new WeakMap();
 const escape = value => String(value).replace(/[&<>"']/g, character => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'})[character]);
+
+function bindingAttribute(element, name, value) {
+  if (element.getAttribute(name) !== value) element.setAttribute(name, value);
+}
+
+/** Clear a caption when its owner starts showing a user name or raw value. */
+export function clearTranslation(element, attribute = 'text') {
+  if (!element) return;
+  if (element.nodeType === 3) { textBindings.delete(element); application?.textNodes.delete(element); return; }
+  const binding = attribute === 'text' ? 'data-i18n' : ATTRIBUTES[attribute];
+  if (binding) {
+    runtimeParameters.get(element)?.delete(binding);
+    if (element.hasAttribute?.(binding)) element.removeAttribute(binding);
+    if (element.hasAttribute?.(`${binding}-params`)) element.removeAttribute(`${binding}-params`);
+  }
+}
+
+/** Bind a factory's returned caption without changing the factory's arguments. */
+export function translatedElement(element, key, params = {}, attribute = 'text') {
+  if (attribute === 'text') localizedText(element, key, params);
+  else localizedAttribute(element, attribute, key, params);
+  return element;
+}
 
 /** Explicit bindings at text owners; parameters are presentation data only. */
 export function messageAttributes(key, params = {}, attribute = 'text') {
-  return `${attribute === 'text' ? 'data-i18n' : ATTRIBUTES[attribute]}="${escape(key)}" data-i18n-params="${escape(JSON.stringify(params))}"`;
+  const binding = attribute === 'text' ? 'data-i18n' : ATTRIBUTES[attribute];
+  return `${binding}="${escape(key)}" ${binding}-params="${escape(JSON.stringify(params))}"`;
 }
 export function messageHTML(key, params) {
   return `<span ${messageAttributes(key, params)}>${escape(interfaceLocalization.t(key, params))}</span>`;
 }
 export function connectTranslations(root) {
+  if (root?.localName === 'template') root = root.content;
+  if (root?.isConnected) {
+    const visit = node => {
+      const binding = textBindings.get(node);
+      if (binding) application?.textNodes.set(node, binding);
+      for (const child of node.childNodes ?? []) visit(child);
+    };
+    visit(root);
+  }
   if (!root?.querySelectorAll) return;
   if (application && (root.isConnected || root.nodeType === 9)) application.apply(root);
   else applyTranslations(root, interfaceLocalization);
 }
 export function localizedText(element, key, params = {}) {
   if (!element) return;
-  element.setAttribute('data-i18n', key);
-  element.setAttribute('data-i18n-params', JSON.stringify(params));
+  const previous = element.textContent;
+  if (element.nodeType === 3) {
+    const binding = {key, params};
+    textBindings.set(element, binding);
+    const text = interfaceLocalization.t(key, params);
+    if (element.data !== text) element.data = text;
+    if (element.isConnected) application?.textNodes.set(element, binding);
+    return previous !== text;
+  }
+  bindingAttribute(element, 'data-i18n', key);
+  if (!runtimeParameters.has(element)) runtimeParameters.set(element, new Map());
+  runtimeParameters.get(element).set('data-i18n', params);
+  if (element.hasAttribute('data-i18n-params')) element.removeAttribute('data-i18n-params');
   translateElement(element, interfaceLocalization);
-  if (element.isConnected) application?.apply(element);
+  if (element.isConnected) application?.elements.add(element);
+  return previous !== element.textContent;
 }
 export function localizedAttribute(element, attribute, key, params = {}) {
   if (!element) return;
-  element.setAttribute(ATTRIBUTES[attribute], key);
-  element.setAttribute('data-i18n-params', JSON.stringify(params));
+  if (typeof element.setAttribute !== 'function') throw new TypeError(`Translation ${key} requires an element (${attribute}, ${element.nodeName ?? typeof element}).`);
+  const previous = element.getAttribute(attribute);
+  bindingAttribute(element, ATTRIBUTES[attribute], key);
+  if (!runtimeParameters.has(element)) runtimeParameters.set(element, new Map());
+  runtimeParameters.get(element).set(ATTRIBUTES[attribute], params);
+  if (element.hasAttribute(`${ATTRIBUTES[attribute]}-params`)) element.removeAttribute(`${ATTRIBUTES[attribute]}-params`);
   translateElement(element, interfaceLocalization);
-  if (element.isConnected) application?.apply(element);
+  if (element.isConnected) application?.elements.add(element);
+  return previous !== element.getAttribute(attribute);
 }
 export function localizedMarkup(element, html) {
+  clearTranslation(element);
   element.innerHTML = html;
   connectTranslations(element);
   return html;
@@ -54,9 +108,19 @@ export function appendChildLocalized(parent, node) {
   return result;
 }
 
+/** Descriptor keys belong to the feature; renderers only attach the binding. */
+export function descriptorAttributes(descriptor, property = 'label', attribute = 'text') {
+  const key = descriptor?.[`${property}Key`];
+  return key ? ' ' + messageAttributes(key, descriptor[`${property}Params`], attribute) : '';
+}
+export function descriptorText(descriptor, property = 'label') {
+  const key = descriptor?.[`${property}Key`];
+  return key ? interfaceLocalization.t(key, descriptor[`${property}Params`]) : descriptor?.[property];
+}
+
 function caption(element, text) {
-  const slot = [...element.children].find(child => child.hasAttribute('data-i18n-slot'));
-  if (slot) { if (slot.textContent !== text) slot.textContent = text; return; }
+  const slot = [...element.children].find(child => child.hasAttribute('data-i18n-slot') || child.classList.contains('ui-label') || child.hasAttribute('data-i18n'));
+  if (slot) { clearTranslation(slot); if (slot.textContent !== text) slot.textContent = text; return; }
   const nodes = [...element.childNodes].filter(node => node.nodeType === 3 && node.textContent.trim());
   if (nodes.length) {
     if (nodes[0].textContent !== text) nodes[0].textContent = text;
@@ -84,12 +148,16 @@ export function applyTranslations(root, localization) {
 function translateElement(element, localization) {
   let params = {};
   try { params = JSON.parse(element.getAttribute('data-i18n-params') || '{}'); } catch { /* invalid authored parameters remain diagnosable */ }
+  params = runtimeParameters.get(element)?.get('data-i18n') ?? params;
   const key = element.getAttribute('data-i18n');
   if (key) caption(element, localization.t(key, params));
   for (const [attribute, binding] of Object.entries(ATTRIBUTES)) {
     const key = element.getAttribute(binding);
     if (key) {
-      const text = localization.t(key, params);
+      let attributeParams = params;
+      try { const authored = element.getAttribute(`${binding}-params`); if (authored) attributeParams = JSON.parse(authored); } catch { /* leave invalid parameters visible */ }
+      attributeParams = runtimeParameters.get(element)?.get(binding) ?? attributeParams;
+      const text = localization.t(key, attributeParams);
       if (attribute === 'title' && element.dataset.hotkeyHint !== undefined) {
         // A shortcut control (hotkey-hints.mjs): the tooltip shows this name and
         // the shortcut, so no native title. A name derived from it follows it.
@@ -156,13 +224,19 @@ export class AppLocalization {
     this.localization.setLocale(locale);
     this.document = documentRoot;
     this.elements = new Set();
+    this.textNodes = new Map();
     this.stats = { applications: 0, registrations: 0, localeChanges: 0 };
     this.unsubscribe = this.localization.subscribe(() => {
       this.stats.localeChanges++;
       this.updateLanguage();
       for (const element of this.elements) {
-        if (!element.isConnected) { this.elements.delete(element); continue; }
+        if (!element.isConnected || !element.matches(SELECTOR)) { this.elements.delete(element); continue; }
         translateElement(element, this.localization);
+      }
+      for (const [node, binding] of this.textNodes) {
+        if (!node.isConnected) { this.textNodes.delete(node); continue; }
+        const text = this.localization.t(binding.key, binding.params);
+        if (node.data !== text) node.data = text;
       }
     });
     this.updateLanguage();
@@ -180,7 +254,8 @@ export class AppLocalization {
   setLocale(locale) { return this.localization.setLocale(locale); }
 
   prune() {
-    for (const element of this.elements) if (!element.isConnected) this.elements.delete(element);
+    for (const element of this.elements) if (!element.isConnected || !element.matches(SELECTOR)) this.elements.delete(element);
+    for (const node of this.textNodes.keys()) if (!node.isConnected) this.textNodes.delete(node);
   }
 
   apply(root) {
@@ -202,6 +277,7 @@ export class AppLocalization {
         const attribute = property === 'text' ? 'data-i18n' : ATTRIBUTES[property];
         if (!attribute) throw new Error(`Unsupported translation attribute: ${property}`);
         element.setAttribute(attribute, key);
+        if (property === 'text') for (const child of element.children) if (child.hasAttribute('data-i18n-slot')) clearTranslation(child);
       }
       translateElement(element, this.localization);
       if (!this.elements.has(element)) this.stats.registrations++;
@@ -211,7 +287,7 @@ export class AppLocalization {
     return count;
   }
 
-  bindChrome(root = this.document) { return this.bind(root, APP_CHROME_BINDINGS); }
+  bindChrome(root = this.document) { const count = this.bind(root, APP_CHROME_BINDINGS); this.apply(root); return count; }
 
   applyMenu(menu) {
     for (const button of menu.querySelectorAll('[data-action]')) {
@@ -229,5 +305,16 @@ export class AppLocalization {
     return this.apply(button);
   }
 
-  destroy() { this.unsubscribe(); this.elements.clear(); if (application === this) application = null; }
+  destroy() { this.unsubscribe(); this.elements.clear(); this.textNodes.clear(); if (application === this) application = null; }
+}
+
+// Existing feature tables also use tuples. Attach key metadata without adding
+// fields to their array/data contract; the renderer reads it explicitly.
+const tupleBindings = new WeakMap();
+export function messageTuple(values, bindings) { tupleBindings.set(values, bindings); return values; }
+export function tupleMessages(values) { return tupleBindings.get(values) ?? {}; }
+
+export function replaceLocalized(parent, ...nodes) {
+  parent.replaceChildren(...nodes);
+  connectTranslations(parent);
 }

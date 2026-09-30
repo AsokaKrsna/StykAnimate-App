@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {clipboardWireChunks, createClipboardWireDecoder} from './clipboard-wire.mjs';
 import {createFrame} from './demo.mjs';
 import {validateCameraMotion} from './camera-motion.mjs';
@@ -5,7 +6,7 @@ import {validateVfxClips} from './vfx-clips.mjs';
 import {validatePixelClipboard} from './drawing-clipboard.mjs';
 import {drawingBarrier} from './drawing-resources.mjs';
 
-const abort = () => new DOMException('The document changed during the clipboard operation.', 'AbortError');
+const abort = () => messageError(new DOMException('', 'AbortError'), "errors.sharedClipboard.theDocumentChangedDuringTheClipboardOperation", {});
 
 export function clipboardSnapshot(editor, kind) {
   let data;
@@ -20,21 +21,21 @@ export function clipboardSnapshot(editor, kind) {
   } else if (kind === 'drawing-pixels') data=editor._drawingPixelClipboard;
   else if (kind === 'camera-motion') data = editor._cameraMotionClipboard;
   else if (kind === 'frames') data = editor.frameClipboardDocumentView?.() ?? editor.frameClipboardDocument();
-  else throw new Error('Unsupported clipboard type.');
+  else throw messageError(new Error(''), "errors.sharedClipboard.unsupportedClipboardType", {});
   return data ? {format: 'StykAnimate clipboard', version: 1, kind, data} : null;
 }
 
 export async function restoreClipboard(editor, packet, checkCurrent = () => {}) {
-  if (packet?.format !== 'StykAnimate clipboard' || packet.version !== 1 || !packet.data) throw new Error('Unsupported StykAnimate clipboard.');
+  if (packet?.format !== 'StykAnimate clipboard' || packet.version !== 1 || !packet.data) throw messageError(new Error(''), "errors.sharedClipboard.unsupportedStykanimateClipboard", {});
   const {kind, data} = packet;
   checkCurrent();
   if (kind === 'figures') {
-    if (!Array.isArray(data.objects) || !data.objects.length || !Array.isArray(data.figures) || !Array.isArray(data.order) || !Number.isFinite(data.offset)) throw new Error('Invalid figure clipboard.');
+    if (!Array.isArray(data.objects) || !data.objects.length || !Array.isArray(data.figures) || !Array.isArray(data.order) || !Number.isFinite(data.offset)) throw messageError(new Error(''), "errors.sharedClipboard.invalidFigureClipboard", {});
     if (data.vfxClips !== undefined) validateVfxClips({version: 1, clips: data.vfxClips});
     const value = {...data, layers: new Map(data.layers), freshTypes: new Set(data.freshTypes), documentToken: null, pastes: 0};
     editor._selectionClipboard = value; editor._figureClipboard = null;
   } else if (kind === 'sheet') {
-    if (data.version !== 1 || !Array.isArray(data.rows) || !data.rows.length || !Number.isInteger(data.duration) || data.duration < 1 || !Array.isArray(data.figures) || !data.rows.every(row => typeof row.id === 'string' && Array.isArray(row.keys))) throw new Error('Invalid timeline clipboard.');
+    if (data.version !== 1 || !Array.isArray(data.rows) || !data.rows.length || !Number.isInteger(data.duration) || data.duration < 1 || !Array.isArray(data.figures) || !data.rows.every(row => typeof row.id === 'string' && Array.isArray(row.keys))) throw messageError(new Error(''), "errors.sharedClipboard.invalidTimelineClipboard", {});
     editor._sheetClipboard = {...data, document: null};
   } else if (kind === 'drawing-pixels') {
     validatePixelClipboard(data);
@@ -44,7 +45,7 @@ export async function restoreClipboard(editor, packet, checkCurrent = () => {}) 
   } else if (kind === 'frames') {
     if (editor.restoreFrameClipboardAsync) await editor.restoreFrameClipboardAsync(data, {checkCurrent});
     else editor.restoreFrameClipboard(data);
-  } else throw new Error('Unsupported clipboard type.');
+  } else throw messageError(new Error(''), "errors.sharedClipboard.unsupportedClipboardType", {});
   editor._emit('clipboard-restored', {clipboard: true});
   return kind;
 }
@@ -105,8 +106,8 @@ export class SharedClipboard {
     return this.run(async checkDocument => {
       const check=()=>{checkDocument();if(signal?.aborted)throw abort();checkCurrent();};
       check();const current = await this.read(check);check();
-      if (this.desktop?.beginSharedClipboardRead && !current) throw new Error('Copy figures or frames in StykAnimate first.');
-      if (kind && current && current !== kind) throw new Error(current === 'figures' ? 'Paste the copied figures on the canvas.' : current === 'drawing-pixels' ? 'Paste the copied pixels in Draw.' : 'Paste the copied frames in the timeline.');
+      if (this.desktop?.beginSharedClipboardRead && !current) throw messageError(new Error(''), "errors.sharedClipboard.copyFiguresOrFramesInStykanimateFirst", {});
+      if (kind && current && current !== kind) throw messageError(new Error(''), current === 'figures' ? 'errors.layerTimeline.pasteTheCopiedFiguresOnTheCanvas' : current === 'drawing-pixels' ? 'errors.sharedClipboard.pastePixelsInDraw' : 'errors.sharedClipboard.pasteFramesInTimeline');
       return operation(current);
     });
   }
@@ -115,7 +116,7 @@ export class SharedClipboard {
 /** Match fixed rows by kind and create missing artwork layers in the same undo. */
 export function pasteSheetClipboard(editor, ids, tick, {insert = false, wholeScene = false} = {}) {
   const clipboard = editor._sheetClipboard;
-  if (!clipboard) throw new Error('Copy timeline frames first.');
+  if (!clipboard) throw messageError(new Error(''), "errors.editorLayerSheet.copyTimelineFramesFirst", {});
   if (clipboard.document === editor._documentToken && !wholeScene) return editor.sheetPasteFrames(ids, tick, {insert});
   const fixed = id => id === 'scene' || id === 'camera';
   const selected = ids.filter(id => !fixed(id));

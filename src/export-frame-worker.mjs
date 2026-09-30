@@ -1,3 +1,5 @@
+import {errorMessageData, messageError} from './localized-error.mjs';
+
 import { applyDocumentChunk } from "./document-transport.mjs";
 import { timeline, evaluatedFrame } from "./pivot/geometry.mjs";
 import { PlaybackResources } from "./playback-resources.mjs";
@@ -31,13 +33,13 @@ async function deliverFrame(message, stats) {
   }
   const blob = await canvas.convertToBlob({type: 'image/png'});
   checkExportContext(context);
-  if (blob.type !== 'image/png' || !blob.size) throw new Error('Lossless video frame encoding is unavailable.');
+  if (blob.type !== 'image/png' || !blob.size) throw messageError(new Error(''), "errors.exportFrameWorker.losslessVideoFrameEncodingIsUnavailable", {});
   return {nativeFrame: {blob, width: canvas.width, height: canvas.height}, stats: {...stats, pngMs: performance.now() - started}};
 }
 function tickFrame(tick) {
   const end = rows.at(-1)?.start + rows.at(-1)?.count;
   if (!Number.isInteger(tick) || tick < 0 || tick >= end)
-    throw new Error("Choose an export frame inside this animation.");
+    throw messageError(new Error(''), "errors.exportFrameWorker.chooseAnExportFrameInsideThisAnimation", {});
   let low = 0,
     high = rows.length - 1;
   while (low < high) {
@@ -58,12 +60,12 @@ function tickFrame(tick) {
 }
 async function render(message) {
   if (!report || !rows)
-    throw new Error("Load the animation before rendering export frames.");
+    throw messageError(new Error(''), "errors.exportFrameWorker.loadTheAnimationBeforeRenderingExportFrames", {});
   const started = performance.now(),
     { frame, index } = message.override
       ? { frame: frameDocument?.keyframes?.[0], index: 0 }
       : tickFrame(message.tick);
-  if (!frame) throw new Error("The current export frame was not transferred.");
+  if (!frame) throw messageError(new Error(''), "errors.exportFrameWorker.theCurrentExportFrameWasNotTransferred", {});
   const geometry = exportFrameGeometry(report, frame),
     backgroundIds = new Set([
       frame.background_id,
@@ -166,7 +168,7 @@ self.addEventListener("message", async ({ data: message }) => {
       report = applyDocumentChunk(report, message.chunk);
     else if (message.operation === "loaded") {
       if (!report?.keyframes?.length || !report?.figure_types)
-        throw new Error("Export needs a decoded animation document.");
+        throw messageError(new Error(''), "errors.exportFrameWorker.exportNeedsADecodedAnimationDocument", {});
       rows = timeline(report);
     } else if (message.operation === "frame-start") frameDocument = undefined;
     else if (message.operation === "frame-chunk")
@@ -174,7 +176,7 @@ self.addEventListener("message", async ({ data: message }) => {
     else if (message.operation === "retile")
       options.tileSize = Math.max(1, Math.min(1024, message.tileSize | 0));
     else if (message.operation === "render") result = await render(message);
-    else throw new Error("Unknown export renderer operation.");
+    else throw messageError(new Error(''), "errors.exportFrameWorker.unknownExportRendererOperation", {});
     self.postMessage(
       { id: message.id, ok: true, ...result },
       result.bitmap ? [result.bitmap] : [],
@@ -201,7 +203,7 @@ self.addEventListener("message", async ({ data: message }) => {
     self.postMessage({
       id: message.id,
       ok: false,
-      error: error?.message || String(error),
+      error: error?.message || String(error), ...errorMessageData(error),
       code: error?.code,
       recoverable,
       ...diagnosticDetails(error,message.operation==='render'?'encode':'prepare','worker_failed'),

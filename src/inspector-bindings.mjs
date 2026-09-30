@@ -1,3 +1,5 @@
+import {t as interfaceText} from './localization.mjs';
+import {messageError} from './localized-error.mjs';
 /**
  * What a changed control in #inspector does (architecture.md §3.13): an
  * ordered, declarative map from a control's selector to the handler that
@@ -32,7 +34,7 @@ export function inspectorBindings(ctx) {
   return [
     ['#figure-layer', async (target) => {
       ctx.finishCurrentEdit();const id=target.value,uids=[...editor.selectedUids];
-      const changed=await ctx.changeFigureLayer('Move figures to layer',options=>editor.assignFiguresToLayerAsync(uids,id,options));
+      const changed=await ctx.changeFigureLayer(interfaceText('inspectorView.moveFiguresToLayer'),options=>editor.assignFiguresToLayerAsync(uids,id,options), {labelKey:'inspectorView.moveFiguresToLayer'});
       if(changed){editor.setActiveLayer(id);state.selectedTrackId=id;ctx.timeline()?.selectTrack?.(id);}ctx.queueUI();ctx.requestRender();
     }],
     ['#builder-branch', (target) => {
@@ -154,7 +156,7 @@ export function inspectorBindings(ctx) {
             seen = new Set([o.unique_id]);
           while (p) {
             if (seen.has(p.unique_id))
-              throw new Error("This attachment would create a cycle.");
+              throw messageError(new Error(''), "errors.inspectorBindings.thisAttachmentWouldCreateACycle", {});
             seen.add(p.unique_id);
             p = p.join ? editor.frame.objects[p.join.target_object_slot] : null;
           }
@@ -173,7 +175,7 @@ export function inspectorBindings(ctx) {
 function fieldChange(ctx, key, target, event) {
   const {editor} = ctx;
   const value = Number(target.value);
-  if (!Number.isFinite(value)) throw new Error("Enter a finite number.");
+  if (!Number.isFinite(value)) throw messageError(new Error(''), "errors.inspectorBindings.enterAFiniteNumber", {});
   if (key === "fps") editor.setFPS(value);
   else if (key === "duration") editor.setFrameDuration(value);
   else if (key.startsWith("group_")) {
@@ -183,7 +185,7 @@ function fieldChange(ctx, key, target, event) {
     else {
       const old = key === "group_width" ? b.maxX - b.minX : b.maxY - b.minY;
       if (value <= 0 || old <= 0)
-        throw new Error("Selection size must be greater than zero.");
+        throw messageError(new Error(''), "errors.inspectorBindings.selectionSizeMustBeGreaterThanZero", {});
       editor.scaleSelection(value / old);
     }
   } else if (key === "rotation")
@@ -238,9 +240,7 @@ function fieldChange(ctx, key, target, event) {
     });
   } else if (key === "canvas_width" || key === "canvas_height") {
     if (value < 1 || value > 16384 || !Number.isInteger(value))
-      throw new Error(
-        "Canvas dimensions must be whole pixels between 1 and 16,384.",
-      );
+      throw messageError(new Error(''), "errors.inspectorBindings.canvasDimensionsMustBeWholePixelsBetween1", {});
     if (editor.updateProject) editor.updateProject({ [key]: value });
     else
       editor.transaction(
@@ -256,7 +256,7 @@ function fieldChange(ctx, key, target, event) {
           (f) => f.figure_type_id === parent.figure_type_id,
         );
       if (value !== 0 && !fig.segments.some((s) => s.segment_id === value))
-        throw new Error("That parent joint does not exist.");
+        throw messageError(new Error(''), "errors.inspectorBindings.thatParentJointDoesNotExist", {});
       editor.object.join.target_handle_id = value;
     });
 }

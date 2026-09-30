@@ -1,9 +1,10 @@
+import {messageError} from './localized-error.mjs';
 // One budget for adapter discovery, device creation and shader compilation.
 // WebGPU promises cannot be cancelled; late devices must still be released.
 export function gpuStartupBudget(timeoutMs = 8000) {
   const deadline = performance.now() + timeoutMs;
   let expired = false;
-  const timeout = () => new Error('Graphics initialization timed out; using compatibility rendering.');
+  const timeout = () => messageError(new Error(''), "errors.gpuStartup.graphicsInitializationTimedOutUsingCompatibilityRendering", {});
   return {
     async wait(promise, releaseLate = () => {}) {
       let timer, settled = false;

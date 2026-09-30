@@ -1,6 +1,8 @@
+import {restoreMessageError, messageError} from './localized-error.mjs';
+
 import {documentChunks} from './document-transport.mjs';
 import {cameraSamplingReport,sampleMotionBake} from './camera-motion-bake.mjs';
-const abort=()=>new DOMException('Camera bake cancelled.','AbortError');
+const abort=()=>messageError(new DOMException('', 'AbortError'), "errors.cameraMotionBakeClient.cameraBakeCancelled", {});
 /** One short-lived worker, acknowledged camera snapshot chunks, one bounded typed
  * result. Only followed figures cross this boundary; other artwork and media do not. */
 export async function prepareCameraBake(report,options){
@@ -8,8 +10,8 @@ export async function prepareCameraBake(report,options){
   const worker=new Worker(new URL('./camera-motion-bake-worker.mjs',import.meta.url),{type:'module'}),{signal}=options;
   let pending;
   const cancelled=()=>{pending?.reject(abort());worker.terminate();};
-  worker.onmessage=({data})=>{if(data.type==='error')pending?.reject(new Error(data.message));else pending?.resolve(data);pending=null;};
-  worker.onerror=event=>{pending?.reject(new Error(event.message||'Camera bake worker failed.'));pending=null;};
+  worker.onmessage=({data})=>{if(data.type==='error')pending?.reject(restoreMessageError(new Error(data.message), data));else pending?.resolve(data);pending=null;};
+  worker.onerror=event=>{pending?.reject((event.message ? new Error(event.message) : messageError(new Error(''), "errors.cameraMotionBakeClient.cameraBakeWorkerFailed")));pending=null;};
   const send=message=>new Promise((resolve,reject)=>{if(signal?.aborted){reject(abort());return;}pending={resolve,reject};worker.postMessage(message);});
   signal?.addEventListener('abort',cancelled,{once:true});
   try{

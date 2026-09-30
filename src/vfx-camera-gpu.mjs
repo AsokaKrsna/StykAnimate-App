@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {parallaxResolver} from './layer-parallax.mjs';
 import {cameraMatrix} from './renderer-geometry.mjs';
 import {drawBackground,backgroundBounds} from './pivot/background.mjs';
@@ -8,7 +9,7 @@ import {offsetGeneratorBatch,generatorSchedule,scheduleWalker} from './vfx-gener
 /** Re-render retained GPU artwork into camera coordinates. Share the device,
  * primitive buffers and textures; own only one camera surface and MSAA target. */
 export class CameraGpuSource {
- constructor(renderer){this.renderer=renderer;this.canvas=new OffscreenCanvas(1,1);this.context=this.canvas.getContext('webgpu');if(!this.context)throw new Error('Camera VFX require an offscreen graphics context.');}
+ constructor(renderer){this.renderer=renderer;this.canvas=new OffscreenCanvas(1,1);this.context=this.canvas.getContext('webgpu');if(!this.context)throw messageError(new Error(''), "errors.vfxCameraGpu.cameraVfxRequireAnOffscreenGraphicsContext", {});}
  paint(target,options,width,height,plan){
   const r=this.renderer,{report,frame}=options,scale=plan.outputSize.width/report.canvas_width;
   const samples=r.msaaCount>1?r.msaaCount:0;

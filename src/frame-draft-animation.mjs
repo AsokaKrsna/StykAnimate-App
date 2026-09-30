@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Simple's Add command uses the same sparse insertion planner as the clipboard.
  * Planning reads a stored projection and publishes no partial animation state. */
 import {storedFrameReport} from './pivot-frame-draft.mjs';
@@ -78,7 +79,7 @@ export function rebaseDraftAnimation(before, working, after, oldTick, newTick) {
       const moved = {...key, tick: key.tick === oldTick ? newTick : key.tick};
       if (!oldKeys.has(key.id) && keysById.has(key.id)) {
         do {
-          if (!Number.isSafeInteger(nextKeyId)) throw new Error('Animation key identity capacity exceeded.');
+          if (!Number.isSafeInteger(nextKeyId)) throw messageError(new Error(''), "errors.cameraBakeAuthored.animationKeyIdentityCapacityExceeded", {});
           moved.id = `key-${nextKeyId++}`;
         } while (ids.has(moved.id));
       }

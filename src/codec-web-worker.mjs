@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Worker shell around the in-browser Pivot codec: Pyodide (codec-web-engine.mjs)
  * behind the request queue in codec-web-shell.mjs. Status of the runtime download
  * and boot goes to the page as {type: 'status', state, stage?, message?}. */
@@ -16,7 +17,7 @@ const engine = createCodecEngine({
   },
   async loadBundle() {
     const response = await fetch(BUNDLE);
-    if (!response.ok) throw new Error(`the codec sources are unavailable (${response.status})`);
+    if (!response.ok) throw messageError(new Error(''), "errors.codecWebWorker.theCodecSourcesAreUnavailable", {status: response.status});
     return response.json();
   },
 });

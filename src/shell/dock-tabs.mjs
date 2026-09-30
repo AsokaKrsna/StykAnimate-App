@@ -1,3 +1,5 @@
+import {t as interfaceText} from '../localization.mjs';
+import {localizedAttribute, appendLocalized} from '../localization-bindings.mjs';
 /**
  * Tabs as the panels' handles (architecture §3.11.5, experience §1.5):
  *
@@ -18,8 +20,8 @@
  */
 const SLOP = 4;
 const HANDLE = '.shell-tabs [role="tab"][data-panel], .shell-strip-button[data-panel], .shell-rail-handle';
-const LABELS = Object.freeze({left: 'Dock left', right: 'Dock right', tab: 'Add as a tab', float: 'Float here',
-  before: 'Stack above', after: 'Stack below', 'rail-left': 'Move tools left', 'rail-right': 'Move tools right'});
+const LABELS = Object.freeze({left: interfaceText("dockTabs.dockLeft"), right: interfaceText("dockTabs.dockRight"), tab: interfaceText("dockTabs.addAsATab"), float: interfaceText("dockTabs.floatHere"),
+  before: interfaceText("dockTabs.stackAbove"), after: interfaceText("dockTabs.stackBelow"), 'rail-left': interfaceText("dockTabs.moveToolsLeft"), 'rail-right': interfaceText("dockTabs.moveToolsRight")});
 
 const inside = (rect, x, y) => rect && rect.width > 0 && rect.height > 0 && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
 const box = (left, top, width, height) => ({left, top, width, height, right: left + width, bottom: top + height});
@@ -33,11 +35,11 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
   const workspaceElement = doc.querySelector('.workspace');
   const abort = new AbortController(), signal = abort.signal;
   const workspace = host.workspace;
-  const title = id => id === 'tools' ? 'Tools' : host.registry.get(id)?.title ?? id;
+  const title = id => id === 'tools' ? interfaceText("dockTabs.tools") : (host.registry.get(id)?.titleKey ? interfaceText(host.registry.get(id).titleKey) : host.registry.get(id)?.title ?? id);
   const railHandle = doc.createElement('button');
   railHandle.type = 'button'; railHandle.className = 'shell-rail-handle'; railHandle.dataset.panel = 'tools';
-  railHandle.setAttribute('aria-label', 'Move tools');
-  railHandle.title = 'Drag to either side; Left and Right arrows move tools';
+  localizedAttribute(railHandle, 'aria-label', "dockTabs.moveTools", {});
+  localizedAttribute(railHandle, "title", "dockTabs.dragToEitherSideLeftAndRightArrows", {});
   host.regions().rail?.prepend(railHandle);
   let press = null, drag = null, suppressClick = false;
 
@@ -55,10 +57,10 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
       if (host.canPlace(id, target) && !(docked && side === target))
         items.push({label: LABELS[target], icon: target === 'left' ? 'panel-left' : 'panel-right', run: () => move(id, target)});
     }
-    if (host.canPlace(id, 'float') && presentation !== 'float') items.push({label: 'Float', icon: 'layout', run: () => move(id, 'float')});
-    if (presentation === 'strip') items.push({label: 'Show', icon: 'maximize', run: () => host.showPanel(id)});
-    else if (host.canPlace(id, 'strip')) items.push({label: 'Fold to strip', icon: 'minimize', run: () => move(id, 'strip')});
-    if (host.canPlace(id, 'hidden')) items.push(null, {label: 'Hide', icon: 'eye-off', run: () => move(id, 'hidden')});
+    if (host.canPlace(id, 'float') && presentation !== 'float') items.push({label: interfaceText("dockTabs.float"), labelKey: "dockTabs.float", icon: 'layout', run: () => move(id, 'float')});
+    if (presentation === 'strip') items.push({label: interfaceText("dockTabs.show"), labelKey: "dockTabs.show", icon: 'maximize', run: () => host.showPanel(id)});
+    else if (host.canPlace(id, 'strip')) items.push({label: interfaceText("dockTabs.foldToStrip"), labelKey: "dockTabs.foldToStrip", icon: 'minimize', run: () => move(id, 'strip')});
+    if (host.canPlace(id, 'hidden')) items.push(null, {label: interfaceText("dockTabs.hide"), labelKey: "dockTabs.hide", icon: 'eye-off', run: () => move(id, 'hidden')});
     return items;
   }
 
@@ -83,7 +85,7 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
     if (id !== 'tools' && !host.registry.has(id)) return;
     const box = handle.getBoundingClientRect();
     const point = at && at.nodeType !== 1 ? at : {left: box.left, bottom: box.bottom, invoker: handle};
-    openMenu(menuItems(id), point, {label: `${title(id)} panel`});
+    openMenu(menuItems(id), point, {label: interfaceText("dockTabs.panel", {value: title(id)}), labelKey: "dockTabs.panel", labelParams: {value: title(id)}});
   }
 
   workspaceElement.addEventListener('contextmenu', event => {
@@ -96,7 +98,7 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
   }, {signal});
   workspaceElement.addEventListener('keydown', event => {
     const handle = event.target.closest?.(HANDLE);
-    if (handle === railHandle && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+    if (handle === railHandle && ["ArrowLeft", "ArrowRight"].includes(event.key)) {
       event.preventDefault(); event.stopPropagation(); move('tools', event.key === 'ArrowLeft' ? 'left' : 'right'); return;
     }
     if (!handle || !((event.key === 'F10' && event.shiftKey) || event.key === 'ContextMenu')) return;
@@ -113,7 +115,7 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
   zone.hidden = true;
   const zoneLabel = doc.createElement('span');
   zoneLabel.className = 'ui-drop-label';
-  zone.append(zoneLabel);
+  appendLocalized(zone, zoneLabel);
   const ghost = doc.createElement('div');
   ghost.className = 'shell-drag-ghost';
   ghost.hidden = true;
@@ -208,7 +210,7 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
     try { handle.setPointerCapture(pointerId); } catch { /* the pointer is gone */ }
     handle.dataset.dragging = 'true';
     ghost.textContent = title(id);
-    if (ghost.parentElement !== doc.body) doc.body.append(ghost);
+    if (ghost.parentElement !== doc.body) appendLocalized(doc.body, ghost);
     ghost.hidden = false;
     follow(event);
     win.addEventListener('keydown', onKey, {capture: true, signal});
@@ -232,7 +234,7 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
     try { if (handle.hasPointerCapture?.(pointerId)) handle.releasePointerCapture(pointerId); } catch { /* released */ }
     suppressClick = true;
     win.setTimeout(() => { suppressClick = false; }, 0);
-    if (!commit || !target) { if (!commit) announce('Move cancelled'); return; }
+    if (!commit || !target) { if (!commit) announce(interfaceText("dockTabs.moveCancelled")); return; }
     if (id === 'tools') move(id, target.kind.slice(5));
     else if (target.kind === 'float') {
       const {rect, stage} = target;

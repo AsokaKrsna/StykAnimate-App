@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Simple timeline checkpoints reuse command snapshots; they never copy an animation. */
 import {validateScene} from './pivot/model.mjs';
 import {createFrame} from './demo.mjs';
@@ -13,16 +14,16 @@ export function validateSimpleFrameDraft(report, {validateFrame = true} = {}) {
   if (!state || state.version !== 1 || !['add', 'update'].includes(state.mode) ||
     !Number.isInteger(state.index) || !report.keyframes[state.index] ||
     state.frameId !== report.keyframes[state.index]._styk?.frameId)
-    throw new Error('Invalid Simple timeline working frame.');
+    throw messageError(new Error(''), "errors.editorFrameDraft.invalidSimpleTimelineWorkingFrame", {});
   if (state.empty !== undefined && typeof state.empty !== 'boolean' || state.empty && (state.mode !== 'add' || state.index !== 0 || report.keyframes.length !== 1))
-    throw new Error('An empty Simple animation requires one Add working placeholder.');
+    throw messageError(new Error(''), "errors.editorFrameDraft.anEmptySimpleAnimationRequiresOneAddWorking", {});
   if (state.baseline !== undefined) {
-    if (state.baseline?._styk?.frameId !== state.frameId) throw new Error('The working frame checkpoint has a different identity.');
+    if (state.baseline?._styk?.frameId !== state.frameId) throw messageError(new Error(''), "errors.editorFrameDraft.theWorkingFrameCheckpointHasADifferentIdentity", {});
     if (validateFrame) validateScene({...report, keyframes: [state.baseline]});
   }
   if (own(state, 'animationBaseline')) {
-    if (state.animationBaseline === undefined) throw new Error('An animation checkpoint must be a channel table or null.');
-    if (!state.baseline) throw new Error('An animation checkpoint requires a working frame baseline.');
+    if (state.animationBaseline === undefined) throw messageError(new Error(''), "errors.editorFrameDraft.anAnimationCheckpointMustBeAChannelTable", {});
+    if (!state.baseline) throw messageError(new Error(''), "errors.editorFrameDraft.anAnimationCheckpointRequiresAWorkingFrameBaseline", {});
     if (validateFrame) validateAnimationDocument({...report, _styk: {...report._styk, animation: state.animationBaseline}});
   }
 }
@@ -200,7 +201,7 @@ export const editorFrameDraftMethods = {
     this._frameDraftSuspended=true;
     try {
       const result=operation();
-      if(result?.then)throw new Error('Prepare timeline edits before publishing them.');
+      if(result?.then)throw messageError(new Error(''), "errors.editorFrameDraft.prepareTimelineEditsBeforePublishingThem", {});
       if(draft&&own(draft,'animationBaseline')){
         const old=new Map((animation?.channels??[]).map(c=>[c.id,c])),after=this.report._styk.animation;
         const changed=new Map((after?.channels??[]).filter(c=>old.get(c.id)!==c).map(c=>[c.id,c]));
@@ -217,7 +218,7 @@ export const editorFrameDraftMethods = {
   },
   /** Enable only for the Simple timeline. Switching to Advanced keeps all edits. */
   enableFrameDrafts({mode = 'update', index = this.frameIndex, restoreSaved = true, empty = false} = {}) {
-    if (!['add', 'update'].includes(mode)) throw new Error('Choose Add or Update frame mode.');
+    if (!['add', 'update'].includes(mode)) throw messageError(new Error(''), "errors.editorFrameDraft.chooseAddOrUpdateFrameMode", {});
     if (this._animationEdit) this.commitAnimationEdit();
     this.commitDrag();
     if (!this._frameDraftListener) {
@@ -255,9 +256,9 @@ export const editorFrameDraftMethods = {
     return added;
   },
   beginFrameDraft({mode = 'update', index = this.frameIndex, empty = false} = {}) {
-    if (!['add', 'update'].includes(mode)) throw new Error('Choose Add or Update frame mode.');
-    if (!Number.isInteger(index) || index < 0 || index >= this.report.keyframes.length) throw new Error('Choose an existing keyframe.');
-    if (empty && (mode !== 'add' || index !== 0 || this.report.keyframes.length !== 1)) throw new Error('An empty animation needs one working placeholder.');
+    if (!['add', 'update'].includes(mode)) throw messageError(new Error(''), "errors.editorFrameDraft.chooseAddOrUpdateFrameMode", {});
+    if (!Number.isInteger(index) || index < 0 || index >= this.report.keyframes.length) throw messageError(new Error(''), "errors.editorFrameDraft.chooseAnExistingKeyframe", {});
+    if (empty && (mode !== 'add' || index !== 0 || this.report.keyframes.length !== 1)) throw messageError(new Error(''), "errors.editorFrameDraft.anEmptyAnimationNeedsOneWorkingPlaceholder", {});
     this.commitDrag();
     if (index !== this.frameIndex) this.selectFrame(index);
     this._frameDraft = fresh(this, mode, empty); sync(this); this._emit('frame-draft'); return this.frameDraft;
@@ -284,12 +285,12 @@ export const editorFrameDraftMethods = {
   _beforeFrameDraftSeek(index) {
     const draft = current(this);
     if (!this._frameDraftPreviewing && !this._frameDraftSuspended && this._frameDraftEnabled && draft?.mode === 'add' && draft.baseline && index !== draft.index)
-      throw new Error('Add the working frame, or select a frame in the Simple timeline to discard its draft.');
+      throw messageError(new Error(''), "errors.editorFrameDraft.addTheWorkingFrameOrSelectAFrame", {});
   },
   _beforeFrameDraftGlobalEdit() {
     const draft = current(this);
     if (!this._frameDraftEnabled || draft?.mode !== 'add' || !draft.baseline) return false;
-    throw new Error('Add the working frame, or discard its draft before changing saved frames.');
+    throw messageError(new Error(''), "errors.editorFrameDraft.addTheWorkingFrameOrDiscardItsDraft", {});
   },
   _applyFrameDraftHistory(command, direction) {
     if (!this._frameDraftEnabled) {
@@ -342,7 +343,7 @@ export const editorFrameDraftMethods = {
     if (command.kind === 'movieclip-batch') return;
     if (this._frameDraftStoredEdit) {
       const pending = this._frameDraftStoredEdit;
-      if (pending.recorded) throw new Error('A stored-frame operation must create one history command.');
+      if (pending.recorded) throw messageError(new Error(''), "errors.editorFrameDraft.aStoredFrameOperationMustCreateOneHistory", {});
       const index = this.report.keyframes.length - 1;
       this.frameIndex = index; this.tick = this.timeline[index]?.start ?? 0;
       const baseline = this.frame;
@@ -469,7 +470,7 @@ export const editorFrameDraftMethods = {
   editStoredFrames(operation, {preserveWorking = true, empty = false} = {}) {
     this.commitDrag(); const draft = current(this);
     if (!this._frameDraftEnabled || draft?.mode !== 'add') return operation();
-    if (this._frameDraftStoredEdit) throw new Error('Finish the current frame operation first.');
+    if (this._frameDraftStoredEdit) throw messageError(new Error(''), "errors.editorFrameDraft.finishTheCurrentFrameOperationFirst", {});
     const pending = {before:overlay(this),selection:this._selectionState(),preserveWorking,empty,recorded:false};
     this._frameDraftStoredEdit = pending; this._frameDraftSuspended = true;
     if (draft.baseline) this.report.keyframes[draft.index] = draft.baseline;
@@ -479,7 +480,7 @@ export const editorFrameDraftMethods = {
     this._invalidate({timing:true});
     try {
       const result = operation();
-      if (result?.then) throw new Error('Stored-frame operations must finish synchronously.');
+      if (result?.then) throw messageError(new Error(''), "errors.editorFrameDraft.storedFrameOperationsMustFinishSynchronously", {});
       if (!pending.recorded) restoreOverlay(this,pending.before);
       return result;
     } catch (error) {
@@ -515,7 +516,7 @@ export const editorFrameDraftMethods = {
   addDraftFrame({blank=false}={}) {
     if (this._animationEdit) this.commitAnimationEdit();
     this.commitDrag(); const draft = current(this), frames = this.report.keyframes, beforeDraft=snapshot(draft);
-    if (frames.length >= 100000) throw new Error('Remove a keyframe before adding beyond the 100,000-keyframe document limit.');
+    if (frames.length >= 100000) throw messageError(new Error(''), "errors.editorFrameDraft.removeAKeyframeBeforeAddingBeyondThe100", {});
     if(draft?.empty) {
       const source=blank?createFrame([]):clone(this.frame); source._styk={...source._styk,frameId:this.frame._styk.frameId};
       this._frameDraftSuspended=true;

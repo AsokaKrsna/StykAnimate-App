@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Native rig relationships. Definitions contain stable handle references; poses
  * retain the existing angle/length channels. A connector's length channel is its
  * normalized sliding position (0..1), not its rendered span. No solver state is
@@ -12,7 +13,7 @@ const plans = new WeakMap();
 const EPS = 1e-8;
 export const clampRig = (n, min, max) => Math.max(min, Math.min(max, n));
 const number = (n, label, min, max) => {
-  if (!Number.isFinite(n) || n < min || n > max) throw new Error(`${label} must be between ${min} and ${max}.`);
+  if (!Number.isFinite(n) || n < min || n > max) throw messageError(new Error(''), "errors.cameraMotion.mustBeBetweenAnd", {label: label, min: min, max: max});
 };
 export function hasRigConstraints(figure) { return figure.segments.some(s => s._stykRig); }
 export function documentHasRigConstraints(document,seen=new Set()) {
@@ -52,67 +53,67 @@ export function* rigConstraintPlanSteps(figure) {
     if((i&255)===255)yield {phase:'rig',stage:'references',completed:i+1,total:segments.length};
   }
   const reference = (id, label, root = false) => {
-    if (!Number.isInteger(id) || (!ids.has(id) && !(root && id === 0))) throw new Error(`${label} refers to a missing joint. Remove or reconnect the rig relationship first.`);
+    if (!Number.isInteger(id) || (!ids.has(id) && !(root && id === 0))) throw messageError(new Error(''), "errors.rigConstraints.refersToAMissingJointRemoveOrReconnect", {label: label});
   };
   for(let i=0;i<segments.length;i++) {
     const s=segments[i];
     const r=s._stykRig, c=r?.connector, d=r?.stretch, f=r?.follow;
-    if(r && (typeof r !== 'object' || Array.isArray(r) || Object.keys(r).some(k=>!['connector','stretch','follow','orientation','response','angleLock','anglePath','weighted','spatial'].includes(k)))) throw new Error('Invalid rig behavior.');
-    if(r?.orientation!==undefined&&!['inherit','world'].includes(r.orientation))throw new Error('Choose a valid attachment orientation.');
+    if(r && (typeof r !== 'object' || Array.isArray(r) || Object.keys(r).some(k=>!['connector','stretch','follow','orientation','response','angleLock','anglePath','weighted','spatial'].includes(k)))) throw messageError(new Error(''), "errors.rigConstraints.invalidRigBehavior", {});
+    if(r?.orientation!==undefined&&!['inherit','world'].includes(r.orientation))throw messageError(new Error(''), "errors.rigConstraints.chooseAValidAttachmentOrientation", {});
     const dependencies = new Set([s.parent_id]);
     if(r?.spatial){
-      if(c||d||f||r.response||r.angleLock||r.anglePath||r.weighted)throw new Error('Spatial articulation owns its transform; apply other relationships to its controls.');
+      if(c||d||f||r.response||r.angleLock||r.anglePath||r.weighted)throw messageError(new Error(''), "errors.rigConstraints.spatialArticulationOwnsItsTransformApplyOtherRelationships", {});
       validateSpatial(r.spatial,reference,dependencies,segments,ids);
     }
     if(r?.weighted){
-      if(c||d||f||r.response||r.angleLock||r.anglePath)throw new Error('A weighted joint follows its anchors; apply other behaviors to those anchors.');
+      if(c||d||f||r.response||r.angleLock||r.anglePath)throw messageError(new Error(''), "errors.rigConstraints.aWeightedJointFollowsItsAnchorsApplyOther", {});
       validateWeightedJoint(r.weighted,reference,dependencies);
     }
     if(r?.anglePath){
-      if(c||d||f||r.response||r.angleLock)throw new Error('An angle-path joint is positioned by its references; apply other rig behaviors to its anchors.');
+      if(c||d||f||r.response||r.angleLock)throw messageError(new Error(''), "errors.rigConstraints.anAnglePathJointIsPositionedByIts", {});
       validateAnglePath(r.anglePath,reference,dependencies);
-      if(r.anglePath.source!==undefined&&!segments[ids.get(r.anglePath.source)]._stykRig?.anglePath?.keys)throw new Error('Choose an angle-path joint as the depth source.');
+      if(r.anglePath.source!==undefined&&!segments[ids.get(r.anglePath.source)]._stykRig?.anglePath?.keys)throw messageError(new Error(''), "errors.rigConstraints.chooseAnAnglePathJointAsTheDepth", {});
     }
     if(c) {
       reference(c.start,'Connector start',true); reference(c.end,'Connector end',true);
-      if(c.start === c.end) throw new Error('Choose two different connector anchors.');
+      if(c.start === c.end) throw messageError(new Error(''), "errors.rigConstraints.chooseTwoDifferentConnectorAnchors", {});
       number(c.restLength,'Connector rest span',EPS,1e6);
       dependencies.add(c.start); dependencies.add(c.end);
     }
     if(d) {
       number(d.restLength,'Stretch rest length',EPS,1e6);
       number(d.min,'Minimum stretch',0,100); number(d.max,'Maximum stretch',Math.max(.01,d.min),100);
-      if(!['keep','inverse','scale'].includes(d.width)) throw new Error('Choose a valid stretch width response.');
-      if(d.branch!==undefined&&typeof d.branch!=='boolean')throw new Error('Invalid stretch branch setting.');
-      if(d.source!==undefined&&(!c||!['span','slide','combined'].includes(d.source)))throw new Error('Choose a valid connector stretch source.');
+      if(!['keep','inverse','scale'].includes(d.width)) throw messageError(new Error(''), "errors.rigConstraints.chooseAValidStretchWidthResponse", {});
+      if(d.branch!==undefined&&typeof d.branch!=='boolean')throw messageError(new Error(''), "errors.rigConstraints.invalidStretchBranchSetting", {});
+      if(d.source!==undefined&&(!c||!['span','slide','combined'].includes(d.source)))throw messageError(new Error(''), "errors.rigConstraints.chooseAValidConnectorStretchSource", {});
       if(d.restPosition!==undefined)number(d.restPosition,'Rest slide position',EPS,1);
-      if(d.source&&d.source!=='span'&&d.restPosition===undefined)throw new Error('Set a nonzero rest slide position first.');
+      if(d.source&&d.source!=='span'&&d.restPosition===undefined)throw messageError(new Error(''), "errors.rigConstraints.setANonzeroRestSlidePositionFirst", {});
     }
     if(f) {
       reference(f.driver,'Stretch driver');
-      if(!segments[ids.get(f.driver)]._stykRig?.stretch) throw new Error('The selected stretch driver is not enabled. Remove its followers before disabling it.');
-      if(!['stretch','rigid'].includes(f.mode)) throw new Error('Choose Stretch or Follow without deforming.');
+      if(!segments[ids.get(f.driver)]._stykRig?.stretch) throw messageError(new Error(''), "errors.rigConstraints.theSelectedStretchDriverIsNotEnabledRemove", {});
+      if(!['stretch','rigid'].includes(f.mode)) throw messageError(new Error(''), "errors.rigConstraints.chooseStretchOrFollowWithoutDeforming", {});
       number(f.influence,'Stretch influence',-4,4); dependencies.add(f.driver);
-      if(f.automatic!==undefined&&typeof f.automatic!=='boolean')throw new Error('Invalid automatic stretch binding.');
-      if(c) throw new Error('A connector follows its anchors; apply stretch to its attached parts instead.');
+      if(f.automatic!==undefined&&typeof f.automatic!=='boolean')throw messageError(new Error(''), "errors.rigConstraints.invalidAutomaticStretchBinding", {});
+      if(c) throw messageError(new Error(''), "errors.rigConstraints.aConnectorFollowsItsAnchorsApplyStretchTo", {});
     }
     const response=r?.response,lock=r?.angleLock;
-    for(const value of [response,lock])if(value!==undefined&&value!==null&&(typeof value!=='object'||Array.isArray(value)))throw new Error('Invalid rig response or angle lock.');
+    for(const value of [response,lock])if(value!==undefined&&value!==null&&(typeof value!=='object'||Array.isArray(value)))throw messageError(new Error(''), "errors.rigConstraints.invalidRigResponseOrAngleLock", {});
     if(response){
-      if(!['stretch','rigid','stop'].includes(response.mode??'stretch'))throw new Error('Choose a valid stretch response.');
+      if(!['stretch','rigid','stop'].includes(response.mode??'stretch'))throw messageError(new Error(''), "errors.rigConstraints.chooseAValidStretchResponse", {});
       if(response.multiplier!==undefined)number(response.multiplier,'Stretch multiplier',-10,10);
-      if(response.reset!==undefined&&typeof response.reset!=='boolean')throw new Error('Invalid stretch impulse reset.');
+      if(response.reset!==undefined&&typeof response.reset!=='boolean')throw messageError(new Error(''), "errors.rigConstraints.invalidStretchImpulseReset", {});
     }
     if(lock){
-      if(c)throw new Error('Connector angles are controlled by their anchors. Lock an anchor or an attached part.');
-      if(!['world','figure','parent'].includes(lock.mode))throw new Error('Choose a valid angle lock.');
-      if(lock.space!==undefined&&!['rendered','authored'].includes(lock.space))throw new Error('Choose a valid angle-lock space.');
+      if(c)throw messageError(new Error(''), "errors.rigConstraints.connectorAnglesAreControlledByTheirAnchorsLock", {});
+      if(!['world','figure','parent'].includes(lock.mode))throw messageError(new Error(''), "errors.rigConstraints.chooseAValidAngleLock", {});
+      if(lock.space!==undefined&&!['rendered','authored'].includes(lock.space))throw messageError(new Error(''), "errors.rigConstraints.chooseAValidAngleLockSpace", {});
       number(lock.angle,'Locked angle',-1e6,1e6);number(lock.multiplier,'Angle multiplier',-10,10);
       if(lock.mode==='parent'){reference(lock.reference,'Angle reference');dependencies.add(lock.reference);number(lock.restAngle,'Reference angle',-1e6,1e6);}
       if(lock.mode==='figure')number(lock.restAngle,'Figure reference angle',-1e6,1e6);
       if(lock.figureRestAngle!==undefined)number(lock.figureRestAngle,'Parent lock figure reference angle',-1e6,1e6);
       if(lock.secondary!=null){
-        if(lock.mode!=='parent'||typeof lock.secondary!=='object'||Array.isArray(lock.secondary))throw new Error('A second angle reference requires a parent angle lock.');
+        if(lock.mode!=='parent'||typeof lock.secondary!=='object'||Array.isArray(lock.secondary))throw messageError(new Error(''), "errors.rigConstraints.aSecondAngleReferenceRequiresAParentAngle", {});
         reference(lock.secondary.reference,'Second angle reference');dependencies.add(lock.secondary.reference);
         number(lock.secondary.restAngle,'Second reference angle',-1e6,1e6);number(lock.secondary.multiplier,'Second rotation multiplier',-10,10);
       }
@@ -124,7 +125,7 @@ export function* rigConstraintPlanSteps(figure) {
   const order=[];indegree.forEach((n,i)=>{if(!n)order.push(i);});
   for(let q=0;q<order.length;q++) {for(const child of outgoing[order[q]]) if(--indegree[child]===0)order.push(child);
     if((q&255)===255)yield {phase:'rig',stage:'order',completed:q+1,total:segments.length};}
-  if(order.length!==segments.length) throw new Error('This rig would depend on itself. Choose anchors or a stretch driver outside the affected branch.');
+  if(order.length!==segments.length) throw messageError(new Error(''), "errors.rigConstraints.thisRigWouldDependOnItselfChooseAnchors", {});
   // Resolve inherited impulses once. Explicit older bindings retain their
   // original response; automatic bindings also include subsequently drawn parts.
   const inputs=new Array(segments.length),outputs=new Array(segments.length),blocked=new Array(segments.length);
@@ -269,7 +270,7 @@ export function authoredRigTarget(shape,x,y,pose) {
       const prior=pose.length*Math.cos(pose.angle+space.rotation-space.followAxis);
       along=(prior<0?-1:1)*Math.sqrt(Math.max(0,radius*radius-side*side));
     }else{
-      if(Math.abs(space.followScale)<1e-8)throw new Error('Expand the stretch driver before posing a fully compressed part.');
+      if(Math.abs(space.followScale)<1e-8)throw messageError(new Error(''), "errors.rigConstraints.expandTheStretchDriverBeforePosingAFully", {});
       along=(dx*c+dy*s)/space.followScale;
     }
     dx=along*c-side*s;dy=along*s+side*c;

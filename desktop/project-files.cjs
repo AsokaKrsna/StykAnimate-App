@@ -1,4 +1,6 @@
 'use strict';
+const { messageError } = require('./localization.cjs');
+
 
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
@@ -6,7 +8,7 @@ const { randomUUID } = require('node:crypto');
 /** Native paths never enter this store through renderer-provided strings. */
 class ProjectFiles {
   constructor({ maxOpenTokens = 32, openTokenTtlMs = 10 * 60 * 1000 } = {}) {
-    if (!Number.isSafeInteger(maxOpenTokens) || maxOpenTokens < 1 || !Number.isFinite(openTokenTtlMs) || openTokenTtlMs <= 0) throw new Error('Native project capability limits must be positive.');
+    if (!Number.isSafeInteger(maxOpenTokens) || maxOpenTokens < 1 || !Number.isFinite(openTokenTtlMs) || openTokenTtlMs <= 0) throw messageError(new Error(''), 'desktop.projectFiles.errors.nativeProjectCapabilityLimitsMustBePositive', {});
     this.maxOpenTokens = maxOpenTokens;
     this.openTokenTtlMs = openTokenTtlMs;
     this.opens = new Map();
@@ -15,7 +17,7 @@ class ProjectFiles {
 
   validateDestination(filename) {
     if (typeof filename !== 'string' || !path.isAbsolute(filename) || path.extname(filename).toLowerCase() !== '.styk') {
-      throw new Error('Choose a .styk project filename. Pivot source files are saved through Export.');
+      throw messageError(new Error(''), 'desktop.projectFiles.errors.chooseAStykProjectFilenamePivotSourceFilesAreSavedThroughExport', {});
     }
     return filename;
   }
@@ -35,7 +37,7 @@ class ProjectFiles {
     let filename = null;
     if (openToken !== undefined && openToken !== null) {
       const opened = this.opens.get(openToken);
-      if (!opened || opened.expires <= Date.now()) throw new Error('This native project open is no longer active. Reopen the file to save to its original location.');
+      if (!opened || opened.expires <= Date.now()) throw messageError(new Error(''), 'desktop.projectFiles.errors.thisNativeProjectOpenIsNoLongerActiveReopenTheFileToSaveToItsOriginalLocation', {});
       filename = opened.filename;
       this.opens.delete(openToken);
     }
@@ -45,7 +47,7 @@ class ProjectFiles {
 
   requireCurrent(documentToken) {
     if (!this.current || typeof documentToken !== 'string' || this.current.documentToken !== documentToken) {
-      throw new Error('This save belongs to a different document.');
+      throw messageError(new Error(''), 'desktop.projectFiles.errors.thisSaveBelongsToADifferentDocument', {});
     }
     return this.current;
   }

@@ -6,9 +6,9 @@
  * without a catalog that knows the keys.
  */
 const TEXT = Object.freeze({
+  'timeline.navigationHint': 'Middle-drag to pan · {zoomModifier}-wheel to zoom',
   'timeline.header': 'Timeline',
   'timeline.mode': 'Timeline mode',
-  'timeline.addFrame': 'Add frame',
   'timeline.addFrameName': 'Add Frame',
   'timeline.blankFrame': 'Blank frame',
   'timeline.drawingFrames': 'Drawing frames',
@@ -87,7 +87,6 @@ const TEXT = Object.freeze({
   'filmstrip.holdName': 'Frame {frame} inbetweens',
   'filmstrip.holdTip': 'Frame {frame}: {count} · drag to hold it longer or shorter',
   'filmstrip.edited': 'Edited: click the frame again to keep or discard the changes',
-  'layers.title': 'Layers',
   'layers.close': 'Close layers',
   'layers.list': 'Layers in this animation',
   'layers.choose': 'Use {name} for new figures',

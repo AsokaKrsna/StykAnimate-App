@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {decodePreview, fitImage, imageInfo, imageBlob} from './preview-image.mjs';
 import {drawingMetadata} from './drawing-model.mjs';
 
@@ -147,11 +148,11 @@ export class ImageResources {
     }
   }
   check = () => {
-    if (this.disposed) throw new DOMException("Playback assets were invalidated.", "AbortError");
+    if (this.disposed) throw messageError(new DOMException('', "AbortError"), "errors.imageResources.playbackAssetsWereInvalidated", {});
   };
   checkImageBudget(incomingBytes = 0) {
     if (this.bytes + incomingBytes > Math.max(this.hardMaxBytes, this.absoluteMaxBytes)) {
-      const error = new Error('This frame needs more image memory than the export allowance. Reduce the source image dimensions and try again. Your animation has not changed.');
+      const error = messageError(new Error(''), "errors.imageResources.thisFrameNeedsMoreImageMemoryThanThe", {});
       error.code = 'export_memory_limit'; throw error;
     }
   }
@@ -214,7 +215,7 @@ export class ImageResources {
   }
   async preload(items, {scale = 1, maxDimension = 4096, visible, plan} = {}) {
     if (this.disposed)
-      throw new DOMException("Playback assets were invalidated.", "AbortError");
+      throw messageError(new DOMException('', "AbortError"), "errors.imageResources.playbackAssetsWereInvalidated", {});
     const view = plan ? {matrix: plan.matrix, width: plan.width, height: plan.height}
       : visible ? {visible, scale} : null;
     // v2 drawing cels decode their tile blob through the provider; the 1×1
@@ -367,10 +368,7 @@ export class ImageResources {
       const bitmap = await this.decodeVariant(blob, target, maxDimension, sourceWidth, sourceHeight);
       if (this.disposed) {
         bitmap.close();
-        throw new DOMException(
-          "Playback assets were invalidated.",
-          "AbortError",
-        );
+        throw messageError(new DOMException('', "AbortError"), "errors.imageResources.playbackAssetsWereInvalidated", {});
       }
       const decodedBytes = bitmap.width * bitmap.height * 4;
       // Evict unused assets, but never reject images required by the current draw.

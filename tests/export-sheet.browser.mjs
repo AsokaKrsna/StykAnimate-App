@@ -33,7 +33,14 @@ const checked = selector => page.locator(`${selector} [aria-checked="true"]`).ev
 
 try {
   // Headless Chrome aborts showSaveFilePicker; without it an export saves through a download.
-  await page.addInitScript(() => { delete window.showSaveFilePicker; });
+  await page.addInitScript(() => {
+    delete window.showSaveFilePicker;
+    // This suite explicitly exercises a browser without H.264; Chrome support
+    // varies by installation, so preserve the real WebM encoder and control MP4.
+    const supported = window.VideoEncoder?.isConfigSupported.bind(window.VideoEncoder);
+    if (supported) window.VideoEncoder.isConfigSupported = config => config.codec.startsWith('avc')
+      ? Promise.resolve({supported:false,config}) : supported(config);
+  });
   await page.goto(base);
   await page.waitForFunction(() => window.styk?.ready, null, {timeout: 60000});
   const total = await page.evaluate(async () => {

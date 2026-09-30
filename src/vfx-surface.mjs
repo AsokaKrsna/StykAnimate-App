@@ -1,9 +1,10 @@
+import {messageError} from './localized-error.mjs';
 // One shared allocation contract for Canvas, WebGL, WebGPU and export tiles.
 // Rectangles and padding are in output pixels; effect parameters stay authored.
 export const VFX_MAX_PIXELS = 16777216;
 export const VFX_MAX_DIMENSION = 4096;
 export function vfxSurfaceError() {
-  return Object.assign(new Error('The effect sampling region exceeds the graphics budget. Reduce the effect radius or output scale.'), {code:'vfx_surface_budget',telemetryCode:'out_of_memory'});
+  return Object.assign(messageError(new Error(''), "errors.vfxSurface.theEffectSamplingRegionExceedsTheGraphicsBudget", {}), {code:'vfx_surface_budget',telemetryCode:'out_of_memory'});
 }
 export function fitsVfxSurface(width,height,limit=VFX_MAX_DIMENSION) {
   return Number.isSafeInteger(width)&&Number.isSafeInteger(height)&&width>0&&height>0&&Math.max(width,height)<=limit&&width*height<=VFX_MAX_PIXELS;

@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Worker-owned raster originals. Packets receive independent transferable clones.
  * Keys include exact artwork content, crop and resolution; document assets own
  * this cache's lifetime so frame-only revisions can safely keep unchanged pixels. */
@@ -24,7 +25,7 @@ export class PlaybackRasterCache {
     if (!this.protectedKeys.has(key)) { this.protectedKeys.add(key); this.protectedBytes += bitmap.width * bitmap.height * 4; }
   }
   async packetBitmap(key, rasterize) {
-    if (this.disposed) throw new DOMException('Playback rasters were invalidated.', 'AbortError');
+    if (this.disposed) throw messageError(new DOMException('', 'AbortError'), "errors.playbackRasterCache.playbackRastersWereInvalidated", {});
     let original = key && this.entries.get(key);
     if (original) {
       this.hits++; this.entries.delete(key); this.entries.set(key, original);
@@ -41,7 +42,7 @@ export class PlaybackRasterCache {
     }
     this._use(key, original);
     const packet = await this.clone(original);
-    if (this.disposed) { packet.close(); throw new DOMException('Playback rasters were invalidated.', 'AbortError'); }
+    if (this.disposed) { packet.close(); throw messageError(new DOMException('', 'AbortError'), "errors.playbackRasterCache.playbackRastersWereInvalidated", {}); }
     return packet;
   }
   clear() {

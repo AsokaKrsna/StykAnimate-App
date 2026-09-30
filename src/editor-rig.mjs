@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Reusable rig editing: frame-local previews, one definition commit per gesture. */
 import {buildGeometry, shortest} from './pivot/geometry.mjs';
 import {segmentBranchIndices} from './editor-builder.mjs';
@@ -5,12 +6,12 @@ import {authoredRigTarget} from './rig-constraints.mjs';
 
 const EPS = 1e-9;
 function coordinates(x, y) {
-  if (![x, y].every(value => typeof value === 'number' && Number.isFinite(value))) throw new Error('Joint coordinates must be finite.');
+  if (![x, y].every(value => typeof value === 'number' && Number.isFinite(value))) throw messageError(new Error(''), "errors.editorRig.jointCoordinatesMustBeFinite", {});
 }
 function chordPose(start, end, bend, scale, fallbackAngle) {
   const distance = Math.hypot(end.x - start.x, end.y - start.y);
   const chordFactor = Math.abs(bend) < EPS ? 1 : 2 * Math.sin(bend / 2) / bend;
-  if (Math.abs(chordFactor) < EPS && distance > EPS) throw new Error('A closed full-circle bend cannot be stretched between different endpoints. Reduce its bend first.');
+  if (Math.abs(chordFactor) < EPS && distance > EPS) throw messageError(new Error(''), "errors.editorRig.aClosedFullCircleBendCannotBeStretched", {});
   return {
     angle: distance < EPS ? fallbackAngle : Math.atan2(end.y - start.y, end.x - start.x) - bend / 2 - (chordFactor * scale < 0 ? Math.PI : 0),
     length: distance < EPS ? 0 : distance / Math.abs(scale * chordFactor),
@@ -38,11 +39,11 @@ export const editorRigMethods = {
     const segment = this.figure?.segments[this.selectedJoint];
     if (bend && (!segment || segment._stykRig?.spatial ||
         ![0, 6].includes(segment.primitive_code ?? (segment.flags ?? 0) & 255))) return false;
-    if(this.figure?.segments[this.selectedJoint]?._stykRig?.spatial)throw new Error('Use Pose or Rotate to articulate this joint. Its rest position belongs to the spatial skin binding.');
+    if(this.figure?.segments[this.selectedJoint]?._stykRig?.spatial)throw messageError(new Error(''), "errors.editorRig.usePoseOrRotateToArticulateThisJoint", {});
     if(this.figure?.segments[this.selectedJoint]?._stykRig?.anglePath||this.figure?.segments[this.selectedJoint]?._stykRig?.weighted)return false;
     if (!bend && this.figure?.segments[this.selectedJoint]?._stykRig?.connector) return this.beginDrag('Slide connector');
     if (!this.figure?.segments[this.selectedJoint]) return false;
-    if (Math.abs(this.object.scale) < EPS) throw new Error('Increase figure scale before editing its rig.');
+    if (Math.abs(this.object.scale) < EPS) throw messageError(new Error(''), "errors.editorRig.increaseFigureScaleBeforeEditingItsRig", {});
     if (!this.beginDrag(label)) return false;
     const geometry = this.geometry.objects.get(this.selectedSlot), object = this._drag.before.find(o => o.unique_id === this.selectedUid);
     const index = this.selectedJoint, figure = this.figure, handle = figure.segments[index].segment_id;
@@ -59,7 +60,7 @@ export const editorRigMethods = {
     const active = Boolean(this._drag?.rig);
     if (!active && !this.beginRigDrag({reposition: reposition ?? true})) return false;
     const drag = this._drag, rig = drag.rig;
-    if (this.frameIndex !== drag.index || this.selectedUid !== rig.uid || this.figure !== rig.figure) { this.cancelRigDrag(); throw new Error('The edited figure changed during the rig gesture.'); }
+    if (this.frameIndex !== drag.index || this.selectedUid !== rig.uid || this.figure !== rig.figure) { this.cancelRigDrag(); throw messageError(new Error(''), "errors.editorRig.theEditedFigureChangedDuringTheRigGesture", {}); }
     try {
       const object = this.object, selected = rig.geometry.segments[rig.index], point = {x, y}, changes = new Map();
       if(selected.seg._stykRig?.anglePath||selected.seg._stykRig?.weighted)return false;

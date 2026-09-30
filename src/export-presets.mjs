@@ -1,3 +1,5 @@
+import {t as interfaceText} from './localization.mjs';
+import {messageError} from './localized-error.mjs';
 /**
  * Export presets: one click for where the animation is going (YouTube,
  * TikTok, a chat GIF…). Pure functions over the export request
@@ -17,7 +19,8 @@
  */
 import {lockedSide, sizePresetChoices} from './export-request.mjs';
 
-const preset = (id, label, detail, icon, fields) => Object.freeze({id, label, detail, icon, ...fields});
+const preset = (id, labelKey, detailKey, icon, fields) => Object.freeze({id, labelKey, detailKey, icon, ...fields,
+  get label() { return interfaceText(labelKey); }, get detail() { return interfaceText(detailKey); }});
 /**
  * `formats`: the types in order of preference; the first enabled one is used
  * (MP4 needs the desktop app's encoder, and YouTube, Shorts and TikTok also
@@ -28,14 +31,14 @@ const preset = (id, label, detail, icon, fields) => Object.freeze({id, label, de
  * canvas). `quality`: the video quality preset. `ready`: the note once chosen, before the size.
  */
 export const EXPORT_PRESETS = Object.freeze([
-  preset('youtube', 'YouTube', '1080p · 16:9', 'export-youtube', {ready: 'Ready for YouTube', formats: ['mp4', 'webm'], size: '1080', quality: 'high', shapes: ['landscape'], wants: 'landscape (16:9)'}),
-  preset('shorts', 'Shorts', '1080p · 9:16', 'export-shorts', {ready: 'Ready for YouTube Shorts', formats: ['mp4', 'webm'], size: '1080', quality: 'high', shapes: ['portrait', 'square'], wants: 'vertical (9:16)'}),
-  preset('tiktok', 'TikTok', '1080p · 9:16', 'export-tiktok', {ready: 'Ready for TikTok', formats: ['mp4', 'webm'], size: '1080', quality: 'recommended', shapes: ['portrait'], wants: 'vertical (9:16)'}),
-  preset('instagram', 'Instagram', 'Reels · 9:16', 'export-instagram', {ready: 'Ready for Instagram Reels', formats: ['mp4'], size: '1080', quality: 'recommended', shapes: ['portrait', 'square'], wants: 'vertical (9:16)'}),
-  preset('x', 'X', '720p video', 'export-x', {ready: 'Ready for X', formats: ['mp4'], size: '720', quality: 'recommended', shapes: ['landscape', 'portrait', 'square']}),
-  preset('gif', 'Chat GIF', 'Small loop', 'export-gif', {ready: 'Small enough to share in chats', formats: ['gif'], size: {shortSide: 480}, shapes: ['landscape', 'portrait', 'square']}),
-  preset('transparent', 'Transparent', 'PNG frames', 'export-transparent', {ready: 'Every frame keeps its transparency, for video editors', formats: ['png-sequence'], size: 'original', shapes: ['landscape', 'portrait', 'square']}),
-  preset('best', 'Best quality', '4K video', 'export-best', {ready: 'The sharpest copy to keep', formats: ['mp4', 'webm'], size: '2160', fallbackSize: '1080', quality: 'high', shapes: ['landscape', 'portrait', 'square']}),
+  preset('youtube', 'exportPresets.youtube.label', 'exportPresets.youtube.detail', 'export-youtube', {readyKey: 'exportPresets.youtube.ready', formats: ['mp4', 'webm'], size: '1080', quality: 'high', shapes: ['landscape'], wantsKey: 'exportPresets.landscape'}),
+  preset('shorts', 'exportPresets.shorts.label', 'exportPresets.shorts.detail', 'export-shorts', {readyKey: 'exportPresets.shorts.ready', formats: ['mp4', 'webm'], size: '1080', quality: 'high', shapes: ['portrait', 'square'], wantsKey: 'exportPresets.vertical'}),
+  preset('tiktok', 'exportPresets.tiktok.label', 'exportPresets.tiktok.detail', 'export-tiktok', {readyKey: 'exportPresets.tiktok.ready', formats: ['mp4', 'webm'], size: '1080', quality: 'recommended', shapes: ['portrait'], wantsKey: 'exportPresets.vertical'}),
+  preset('instagram', 'exportPresets.instagram.label', 'exportPresets.instagram.detail', 'export-instagram', {readyKey: 'exportPresets.instagram.ready', formats: ['mp4'], size: '1080', quality: 'recommended', shapes: ['portrait', 'square'], wantsKey: 'exportPresets.vertical'}),
+  preset('x', 'exportPresets.x.label', 'exportPresets.x.detail', 'export-x', {readyKey: 'exportPresets.x.ready', formats: ['mp4'], size: '720', quality: 'recommended', shapes: ['landscape', 'portrait', 'square']}),
+  preset('gif', 'exportPresets.gif.label', 'exportPresets.gif.detail', 'export-gif', {readyKey: 'exportPresets.gif.ready', formats: ['gif'], size: {shortSide: 480}, shapes: ['landscape', 'portrait', 'square']}),
+  preset('transparent', 'exportPresets.transparent.label', 'exportPresets.transparent.detail', 'export-transparent', {readyKey: 'exportPresets.transparent.ready', formats: ['png-sequence'], size: 'original', shapes: ['landscape', 'portrait', 'square']}),
+  preset('best', 'exportPresets.best.label', 'exportPresets.best.detail', 'export-best', {readyKey: 'exportPresets.best.ready', formats: ['mp4', 'webm'], size: '2160', fallbackSize: '1080', quality: 'high', shapes: ['landscape', 'portrait', 'square']}),
 ]);
 const PRESETS = new Map(EXPORT_PRESETS.map(entry => [entry.id, entry]));
 export const exportPresetInfo = id => PRESETS.get(id) ?? null;
@@ -52,7 +55,7 @@ export function artboardShape({canvasWidth, canvasHeight}) {
  */
 function presetFormat(entry, states) {
   const listed = entry.formats.filter(id => states?.get(id)?.listed ?? true);
-  const usable = id => !states?.get(id)?.disabled || /^Checking\b/.test(states?.get(id)?.reason ?? '');
+  const usable = id => !states?.get(id)?.disabled || states?.get(id)?.pending === true;
   return listed.find(usable) ?? listed[0] ?? entry.formats[0];
 }
 
@@ -76,7 +79,7 @@ function presetSizeFields(entry, board) {
  */
 export function applyExportPreset(id, {board, states} = {}) {
   const entry = PRESETS.get(id);
-  if (!entry) throw new TypeError(`Unknown export preset: ${id}`);
+  if (!entry) throw messageError(new TypeError(''), "errors.exportPresets.unknownExportPreset", {id: id});
   const format = presetFormat(entry, states);
   const patch = {format, ...presetSizeFields(entry, board)};
   if (entry.quality) Object.assign(patch, {videoQuality: entry.quality, bitrateMode: 'auto'});
@@ -107,7 +110,9 @@ export function exportPresetFit(id, board, request) {
   const entry = PRESETS.get(id);
   if (!entry) return {fits: true, message: ''};
   const shape = artboardShape(board), fits = entry.shapes.includes(shape);
-  if (!fits) return {fits, message: `${entry.label} shows ${entry.wants} video full screen. This canvas is ${shape}, so the video will play with bars. To fill the screen, change Canvas size in the scene's properties.`};
-  const size = Number.isFinite(request?.width) && Number.isFinite(request?.height) ? `${request.width} × ${request.height}` : '';
-  return {fits, message: size ? `${entry.ready}: ${size}.` : `${entry.ready}.`};
+  const messageKey = !fits ? 'exportPresets.labelShowsWantsVideoFullScreenThisCanvasIs'
+    : Number.isFinite(request?.width) && Number.isFinite(request?.height) ? 'exportPresets.readySize' : 'exportPresets.ready';
+  const messageParams = !fits ? {label: {messageKey: entry.labelKey}, wants: {messageKey: entry.wantsKey}, shape: {messageKey: `exportPresets.shape.${shape}`}}
+    : {ready: {messageKey: entry.readyKey}, width: {format: 'number', value: request?.width, options: {useGrouping: false}}, height: {format: 'number', value: request?.height, options: {useGrouping: false}}};
+  return {fits, message: interfaceText(messageKey, messageParams), messageKey, messageParams};
 }

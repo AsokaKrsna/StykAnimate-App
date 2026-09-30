@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Layer exposure sheet. Each key owns a complete pose on one layer. Imported
  * spans reference their original evaluator until their endpoints are edited. */
 import {layerIdForUid} from './layers.mjs';
@@ -22,31 +23,31 @@ export function sheetKeyTimes(report){
 export function validateLayerSheet(report){
   const state=report._styk?.layerSheet;if(state===undefined)return report;
   if(!state||state.version!==1||!Number.isInteger(state.duration)||state.duration<1||state.duration>MAX_SHEET_TICKS||
-    !Number.isSafeInteger(state.nextId)||state.nextId<1||!state.tracks||Array.isArray(state.tracks))throw new Error('Invalid layer timeline.');
+    !Number.isSafeInteger(state.nextId)||state.nextId<1||!state.tracks||Array.isArray(state.tracks))throw messageError(new Error(''), "errors.layerSheet.invalidLayerTimeline", {});
   const allowed=new Set(['scene','camera',...(report._styk.layers?.order??[])]),ids=new Set();let count=0,largest=0;
-  if([...allowed].some(id=>!Object.hasOwn(state.tracks,id)))throw new Error('Layer timeline is missing an exposure track.');
+  if([...allowed].some(id=>!Object.hasOwn(state.tracks,id)))throw messageError(new Error(''), "errors.layerSheet.layerTimelineIsMissingAnExposureTrack", {});
   for(const [id,track] of Object.entries(state.tracks)){
-    if(!allowed.has(id)||!track||!Array.isArray(track.keys))throw new Error('Layer timeline references a missing layer.');
-    if(!Number.isInteger(track.end)||track.end<0||track.end>state.duration)throw new Error('Invalid layer exposure length.');
+    if(!allowed.has(id)||!track||!Array.isArray(track.keys))throw messageError(new Error(''), "errors.layerSheet.layerTimelineReferencesAMissingLayer", {});
+    if(!Number.isInteger(track.end)||track.end<0||track.end>state.duration)throw messageError(new Error(''), "errors.layerSheet.invalidLayerExposureLength", {});
     let previous=-1;
     for(const key of track.keys){
       if(++count>1000000||!key||typeof key.id!=='string'||!key.id||ids.has(key.id)||!Number.isInteger(key.tick)||key.tick<0||key.tick<=previous||key.tick>=track.end)
-        throw new Error('Layer keys need unique identities and distinct ordered frame positions.');
+        throw messageError(new Error(''), "errors.layerSheet.layerKeysNeedUniqueIdentitiesAndDistinctOrdered", {});
       ids.add(key.id);previous=key.tick;validateKeyEasing(key);
-      if(key.patchOnly!==undefined&&key.patchOnly!==true)throw new Error('Invalid movieclip frame boundary.');
+      if(key.patchOnly!==undefined&&key.patchOnly!==true)throw messageError(new Error(''), "errors.layerSheet.invalidMovieclipFrameBoundary", {});
       if(key.movieclipPatches!==undefined){
-        if(!Array.isArray(key.movieclipPatches)||key.movieclipPatches.length>65535)throw new Error('Invalid movieclip frame replacements.');
+        if(!Array.isArray(key.movieclipPatches)||key.movieclipPatches.length>65535)throw messageError(new Error(''), "errors.layerSheet.invalidMovieclipFrameReplacements", {});
         const replaced=new Set();
         for(const patch of key.movieclipPatches){if(!patch||!Number.isInteger(patch.uid)||patch.uid<0||replaced.has(patch.uid)||!poseSourceFrame(report,patch.frameId)||
           patch.replacementUid!==undefined&&!poseSourceFrame(report,patch.frameId).objects.some(object=>object.unique_id===patch.replacementUid)||
-          patch.orderIndex!==undefined&&(!Number.isInteger(patch.orderIndex)||patch.orderIndex<0||patch.orderIndex>65535))throw new Error('Invalid movieclip frame replacement.');replaced.add(patch.uid);}
+          patch.orderIndex!==undefined&&(!Number.isInteger(patch.orderIndex)||patch.orderIndex<0||patch.orderIndex>65535))throw messageError(new Error(''), "errors.layerSheet.invalidMovieclipFrameReplacement", {});replaced.add(patch.uid);}
       }
       if(/^cell-\d+$/.test(key.id))largest=Math.max(largest,Number(key.id.slice(5)));
-      if(key.sourceTick!==undefined){if(!Number.isFinite(key.sourceTick)||key.sourceTick<0||key.sourceTick>MAX_SHEET_TICKS)throw new Error('Invalid imported layer timing.');}
-      else if(key.value?.frameId!==null&&!poseSourceFrame(report,key.value?.frameId))throw new Error('Layer key references a missing pose.');
+      if(key.sourceTick!==undefined){if(!Number.isFinite(key.sourceTick)||key.sourceTick<0||key.sourceTick>MAX_SHEET_TICKS)throw messageError(new Error(''), "errors.layerSheet.invalidImportedLayerTiming", {});}
+      else if(key.value?.frameId!==null&&!poseSourceFrame(report,key.value?.frameId))throw messageError(new Error(''), "errors.layerSheet.layerKeyReferencesAMissingPose", {});
     }
   }
-  if(state.nextId<=largest)throw new Error('Layer key identity counter is invalid.');
+  if(state.nextId<=largest)throw messageError(new Error(''), "errors.layerSheet.layerKeyIdentityCounterIsInvalid", {});
   return report;
 }
 export function legacySheetReport(report){

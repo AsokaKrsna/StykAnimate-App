@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Current-pose Handle Edit Mode; distinct from reusable figure-definition edits.
  * https://www.pivotanimator.net/help5-2/handle_edit_mode.htm
  */
@@ -5,14 +6,14 @@ import {shortest} from './pivot/geometry.mjs';
 
 const EPS = 1e-9;
 const finitePoint = (x, y) => {
-  if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('Handle coordinates must be finite.');
+  if (!Number.isFinite(x) || !Number.isFinite(y)) throw messageError(new Error(''), "errors.editorHandleEdit.handleCoordinatesMustBeFinite", {});
 };
 
 /** Solve the same circular arc between two endpoints. Optional bend editing
  * preserves the tangent at the endpoint being moved, as native R+right-drag.
  */
 export function handleEditSegmentPose(shape, start, end, scale, {bend = false, movingEnd = false} = {}) {
-  if (!(Math.abs(scale) > EPS)) throw new Error('Increase figure scale before repositioning a handle.');
+  if (!(Math.abs(scale) > EPS)) throw messageError(new Error(''), "errors.editorHandleEdit.increaseFigureScaleBeforeRepositioningAHandle", {});
   const dx = end.x - start.x, dy = end.y - start.y, distance = Math.hypot(dx, dy);
   let angle = shape.angle, curvature = shape.bend;
   const line = [0, 6].includes(shape.seg.primitive_code ?? (shape.seg.flags ?? 0) & 255);
@@ -25,7 +26,7 @@ export function handleEditSegmentPose(shape, start, end, scale, {bend = false, m
   }
   const factor = Math.abs(curvature) < EPS ? 1 : 2 * Math.sin(curvature / 2) / curvature;
   if (Math.abs(factor) < EPS && distance > EPS)
-    throw new Error('Reduce the full-circle bend before moving its endpoint.');
+    throw messageError(new Error(''), "errors.editorHandleEdit.reduceTheFullCircleBendBeforeMovingIts", {});
   if (distance > EPS && !(bend && line))
     angle = Math.atan2(dy, dx) - curvature / 2 - (factor * scale < 0 ? Math.PI : 0);
   return {angle: shape.angle + shortest(angle - shape.angle),
@@ -45,9 +46,9 @@ function restoreObject(state, object) {
 export const editorHandleEditMethods = {
   beginHandleEditDrag({label = 'Reposition handle', bend = false} = {}) {
     const figure = this.figure, object = this.object, index = this.selectedJoint;
-    if(figure?.segments.some(s=>s._stykRig))throw new Error('Use Build Figure to reposition rig anchors, or drag a connector to slide its attachment. Free handle repositioning cannot preserve these constraints.');
+    if(figure?.segments.some(s=>s._stykRig))throw messageError(new Error(''), "errors.editorHandleEdit.useBuildFigureToRepositionRigAnchorsOr", {});
     if (!figure || !object || index < -1 || index >= figure.segments.length || index < 0 && object.join) return false;
-    if (!(Math.abs(object.scale) > EPS)) throw new Error('Increase figure scale before repositioning a handle.');
+    if (!(Math.abs(object.scale) > EPS)) throw messageError(new Error(''), "errors.editorHandleEdit.increaseFigureScaleBeforeRepositioningAHandle", {});
     if (!this.beginDrag(label)) return false;
     try {
       const geometry = this.geometry, slot = this.selectedSlot;
@@ -65,8 +66,8 @@ export const editorHandleEditMethods = {
       for (let cursor = 0; cursor < queue.length; cursor++) {
         const item = queue[cursor]; if (visited.has(item.slot)) continue; visited.add(item.slot);
         const g = geometry.objects.get(item.slot), before = snapshots.get(g?.obj.unique_id);
-        if (!g || !before) throw new Error('The attached handle is outside the current pose gesture.');
-        if (!(Math.abs(g.obj.scale) > EPS)) throw new Error('Increase attached figure scale before repositioning this handle.');
+        if (!g || !before) throw messageError(new Error(''), "errors.editorHandleEdit.theAttachedHandleIsOutsideTheCurrentPose", {});
+        if (!(Math.abs(g.obj.scale) > EPS)) throw messageError(new Error(''), "errors.editorHandleEdit.increaseAttachedFigureScaleBeforeRepositioningThisHandle", {});
         const incident = g.segments.filter(shape => shape.seg.segment_id === item.vertex || shape.seg.parent_id === item.vertex);
         states.push({...item, g, before, indices: incident.map(shape => shape.index), incident,
           lengths: g.segments.map(shape => shape.length / Math.abs(g.obj.scale)),
@@ -86,7 +87,7 @@ export const editorHandleEditMethods = {
     if (!active && !this.beginHandleEditDrag({bend: bend ?? false})) return false;
     const drag = this._drag, edit = drag.handleEdit;
     if (drag.index !== this.frameIndex || edit.uid !== this.selectedUid || edit.index !== this.selectedJoint) {
-      this.cancelDrag(); throw new Error('The selected handle changed during its gesture.');
+      this.cancelDrag(); throw messageError(new Error(''), "errors.editorHandleEdit.theSelectedHandleChangedDuringItsGesture", {});
     }
     try {
       const point = {x, y}, atStart = Math.hypot(x - edit.point.x, y - edit.point.y) < EPS;

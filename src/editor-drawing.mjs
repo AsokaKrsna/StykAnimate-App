@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {drawingMetadata,isDrawingLayer,createDrawingFigure,copyDrawingFigure,migrateDrawingFigure,EMPTY_PNG} from './drawing-model.mjs';
 import {drawingSheetPlan,drawingSheetPublish} from './editor-layer-sheet.mjs';
 import {sheetKeyAt,MAX_SHEET_TICKS} from './layer-sheet.mjs';
@@ -6,13 +7,13 @@ import {pixelChangeBytes} from './drawing-pixels.mjs';
 import {nextUidAfter} from './object-identity.mjs';
 
 export function assertDrawingTargets(editor,ids) {
-  if(!ids.length)throw new Error('Choose a drawing layer.');
-  for(const id of ids){const layer=editor.getLayer(id);if(!isDrawingLayer(layer))throw new Error('Choose a drawing layer or create a new drawing layer.');if(layer.locked||!layer.visible)throw new Error(`Show and unlock ${layer.name} before drawing.`);}
+  if(!ids.length)throw messageError(new Error(''), "errors.editorDrawing.chooseADrawingLayer", {});
+  for(const id of ids){const layer=editor.getLayer(id);if(!isDrawingLayer(layer))throw messageError(new Error(''), "errors.editorDrawing.chooseADrawingLayerOrCreateANew", {});if(layer.locked||!layer.visible)throw messageError(new Error(''), "errors.editorDrawing.showAndUnlockBeforeDrawing", {name: layer.name});}
 }
 export function applyDrawingCommand(editor,command,direction,prepared) {
   if(command.kind!=='drawing-pixels')return false;
   const figure=editor.report.figure_types.find(f=>drawingMetadata(f)?.celId===command.celId);
-  if(!figure)throw new Error('The drawing history references a missing cel.');
+  if(!figure)throw messageError(new Error(''), "errors.editorDrawing.theDrawingHistoryReferencesAMissingCel", {});
   editor.drawingResources.apply(figure,command.tiles,direction,prepared);
   const d=drawingMetadata(figure);
   if(d.version===2)d.bounds=command[direction==='before'?'beforeBounds':'afterBounds']??null;
@@ -33,10 +34,10 @@ export const editorDrawingMethods={
   },
   drawingTarget(id=this.activeLayerId,tick=this.tick) {
     assertDrawingTargets(this,[id]);const track=this.report._styk.layerSheet.tracks[id],{key,next}=sheetKeyAt(track,tick);
-    if(!key||tick>=track.end)throw new Error('Insert a Blank drawing or Copy drawing here before painting.');
+    if(!key||tick>=track.end)throw messageError(new Error(''), "errors.editorDrawing.insertABlankDrawingOrCopyDrawingHere", {});
     const frame=key.value?.frameId?this.getFrameById(key.value.frameId):null;
     const object=frame?.objects.find(o=>this.layerForUid(o.unique_id)===id),figure=object&&this.report.figure_types.find(f=>f.figure_type_id===object.figure_type_id);
-    if(figure&&!drawingMetadata(figure))throw new Error('Convert this image to a drawing before painting.');
+    if(figure&&!drawingMetadata(figure))throw messageError(new Error(''), "errors.editorDrawing.convertThisImageToADrawingBeforePainting", {});
     return {id,key,end:next?.tick??track.end,object,figure};
   },
   /** Auto key: painting on a held drawing first copies it to the playhead. */
@@ -60,9 +61,9 @@ export const editorDrawingMethods={
     for(const [old,copy] of forks)this.drawingResources.fork(old,copy);return result;
   },
   nextDrawing(ids=[this.activeLayerId],{blank=true,length=1,tick=this.tick}={}) {
-    assertDrawingTargets(this,ids);if(!Number.isInteger(length)||length<1||length>65535)throw new Error('Choose an exposure length of 1–65,535 frames.');
+    assertDrawingTargets(this,ids);if(!Number.isInteger(length)||length<1||length>65535)throw messageError(new Error(''), "errors.editorDrawing.chooseAnExposureLengthOf165535", {});
     const spans=ids.map(id=>({id,...this.sheetSpan(id,tick)}));
-    for(const {id,end} of spans)if(Math.max(end,this.report._styk.layerSheet.tracks[id].end)+length>MAX_SHEET_TICKS)throw new Error('This exposure exceeds the timeline limit.');
+    for(const {id,end} of spans)if(Math.max(end,this.report._styk.layerSheet.tracks[id].end)+length>MAX_SHEET_TICKS)throw messageError(new Error(''), "errors.editorDrawing.thisExposureExceedsTheTimelineLimit", {});
     return this.movieclipBatch(blank?'Next blank drawing':'Next copied drawing',()=>{
       for(const {id,end} of spans){
         // Split before shifting: copying at an existing next key must use the
@@ -73,9 +74,9 @@ export const editorDrawingMethods={
     });
   },
   extendDrawing(ids=[this.activeLayerId],count=1) {
-    assertDrawingTargets(this,ids);if(!Number.isInteger(count)||count<1||count>65535)throw new Error('Choose a positive exposure extension.');
+    assertDrawingTargets(this,ids);if(!Number.isInteger(count)||count<1||count>65535)throw messageError(new Error(''), "errors.editorDrawing.chooseAPositiveExposureExtension", {});
     const spans=ids.map(id=>({id,...this.drawingTarget(id)}));
-    for(const {id} of spans)if(this.report._styk.layerSheet.tracks[id].end+count>MAX_SHEET_TICKS)throw new Error('This exposure exceeds the timeline limit.');
+    for(const {id} of spans)if(this.report._styk.layerSheet.tracks[id].end+count>MAX_SHEET_TICKS)throw messageError(new Error(''), "errors.editorDrawing.thisExposureExceedsTheTimelineLimit", {});
     return this.movieclipBatch('Extend drawing exposure',()=>{for(const {id,end} of spans)this.sheetInsertFrames([id],end,count);return true;});
   },
   prepareDrawingCel({pixelsPerUnit=1,world={x:0,y:0}}={}) {
@@ -89,7 +90,7 @@ export const editorDrawingMethods={
    * pixel (0,0) stays fixed so anchors and the segment scale with the ratio. */
   resampleDrawing(target,{pixelsPerUnit,tiles,bounds,owned=false}) {
     assertDrawingTargets(this,[target.id]);const current=this.drawingTarget(target.id);
-    if(current.key.id!==target.key.id||current.figure!==target.figure)throw new Error('The drawing changed before resampling.');
+    if(current.key.id!==target.key.id||current.figure!==target.figure)throw messageError(new Error(''), "errors.editorDrawing.theDrawingChangedBeforeResampling", {});
     const old=drawingMetadata(target.figure),ratio=pixelsPerUnit/old.pixelsPerUnit,typeId=this.report.figure_types.reduce((n,f)=>Math.max(n,f.figure_type_id+1),1);
     const figure=old.version===1?migrateDrawingFigure(target.figure,typeId,{bounds,anchorScale:ratio}):copyDrawingFigure(target.figure,typeId),asset=figure.image_assets[0];
     const fd=drawingMetadata(figure);fd.pixelsPerUnit=pixelsPerUnit;fd.bounds=bounds?{...bounds}:null;fd.revision=0;
@@ -109,7 +110,7 @@ export const editorDrawingMethods={
   commitDrawingPixels(target,tiles,label='Brush stroke',prepared,{resident=false}={}) {
     if(!tiles.length)return false;assertDrawingTargets(this,[target.id]);
     const current=this.drawingTarget(target.id,target.key.tick);
-    if(current.key.id!==target.key.id||(!target.created&&!target.migratedFrom&&current.figure!==target.figure))throw new Error('The drawing exposure changed before the edit finished.');
+    if(current.key.id!==target.key.id||(!target.created&&!target.migratedFrom&&current.figure!==target.figure))throw messageError(new Error(''), "errors.editorDrawing.theDrawingExposureChangedBeforeTheEditFinished", {});
     // The record commits at any size: history eviction retires older entries,
     // and reserve() bounds resident stores before this point is reached.
     const bytes=pixelChangeBytes(tiles);

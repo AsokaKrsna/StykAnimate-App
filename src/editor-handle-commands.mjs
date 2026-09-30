@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Native screen-pixel positioning, alignment and segment-value commands.
  * help5-2/{positioning_figures,segment_alignment,value_input,
  * alignment_to_neighbouring_frames}.htm; static clipboard evidence is in
@@ -6,12 +7,12 @@
 import {arc, buildGeometry, evaluatedFrame, shortest} from './pivot/geometry.mjs';
 import {cameraMatrix} from './renderer-geometry.mjs';
 const RAD = Math.PI / 180, DEG = 180 / Math.PI;
-const finite = value => { if (!Number.isFinite(value)) throw new Error('Position values must be finite.'); return value; };
+const finite = value => { if (!Number.isFinite(value)) throw messageError(new Error(''), "errors.editorHandleCommands.positionValuesMustBeFinite", {}); return value; };
 
 export function screenVectorToWorld(dx, dy, options) {
   finite(dx); finite(dy);
   const [a,b,c,d] = cameraMatrix(options), determinant = a*d-b*c;
-  if (!Number.isFinite(determinant) || Math.abs(determinant)<1e-20) throw new Error('The current view cannot resolve a pixel movement.');
+  if (!Number.isFinite(determinant) || Math.abs(determinant)<1e-20) throw messageError(new Error(''), "errors.editorHandleCommands.theCurrentViewCannotResolveAPixelMovement", {});
   return {x:(d*dx-c*dy)/determinant,y:(a*dy-b*dx)/determinant};
 }
 
@@ -37,7 +38,7 @@ export function formatSegmentValues(values) {
   return ['angle','bend','length'].map(key=>String(finite(values[key]))).join(':');
 }
 export function parseSegmentValues(text) {
-  if(typeof text!=='string'||text.length>100)throw new Error('Paste up to 100 characters of Angle:Bend:Length values.');
+  if(typeof text!=='string'||text.length>100)throw messageError(new Error(''), "errors.editorHandleCommands.pasteUpTo100CharactersOfAngleBend", {});
   // Native paste compacts numeric tokens into the visible boxes, ignoring
   // malformed tokens; a partial paste leaves the remaining fields unchanged.
   const numbers=[];
@@ -47,7 +48,7 @@ export function parseSegmentValues(text) {
     if(numbers.length===3)break;
   }
   const values=Object.fromEntries(numbers.map((value,index)=>[['angle','bend','length'][index],value]));
-  if('length'in values&&!(values.length>0))throw new Error('Segment length must be greater than zero.');
+  if('length'in values&&!(values.length>0))throw messageError(new Error(''), "errors.editorHandleCommands.segmentLengthMustBeGreaterThanZero", {});
   return values;
 }
 
@@ -89,7 +90,7 @@ export const editorHandleCommandMethods={
   },
 
   locateEditedHandle(direction=-1,options={}) {
-    if(direction!==-1&&direction!==1)throw new Error('Choose the previous or next frame.');
+    if(direction!==-1&&direction!==1)throw messageError(new Error(''), "errors.editorHandleCommands.chooseThePreviousOrNextFrame", {});
     if(this._drag)this.commitDrag();
     const index=this.frameIndex+direction;if(index<0||index>=this.report.keyframes.length)return false;
     const current=this.selectionFrame??this.frame,uid=options.uid??this.selectedUid;
@@ -120,9 +121,9 @@ export const editorHandleCommandMethods={
 
   setSegmentValues(values,options={}) {
     const opts={...this._drag?.segmentValueOptions,...options};
-    if(!values||Object.keys(values).some(key=>!['angle','bend','length'].includes(key)))throw new Error('Choose segment angle, bend and length values.');
+    if(!values||Object.keys(values).some(key=>!['angle','bend','length'].includes(key)))throw messageError(new Error(''), "errors.editorHandleCommands.chooseSegmentAngleBendAndLengthValues", {});
     for(const value of Object.values(values))finite(value);
-    if('length'in values&&!(values.length>0))throw new Error('Segment length must be greater than zero.');
+    if('length'in values&&!(values.length>0))throw messageError(new Error(''), "errors.editorHandleCommands.segmentLengthMustBeGreaterThanZero", {});
     const index=this.selectedJoint;if(!this.figure?.segments[index]||!Object.keys(values).length)return false;
     const previous=this.segmentValues(opts);
     if(Object.entries(values).every(([key,value])=>key==='angle'?Math.abs(shortest((value-previous.angle)*RAD))<1e-12:value===previous[key]))return false;
@@ -133,7 +134,7 @@ export const editorHandleCommandMethods={
       const angle='angle'in values?values.angle*RAD+reference:shape.angle,bend='bend'in values?values.bend*RAD:shape.bend;
       const length='length'in values?values.length:this.segmentValues().length;
       if(opts.editMode){
-        if(!this._drag.handleEdit)throw new Error('Begin a Handle Edit value gesture before changing these values.');
+        if(!this._drag.handleEdit)throw messageError(new Error(''), "errors.editorHandleCommands.beginAHandleEditValueGestureBeforeChanging", {});
         const endpoint=arc(shape.start,angle,length*object.scale,bend).at(-1);
         this.editHandlePosition(endpoint.x,endpoint.y);
         object.angles[index]=shape.angle+shortest(angle-shape.angle);

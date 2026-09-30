@@ -1,3 +1,4 @@
+import {messageError} from '../localized-error.mjs';
 import {validateSpatialPose,validateSpatialJoins} from '../spatial-projection.mjs';
 import {validateSurface} from './surfaces.mjs';
 import {hasRigConstraints, rigConstraintPlanSteps, rigIKAllowed} from '../rig-constraints.mjs';
@@ -16,7 +17,7 @@ import {validateVfxOwner} from '../vfx.mjs';
 import {validateOriginObject,validateOriginObjectSteps,validateOriginSupportSteps} from '../animation-origin-validation.mjs';
 const finite = (value, label) => {
   if (typeof value !== "number" || !Number.isFinite(value))
-    throw new Error(`${label} must be a finite number.`);
+    throw messageError(new Error(''), "errors.model.mustBeAFiniteNumber", {label: label});
 };
 export function roundEven(value) {
   const floor = Math.floor(value),
@@ -29,16 +30,16 @@ export function roundEven(value) {
 }
 const integer = (value, min, max, label) => {
   if (!Number.isInteger(value) || value < min || value > max)
-    throw new Error(`${label} must be an integer from ${min} to ${max}.`);
+    throw messageError(new Error(''), "errors.model.mustBeAnIntegerFromTo", {label: label, min: min, max: max});
 };
 const float32 = (value, label) => {
   finite(value, label);
   if (!Number.isFinite(Math.fround(value)))
-    throw new Error(`${label} exceeds the native float32 range.`);
+    throw messageError(new Error(''), "errors.model.exceedsTheNativeFloat32Range", {label: label});
 };
 const rgb = (value, label) => {
   if (!Array.isArray(value) || value.length !== 3)
-    throw new Error(`${label} needs three RGB bytes.`);
+    throw messageError(new Error(''), "errors.model.needsThreeRgbBytes", {label: label});
   for (const n of value) integer(n, 0, 255, label);
 };
 // Populated only by successful definition validation. Editor topology/style
@@ -48,7 +49,7 @@ function validateObjectPose(report, object, figure, origin = true) {
   if(object._sticknodesShapes||object._sticknodesSprite)validateSticknodesObject(object,figure);
   validateIK(object);
   validateSpatialPose(object,figure);
-  if(object._stykIK)for(const [id,c] of Object.entries(object._stykIK))if(c.enabled&&!rigIKAllowed(figure,figure.segments.findIndex(s=>s.segment_id===Number(id))))throw new Error('IK cannot drive a derived connector, weighted or angle-locked attachment.');
+  if(object._stykIK)for(const [id,c] of Object.entries(object._stykIK))if(c.enabled&&!rigIKAllowed(figure,figure.segments.findIndex(s=>s.segment_id===Number(id))))throw messageError(new Error(''), "errors.model.ikCannotDriveADerivedConnectorWeightedOr", {});
   validateAnimationStyle(object);
   validateVfxOwner(object);
   if (object._stykZIndex !== undefined) validateFigureZIndex(object._stykZIndex);
@@ -58,10 +59,10 @@ function validateObjectPose(report, object, figure, origin = true) {
   if (object.color_override_raw !== undefined)
     integer(object.color_override_raw, report.version < 5 ? -0x80000000 : 0, 0xffffffff, 'Figure color');
   if (object.field28 !== undefined) integer(object.field28, 0, 255, 'Figure transparency');
-  if (object.scale < 0) throw new Error('Object scale cannot be negative.');
+  if (object.scale < 0) throw messageError(new Error(''), "errors.model.objectScaleCannotBeNegative", {});
   for (const [flag, key] of [[true, 'angles'], [object.len_flag, 'lengths'], [object.bend_flag, 'bends']]) if (flag) {
     if (!Array.isArray(object[key]) || object[key].length !== figure.segments.length)
-      throw new Error('Pose array does not match its figure.');
+      throw messageError(new Error(''), "errors.model.poseArrayDoesNotMatchItsFigure", {});
     for (const value of object[key]) (key === 'lengths' ? float32 : finite)(value, key);
   }
 }
@@ -73,12 +74,12 @@ function validateObjectPose(report, object, figure, origin = true) {
 export function validateObjectChanges(report, frame, changedUids) {
   const types = new Map(), metadata = new Map();
   for (const figure of report.figure_types) {
-    if (types.has(figure.figure_type_id)) throw new Error('Invalid or repeated figure type.');
+    if (types.has(figure.figure_type_id)) throw messageError(new Error(''), "errors.model.invalidOrRepeatedFigureType", {});
     types.set(figure.figure_type_id, figure);
   }
   const definition = typeId => {
     const figure = types.get(typeId);
-    if (!figure) throw new Error('Unknown figure or repeated object identity.');
+    if (!figure) throw messageError(new Error(''), "errors.model.unknownFigureOrRepeatedObjectIdentity", {});
     let cached = validatedDefinitions.get(figure);
     if (!cached || cached.segments !== figure.segments || cached.count !== figure.segments.length ||
         cached.origin!==figure._styk?.animationOrigin || cached.support!==figure._styk?.animationOrigin?.support) {
@@ -89,25 +90,25 @@ export function validateObjectChanges(report, frame, changedUids) {
   };
   const changed = new Set(changedUids), identities = new Set(), slots = [];
   frame.objects.forEach((object, slot) => {
-    if (identities.has(object.unique_id)) throw new Error('Unknown figure or repeated object identity.');
+    if (identities.has(object.unique_id)) throw messageError(new Error(''), "errors.model.unknownFigureOrRepeatedObjectIdentity", {});
     identities.add(object.unique_id);
     if (changed.has(object.unique_id)) slots.push(slot);
   });
-  if (slots.length !== changed.size) throw new Error('A gesture cannot change figure identities.');
+  if (slots.length !== changed.size) throw messageError(new Error(''), "errors.model.aGestureCannotChangeFigureIdentities", {});
   validateSpatialJoins(frame,report.figure_types);
   for (const slot of slots) validateObjectPose(report, frame.objects[slot], definition(frame.objects[slot].figure_type_id));
   const finished = new Set();
   for (const initial of slots) {
     let slot = initial; const chain = new Set();
     while (!finished.has(slot)) {
-      if (chain.has(slot)) throw new Error('Figures contain a cyclic join.');
+      if (chain.has(slot)) throw messageError(new Error(''), "errors.editorSelection.figuresContainACyclicJoin", {});
       chain.add(slot); const object = frame.objects[slot];
       if (!object?.join) break;
       const targetSlot = object.join.target_object_slot, parent = frame.objects[targetSlot];
-      if (!Number.isInteger(targetSlot) || !parent) throw new Error('Join points to a missing figure or handle.');
+      if (!Number.isInteger(targetSlot) || !parent) throw messageError(new Error(''), "errors.model.joinPointsToAMissingFigureOrHandle", {});
       const figure = definition(parent.figure_type_id);
       if (!metadata.get(figure.figure_type_id).handles.has(object.join.target_handle_id))
-        throw new Error('Join points to a missing figure or handle.');
+        throw messageError(new Error(''), "errors.model.joinPointsToAMissingFigureOrHandle", {});
       slot = targetSlot;
     }
     for (const slot of chain) finished.add(slot);
@@ -144,19 +145,19 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
     typeof report !== "object" ||
     ![2, 3, 4, 5].includes(report.version)
   )
-    throw new Error("Expected a decoded Pivot 2–5 scene.");
+    throw messageError(new Error(''), "errors.model.expectedADecodedPivot25Scene", {});
   for (const key of ["canvas_width", "canvas_height"])
     if (
       !Number.isInteger(report[key]) ||
       report[key] < 1 ||
       report[key] > 100000
     )
-      throw new Error("Canvas dimensions must be integers from 1 to 100,000.");
+      throw messageError(new Error(''), "errors.model.canvasDimensionsMustBeIntegersFrom1To", {});
   integer(report.fps, 1, 1000, "FPS");
   if (report.frame_delay_ms != null)
     integer(report.frame_delay_ms, 1, 65535, "Frame delay");
   if (report.fps < 1 || report.fps > 1000)
-    throw new Error("FPS must be between 1 and 1,000.");
+    throw messageError(new Error(''), "errors.model.fpsMustBeBetween1And1000", {});
   if (
     !Array.isArray(report.figure_types) ||
     report.figure_types.length > 65535 ||
@@ -164,9 +165,7 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
     !report.keyframes.length ||
     report.keyframes.length > 100000
   )
-    throw new Error(
-      "Scene must have a valid figure table and 1–100,000 keyframes.",
-    );
+    throw messageError(new Error(''), "errors.model.sceneMustHaveAValidFigureTableAnd", {});
   const types = new Map(), typeHandles = new Map();
   let totalSegments = 0,
     totalObjects = 0;
@@ -176,13 +175,13 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
       types.has(fig.figure_type_id) ||
       !Array.isArray(fig.segments)
     )
-      throw new Error("Invalid or repeated figure type.");
+      throw messageError(new Error(''), "errors.model.invalidOrRepeatedFigureType", {});
     types.set(fig.figure_type_id, fig);
     if (fig.segments.length > 30000)
-      throw new Error('A native Pivot figure supports at most 30,000 segments.');
+      throw messageError(new Error(''), "errors.editorBuilderBranch.aNativePivotFigureSupportsAtMost30", {});
     totalSegments += fig.segments.length;
     if (totalSegments > 1000000)
-      throw new Error("Figure table exceeds the one-million-segment limit.");
+      throw messageError(new Error(''), "errors.model.figureTableExceedsTheOneMillionSegmentLimit", {});
     const parents = new Map();
     for (const s of fig.segments) {
       if(s.paint)normalizePaint(s.paint);
@@ -193,7 +192,7 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
         s.segment_id > 65535 ||
         parents.has(s.segment_id)
       )
-        throw new Error("Invalid or repeated segment handle.");
+        throw messageError(new Error(''), "errors.model.invalidOrRepeatedSegmentHandle", {});
       parents.set(s.segment_id, s.parent_id);
       for (const k of ["length", "angle_rad", "thickness"])
         (k === "angle_rad" ? finite : float32)(s[k], `Segment ${k}`);
@@ -208,7 +207,7 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
       let p = id;
       while (!done.has(p)) {
         if (!parents.has(p) || seen.has(p))
-          throw new Error("Figure has a missing parent or a cycle.");
+          throw messageError(new Error(''), "errors.model.figureHasAMissingParentOrACycle", {});
         seen.add(p);
         p = parents.get(p);
         if (due()) yield progress('figures');
@@ -232,16 +231,16 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
       frame.duration_raw < 0 ||
       frame.duration_raw > 65535
     )
-      throw new Error("Invalid keyframe objects or duration.");
+      throw messageError(new Error(''), "errors.model.invalidKeyframeObjectsOrDuration", {});
     totalObjects += frame.objects.length;
     validateSpatialJoins(frame,report.figure_types);
     if (totalObjects > 2000000)
-      throw new Error("Scene exceeds the two-million-object limit.");
+      throw messageError(new Error(''), "errors.model.sceneExceedsTheTwoMillionObjectLimit", {});
     const uids = new Set();
     for (const o of frame.objects) {
       const fig = types.get(o.figure_type_id);
       if (!fig || !Number.isInteger(o.unique_id) || uids.has(o.unique_id))
-        throw new Error("Unknown figure or repeated object identity.");
+        throw messageError(new Error(''), "errors.model.unknownFigureOrRepeatedObjectIdentity", {});
       uids.add(o.unique_id);
       validateObjectPose(report, o, fig, false);
       if (o._stykMovieclip) validatePlayback(o._stykMovieclip);
@@ -253,7 +252,7 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
           !target ||
           !typeHandles.get(target.figure_type_id).has(o.join.target_handle_id)
         )
-          throw new Error("Join points to a missing figure or handle.");
+          throw messageError(new Error(''), "errors.model.joinPointsToAMissingFigureOrHandle", {});
       }
       if (due()) yield progress('poses');
     }
@@ -263,7 +262,7 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
       let slot = i;
       const chain = new Set();
       while (!finished.has(slot)) {
-        if (chain.has(slot)) throw new Error("Figures contain a cyclic join.");
+        if (chain.has(slot)) throw messageError(new Error(''), "errors.editorSelection.figuresContainACyclicJoin", {});
         chain.add(slot);
         const join = frame.objects[slot].join;
         if (!join) break;
@@ -281,13 +280,13 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
           (i) => !Number.isInteger(i) || i < 0 || i >= frame.objects.length,
         )
       )
-        throw new Error("Invalid figure layer order.");
+        throw messageError(new Error(''), "errors.model.invalidFigureLayerOrder", {});
     }
     if (frame.camera && !frame.camera.is_default) {
       for (const k of ["x", "y", "scale"])
         float32(frame.camera[k], `Camera ${k}`);
       if (frame.camera.scale <= 0)
-        throw new Error("Camera scale must be positive.");
+        throw messageError(new Error(''), "errors.editorCamera.cameraScaleMustBePositive", {});
       inverseCameraScale(frame.camera);
       if (frame.camera.angle_rad !== undefined)
         finite(frame.camera.angle_rad, "Camera angle");
@@ -300,13 +299,13 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
       if (style.outline_thickness !== undefined) {
         float32(style.outline_thickness, "Outline width");
         if (style.outline_thickness < 0)
-          throw new Error("Outline width cannot be negative.");
+          throw messageError(new Error(''), "errors.model.outlineWidthCannotBeNegative", {});
       }
       if (style.u28 !== undefined) {
         integer(style.u28, 0, 0xffffffff, "Outline bits");
         const width = new Float32Array(new Uint32Array([style.u28]).buffer)[0];
         if (!Number.isFinite(width) || width < 0)
-          throw new Error("Invalid outline width.");
+          throw messageError(new Error(''), "errors.model.invalidOutlineWidth", {});
       }
       if (style.rgb) rgb(style.rgb, "Outline color");
       if (style.u30 !== undefined)
@@ -315,7 +314,7 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
     for (const poly of fig.polyfills || []) {
       if(poly._stykSurface)validateSurface(poly,typeHandles.get(fig.figure_type_id));
       if(poly.z_order!==undefined)float32(poly.z_order,'Polygon drawing order');
-      if(poly.color_alpha!==undefined){finite(poly.color_alpha,'Polygon opacity');if(poly.color_alpha<0||poly.color_alpha>1)throw new Error('Polygon opacity must be between zero and one.');}
+      if(poly.color_alpha!==undefined){finite(poly.color_alpha,'Polygon opacity');if(poly.color_alpha<0||poly.color_alpha>1)throw messageError(new Error(''), "errors.model.polygonOpacityMustBeBetweenZeroAndOne", {});}
       if (poly.color_rgb) rgb(poly.color_rgb, "Polygon color");
       if (poly.alpha_raw !== undefined)
         integer(poly.alpha_raw, 0, 255, "Polygon transparency");
@@ -331,7 +330,7 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
       bg.background_id < 1 ||
       backgrounds.has(bg.background_id)
     )
-      throw new Error("Invalid or repeated background ID.");
+      throw messageError(new Error(''), "errors.model.invalidOrRepeatedBackgroundId", {});
     backgrounds.add(bg.background_id);
     if (bg.kind === 2) integer(bg.color, 0, 0xffffffff, "Background color");
     if ([3, 4].includes(bg.kind)) {
@@ -340,7 +339,7 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
       for (const key of ["x1", "y1", "x2", "y2"])
         float32(bg[key], "Gradient " + key);
       if (bg.kind === 4 && (bg.x2 < 0 || bg.y2 < 0))
-        throw new Error("Radial background radii cannot be negative.");
+        throw messageError(new Error(''), "errors.model.radialBackgroundRadiiCannotBeNegative", {});
     }
     if (due()) yield progress('backgrounds');
   }
@@ -349,7 +348,7 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
       !backgrounds.has(f.background_id ?? 0) ||
       (f.background_mix && !backgrounds.has(f.background_id_b ?? 0))
     )
-      throw new Error("Frame references a missing background.");
+      throw messageError(new Error(''), "errors.model.frameReferencesAMissingBackground", {});
     if (f.background_mix !== undefined)
       integer(f.background_mix, 0, 255, "Background mix");
     if (due()) yield progress('background references');

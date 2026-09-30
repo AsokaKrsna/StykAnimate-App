@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {figurePalette, attachedFigurePalette, validateRecolor} from './figure-colors.mjs';
 import {layerLocked,layerVisible} from './layers.mjs';
 import {hexColor,parseColor} from './paint.mjs';
@@ -34,7 +35,7 @@ export const editorColorMethods={
   editFigureColors(operation,{indices,...options}={}){
     operation=validateRecolor({...operation,kind:'recolor'});
     const uids=options.uids??[...this.selectedUids];
-    if(uids.some(uid=>layerLocked(this.report,uid)||!layerVisible(this.report,uid)))throw new Error('Show and unlock the selected layers before recoloring.');
+    if(uids.some(uid=>layerLocked(this.report,uid)||!layerVisible(this.report,uid)))throw messageError(new Error(''), "errors.editorColors.showAndUnlockTheSelectedLayersBeforeRecoloring", {});
     return this.applyFigureRange(operation,{...options,uids,...(indices?{indices}:this.propertyChannels&&!this.report._styk?.layerSheet?{ticks:[this.tick]}:{atPlayhead:true}),label:operation.mode==='replace'?'Replace figure color':operation.mode==='style'?'Edit segment colors':operation.mode==='reset'?'Reset figure colors':'Set figure color'});
   },
   setFigureColor(color,options={}){const {opacity,...range}=options;return this.editFigureColors({mode:'all',color,opacity},range);},
@@ -52,14 +53,14 @@ export const editorColorMethods={
   addPaletteColor(color){
     const hex=paletteColor(color),colors=projectColors(this.report);
     if(colors.includes(hex))return false;
-    if(colors.length>=PROJECT_PALETTE_LIMIT)throw new Error(`The project palette is full. Remove a color to add ${hex.toUpperCase()}.`);
+    if(colors.length>=PROJECT_PALETTE_LIMIT)throw messageError(new Error(''), "errors.editorColors.theProjectPaletteIsFullRemoveAColor", {value: hex.toUpperCase()});
     return publishPalette(this,[...colors,hex],'Add palette color');
   },
   /** Adds the colours the project lacks, in order, as one undo step; returns how many. */
   addPaletteColors(list){
     const colors=projectColors(this.report),added=[...new Set(list.map(paletteColor))].filter(hex=>!colors.includes(hex));
     if(!added.length)return 0;
-    if(colors.length+added.length>PROJECT_PALETTE_LIMIT)throw new Error(`The project palette holds up to ${PROJECT_PALETTE_LIMIT} colors. Remove ${colors.length+added.length-PROJECT_PALETTE_LIMIT} to add these.`);
+    if(colors.length+added.length>PROJECT_PALETTE_LIMIT)throw messageError(new Error(''), "errors.editorColors.theProjectPaletteHoldsUpToColorsRemove", {PROJECT_PALETTE_LIMIT: PROJECT_PALETTE_LIMIT, value: colors.length+added.length-PROJECT_PALETTE_LIMIT});
     publishPalette(this,[...colors,...added],'Add palette colors');
     return added.length;
   },

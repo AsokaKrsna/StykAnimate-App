@@ -1,3 +1,7 @@
+import {replaceLocalized, descriptorAttributes, localizedAttribute, localizedMarkup, appendLocalized} from '../localization-bindings.mjs';
+
+import {t as interfaceText} from '../localization.mjs';
+
 /**
  * The stage's modifier buttons (docs/TOUCH.md): what the right mouse button
  * and the Shift, Ctrl and Alt keys do during a drag, for fingers and pens.
@@ -22,17 +26,17 @@ import {icon} from '../icons.mjs';
 
 /** A modifier: what it adds to the stage's events ({button: 2} or a key), its name and glyph. */
 const MODIFIERS = Object.freeze({
-  bend: {secondary: true, label: 'Bend', icon: 'bend', hint: 'Drag a joint to bend it (the right mouse button)'},
-  stretch: {ctrl: true, label: 'Stretch', icon: 'stretch-horizontal', hint: 'Drag a joint to change its length (Ctrl)'},
-  add: {shift: true, label: 'Add', icon: 'plus', hint: 'Tap figures to add them to the selection (Shift)'},
-  transform: {alt: true, label: 'Transform', icon: 'transform', hint: 'Drag a joint to rotate and scale the figure; drag its origin to copy it (Alt)'},
-  handles: {held: 'handle-edit-hold', label: 'Handles', icon: 'nodes', hint: 'Drag joints to move their handles (hold R)'},
-  depth: {held: 'depth-hold', label: 'Depth', icon: 'depth', hint: 'Drag a 3D part toward or away from you (hold D)'},
-  line: {shift: true, label: 'Line', icon: 'line', hint: 'A straight line from the last stroke (Shift)'},
-  pick: {alt: true, label: 'Pick', icon: 'eyedropper', hint: 'Pick a colour from the canvas (Alt)'},
-  size: {ctrl: true, label: 'Size', icon: 'maximize', hint: 'Drag to resize the brush (Ctrl)'},
-  subtract: {alt: true, label: 'Subtract', icon: 'minus', hint: 'Remove from the selection (Alt)'},
-  snap: {shift: true, label: 'Snap', icon: 'magnet', hint: 'Snap angles to 15° (Shift)'},
+  bend: {secondary: true, label: interfaceText("modifierDock.bend"), labelKey: "modifierDock.bend", icon: 'bend', hint: interfaceText("modifierDock.dragAJointToBendItTheRight")},
+  stretch: {ctrl: true, label: interfaceText("modifierDock.stretch"), labelKey: "modifierDock.stretch", icon: 'stretch-horizontal', hint: interfaceText("modifierDock.dragAJointToChangeItsLengthCtrl")},
+  add: {shift: true, label: interfaceText("modifierDock.add"), labelKey: "modifierDock.add", icon: 'plus', hint: interfaceText("modifierDock.tapFiguresToAddThemToTheSelection")},
+  transform: {alt: true, label: interfaceText("modifierDock.transform"), labelKey: "modifierDock.transform", icon: 'transform', hint: interfaceText("modifierDock.dragAJointToRotateAndScaleThe")},
+  handles: {held: 'handle-edit-hold', label: interfaceText("modifierDock.handles"), labelKey: "modifierDock.handles", icon: 'nodes', hint: interfaceText("modifierDock.dragJointsToMoveTheirHandlesHoldR")},
+  depth: {held: 'depth-hold', label: interfaceText("modifierDock.depth"), labelKey: "modifierDock.depth", icon: 'depth', hint: interfaceText("modifierDock.dragA3dPartTowardOrAwayFrom")},
+  line: {shift: true, label: interfaceText("modifierDock.line"), labelKey: "modifierDock.line", icon: 'line', hint: interfaceText("modifierDock.aStraightLineFromTheLastStrokeShift")},
+  pick: {alt: true, label: interfaceText("modifierDock.pick"), labelKey: "modifierDock.pick", icon: 'eyedropper', hint: interfaceText("modifierDock.pickAColourFromTheCanvasAlt")},
+  size: {ctrl: true, label: interfaceText("modifierDock.size"), labelKey: "modifierDock.size", icon: 'maximize', hint: interfaceText("modifierDock.dragToResizeTheBrushCtrl")},
+  subtract: {alt: true, label: interfaceText("modifierDock.subtract"), labelKey: "modifierDock.subtract", icon: 'minus', hint: interfaceText("modifierDock.removeFromTheSelectionAlt")},
+  snap: {shift: true, label: interfaceText("modifierDock.snap"), labelKey: "modifierDock.snap", icon: 'magnet', hint: interfaceText("modifierDock.snapAnglesTo15Shift")},
 });
 
 /**
@@ -114,7 +118,7 @@ export function installModifierDock({touch, host, viewport, context, setHeld = (
   const dock = doc.createElement('div');
   dock.className = 'touch-modifiers';
   dock.setAttribute('role', 'toolbar');
-  dock.setAttribute('aria-label', 'Modifiers');
+  localizedAttribute(dock, 'aria-label', "modifierDock.modifiers", {});
   dock.setAttribute('aria-orientation', 'vertical');
   dock.hidden = true;
   const list = doc.createElement('div');
@@ -123,10 +127,10 @@ export function installModifierDock({touch, host, viewport, context, setHeld = (
   toggle.type = 'button';
   toggle.className = 'touch-modifiers-toggle';
   toggle.setAttribute('aria-expanded', 'false');
-  toggle.setAttribute('aria-label', 'Modifiers');
-  toggle.innerHTML = `${icon('modifiers')}<span class="touch-modifiers-state"></span>`;
-  dock.append(list, toggle);
-  host.append(dock);
+  localizedAttribute(toggle, 'aria-label', "modifierDock.modifiers", {});
+  localizedMarkup(toggle, `${icon('modifiers')}<span class="touch-modifiers-state"></span>`);
+  appendLocalized(dock, list, toggle);
+  appendLocalized(host, dock);
   const stateLabel = toggle.querySelector('.touch-modifiers-state');
 
   const active = () => new Set([...latched, ...held]);
@@ -140,7 +144,7 @@ export function installModifierDock({touch, host, viewport, context, setHeld = (
     node.dataset.modifier = name;
     node.setAttribute('aria-pressed', 'false');
     node.dataset.tooltip = spec.hint;
-    node.innerHTML = `${icon(spec.icon)}<span>${spec.label}</span>`;
+    localizedMarkup(node, `${icon(spec.icon)}<span${descriptorAttributes(spec, "label")}>${spec.label}</span>`);
     node.setAttribute('aria-label', spec.label);
     // Tap latches; a press held while another finger works on the stage is a one-off.
     let press = null;
@@ -181,7 +185,7 @@ export function installModifierDock({touch, host, viewport, context, setHeld = (
     const names = offered.filter(name => on.has(name)).map(name => MODIFIERS[name].label);
     stateLabel.textContent = names.join(' · ');
     toggle.toggleAttribute('data-active', names.length > 0);
-    toggle.setAttribute('aria-label', names.length ? `Modifiers: ${names.join(', ')}` : 'Modifiers');
+    localizedAttribute(toggle, 'aria-label', (names.length ? 'modifierDock.modifiersValue' : "modifierDock.modifiers"), (names.length ? {value: names.join(', ')} : {}));
     dock.toggleAttribute('data-expanded', expanded);
     toggle.setAttribute('aria-expanded', String(expanded));
     list.hidden = !expanded;
@@ -201,7 +205,7 @@ export function installModifierDock({touch, host, viewport, context, setHeld = (
       if (lastKey) clear();
       lastKey = key;
       offered = names;
-      list.replaceChildren(...names.map(button));
+      replaceLocalized(list, ...names.map(button));
     }
     dock.hidden = !names.length;
     render();

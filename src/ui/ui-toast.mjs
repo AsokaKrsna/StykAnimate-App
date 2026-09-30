@@ -1,3 +1,8 @@
+import {interfaceLocalization} from '../localization.mjs';
+import {replaceLocalized, appendLocalized, localizedText, localizedAttribute, clearTranslation} from '../localization-bindings.mjs';
+import {errorText} from '../error-presentation.mjs';
+import {messageError, errorMessageData} from '../localized-error.mjs';
+
 /**
  * Messages: the stage's one message slot. A toast is a short white pill with
  * an optional action (Undo, Restore, Show) and a dismiss button when it
@@ -106,7 +111,7 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
   document: doc = host?.ownerDocument ?? globalThis.document, setTimer = setTimeout, clearTimer = clearTimeout,
   now = () => globalThis.performance?.now() ?? Date.now()} = {}) {
   const element = host ?? doc.createElement('div');
-  if (!host) doc.body.append(element);
+  if (!host) appendLocalized(doc.body, element);
   // Where the host lives while no modal dialog is open.
   const home = element.parentNode ?? doc.body;
   element.classList.add('ui-toast-host');
@@ -125,7 +130,7 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
     region.setAttribute('role', assertive ? 'alert' : 'status');
     region.setAttribute('aria-live', assertive ? 'assertive' : 'polite');
     region.setAttribute('aria-atomic', 'true');
-    parent.append(region);
+    appendLocalized(parent, region);
     return region;
   };
   const live = {polite: liveRegion(doc.body, false), assertive: liveRegion(doc.body, true)};
@@ -151,13 +156,13 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
     const value = icon?.(name);
     if (!value) return;
     if (typeof value === 'string') { parent.insertAdjacentHTML('beforeend', value); parent.lastElementChild?.classList.add(...className.split(' ')); }
-    else { value.classList?.add(...className.split(' ')); parent.append(value); }
+    else { value.classList?.add(...className.split(' ')); appendLocalized(parent, value); }
   };
   /** Keeps the host inside the topmost modal dialog while one is open (outside it the message would be inert), else at home. */
   const relocate = () => {
     const parent = topModal() ?? home;
     if (element.parentNode === parent || !parent) return;
-    parent.append(element);   // a shown popover that moves is hidden; the caller shows it again
+    appendLocalized(parent, element);   // a shown popover that moves is hidden; the caller shows it again
   };
   /**
    * Places the shown message: outside an open modal's box (above it, else
@@ -217,7 +222,7 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
   const closeHost = () => {
     try { if (element.matches(':popover-open')) element.hidePopover(); } catch { /* already hidden */ }
     element.setAttribute('hidden', '');
-    element.replaceChildren();
+    replaceLocalized(element);
     element.removeAttribute('data-place');
     slot?.release?.();
     relocate();
@@ -239,10 +244,16 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
   doc.addEventListener?.('close', event => { if (event.target?.localName === 'dialog') raise(); }, {capture: true});
 
   // The verb or subject in bold, then the rest: "<b>Restore unsaved work</b> from 12:04?"
-  const writeText = (node, title, message) => {
-    node.replaceChildren();
-    if (title) { const strong = doc.createElement('b'); strong.textContent = title; node.append(strong); }
-    if (message) node.append(doc.createTextNode(title ? ` ${message}` : message));
+  const writeText = (node, record) => {
+    const {title, message, titleKey, titleParams, messageKey, messageParams} = record;
+    replaceLocalized(node);
+    if (title) { const strong = doc.createElement('b'); strong.textContent = title; if (titleKey) localizedText(strong, titleKey, titleParams); appendLocalized(node, strong); }
+    if (message) {
+      if (title) appendLocalized(node, doc.createTextNode(' '));
+      const caption = doc.createTextNode(message);
+      if (messageKey) localizedText(caption, messageKey, messageParams);
+      appendLocalized(node, caption);
+    }
   };
   const render = record => {
     const node = doc.createElement('div');
@@ -252,20 +263,21 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
     if (record.tone === 'warning') node.dataset.tone = 'warning';
     if (record.task) node.dataset.variant = 'task';
     else if (record.variant) node.dataset.variant = record.variant;
-    if (record.slot === 'hint') { const dot = doc.createElement('span'); dot.className = 'ui-toast-dot'; node.append(dot); }
+    if (record.slot === 'hint') { const dot = doc.createElement('span'); dot.className = 'ui-toast-dot'; appendLocalized(node, dot); }
     else if (record.icon) glyph(node, record.icon, 'ui-icon ui-toast-icon');
     const text = doc.createElement('span');
     text.className = 'ui-toast-text';
-    writeText(text, record.title, record.message);
-    node.append(text);
+    writeText(text, record);
+    appendLocalized(node, text);
     if (record.task) {
       const bar = doc.createElement('div');
       bar.className = 'ui-toast-progress';
       bar.setAttribute('role', 'progressbar');
       bar.setAttribute('aria-label', record.title || record.message);
+      if (record.titleKey || record.messageKey) localizedAttribute(bar, 'aria-label', record.titleKey || record.messageKey, record.titleKey ? record.titleParams : record.messageParams);
       bar.setAttribute('aria-valuemin', '0');
       bar.setAttribute('aria-valuemax', '100');
-      node.append(bar);
+      appendLocalized(node, bar);
       record.bar = bar;
       paintProgress(record);
     }
@@ -277,13 +289,14 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
       button.dataset.size = 'sm';
       if (action.command) button.dataset.action = action.command;
       button.textContent = action.label;
+      if (action.labelKey) localizedText(button, action.labelKey, action.labelParams);
       if (action.tip) button.dataset.tooltip = action.tip;
       if (action.id) button.id = action.id;
       button.addEventListener('click', event => {
         if (!action.command) event.stopPropagation();
         try { action.run?.(event); } finally { if (action.dismiss !== false) dismiss(record.id); }
       });
-      node.append(button);
+      appendLocalized(node, button);
     }
     if (record.dismissible) {
       const close = doc.createElement('button');
@@ -291,10 +304,11 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
       close.className = 'ui-icon-button ui-toast-close';
       close.dataset.size = 'sm';
       close.setAttribute('aria-label', record.dismissLabel);
+      if (record.dismissLabelKey) localizedAttribute(close, 'aria-label', record.dismissLabelKey);
       glyph(close, 'close', 'ui-icon');
       if (!close.firstChild) close.textContent = '×';
       close.addEventListener('click', event => { event.stopPropagation(); dismiss(record.id); });
-      node.append(close);
+      appendLocalized(node, close);
     }
     // Hover and focus pause the timeout; leaving resumes it with the time left.
     const pause = () => { if (record.timer) { clearTimer(record.timer); record.timer = 0; record.remaining = Math.max(0, record.deadline - now()); } };
@@ -317,7 +331,7 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
   const present = record => {
     if (visible && visible !== record) { clearTimer(visible.timer); visible.timer = 0; visible.remaining = Math.max(0, (visible.deadline ?? 0) - now()); }
     visible = record;
-    element.replaceChildren(render(record));
+    replaceLocalized(element, render(record));
     openHost();
     arm(record, record.remaining ?? record.timeout);
     if (!record.announced) {
@@ -339,10 +353,11 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
   };
 
   function show({message = '', title = '', tone = 'info', slot: rank = null, variant = null, action = null, actions = null, timeout = null, dismissible = null,
-    icon: iconName = null, key = null, dismissLabel = null, onDismiss = null, task = false} = {}) {
+    icon: iconName = null, key = null, dismissLabel = null, onDismiss = null, task = false,
+    messageKey = null, messageParams = {}, titleKey = null, titleParams = {}} = {}) {
     const list = actions ?? (action ? [action] : []);
     const record = {
-      id: `toast-${++toastCount}`, message: String(message), title: String(title), tone, task, variant, actions: list, onDismiss,
+      id: `toast-${++toastCount}`, messageKey, messageParams, titleKey, titleParams, dismissLabelKey: dismissLabel === null ? 'overlays.dismiss' : null, message: String(message), title: String(title), tone, task, variant, actions: list, onDismiss,
       dismissLabel: dismissLabel ?? kitText(t, 'overlays.dismiss'),
       slot: rank ?? (tone === 'error' ? 'error' : 'toast'),
       // Errors and tasks stay until dismissed or done; an action earns a message more time to be read.
@@ -350,7 +365,7 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
       icon: iconName ?? TONE_ICONS[tone] ?? null,
       progress: null, timer: 0, remaining: null,
     };
-    record.key = key ?? `${tone}|${record.title}|${record.message}`;
+    record.key = key ?? `${tone}|${titleKey ?? record.title}|${messageKey ?? record.message}|${JSON.stringify(messageParams)}`;
     record.dismissible = dismissible ?? (record.timeout === 0 && !task);
     record.persistent = record.timeout === 0;
     const outcome = queue.push(record);
@@ -370,12 +385,13 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
       id: record.id,
       dismiss: () => dismiss(record.id),
       /** Rewrites the message's words (a live readout, a mode's step); it was announced once and is not announced again. */
-      update({title = record.title, message = record.message} = {}) {
+      update({title = record.title, message = record.message, titleKey = null, titleParams = {}, messageKey = null, messageParams = {}} = {}) {
         if (!records.has(record.id) || (String(title) === record.title && String(message) === record.message)) return;
+        Object.assign(record, {titleKey, titleParams, messageKey, messageParams});
         record.title = String(title);
         record.message = String(message);
         const text = record.node?.querySelector('.ui-toast-text');
-        if (text) writeText(text, record.title, record.message);
+        if (text) writeText(text, record);
         if (visible === record) place();
       },
       get visible() { return visible === record; },
@@ -399,9 +415,9 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
    * `confirmCancel()` may return false (or a promise of it) to keep going. The
    * caller's `signal` ends the task quietly when it aborts (at once if it already has).
    */
-  function task({title = '', meta = '', cancellable = true, cancelLabel = null, confirmCancel = null, onCancel = null, signal = null, delay = 150} = {}) {
+  function task({title = '', meta = '', titleKey = null, titleParams = {}, metaKey = null, metaParams = {}, cancellable = true, cancelLabel = null, confirmCancel = null, onCancel = null, signal = null, delay = 150} = {}) {
     const controller = new AbortController(), lifetime = new AbortController();
-    let record = null, progress = null, finished = false, text = {title, meta}, timer = 0;
+    let record = null, progress = null, finished = false, text = {title, meta, titleKey, titleParams, metaKey, metaParams}, timer = 0;
     const end = () => {
       finished = true;
       clearTimer(timer);
@@ -413,7 +429,7 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
       if (confirmCancel && (await confirmCancel()) === false) return;
       if (finished) return;
       end();
-      controller.abort(new DOMException('Cancelled', 'AbortError'));
+      controller.abort(messageError(new DOMException('', 'AbortError'), "errors.supportMedia.cancelled", {}));
       onCancel?.();
     };
     if (signal?.aborted) finished = true;
@@ -421,8 +437,8 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
       signal?.addEventListener('abort', end, {once: true, signal: lifetime.signal});
       timer = setTimer(() => {
         if (finished) return;
-        const handle = show({title: text.title, message: text.meta, task: true, key: `task-${++toastCount}`,
-          actions: cancellable ? [{label: cancelLabel ?? kitText(t, 'common.cancel'), run: () => { cancel(); }, dismiss: false}] : []});
+        const handle = show({title: text.title, titleKey: text.titleKey, titleParams: text.titleParams, message: text.meta, messageKey: text.metaKey, messageParams: text.metaParams, task: true, key: `task-${++toastCount}`,
+          actions: cancellable ? [{label: cancelLabel ?? kitText(t, 'common.cancel'), labelKey: cancelLabel === null ? 'common.cancel' : null, run: () => { cancel(); }, dismiss: false}] : []});
         record = records.get(handle.id);
         if (record) { record.progress = progress; paintProgress(record); }
       }, delay);
@@ -433,15 +449,19 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
         progress = value === null || value === undefined ? null : Number(value);
         if (record) { record.progress = progress; paintProgress(record); }
       },
-      update({title: nextTitle = text.title, meta: nextMeta = text.meta} = {}) {
-        text = {title: nextTitle, meta: nextMeta};
+      update({title: nextTitle = text.title, meta: nextMeta = text.meta, titleKey = null, titleParams = {}, metaKey = null, metaParams = {}} = {}) {
+        text = {title: nextTitle, meta: nextMeta, titleKey, titleParams, metaKey, metaParams};
         if (!record) return;
         // Kept on the record too: when a message that displaced the task goes, the task re-renders from it.
         record.title = String(nextTitle);
         record.message = String(nextMeta);
+        Object.assign(record, {titleKey, titleParams, messageKey: metaKey, messageParams: metaParams});
         const node = record.node?.querySelector('.ui-toast-text');
-        if (node) writeText(node, nextTitle, nextMeta);
-        record.bar?.setAttribute('aria-label', record.title || record.message);
+        if (node) writeText(node, record);
+        if (record.bar) {
+          if (titleKey || metaKey) localizedAttribute(record.bar, 'aria-label', titleKey || metaKey, titleKey ? titleParams : metaParams);
+          else { clearTranslation(record.bar, 'aria-label'); record.bar.setAttribute('aria-label', record.title || record.message); }
+        }
       },
       done({message = '', tone = 'success', ...rest} = {}) { if (finished) return; end(); if (message) show({message, tone, ...rest}); },
       fail(error) { if (finished) return; end(); fail(error); },
@@ -452,16 +472,18 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
   /** Shows an error the way the app reports failures: aborts are silent, user preconditions are warnings. */
   function fail(error, options = {}) {
     if (error?.name === 'AbortError') return null;
-    const message = error?.message || String(error);
-    if (error instanceof UserActionError) return show({message, tone: 'warning', ...options});
+    const message = errorText(error), metadata = errorMessageData(error);
+    if (error instanceof UserActionError) return show({message, ...metadata, tone: 'warning', ...options});
     const actions = feedback ? [{label: feedback.label, run: () => feedback.run(error), variant: 'ghost'}] : [];
-    return show({message, tone: 'error', actions, ...options});
+    return show({message, ...metadata, tone: 'error', actions, ...options});
   }
 
+  const stopLanguage = interfaceLocalization.subscribe(() => queueMicrotask(() => { if (visible) place(); }));
   return {
     host: element, live, show, task, fail, raise, dismiss, announce,
+    destroy() { stopLanguage(); for (const id of [...records.keys()]) dismiss(id); element.remove(); live.polite.remove(); live.assertive.remove(); },
     /** Places the shown message again (the stage header changed size or content). */
-    reposition() { if (visible && element.parentNode === home) place(); },
+    reposition() { if (visible) place(); },
     /** Dismisses every message, or only those of the given tones (a press on the canvas clears info messages: clear({tones: ['info']})). */
     clear({tones = null} = {}) {
       for (const [id, record] of [...records]) if (!tones || tones.includes(record.tone)) dismiss(id);

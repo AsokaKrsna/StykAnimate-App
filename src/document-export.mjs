@@ -1,3 +1,5 @@
+import {restoreMessageError, messageError} from './localized-error.mjs';
+
 import {documentChunks} from './document-transport.mjs';
 import {drawingBarrier} from './drawing-resources.mjs';
 import {codecJob} from './codec-job.mjs';
@@ -15,7 +17,7 @@ async function yieldToInput() {
 export class DocumentExporter {
   constructor({baseURL = globalThis.location?.origin, token = globalThis.stykDesktop?.apiToken || '', targetRecords = 2000,
     targetBytes = 1024 * 1024, timeoutMs = 300000} = {}) {
-    if (!baseURL) throw new Error('Document export requires the local file service URL.');
+    if (!baseURL) throw messageError(new Error(''), "errors.documentExport.documentExportRequiresTheLocalFileServiceUrl", {});
     this.baseURL = new URL(baseURL, globalThis.location?.href).origin;
     this.token = token;
     this.targetRecords = targetRecords;
@@ -28,9 +30,9 @@ export class DocumentExporter {
 
   /** @returns {Promise<Blob>} Native .styk/.stkz or Pivot .piv/.stk bytes. */
   async export(report, {sourceId, format = 'styk', name, figureTypeId, figureUid, figureUids, tick, signal, getRevision} = {}) {
-    if (this.disposed) throw new Error('The document exporter has been disposed.');
-    if (!report || typeof report !== 'object') throw new TypeError('Export requires an editable document.');
-    if (!['piv', 'stk', 'styk', 'stkz', 'stykmov'].includes(format)) throw new Error('Choose a .piv, .stk, .styk, .stkz, or .stykmov export.');
+    if (this.disposed) throw messageError(new Error(''), "errors.documentExport.theDocumentExporterHasBeenDisposed", {});
+    if (!report || typeof report !== 'object') throw messageError(new TypeError(''), "errors.documentExport.exportRequiresAnEditableDocument", {});
+    if (!['piv', 'stk', 'styk', 'stkz', 'stykmov'].includes(format)) throw messageError(new Error(''), "errors.documentExport.chooseAPivStkStykStkzOrStykmov", {});
     if (signal?.aborted) throw abortError();
     const originalRevision = getRevision?.(), started = performance.now();
     await drawingBarrier(report,{signal});
@@ -41,14 +43,14 @@ export class DocumentExporter {
     const fail = error => { failure = error; backendJob.cancel(); pending?.reject(error); pending = null; worker.terminate(); };
     const job = {cancel: () => fail(abortError())};
     this.jobs.add(job);
-    worker.addEventListener('error', event => { event.preventDefault(); fail(Object.assign(new Error(event.message || 'The document export worker stopped.'), { telemetryCode: 'worker_failed', telemetryStage: 'serialize' })); });
-    worker.addEventListener('messageerror', () => fail(Object.assign(new Error('The document snapshot could not be transferred.'), { telemetryCode: 'snapshot_failed', telemetryStage: 'prepare' })));
+    worker.addEventListener('error', event => { event.preventDefault(); fail(Object.assign((event.message ? new Error(event.message) : messageError(new Error(''), "errors.documentExport.theDocumentExportWorkerStopped")), { telemetryCode: 'worker_failed', telemetryStage: 'serialize' })); });
+    worker.addEventListener('messageerror', () => fail(Object.assign(messageError(new Error(''), "errors.documentExport.theDocumentSnapshotCouldNotBeTransferred", {}), { telemetryCode: 'snapshot_failed', telemetryStage: 'prepare' })));
     worker.addEventListener('message', event => {
       if (!pending || pending.id !== event.data?.id) return;
       const request = pending; pending = null;
       if (event.data.ok) request.resolve(event.data);
       else {
-        const error = new Error(event.data.error?.message || 'Document export failed.');
+        const error = restoreMessageError((event.data.error?.message ? new Error(event.data.error?.message) : messageError(new Error(''), "errors.documentExport.documentExportFailed")), event.data.error);
         error.code = event.data.error?.code; error.status = event.data.error?.status;
         error.telemetryCode = event.data.error?.telemetryCode; error.telemetryStage = event.data.error?.telemetryStage;
         error.telemetryFrames=event.data.error?.telemetryFrames;error.name=event.data.error?.name||'Error';
@@ -74,7 +76,7 @@ export class DocumentExporter {
     };
     const abort = () => fail(abortError());
     signal?.addEventListener('abort', abort, {once: true});
-    const timer = this.timeoutMs > 0 ? setTimeout(() => fail(Object.assign(new Error('Document export timed out.'), { telemetryCode: 'timeout', telemetryStage: 'serialize' })), this.timeoutMs) : null;
+    const timer = this.timeoutMs > 0 ? setTimeout(() => fail(Object.assign(messageError(new Error(''), "errors.documentExport.documentExportTimedOut", {}), { telemetryCode: 'timeout', telemetryStage: 'serialize' })), this.timeoutMs) : null;
     try {
       const link = backendJob.link();
       await request('start', {options: {sourceId, format, name, figureTypeId, figureUid, figureUids, tick, baseURL: this.baseURL, token: this.token, jobId: backendJob.id, ...link.fields}}, link.transfer);
@@ -97,7 +99,7 @@ export class DocumentExporter {
       const snapshotMs = performance.now() - snapshotStarted;
       const result = await request('export');
       check();
-      if (!(result.blob instanceof Blob)) throw new Error('The file service returned no exported document.');
+      if (!(result.blob instanceof Blob)) throw messageError(new Error(''), "errors.documentExport.theFileServiceReturnedNoExportedDocument", {});
       this.lastTimings = {format, chunks: count, snapshot_ms: snapshotMs, max_chunk_prepare_ms: prepMax,
         max_chunk_post_ms: postMax, main_work_ms: mainWork, total_ms: performance.now() - started, ...result.timings};
       backendJob.finish();

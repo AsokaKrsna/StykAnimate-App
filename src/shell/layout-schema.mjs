@@ -1,3 +1,4 @@
+import {messageError} from '../localized-error.mjs';
 /**
  * Workspace layouts as versioned data (schema v2). Pure functions: no DOM and
  * no I/O; layout-store.mjs reads and writes, layout-solver.mjs fits a layout
@@ -146,7 +147,7 @@ export function normalizeMode(mode) {
 
 /** Operations on one workspace refuse to guess it: a Build arrangement read as Animate would lose Structure. */
 function requireMode(mode) {
-  if (mode !== 'build' && !MODES.includes(mode)) throw new TypeError(`Unknown workspace: ${String(mode)}`);
+  if (mode !== 'build' && !MODES.includes(mode)) throw messageError(new TypeError(''), "errors.layoutSchema.unknownWorkspace", {value: String(mode)});
   return normalizeMode(mode);
 }
 

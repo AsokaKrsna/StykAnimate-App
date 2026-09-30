@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {FOLLOW_DEFAULTS,FOLLOW_FRAME_LIMIT,sampleFollow,validateFollowTargets} from './camera-follow.mjs';
 /** Saved camera motion is small, immutable and sampled by timeline time only.
  * No renderer state, random generator state, or per-tick pose allocation lives here.
@@ -20,26 +21,26 @@ const WHOLE=new Set(['seed','fadeIn','fadeOut','lookAhead','lag']);
 export const motionParameterKeys=type=>Object.keys(type==='follow'?FOLLOW_DEFAULTS:defaults);
 export const isWholeMotionParameter=key=>WHOLE.has(key);
 export function createCameraMotion(type,id,start=0,duration=24,{targets}={}) {
-  if(!Object.hasOwn(CAMERA_MOTION_TYPES,type))throw new Error('Choose a camera motion preset.');
+  if(!Object.hasOwn(CAMERA_MOTION_TYPES,type))throw messageError(new Error(''), "errors.cameraMotion.chooseACameraMotionPreset", {});
   if(type==='follow'){validateFollowTargets(targets);return {id,type,start,duration,enabled:true,targets:targets.map(t=>({uid:t.uid,weight:t.weight})),params:{...FOLLOW_DEFAULTS}};}
   const preset=type==='handheld'?{moveX:3,moveY:2,roll:.3,frequency:.7}:type==='wobble'?{moveX:5,moveY:2,roll:2,frequency:1.5}:type==='impact'?{moveX:18,moveY:18,roll:1.5,zoom:.04,fadeIn:0,fadeOut:0,frequency:6}:type==='pulse'?{moveX:0,moveY:0,roll:0,zoom:.08,fadeIn:0,fadeOut:0}:{};
   return {id,type,start,duration,enabled:true,params:{...defaults,...preset}};
 }
 export function validateCameraMotion(state) {
   if(state===undefined)return;
-  if(!state||state.version!==1||!Array.isArray(state.clips)||state.clips.length>CAMERA_MOTION_LIMIT)throw new Error('Invalid camera motion table (maximum 256 clips).');
+  if(!state||state.version!==1||!Array.isArray(state.clips)||state.clips.length>CAMERA_MOTION_LIMIT)throw messageError(new Error(''), "errors.cameraMotion.invalidCameraMotionTableMaximum256Clips", {});
   const ids=new Set();
   for(const clip of state.clips){
-    if(!clip||typeof clip.id!=='string'||!/^[\w-]{1,80}$/.test(clip.id)||ids.has(clip.id)||!Object.hasOwn(CAMERA_MOTION_TYPES,clip.type)||typeof clip.enabled!=='boolean'||!Number.isInteger(clip.start)||clip.start<0||!Number.isInteger(clip.duration)||clip.duration<1||clip.start+clip.duration>10000000)throw new Error('Invalid camera motion clip.');
+    if(!clip||typeof clip.id!=='string'||!/^[\w-]{1,80}$/.test(clip.id)||ids.has(clip.id)||!Object.hasOwn(CAMERA_MOTION_TYPES,clip.type)||typeof clip.enabled!=='boolean'||!Number.isInteger(clip.start)||clip.start<0||!Number.isInteger(clip.duration)||clip.duration<1||clip.start+clip.duration>10000000)throw messageError(new Error(''), "errors.cameraMotion.invalidCameraMotionClip", {});
     ids.add(clip.id);
-    if(clip.mutedRanges!==undefined&&(!Array.isArray(clip.mutedRanges)||clip.mutedRanges.length>1024||clip.mutedRanges.some(r=>!Number.isInteger(r.start)||!Number.isInteger(r.end)||r.start<0||r.end<=r.start)))throw new Error('Invalid baked camera range.');
+    if(clip.mutedRanges!==undefined&&(!Array.isArray(clip.mutedRanges)||clip.mutedRanges.length>1024||clip.mutedRanges.some(r=>!Number.isInteger(r.start)||!Number.isInteger(r.end)||r.start<0||r.end<=r.start)))throw messageError(new Error(''), "errors.cameraMotion.invalidBakedCameraRange", {});
     const keys=motionParameterKeys(clip.type);
-    if(clip.type==='follow'){validateFollowTargets(clip.targets);if(clip.duration>FOLLOW_FRAME_LIMIT)throw new Error(`A follow clip can last up to ${FOLLOW_FRAME_LIMIT.toLocaleString('en-US')} frames.`);}
-    else if(clip.targets!==undefined)throw new Error('Only follow clips have followed figures.');
-    if(!clip.params||Object.keys(clip.params).some(key=>!keys.includes(key)))throw new Error('Invalid camera motion parameters.');
+    if(clip.type==='follow'){validateFollowTargets(clip.targets);if(clip.duration>FOLLOW_FRAME_LIMIT)throw messageError(new Error(''), "errors.cameraMotion.aFollowClipCanLastUpToFrames", {value: FOLLOW_FRAME_LIMIT.toLocaleString('en-US')});}
+    else if(clip.targets!==undefined)throw messageError(new Error(''), "errors.cameraMotion.onlyFollowClipsHaveFollowedFigures", {});
+    if(!clip.params||Object.keys(clip.params).some(key=>!keys.includes(key)))throw messageError(new Error(''), "errors.cameraMotion.invalidCameraMotionParameters", {});
     for(const key of keys){
       const [label,min,max]=MOTION_PARAMETERS[key],value=clip.params[key];
-      if(typeof value!=='number'||!Number.isFinite(value)||value<min||value>max||['seed','fadeIn','fadeOut','lookAhead'].includes(key)&&!Number.isInteger(value))throw new Error(`${label} must be between ${min} and ${max}.`);
+      if(typeof value!=='number'||!Number.isFinite(value)||value<min||value>max||['seed','fadeIn','fadeOut','lookAhead'].includes(key)&&!Number.isInteger(value))throw messageError(new Error(''), "errors.cameraMotion.mustBeBetweenAnd", {label: label, min: min, max: max});
     }
   }
 }

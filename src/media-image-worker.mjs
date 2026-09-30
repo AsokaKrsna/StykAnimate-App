@@ -1,8 +1,10 @@
+import {errorMessageData, messageError} from './localized-error.mjs';
+
 import {applySpriteColorKey, mediaImageFormat, preserveMediaBackground, MAX_MEDIA_BYTES} from './media-authoring.mjs';
 
 const validateDimensions = (width, height, maxPixels) => {
   if (![width, height].every(value => Number.isInteger(value) && value > 0) || width * height > maxPixels)
-    throw new Error(`Image dimensions must be positive and contain at most ${maxPixels.toLocaleString()} pixels.`);
+    throw messageError(new Error(''), "errors.mediaAuthoring.imageDimensionsMustBePositiveAndContainAt", {value: maxPixels.toLocaleString()});
 };
 
 // Native formats expose dimensions before decompression; reject oversized inputs
@@ -28,28 +30,28 @@ self.onmessage = async ({data}) => {
   try {
     const {file, maxPixels, preserveOpaqueBackground} = data;
     if (!(file instanceof Blob) || !file.size || file.size > MAX_MEDIA_BYTES)
-      throw new Error('Image files must contain 1 byte to 64 MB.');
+      throw messageError(new Error(''), "errors.mediaAuthoring.imageFilesMustContain1ByteTo64", {});
     const header = new Uint8Array(await file.slice(0,32).arrayBuffer()), format = mediaImageFormat(header);
-    if (!format) throw new Error('Choose a PNG, JPEG, GIF, BMP, or WebP image.');
+    if (!format) throw messageError(new Error(''), "errors.mediaAuthoring.chooseAPngJpegGifBmpOrWebp", {});
     validateHeaderDimensions(header, format, maxPixels);
     try { bitmap = await createImageBitmap(file); }
-    catch { throw new Error('The image could not be decoded. It may be damaged or unsupported.'); }
+    catch { throw messageError(new Error(''), "errors.mediaImageWorker.theImageCouldNotBeDecodedItMay", {}); }
     const width = bitmap.width, height = bitmap.height;
     validateDimensions(width, height, maxPixels);
     const preserve = preserveMediaBackground(format, preserveOpaqueBackground);
     surface = new OffscreenCanvas(width, height);
     const context = surface.getContext('2d', {willReadFrequently: !preserve});
-    if (!context) throw new Error('The image decoding canvas is unavailable.');
+    if (!context) throw messageError(new Error(''), "errors.mediaImageWorker.theImageDecodingCanvasIsUnavailable", {});
     context.drawImage(bitmap, 0, 0); bitmap.close(); bitmap = null;
     if (!preserve) {
       const pixels = context.getImageData(0, 0, width, height);
       if (applySpriteColorKey(pixels.data, width, height)) context.putImageData(pixels, 0, 0);
     }
     const png = await surface.convertToBlob({type: 'image/png'});
-    if (png.size > MAX_MEDIA_BYTES) throw new Error('The decoded image exceeds the 64 MB embedded asset limit.');
+    if (png.size > MAX_MEDIA_BYTES) throw messageError(new Error(''), "errors.mediaImageWorker.theDecodedImageExceedsThe64MbEmbedded", {});
     self.postMessage({ok: true, png, width, height});
   } catch (error) {
-    self.postMessage({ok: false, error: error.message});
+    self.postMessage({ok: false, error: error.message, ...errorMessageData(error)});
   } finally {
     bitmap?.close();
     if (surface) surface.width = surface.height = 1;

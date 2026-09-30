@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Independent layer poses reference native frames; pose channels never copy the
  * entire imported animation or replace unaffected layers with a baked movie. */
 import {keyEasing} from './keyframe-easing.mjs';
@@ -79,7 +80,7 @@ export function buildVirtualPoseTrack(report, channel, { resolveFrame } = {}) {
   const frames = keys.map((key, i) => {
     const blank = key.value === null || key.value?.frameId === null;
     const source = blank ? null : lookup(key.value?.frameId);
-    if (!blank && !source) throw new Error(`The pose source for key ${key.id} is missing.`);
+    if (!blank && !source) throw messageError(new Error(''), "errors.animationPose.thePoseSourceForKeyIsMissing", {id: key.id});
     const next = keys[i + 1];
     return {
       ...(source || blankPoseFrame(report.keyframes[0])),
@@ -139,7 +140,7 @@ export function handleOrientation(object, handle, definitions, handleIndices) {
 export function composePoseChannels(report, baseFrame, tick, options = {}) {
   const channels = (report._styk?.animation?.channels || []).filter(channel => channel.property === 'pose');
   if (!channels.length || !baseFrame) return baseFrame;
-  if (typeof options.sampleNative !== 'function') throw new Error('Pose channels require the native frame evaluator.');
+  if (typeof options.sampleNative !== 'function') throw messageError(new Error(''), "errors.animationPose.poseChannelsRequireTheNativeFrameEvaluator", {});
   let result = baseFrame;
   const replacements = new Map();
   const nativePropertyOwners = new Set(channels.filter(channel => channel.nativeProperties)
@@ -198,7 +199,7 @@ export function composePoseChannels(report, baseFrame, tick, options = {}) {
   const definitions = new Map(report.figure_types.map(figure => [figure.figure_type_id, figure]));
   const geometry = new WeakMap(), handleIndices = new Map();
   const worldRoot = record => {
-    if (typeof options.resolveGeometry !== 'function') throw new Error('A disappearing joined parent requires native geometry resolution.');
+    if (typeof options.resolveGeometry !== 'function') throw messageError(new Error(''), "errors.animationPose.aDisappearingJoinedParentRequiresNativeGeometryResolution", {});
     let resolved = geometry.get(record.source);
     if (!resolved) geometry.set(record.source, resolved = {
       geometry: options.resolveGeometry(report, record.source),
@@ -227,7 +228,7 @@ export function composePoseChannels(report, baseFrame, tick, options = {}) {
     if (done.has(start)) continue;
     const path = [], visiting = new Set(); let slot = start;
     while (!done.has(slot)) {
-      if (visiting.has(slot)) throw new Error('These layer poses create a cyclic figure attachment.');
+      if (visiting.has(slot)) throw messageError(new Error(''), "errors.animationPose.theseLayerPosesCreateACyclicFigureAttachment", {});
       visiting.add(slot); path.push(slot);
       const parent = objects[slot].join?.target_object_slot;
       if (parent === undefined) break;

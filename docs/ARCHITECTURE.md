@@ -249,3 +249,17 @@ surfaces and worker publication; `drawing-controller.mjs` owns pointer gestures.
 `drawing-view.mjs` extends the shared inspector primitives and tool rail.
 Pixel history participates in the existing command stream and its shared
 undo/redo byte budget. See [drawing ownership and workflow](DRAWING.md).
+
+## Interface localization
+
+`src/localization.mjs` is the one DOM-free lookup/fallback and Intl formatting
+service. English messages have exclusive feature ownership; independent JSON packs
+supply locale metadata and translations. `src/localization-bindings.mjs` connects
+presentation keys explicitly at UI owners and updates retained captions/attributes
+on language changes. Numeric drafts, editor documents, command IDs/history, canvas
+coordinates and chronological timeline order do not depend on locale. Worker errors
+retain diagnostic identity and transfer message metadata through existing replies;
+Electron shares the catalog/service through its native facade and existing settings
+IPC. Generated registry/context/preload blocks belong to integration, not individual
+translators. [LOCALIZATION.md](LOCALIZATION.md) defines the lookup, variant, plural,
+RTL and validation contracts; [TRANSLATING.md](TRANSLATING.md) defines pack ownership.

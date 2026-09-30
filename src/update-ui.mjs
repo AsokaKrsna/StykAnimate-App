@@ -1,3 +1,7 @@
+import {messageTuple, localizedText, messageHTML, localizedAttribute, localizedMarkup, appendLocalized} from './localization-bindings.mjs';
+
+import {t as interfaceText} from './localization.mjs';
+
 export class UpdateUI {
   constructor(desktop, { onRestart, document: doc = document } = {}) {
     this.desktop = desktop;
@@ -5,9 +9,9 @@ export class UpdateUI {
     this.element = doc.createElement('aside');
     this.element.className = 'update-notice';
     this.element.hidden = true;
-    this.element.setAttribute('aria-label', 'App update');
-    this.element.innerHTML = `<div class="update-copy" role="status" aria-live="polite"><strong></strong><span></span></div><progress max="100" aria-label="Update download progress"></progress><div class="update-actions"><button class="button primary" type="button"></button><button class="button subtle update-dismiss" type="button" aria-label="Dismiss update notice">Later</button></div>`;
-    doc.body.append(this.element);
+    localizedAttribute(this.element, 'aria-label', "updateUi.appUpdate", {});
+    localizedMarkup(this.element, `<div class="update-copy" role="status" aria-live="polite"><strong></strong><span></span></div><progress max="100" aria-label="Update download progress" data-i18n-aria-label="updateUi.updateDownloadProgress"></progress><div class="update-actions"><button class="button primary" type="button"></button><button class="button subtle update-dismiss" type="button" aria-label="Dismiss update notice" data-i18n-aria-label="updateUi.dismissUpdateNotice" data-i18n="updateUi.later">${messageHTML("updateUi.later", {})}</button></div>`);
+    appendLocalized(doc.body, this.element);
     this.title = this.element.querySelector('strong');
     this.detail = this.element.querySelector('.update-copy span');
     this.progress = this.element.querySelector('progress');
@@ -20,7 +24,7 @@ export class UpdateUI {
         if (this.state.status === 'ready') await onRestart?.();
         else if (this.state.status === 'unavailable') await desktop.openUpdateReleases();
         else await this.check();
-      } catch { this.render({ ...this.state, status: 'error', message: 'The update could not be completed. Please try again.' }); }
+      } catch { this.render({ ...this.state, status: 'error', message: interfaceText("updateUi.theUpdateCouldNotBeCompletedPleaseTry"), messageKey: "updateUi.theUpdateCouldNotBeCompletedPleaseTry" }); }
       finally { this.action.disabled = false; }
     };
     let received = false;
@@ -43,20 +47,20 @@ export class UpdateUI {
     this.element.hidden = !(active || this.manual || status === 'error') || this.dismissed === status;
     if (status === 'idle') this.element.hidden = true;
     const labels = {
-      checking: ['Checking for updates…', `Installed version ${currentVersion}`],
+      checking: messageTuple([interfaceText("updateUi.checkingForUpdates"), `Installed version ${currentVersion}`], {0: {key: "updateUi.checkingForUpdates", params: {}}}),
       downloading: [`Downloading StykAnimate ${version}`, `${Math.floor(state.percent || 0)}%${state.total ? ` · ${(state.transferred / 1048576).toFixed(1)} of ${(state.total / 1048576).toFixed(1)} MB` : ''} · You can keep working.`],
-      ready: [`StykAnimate ${version} is ready`, 'Restart to install the update. You can save your work first.'],
-      restarting: ['Restarting StykAnimate…', 'Installing the downloaded update.'],
-      current: ['You’re up to date', `StykAnimate ${currentVersion}`],
-      unavailable: ['Automatic updates', message],
-      error: ['Update interrupted', message],
+      ready: messageTuple([`StykAnimate ${version} is ready`, interfaceText("updateUi.restartToInstallTheUpdateYouCanSave")], {1: {key: "updateUi.restartToInstallTheUpdateYouCanSave", params: {}}}),
+      restarting: [interfaceText("updateUi.restartingStykanimate"), interfaceText("updateUi.installingTheDownloadedUpdate")],
+      current: messageTuple([interfaceText("updateUi.youReUpToDate"), `StykAnimate ${currentVersion}`], {0: {key: "updateUi.youReUpToDate", params: {}}}),
+      unavailable: messageTuple([interfaceText("updateUi.automaticUpdates"), message], {0: {key: "updateUi.automaticUpdates", params: {}}}),
+      error: messageTuple([interfaceText("updateUi.updateInterrupted"), message], {0: {key: "updateUi.updateInterrupted", params: {}}}),
     };
     [this.title.textContent, this.detail.textContent] = labels[status] || ['', ''];
     this.progress.hidden = status !== 'downloading';
     this.progress.value = state.percent || 0;
     this.action.hidden = !['ready', 'error', 'unavailable'].includes(status);
-    this.action.textContent = status === 'ready' ? 'Restart to update' : status === 'unavailable' ? 'Open downloads' : 'Try again';
+    localizedText(this.action, (status === 'ready' ? "updateUi.restartToUpdate" : (status === 'unavailable' ? "updateUi.openDownloads" : "updateUi.tryAgain")), (status === 'ready' ? {} : (status === 'unavailable' ? {} : {})));
     this.dismiss.hidden = status === 'restarting';
-    this.dismiss.textContent = status === 'ready' || status === 'downloading' ? 'Later' : 'Dismiss';
+    localizedText(this.dismiss, (status === 'ready' || status === 'downloading' ? "updateUi.later" : "updateUi.dismiss"), (status === 'ready' || status === 'downloading' ? {} : {}));
   }
 }

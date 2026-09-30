@@ -1,3 +1,10 @@
+import {presentError} from './error-presentation.mjs';
+import {connectTranslations, replaceLocalized, tupleMessages, messageTuple, localizedMarkup, messageHTML, appendLocalized, messageAttributes, localizedAttribute, localizedText} from './localization-bindings.mjs';
+
+import {interfaceLocalization, t as interfaceText} from './localization.mjs';
+
+import {messageError} from './localized-error.mjs';
+
 import {drawingBarrier} from './drawing-resources.mjs';
 import {icon} from './icons.mjs';
 import {HotkeyManager} from './hotkeys.mjs';
@@ -10,9 +17,8 @@ import {setAttr, setProp, setText} from './ui/dom-write.mjs';
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const folderIcon = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>';
-const KINDS = {folder: 'Folder', movieclip: 'Movieclip', set: 'Figure set', figure: 'Figure'};
-const label = item => KINDS[item.kind] ?? 'Figure';
-const plural = (count, one, many = `${one}s`) => `${count.toLocaleString()} ${count === 1 ? one : many}`;
+const KIND_KEYS = {folder:"userLibrary.folder", movieclip:"userLibrary.movieclip", set:"userLibrary.figureSet", figure:"userLibrary.figure"};
+const label = item => interfaceText(KIND_KEYS[item.kind] ?? "userLibrary.figure");
 const parentOf = path => path.split('/').slice(0, -1).join('/');
 // Electron prefixes what the main process throws; the person only needs the sentence.
 const plain = error => String(error?.message ?? error).replace(/^Error invoking remote method '[^']*': (?:Error: )?/, '');
@@ -44,19 +50,20 @@ export class UserLibrary {
     // The kit's parts (features/library.css): the source switch, a search with the kind and the library menu, where
     // you are, the cards as one listbox, then a pinned foot with the status line and Add selection.
     this.container.dataset.source = 'mine'; this.container.dataset.background = 'auto';
-    this.container.innerHTML = `<div class="library-head">
-      <div class="library-source ui-segmented" data-size="sm" data-fill role="group" aria-label="Library source"><button type="button" class="ui-segmented-item" data-library-source="mine" aria-pressed="true">My library</button><button type="button" class="ui-segmented-item" data-library-source="public" aria-pressed="false">${icon('globe')}Community library</button></div>
-      <div class="library-tools"><label class="library-search ui-field" data-size="sm">${icon('search')}<input class="ui-field-input" type="search" aria-label="Search library" placeholder="Search" spellcheck="false" autocomplete="off"></label><span class="ui-select library-kind-filter" data-size="sm"><select aria-label="Show"><option value="all">All</option><option value="figure">Figures</option><option value="movieclip">Movieclips</option></select>${icon('chevron-down')}</span><button type="button" class="ui-icon-button" data-size="sm" data-library-menu aria-haspopup="menu" aria-label="Library options" title="Library options">${icon('more')}</button></div>
-      <div class="library-location"><nav class="library-breadcrumbs ui-crumb" aria-label="Library folders"></nav><span class="library-origin">${icon('globe')}<span>stykanimate.com</span></span><span class="library-count"></span><button type="button" class="ui-icon-button library-new-folder" data-size="sm" data-library-action="folder" aria-label="New library folder" title="New folder">${icon('folder-plus')}</button></div>
+    localizedMarkup(this.container, `<div class="library-head">
+      <div class="library-source ui-segmented" data-size="sm" data-fill role="group" aria-label="Library source" data-i18n-aria-label="userLibrary.librarySource"><button type="button" class="ui-segmented-item" data-library-source="mine" aria-pressed="true" data-i18n="userLibrary.myLibrary">${messageHTML("userLibrary.myLibrary", {})}</button><button type="button" class="ui-segmented-item" data-library-source="public" aria-pressed="false">${icon('globe')}${messageHTML("userLibrary.communityLibrary", {})}</button></div>
+      <div class="library-tools"><label class="library-search ui-field" data-size="sm">${icon('search')}<input class="ui-field-input" type="search" aria-label="Search library" placeholder="Search" spellcheck="false" autocomplete="off" data-i18n-aria-label="userLibrary.searchLibrary" data-i18n-placeholder="common.search"></label><span class="ui-select library-kind-filter" data-size="sm"><select aria-label="Show" data-i18n-aria-label="userLibrary.show"><option value="all" data-i18n="userLibrary.all">${messageHTML("userLibrary.all", {})}</option><option value="figure" data-i18n="userLibrary.figures">${messageHTML("userLibrary.figures", {})}</option><option value="movieclip" data-i18n="userLibrary.movieclips">${messageHTML("userLibrary.movieclips", {})}</option></select>${icon('chevron-down')}</span><button type="button" class="ui-icon-button" data-size="sm" data-library-menu aria-haspopup="menu" aria-label="Library options" title="Library options" data-i18n-aria-label="userLibrary.libraryOptions" data-i18n-title="userLibrary.libraryOptions">${icon('more')}</button></div>
+      <div class="library-location"><nav class="library-breadcrumbs ui-crumb" aria-label="Library folders" data-i18n-aria-label="userLibrary.libraryFolders"></nav><span class="library-origin">${icon('globe')}<span data-i18n="userLibrary.stykanimateCom">stykanimate.com</span></span><span class="library-count"></span><button type="button" class="ui-icon-button library-new-folder" data-size="sm" data-library-action="folder" aria-label="New library folder" title="New folder" data-i18n-aria-label="userLibrary.newLibraryFolder" data-i18n-title="userLibrary.newFolder">${icon('folder-plus')}</button></div>
     </div>
-    <div class="library-content"><div class="library-grid" role="listbox" aria-label="My library"></div><div class="library-empty ui-empty" hidden></div></div>
-    <div class="library-foot"><p class="library-message" role="status" aria-live="polite"></p><button type="button" class="ui-button library-add" data-variant="outline" data-library-action="save">${icon('plus')}<span class="ui-label">Add selection</span></button><button type="button" class="ui-button library-website" data-variant="ghost" data-size="sm" data-library-action="website">${icon('link')}<span class="ui-label">Browse stykanimate.com/library</span></button></div>`;
+    <div class="library-content"><div class="library-grid" role="listbox" aria-label="My library" data-i18n-aria-label="userLibrary.myLibrary"></div><div class="library-empty ui-empty" hidden></div></div>
+    <div class="library-foot"><p class="library-message" role="status" aria-live="polite"></p><button type="button" class="ui-button library-add" data-variant="outline" data-library-action="save">${icon('plus')}<span class="ui-label" data-i18n="userLibrary.addSelection">${messageHTML("userLibrary.addSelection", {})}</span></button><button type="button" class="ui-button library-website" data-variant="ghost" data-size="sm" data-library-action="website">${icon('link')}<span class="ui-label" data-i18n="userLibrary.browseStykanimateComLibrary">${messageHTML("userLibrary.browseStykanimateComLibrary", {})}</span></button></div>`);
     // Properties' footer: Add to library, shown with the Properties panel.
     this.propertySave = document.createElement('div'); this.propertySave.className = 'properties-library-save';
-    this.propertySave.innerHTML = `<button type="button" class="button" data-library-action="save">${icon('plus')} Add to library</button>`;
+    localizedMarkup(this.propertySave, `<button type="button" class="button" data-library-action="save">${icon('plus')} ${messageHTML("userLibrary.addToLibrary", {})}</button>`);
     (document.getElementById('properties-panel') ?? this.container.parentElement)?.append(this.propertySave);
+    connectTranslations(this.propertySave);
     this.roots = [this.container, this.propertySave];
-    this.dialog = document.createElement('dialog'); this.dialog.className = 'library-dialog'; document.body.append(this.dialog);
+    this.dialog = document.createElement('dialog'); this.dialog.className = 'library-dialog'; appendLocalized(document.body, this.dialog);
     this.grid = this.container.querySelector('.library-grid'); this.message = this.container.querySelector('.library-message');
     this.content = this.container.querySelector('.library-content'); this.empty = this.container.querySelector('.library-empty');
     this.input = this.container.querySelector('input'); this.kindSelect = this.container.querySelector('.library-kind-filter select');
@@ -118,8 +125,8 @@ export class UserLibrary {
   /** Removing words: the desktop moves to the Recycle Bin; the browser's library has none, so removing deletes. */
   get bin() {
     return this.desktop?.inBrowser
-      ? {menu: 'Delete', dialog: 'will be deleted from this browser’s library', button: 'Delete', done: 'Deleted'}
-      : {menu: 'Move to Recycle Bin', dialog: 'will move to the Recycle Bin', button: 'Move to Recycle Bin', done: 'Moved to Recycle Bin'};
+      ? {menu: interfaceText("common.delete"), menuKey:"common.delete", dialog: interfaceText("userLibrary.willBeDeletedFromThisBrowserSLibrary"), dialogKey:"userLibrary.willBeDeletedFromThisBrowserSLibrary", button: interfaceText("common.delete"), buttonKey:"common.delete", done: interfaceText("userLibrary.deleted"), doneKey:"userLibrary.deleted"}
+      : {menu: interfaceText("userLibrary.moveToRecycleBin"), menuKey:"userLibrary.moveToRecycleBin", dialog: interfaceText("userLibrary.willMoveToTheRecycleBin"), dialogKey:"userLibrary.willMoveToTheRecycleBin", button: interfaceText("userLibrary.moveToRecycleBin"), buttonKey:"userLibrary.moveToRecycleBin", done: interfaceText("userLibrary.movedToRecycleBin"), doneKey:"userLibrary.movedToRecycleBin"};
   }
   get publicItems() {
     const names = new Map((this.publicCatalog?.categories ?? []).map(category => [category.id, category.name]));
@@ -141,12 +148,13 @@ export class UserLibrary {
   }
 
   // ---- Showing ----
-  async run(operation) { try { await operation(); } catch (error) { this.say(plain(error), true); } }
+  async run(operation) { try { await operation(); } catch (error) { this.say(error, true); } }
   say(text, error = false) {
     clearTimeout(this.messageTimer);
-    this.message.textContent = text; this.message.dataset.error = String(error);
+    if (text?.messageKey) presentError(this.message, text); else setText(this.message, text && typeof text === 'object' ? plain(text) : text);
+    this.message.dataset.error = String(error);
     // Success fades after a while; an error stays until the next action.
-    if (text && !error) this.messageTimer = setTimeout(() => { if (this.message.textContent === text) this.message.textContent = ''; }, 6000);
+    if (text && !error) this.messageTimer = setTimeout(() => { this.messageTimer = null; setText(this.message, ''); }, 6000);
   }
   show(visible = true) { this.showView(visible ? 'library' : 'properties'); }
   /** Asks the shell to show a panel: 'library', 'properties' or 'vfx'. */
@@ -175,27 +183,27 @@ export class UserLibrary {
     for (const button of saves) setProp(button, 'disabled', this.busy || !count || !available);
     // Properties' foot shows only when there is something to save (a figure or movieclip, in the desktop app).
     setProp(this.propertySave, 'hidden', !count || !available);
-    setText(this.container.querySelector('.library-add .ui-label'), count > 1 ? `Add ${count} figures` : 'Add selection');
-    for (const button of saves) setAttr(button, 'title', count ? `Save the selection in ${this.folder ? this.folder.split('/').at(-1) : 'My library'}` : 'Select figures or a movieclip to add them');
+    localizedText(this.container.querySelector('.library-add .ui-label'), (count > 1 ? 'userLibrary.addFigures' : "userLibrary.addSelection"), (count > 1 ? {count} : {}));
+    for (const button of saves) setAttr(button, 'title', count ? interfaceText('userLibrary.saveTheSelectionInValue', {value: this.folder ? this.folder.split('/').at(-1) : {messageKey: "userLibrary.myLibrary"}}) : interfaceText("userLibrary.selectFiguresOrAMovieclipToAddThem"));
   }
   /** Empty grid: explain the library and offer the next action for this situation. */
   renderEmpty(filtered) {
     const selection = this.editor.selectedObjects.length, pub = this.source === 'public';
     // The kit's empty state: a title, one quiet line where it helps, then the next step.
-    const card = (title, text, actions = '') => `<h3 class="ui-empty-title">${title}</h3>${text ? `<p class="ui-empty-text">${text}</p>` : ''}${actions ? `<div class="ui-empty-actions">${actions}</div>` : ''}`;
-    const examples = '<button type="button" class="ui-button" data-variant="outline" data-size="sm" data-action="rig-examples">Rig examples</button>';
-    const browse = '<button type="button" class="ui-button" data-variant="outline" data-size="sm" data-library-source-link="public">Browse the community library</button>';
-    if (filtered) this.empty.innerHTML = card('No matches', '', '<button type="button" class="ui-button" data-size="sm" data-library-clear>Clear search</button>');
-    else if (pub && !this.desktop?.listPublicLibrary) this.empty.innerHTML = card('Community library', 'Free figures and movieclips shared by the community, ready to drop into your scenes. Browse them on the website, or open them from the desktop app.', `<a class="ui-button" data-variant="outline" data-size="sm" href="${PUBLIC_PAGE}" target="_blank" rel="noopener noreferrer">Open stykanimate.com/library</a>`);
-    else if (pub && this.publicState === 'error') this.empty.innerHTML = card('Community library is unavailable', esc(this.publicError), '<button type="button" class="ui-button" data-size="sm" data-library-retry>Try again</button>');
-    else if (pub) this.empty.innerHTML = card('Nothing here yet', 'Figures and movieclips shared by the community appear here.');
-    else if (!this.desktop?.listLibrary) this.empty.innerHTML = card('Library is available in the desktop app', 'Save figures and movieclips there to reuse them in any project.', examples);
-    else if (this.folder) this.empty.innerHTML = card('Empty folder', 'Drag assets onto this folder’s name above, or add the selection here.', selection ? '' : examples);
-    else this.empty.innerHTML = card('No saved assets yet', selection ? 'Add the selection below to reuse it in any project.' : 'Select figures or a movieclip and choose Add selection, or start from the community library.', `${selection ? '' : browse}${examples}`);
+    const card = (title, text, actions = '', _messages = {}) => `<h3 class="ui-empty-title" ${_messages.title ? messageAttributes(_messages.title.key, _messages.title.params) : ''}>${title}</h3>${text ? `<p class="ui-empty-text" ${_messages.text ? messageAttributes(_messages.text.key, _messages.text.params) : ''}>${text}</p>` : ''}${actions ? `<div class="ui-empty-actions">${actions}</div>` : ''}`;
+    const examples = `<button type="button" class="ui-button" data-variant="outline" data-size="sm" data-action="rig-examples" data-i18n="userLibrary.rigExamples">${messageHTML("userLibrary.rigExamples", {})}</button>`;
+    const browse = `<button type="button" class="ui-button" data-variant="outline" data-size="sm" data-library-source-link="public" data-i18n="userLibrary.browseTheCommunityLibrary">${messageHTML("userLibrary.browseTheCommunityLibrary", {})}</button>`;
+    if (filtered) localizedMarkup(this.empty, card(interfaceText("userLibrary.noMatches"), '', `<button type="button" class="ui-button" data-size="sm" data-library-clear data-i18n="userLibrary.clearSearch">${messageHTML("userLibrary.clearSearch", {})}</button>`, {title: {key: "userLibrary.noMatches", params: {}}}));
+    else if (pub && !this.desktop?.listPublicLibrary) localizedMarkup(this.empty, card(interfaceText("userLibrary.communityLibrary"), interfaceText("userLibrary.freeFiguresAndMovieclipsSharedByTheCommunity"), `<a class="ui-button" data-variant="outline" data-size="sm" href="${PUBLIC_PAGE}" target="_blank" rel="noopener noreferrer">${messageHTML("userLibrary.openStykanimateComLibrary", {})}</a>`, {title: {key: "userLibrary.communityLibrary", params: {}}, text: {key: "userLibrary.freeFiguresAndMovieclipsSharedByTheCommunity", params: {}}}));
+    else if (pub && this.publicState === 'error') localizedMarkup(this.empty, card(interfaceText("userLibrary.communityLibraryIsUnavailable"), esc(this.publicError), `<button type="button" class="ui-button" data-size="sm" data-library-retry data-i18n="userLibrary.tryAgain">${messageHTML("userLibrary.tryAgain", {})}</button>`, {title: {key: "userLibrary.communityLibraryIsUnavailable", params: {}}}));
+    else if (pub) localizedMarkup(this.empty, card(interfaceText("userLibrary.nothingHereYet"), interfaceText("userLibrary.figuresAndMovieclipsSharedByTheCommunityAppear"), undefined, {title: {key: "userLibrary.nothingHereYet", params: {}}, text: {key: "userLibrary.figuresAndMovieclipsSharedByTheCommunityAppear", params: {}}}));
+    else if (!this.desktop?.listLibrary) localizedMarkup(this.empty, card(interfaceText("userLibrary.libraryIsAvailableInTheDesktopApp"), interfaceText("userLibrary.saveFiguresAndMovieclipsThereToReuseThem"), examples, {title: {key: "userLibrary.libraryIsAvailableInTheDesktopApp", params: {}}, text: {key: "userLibrary.saveFiguresAndMovieclipsThereToReuseThem", params: {}}}));
+    else if (this.folder) localizedMarkup(this.empty, card(interfaceText("userLibrary.emptyFolder"), interfaceText("userLibrary.dragAssetsOntoThisFolderSNameAbove"), selection ? '' : examples, {title: {key: "userLibrary.emptyFolder", params: {}}, text: {key: "userLibrary.dragAssetsOntoThisFolderSNameAbove", params: {}}}));
+    else localizedMarkup(this.empty, card(interfaceText("userLibrary.noSavedAssetsYet"), selection ? interfaceText("userLibrary.addTheSelectionBelowToReuseItIn") : interfaceText("userLibrary.selectFiguresOrAMovieclipAndChooseAdd"), `${selection ? '' : browse}${examples}`, {title: {key: "userLibrary.noSavedAssetsYet", params: {}}}));
   }
   renderLocation(count) {
     const pub = this.source === 'public';
-    setText(this.container.querySelector('.library-count'), pub ? plural(count, 'asset') : plural(count, 'item'));
+    localizedText(this.container.querySelector('.library-count'), pub ? 'counts.assets' : 'counts.items', {count});
   }
 
   // ---- My library ----
@@ -211,16 +219,16 @@ export class UserLibrary {
     if (generation !== this.generation || this.source !== 'mine') return;
     if (this.folder !== result.path) { this.selected = null; this.input.value = ''; }
     this.folder = result.path; this.entries = result.entries; this.root = result.root;
-    const nav = this.container.querySelector('nav'); nav.replaceChildren();
-    let current = ''; const parts = ['Library', ...this.folder.split('/').filter(Boolean)];
+    const nav = this.container.querySelector('nav'); replaceLocalized(nav);
+    let current = ''; const parts = messageTuple([interfaceText("userLibrary.library2"), ...this.folder.split('/').filter(Boolean)], {0: {key: "userLibrary.library2", params: {}}});
     for (const [i, part] of parts.entries()) {
       if (i) current += `${current ? '/' : ''}${part}`;
-      if (i) { const sep = document.createElement('span'); sep.className = 'ui-crumb-sep'; sep.setAttribute('aria-hidden', 'true'); sep.textContent = '›'; nav.append(sep); }
+      if (i) { const sep = document.createElement('span'); sep.className = 'ui-crumb-sep'; sep.setAttribute('aria-hidden', 'true'); sep.textContent = '›'; appendLocalized(nav, sep); }
       const path = current, button = document.createElement('button'); button.type = 'button'; button.className = 'ui-crumb-item'; button.textContent = part;
       button.title = i ? part : this.root; button.dataset.libraryFolder = path;
       if (i === parts.length - 1) button.setAttribute('aria-current', 'location');
       button.onclick = () => this.run(() => this.refresh(path));
-      nav.append(button);
+      appendLocalized(nav, button);
     }
     this.syncSelection();
     this.render();
@@ -240,7 +248,7 @@ export class UserLibrary {
       if (generation !== this.publicGeneration) return;
       this.publicError = plain(error);
       // A catalogue already shown stays usable; the failure is only reported.
-      if (this.publicCatalog) { this.publicState = 'ready'; this.say(error.message, true); } else this.publicState = 'error';
+      if (this.publicCatalog) { this.publicState = 'ready'; this.say(error, true); } else this.publicState = 'error';
     }
     if (this.source === 'public') this.render();
   }
@@ -251,21 +259,21 @@ export class UserLibrary {
     if (!id) return;
     let item = this.publicItems.find(item => item.id === id);
     if (!item && this.publicState === 'ready') { await this.loadPublic({refresh: true}); item = this.publicItems.find(item => item.id === id); }
-    if (!item) { if (this.publicState === 'ready') this.say('That asset is no longer in the community library.', true); return; }
+    if (!item) { if (this.publicState === 'ready') this.say({messageKey:"userLibrary.notice.thatAssetIsNoLongerInTheCommunity",messageParams:{}}, true); return; }
     if (!this.visibleItems().includes(item)) { this.input.value = ''; this.setFilter('all'); }
     this.publicSelected = id; this.render();
     const card = this.cardFor(id);
     card?.scrollIntoView({block: 'center'}); card?.focus({preventScroll: true});
     card?.classList.add('library-card-linked');
-    this.say(`${item.name} is ready: drag it onto the canvas or double-click to insert it.`);
+    this.say({messageKey:"userLibrary.notice.isReadyDragItOntoTheCanvasOr",messageParams:{name: item.name}});
   }
 
   // ---- Cards ----
   render() {
     this.closeMenu(); this.hoverPreview.stop();
-    this.observer.disconnect(); this.grid.replaceChildren();
+    this.observer.disconnect(); replaceLocalized(this.grid);
     const pub = this.source === 'public', items = this.visibleItems();
-    this.grid.setAttribute('aria-label', pub ? 'Community library' : 'My library');
+    localizedAttribute(this.grid, 'aria-label', (pub ? "userLibrary.communityLibrary" : "userLibrary.myLibrary"), (pub ? {} : {}));
     this.grid.removeAttribute('aria-busy');
     if (pub && this.publicState === 'loading') {
       this.grid.setAttribute('aria-busy', 'true'); this.empty.hidden = true; this.renderLocation(0);
@@ -281,11 +289,11 @@ export class UserLibrary {
       for (const category of this.publicCatalog?.categories ?? []) {
         const members = items.filter(item => item.category === category.id); if (!members.length) continue;
         const group = document.createElement('div'); group.className = 'library-group'; group.setAttribute('role', 'group'); group.setAttribute('aria-label', category.name);
-        group.innerHTML = `<div class="library-group-label"><span>${esc(category.name)}</span><span class="library-group-count">${members.length}</span></div>`;
-        for (const item of members) group.append(this.card(item));
-        this.grid.append(group);
+        localizedMarkup(group, `<div class="library-group-label"><span>${esc(category.name)}</span><span class="library-group-count">${members.length}</span></div>`);
+        for (const item of members) appendLocalized(group, this.card(item));
+        appendLocalized(this.grid, group);
       }
-    } else for (const item of items) this.grid.append(this.card(item));
+    } else for (const item of items) appendLocalized(this.grid, this.card(item));
     for (const card of this.grid.querySelectorAll('.library-card')) if (!card.classList.contains('folder')) this.observer.observe(card);
     const key = this.selectedKey;
     this.select(items.some(item => (item.path ?? item.id) === key) ? key : null);
@@ -295,13 +303,11 @@ export class UserLibrary {
     card.className = `library-card ${item.kind}`; card.tabIndex = -1;
     if (pub) card.dataset.publicId = item.id; else card.dataset.libraryPath = item.path;
     if (item.kind === 'folder') card.dataset.libraryFolder = item.path;
-    card.setAttribute('role', 'option'); card.setAttribute('aria-selected', 'false'); card.setAttribute('aria-label', `${item.name}, ${label(item)}`);
-    card.title = item.kind === 'folder' ? `${item.name}. Double-click to open, or drop assets here to move them.`
-      : pub ? `${item.name}${item.author ? ` by ${item.author}` : ''}${item.description ? `: ${item.description}` : ''}\nDouble-click to insert, or drag onto the canvas.`
-        : `${item.name}. Double-click to insert, or drag onto the canvas or a folder.${item.kind === 'movieclip' ? ' Hover to play.' : ''}`;
-    const badge = ['movieclip', 'set'].includes(item.kind) ? `<span class="library-clip-badge" title="${label(item)}">${icon(item.kind === 'movieclip' ? 'play' : 'duplicate')}</span>` : '';
-    const clip = item.kind === 'movieclip' && !pub ? '<span class="library-preview-hint">Hover to play</span><span class="library-preview-progress"></span>' : '';
-    card.innerHTML = `<div class="library-thumbnail">${item.kind === 'folder' ? folderIcon : '<span class="library-preview-loading"></span>'}${badge}${clip}</div><div class="library-card-info"><span class="library-name">${esc(item.name)}</span><span class="library-kind">${label(item)}</span></div><button type="button" class="library-more" tabindex="-1" aria-label="Actions for ${esc(item.name)}" aria-haspopup="menu">${icon('more')}</button>`;
+    card.setAttribute('role', 'option'); card.setAttribute('aria-selected', 'false'); localizedAttribute(card, 'aria-label', 'userLibrary.assetLabel', {name:item.name, kind:{messageKey:KIND_KEYS[item.kind]??'userLibrary.figure'}});
+    localizedAttribute(card, "title", (item.kind === 'folder' ? 'userLibrary.nameDoubleClickToOpenOrDropAssetsHere' : (pub ? 'userLibrary.nameValue1Value2DoubleClickToInsertOrDrag' : 'userLibrary.nameDoubleClickToInsertOrDragOntoThe')), (item.kind === 'folder' ? {name: item.name} : (pub ? {name: item.name, value1: item.author ? ` by ${item.author}` : '', value2: item.description ? `: ${item.description}` : ''} : {name: item.name, value1: item.kind === 'movieclip' ? interfaceText("userLibrary.hoverToPlay2") : ''})));
+    const badge = ['movieclip', 'set'].includes(item.kind) ? `<span class="library-clip-badge" title="${label(item)}" ${messageAttributes(KIND_KEYS[item.kind]??"userLibrary.figure",{},"title")}>${icon(item.kind === 'movieclip' ? 'play' : 'duplicate')}</span>` : '';
+    const clip = item.kind === 'movieclip' && !pub ? `<span class="library-preview-hint" data-i18n="userLibrary.hoverToPlay">${messageHTML("userLibrary.hoverToPlay", {})}</span><span class="library-preview-progress"></span>` : '';
+    localizedMarkup(card, `<div class="library-thumbnail">${item.kind === 'folder' ? folderIcon : '<span class="library-preview-loading"></span>'}${badge}${clip}</div><div class="library-card-info"><span class="library-name">${esc(item.name)}</span><span class="library-kind">${messageHTML(KIND_KEYS[item.kind]??"userLibrary.figure")}</span></div><button type="button" class="library-more" tabindex="-1" aria-label="Actions for ${esc(item.name)}" aria-haspopup="menu" ${messageAttributes("userLibrary.actionsFor", {name: item.name}, "aria-label")}>${icon('more')}</button>`);
     return card;
   }
   async loadThumbnail(card, generation) {
@@ -317,7 +323,7 @@ export class UserLibrary {
           const file = await readLibraryFile(this.desktop,path), result = await this.importer.importFile(file), report = result.document ?? result.report ?? result;
           const thumbnail = await libraryPreview(report), kind = report.keyframes[0].objects.length > 1 ? 'set' : item.kind;
           await this.desktop.cacheLibraryThumbnail({path, thumbnail, modified:item.modified, kind});
-          if (generation === this.generation && card.isConnected) { item.kind = kind; card.setAttribute('aria-label',`${item.name}, ${label(item)}`); card.querySelector('.library-kind').textContent = label(item); }
+          if (generation === this.generation && card.isConnected) { item.kind = kind; localizedAttribute(card, 'aria-label', 'userLibrary.assetLabel', {name:item.name, kind:{messageKey:KIND_KEYS[item.kind]??'userLibrary.figure'}}); localizedText(card.querySelector('.library-kind'), KIND_KEYS[item.kind]??'userLibrary.figure'); }
           return thumbnail;
         };
         const pending = (this.previewChain ?? Promise.resolve()).then(generate); this.previewChain = pending.catch(() => {}); url = await pending;
@@ -336,7 +342,7 @@ export class UserLibrary {
   }
   showThumbnail(card, key, url, name) {
     const target = card.querySelector('.library-thumbnail'); target.querySelector('.library-preview-loading')?.remove();
-    if (!url) { target.insertAdjacentHTML('afterbegin', icon('person')); target.title = 'Preview unavailable for this file'; return; }
+    if (!url) { target.insertAdjacentHTML('afterbegin', icon('person')); localizedAttribute(target, "title", "userLibrary.previewUnavailableForThisFile", {}); return; }
     this.thumbnails.delete(key); this.thumbnails.set(key, url); while (this.thumbnails.size > 160) this.thumbnails.delete(this.thumbnails.keys().next().value);
     const image = new Image(); image.alt = name; image.draggable = false; image.decoding = 'async';
     image.onload = () => {
@@ -380,7 +386,7 @@ export class UserLibrary {
   }
   onKey(event) {
     if (event.target.matches('input')) return;
-    if (event.target.closest('button') && ['Enter', ' '].includes(event.key)) return;
+    if (event.target.closest('button') && ["Enter", ' '].includes(event.key)) return;
     const card = this.cardFrom(event.target);
     if (event.key === 'ContextMenu' || event.key === 'F10' && event.shiftKey) {
       event.preventDefault(); if (card) { const rect = card.getBoundingClientRect(); this.showMenu(card, {point: {x: rect.left, y: rect.bottom}}); } return;
@@ -391,7 +397,7 @@ export class UserLibrary {
       event.preventDefault();
       if (!event.repeat) this.run(() => command.id === 'library-open' ? this.open(this.selectedKey) : this.rename());
     }
-    else if (card && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
+    else if (card && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
       event.preventDefault(); const next = this.neighbour(card, event.key);
       this.select(this.keyOf(next)); next.focus(); next.scrollIntoView({block: 'nearest'});
     }
@@ -407,37 +413,36 @@ export class UserLibrary {
     const run = operation => () => this.run(operation);
     let items;
     if (item && pub) items = [
-      {label: 'Insert', icon: 'plus', shortcut: 'Enter', disabled: this.busy, run: run(() => this.insert(item))},
-      {label: 'Save to My library', icon: 'library', disabled: this.busy || !this.desktop?.savePublicLibraryAsset, run: run(() => this.savePublic(item))},
+      {label: interfaceText('userLibrary.insert'), labelKey: "userLibrary.insert", icon: 'plus', shortcut: 'Enter', disabled: this.busy, run: run(() => this.insert(item))},
+      {label: interfaceText("userLibrary.saveToMyLibrary"), labelKey: "userLibrary.saveToMyLibrary", icon: 'library', disabled: this.busy || !this.desktop?.savePublicLibraryAsset, run: run(() => this.savePublic(item))},
       null,
-      {label: 'View on stykanimate.com', icon: 'link', run: run(() => this.desktop.openPublicLibraryPage(item.id))},
+      {label: interfaceText("userLibrary.viewOnStykanimateCom"), labelKey: "userLibrary.viewOnStykanimateCom", icon: 'link', run: run(() => this.desktop.openPublicLibraryPage(item.id))},
     ];
     else if (item) items = [
-      {label: item.kind === 'folder' ? 'Open' : 'Insert', icon: item.kind === 'folder' ? 'folder' : 'plus', shortcut: 'Enter', disabled: this.busy, run: run(() => this.open(item.path))},
-      {label: 'Rename', icon: 'text', shortcut: 'F2', disabled: this.busy, run: run(() => this.rename())},
-      {label: 'Move to…', icon: 'arrow-right', disabled: this.busy, run: run(() => this.move())},
-      ...(this.desktop.revealLibrary ? [{label: 'Show in folder', icon: 'folder', run: run(() => this.desktop.revealLibrary(item.kind === 'folder' ? item.path : parentOf(item.path)))}] : []),
+      {label: item.kind === 'folder' ? interfaceText("userLibrary.open") : interfaceText('userLibrary.insert'), labelKey: (item.kind === 'folder' ? "userLibrary.open" : "userLibrary.insert"), labelParams: (item.kind === 'folder' ? {} : {}), icon: item.kind === 'folder' ? 'folder' : 'plus', shortcut: 'Enter', disabled: this.busy, run: run(() => this.open(item.path))},
+      {label: interfaceText("common.rename"), labelKey: "common.rename", icon: 'text', shortcut: 'F2', disabled: this.busy, run: run(() => this.rename())},
+      {label: interfaceText("userLibrary.moveTo"), labelKey: "userLibrary.moveTo", icon: 'arrow-right', disabled: this.busy, run: run(() => this.move())},
+      ...(this.desktop.revealLibrary ? [{label: interfaceText("userLibrary.showInFolder"), labelKey: "userLibrary.showInFolder", icon: 'folder', run: run(() => this.desktop.revealLibrary(item.kind === 'folder' ? item.path : parentOf(item.path)))}] : []),
       null,
-      {label: this.bin.menu, icon: 'trash', shortcut: 'Del', danger: true, disabled: this.busy, run: run(() => this.trash())},
+      {label: this.bin.menu, labelKey:this.bin.menuKey, icon: 'trash', shortcut: 'Del', danger: true, disabled: this.busy, run: run(() => this.trash())},
     ];
     else {
       items = pub ? [
-        {label: 'Refresh', icon: 'rotate', disabled: !this.desktop?.listPublicLibrary, run: run(() => this.loadPublic({refresh: true}))},
-        {label: 'Open stykanimate.com/library', icon: 'link', run: run(() => this.action('website'))},
+        {label: interfaceText("userLibrary.refresh"), labelKey: "userLibrary.refresh", icon: 'rotate', disabled: !this.desktop?.listPublicLibrary, run: run(() => this.loadPublic({refresh: true}))},
+        {label: interfaceText("userLibrary.openStykanimateComLibrary"), labelKey: "userLibrary.openStykanimateComLibrary", icon: 'link', run: run(() => this.action('website'))},
       ] : [
-        {label: 'New folder', icon: 'folder-plus', disabled: !mine || this.busy, run: run(() => this.newFolder())},
-        {label: 'Add selection', icon: 'plus', disabled: !mine || this.busy || !this.editor.selectedObjects.length, run: run(() => this.save())},
+        {label: interfaceText("userLibrary.newFolder"), labelKey: "userLibrary.newFolder", icon: 'folder-plus', disabled: !mine || this.busy, run: run(() => this.newFolder())},
+        {label: interfaceText("userLibrary.addSelection"), labelKey: "userLibrary.addSelection", icon: 'plus', disabled: !mine || this.busy || !this.editor.selectedObjects.length, run: run(() => this.save())},
         null,
-        {label: 'Refresh', icon: 'rotate', disabled: !mine, run: run(() => this.refresh())},
-        ...(this.desktop?.revealLibrary ? [{label: 'Show in folder', icon: 'folder', disabled: !mine, run: run(() => this.desktop.revealLibrary(this.folder))}] : []),
+        {label: interfaceText("userLibrary.refresh"), labelKey: "userLibrary.refresh", icon: 'rotate', disabled: !mine, run: run(() => this.refresh())},
+        ...(this.desktop?.revealLibrary ? [{label: interfaceText("userLibrary.showInFolder"), labelKey: "userLibrary.showInFolder", icon: 'folder', disabled: !mine, run: run(() => this.desktop.revealLibrary(this.folder))}] : []),
       ];
       if (options) items.push(null,
-        {label: 'Preview background', icon: 'image', submenu: [['auto', 'Automatic'], ['light', 'Light'], ['dark', 'Dark']].map(([value, text]) =>
-          ({label: text, radio: true, checked: this.background === value, run: () => this.setBackground(value)}))},
-        {label: 'Rig examples…', icon: 'person', command: 'rig-examples'});
+        {label: interfaceText("userLibrary.previewBackground"), labelKey: "userLibrary.previewBackground", icon: 'image', submenu: [messageTuple(['auto', interfaceText("userLibrary.automatic")], {1: {key: "userLibrary.automatic", params: {}}}), messageTuple(['light', interfaceText("userLibrary.light")], {1: {key: "userLibrary.light", params: {}}}), messageTuple(['dark', interfaceText("userLibrary.dark")], {1: {key: "userLibrary.dark", params: {}}})].map((_tuple) => {const [value, text] = _tuple; const _messages = tupleMessages(_tuple); return {label: text, ...(_messages[1] ? {labelKey: _messages[1].key, labelParams: _messages[1].params} : {}), radio: true, checked: this.background === value, run: () => this.setBackground(value)};})},
+        {label: interfaceText("userLibrary.rigExamples2"), labelKey: "userLibrary.rigExamples2", icon: 'person', command: 'rig-examples'});
     }
     const invoker = card ?? (anchor || this.grid.querySelector('.library-card[tabindex="0"]') || this.input);
-    const menu = this.menu = openMenu({items, ...(anchor ? {anchor} : {point}), icon: name => icon(name), label: options ? 'Library options' : 'Library actions', invoker,
+    const menu = this.menu = openMenu({items, ...(anchor ? {anchor} : {point}), icon: name => icon(name), label: options ? interfaceText("userLibrary.libraryOptions") : interfaceText("userLibrary.libraryActions"), labelKey: (options ? "userLibrary.libraryOptions" : "userLibrary.libraryActions"), labelParams: (options ? {} : {}), invoker,
       onClose: () => { if (this.menu === menu) this.menu = null; }});
   }
 
@@ -453,14 +458,14 @@ export class UserLibrary {
   dragDestination(hit, item) {
     const target = hit?.closest('[data-library-folder]');
     if (!target || item?.source === 'public' || this.source !== 'mine' || !this.container.contains(target) || this.busy || !canMoveLibraryItem(item, target.dataset.libraryFolder)) return null;
-    return {element: target, folder: target.dataset.libraryFolder, name: target.dataset.libraryFolder.split('/').at(-1) || 'Library'};
+    return {element: target, folder: target.dataset.libraryFolder, name: target.dataset.libraryFolder.split('/').at(-1) || interfaceText("userLibrary.library2")};
   }
   async moveItem(item, folder) {
     if (this.busy || !canMoveLibraryItem(item, folder)) return;
     this.busy = true; this.syncSelection(); this.hoverPreview.stop();
     try {
       await this.desktop.changeLibraryItem({path: item.path, folder}); this.selected = null;
-      await this.refresh(); this.say(`${item.name} moved to ${folder || 'Library'}`);
+      await this.refresh(); this.say({messageKey:"userLibrary.notice.movedTo",messageParams:{name: item.name, value1: folder || {messageKey:"userLibrary.library2"}}});
     } finally { this.busy = false; this.syncSelection(); }
   }
   async save() {
@@ -469,27 +474,27 @@ export class UserLibrary {
     // Saving lands in My library's open folder: show it there.
     if (this.source !== 'mine') await this.setSource('mine');
     this.show(); this.busy = true; this.syncSelection();
-    this.say('Saving artwork and preview…');
+    this.say({messageKey:"userLibrary.notice.savingArtworkAndPreview",messageParams:{}});
     const folder = this.folder;
     try {
-      const revision=this.editor.revision;await drawingBarrier(this.editor.report);if(revision!==this.editor.revision)throw new Error('The selection changed before saving to the library. Try again.');
+      const revision=this.editor.revision;await drawingBarrier(this.editor.report);if(revision!==this.editor.revision)throw messageError(new Error(''), "errors.userLibrary.theSelectionChangedBeforeSavingToTheLibrary", {});
       const report = librarySnapshot(this.editor), format = report._styk.libraryKind === 'movieclip' ? 'stykmov' : 'stkz';
       const [thumbnail, blob] = await Promise.all([libraryPreview(report), this.exporter.export(report, {format, figureUids:report.keyframes[0].objects.map(o => o.unique_id)})]);
-      let name = report._styk.name.replace(/[<>:"/\\|?*\x00-\x1f]/g,'-').replace(/^\.+|[. ]+$/g,'').slice(0,110).trim() || 'Untitled asset';
+      let name = report._styk.name.replace(/[<>:"/\\|?*\x00-\x1f]/g,'-').replace(/^\.+|[. ]+$/g,'').slice(0,110).trim() || interfaceText("userLibrary.untitledAsset");
       if (/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(name)) name = `Asset ${name}`;
       const result = await saveLibraryFile(this.desktop, blob, {folder, name, kind:report._styk.libraryKind, extension:`.${format}`, thumbnail});
-      this.input.value = ''; this.filterValue = 'all'; this.kindSelect.value = 'all'; await this.refresh(folder); this.select(result.path); this.say(`Saved to ${folder || 'My library'}`);
+      this.input.value = ''; this.filterValue = 'all'; this.kindSelect.value = 'all'; await this.refresh(folder); this.select(result.path); this.say({messageKey:"userLibrary.notice.savedTo",messageParams:{value0: folder || {messageKey:"userLibrary.myLibrary"}}});
       this.cardFor(result.path)?.scrollIntoView({block:'nearest'});
     } finally { this.busy = false; this.syncSelection(); }
   }
   async savePublic(item) {
     if (this.busy) return;
-    this.busy = true; this.syncSelection(); this.say(`Saving ${item.name} to My library…`);
+    this.busy = true; this.syncSelection(); this.say({messageKey:"userLibrary.notice.savingToMyLibrary",messageParams:{name: item.name}});
     try {
       // The library keeps PNG previews; the website's posters are WebP, so the poster is converted here.
       const thumbnail = await pngThumbnail(this.thumbnails.get(`public:${item.id}:${item.sha256}`) ?? await this.desktop.getPublicLibraryPreview(item.id));
       const result = await this.desktop.savePublicLibraryAsset({id: item.id, folder: this.folder, thumbnail});
-      this.say(`${item.name} saved to ${this.folder ? `My library › ${this.folder.split('/').join(' › ')}` : 'My library'}`);
+      this.say({messageKey:"userLibrary.notice.savedTo2",messageParams:{name: item.name, value1: this.folder ? {messageKey:'userLibrary.folderLocation',messageParams:{folder:this.folder.split('/').join(' › ')}} : interfaceText("userLibrary.myLibrary")}});
       return result;
     } finally { this.busy = false; this.syncSelection(); }
   }
@@ -506,74 +511,74 @@ export class UserLibrary {
   async insert(item, position) {
     if (this.busy) return;
     this.hoverPreview.stop();
-    this.busy = true; this.syncSelection(); this.say(`Inserting ${item.name}…`);
+    this.busy = true; this.syncSelection(); this.say({messageKey:"userLibrary.notice.inserting",messageParams:{name: item.name}});
     try {
       this.pause(); this.finishEdit();
       const report = this.editor.report, tick = this.editor.tick, layer = this.editor.activeLayerId;
       const file = await this.readAsset(item), result = await this.importer.importFile(file);
-      if (this.editor.report !== report || this.editor.tick !== tick || this.editor.activeLayerId !== layer) throw new Error('The document or insertion frame changed. Insert the asset again.');
+      if (this.editor.report !== report || this.editor.tick !== tick || this.editor.activeLayerId !== layer) throw messageError(new Error(''), "errors.userLibrary.theDocumentOrInsertionFrameChangedInsertThe", {});
       const document = result.document ?? result.report ?? result;
       if (document.figure_types?.length === 1) document.figure_types[0].name = item.name;
-      if (this.editor.getLayer(layer)?.locked) throw new Error('Unlock the destination layer before inserting an asset.');
-      this.editor.importFigure(document, {position}); this.setTool('select'); this.say(`${item.name} added to the scene`);
+      if (this.editor.getLayer(layer)?.locked) throw messageError(new Error(''), "errors.userLibrary.unlockTheDestinationLayerBeforeInsertingAnAsset", {});
+      this.editor.importFigure(document, {position}); this.setTool('select'); this.say({messageKey:"userLibrary.notice.addedToTheScene",messageParams:{name: item.name}});
     } finally { this.busy = false; this.syncSelection(); }
   }
   rename() {
     this.hoverPreview.stop();
     const item = this.source === 'mine' ? this.entries.find(item => item.path === this.selected) : null; if (!item || this.busy) return;
     const card = this.cardFor(item.path), name = card?.querySelector('.library-name'); if (!name || card.querySelector('input')) return;
-    const input = document.createElement('input'); input.className = 'library-rename'; input.value = item.name; input.maxLength = 120; input.setAttribute('aria-label','Asset name'); name.replaceWith(input); input.focus(); input.select();
+    const input = document.createElement('input'); input.className = 'library-rename'; input.value = item.name; input.maxLength = 120; localizedAttribute(input, 'aria-label', "userLibrary.assetName", {}); name.replaceWith(input); input.focus(); input.select();
     let done = false;
     const commit = async () => {
       if (done) return; done = true;
       try { const result = await this.desktop.changeLibraryItem({path:item.path, name:input.value}); this.selected = result.path; await this.refresh(); this.cardFor(result.path)?.focus({preventScroll: true}); }
-      catch (error) { done = false; this.say(error.message, true); input.focus(); }
+      catch (error) { done = false; this.say(error, true); input.focus(); }
     };
     input.onkeydown = event => { event.stopPropagation(); if (event.key === 'Enter') { event.preventDefault(); commit(); } else if (event.key === 'Escape') { done = true; this.render(); this.cardFor(item.path)?.focus({preventScroll: true}); } };
     input.onblur = commit;
   }
   newFolder() {
-    this.dialog.setAttribute('aria-label','New library folder');
-    this.dialog.innerHTML = `<form><h2>New folder</h2><p>In ${esc(this.folder ? this.folder.split('/').join(' › ') : 'My library')}</p><label>Folder name<input name="name" aria-label="Folder name" value="New folder" maxlength="120" required></label><div class="library-dialog-error" role="alert"></div><footer><button class="ui-button" data-variant="ghost" type="button" data-cancel>Cancel</button><button class="ui-button" data-variant="primary" type="submit">Create folder</button></footer></form>`;
+    localizedAttribute(this.dialog, 'aria-label', "userLibrary.newLibraryFolder", {});
+    localizedMarkup(this.dialog, `<form><h2 data-i18n="userLibrary.newFolder">${messageHTML("userLibrary.newFolder", {})}</h2><p ${messageAttributes("userLibrary.in", {value: this.folder ? this.folder.split('/').join(' › ') : {messageKey: "userLibrary.myLibrary"}})}>In ${esc(this.folder ? this.folder.split('/').join(' › ') : interfaceText("userLibrary.myLibrary"))}</p><label>${messageHTML("userLibrary.folderName", {})}<input name="name" aria-label="Folder name" value="New folder" maxlength="120" required data-i18n-aria-label="userLibrary.folderName"></label><div class="library-dialog-error" role="alert"></div><footer><button class="ui-button" data-variant="ghost" type="button" data-cancel data-i18n="common.cancel">${messageHTML("userLibrary.cancel", {})}</button><button class="ui-button" data-variant="primary" type="submit" data-i18n="userLibrary.createFolder">${messageHTML("userLibrary.createFolder", {})}</button></footer></form>`);
     this.dialog.querySelector('[data-cancel]').onclick = () => this.dialog.close();
     this.dialog.querySelector('form').onsubmit = async event => {
       event.preventDefault(); const submit = event.submitter; submit.disabled = true;
       try { const result = await this.desktop.createLibraryFolder({folder:this.folder, name:this.dialog.querySelector('input').value}); this.dialog.close(); this.selected = result.path; await this.refresh(); }
-      catch (error) { this.dialog.querySelector('[role="alert"]').textContent = error.message; } finally { submit.disabled = false; }
+      catch (error) { presentError(this.dialog.querySelector('[role="alert"]'), error); } finally { submit.disabled = false; }
     };
     this.dialog.showModal(); this.dialog.querySelector('input').select();
   }
   async move() {
     const item = this.entries.find(item => item.path === this.selected); if (!item) return;
-    this.dialog.setAttribute('aria-label','Move library item'); let destination = ''; let sequence = 0;
-    this.dialog.innerHTML = `<h2>Move ${esc(item.name)}</h2><div class="library-move-location"></div><div class="library-move-folders"></div><div role="alert" class="library-dialog-error"></div><footer><button type="button" class="ui-button" data-variant="ghost" data-cancel>Cancel</button><button type="button" class="ui-button" data-variant="primary" data-move>Move here</button></footer>`;
+    localizedAttribute(this.dialog, 'aria-label', "userLibrary.moveLibraryItem", {}); let destination = ''; let sequence = 0;
+    localizedMarkup(this.dialog, `<h2 ${messageAttributes("userLibrary.move", {name: item.name})}>Move ${esc(item.name)}</h2><div class="library-move-location"></div><div class="library-move-folders"></div><div role="alert" class="library-dialog-error"></div><footer><button type="button" class="ui-button" data-variant="ghost" data-cancel data-i18n="common.cancel">${messageHTML("userLibrary.cancel", {})}</button><button type="button" class="ui-button" data-variant="primary" data-move data-i18n="userLibrary.moveHere">${messageHTML("userLibrary.moveHere", {})}</button></footer>`);
     const browse = async folder => {
       const id = ++sequence, result = await this.desktop.listLibrary(folder); if (id !== sequence) return; destination = folder;
-      this.dialog.querySelector('.library-move-location').textContent = `Library${folder ? ` › ${folder.replaceAll('/',' › ')}` : ''}`;
-      const list = this.dialog.querySelector('.library-move-folders'); list.replaceChildren();
+      localizedText(this.dialog.querySelector('.library-move-location'), "userLibrary.library", {value: folder ? ` › ${folder.replaceAll('/',' › ')}` : ''});
+      const list = this.dialog.querySelector('.library-move-folders'); replaceLocalized(list);
       // A row per place: the parent first (a back chevron), then each folder with its glyph.
-      const add = (text, path, glyph) => { const button = document.createElement('button'); button.type = 'button'; button.innerHTML = icon(glyph); const words = document.createElement('span'); words.textContent = text; button.append(words); button.onclick = () => this.run(() => browse(path)); list.append(button); return button; };
+      const add = (text, path, glyph) => { const button = document.createElement('button'); button.type = 'button'; localizedMarkup(button, icon(glyph)); const words = document.createElement('span'); words.textContent = text; appendLocalized(button, words); button.onclick = () => this.run(() => browse(path)); appendLocalized(list, button); return button; };
       if (folder) add('Parent folder', parentOf(folder), 'chevron-left').dataset.parent = '';
       for (const child of result.entries.filter(child => child.kind === 'folder' && child.path !== item.path)) add(child.name, child.path, 'folder');
-      if (!list.children.length) { const none = document.createElement('p'); none.className = 'library-move-none'; none.textContent = 'No folders here'; list.append(none); }
+      if (!list.children.length) { const none = document.createElement('p'); none.className = 'library-move-none'; localizedText(none, "userLibrary.noFoldersHere", {}); appendLocalized(list, none); }
     };
     this.dialog.querySelector('[data-cancel]').onclick = () => this.dialog.close();
     this.dialog.querySelector('[data-move]').onclick = async event => {
       event.target.disabled = true;
-      try { await this.desktop.changeLibraryItem({path:item.path, folder:destination}); this.dialog.close(); this.selected = null; await this.refresh(); this.say(`Moved to ${destination || 'Library'}`); }
-      catch (error) { this.dialog.querySelector('[role="alert"]').textContent = error.message; } finally { event.target.disabled = false; }
+      try { await this.desktop.changeLibraryItem({path:item.path, folder:destination}); this.dialog.close(); this.selected = null; await this.refresh(); this.say({messageKey:"userLibrary.notice.movedTo2",messageParams:{value0: destination || {messageKey:"userLibrary.library2"}}}); }
+      catch (error) { presentError(this.dialog.querySelector('[role="alert"]'), error); } finally { event.target.disabled = false; }
     };
     await browse(''); this.dialog.showModal();
   }
   trash() {
     const item = this.source === 'mine' ? this.entries.find(item => item.path === this.selected) : null; if (!item) return;
-    this.dialog.setAttribute('aria-label','Remove library item');
-    this.dialog.innerHTML = `<h2>Remove ${esc(item.name)}?</h2><p>${item.kind === 'folder' ? 'This folder and its contents' : 'This asset and its preview'} ${this.bin.dialog}. Copies already in your scenes stay available.</p><div class="library-dialog-error" role="alert"></div><footer><button type="button" class="ui-button" data-variant="ghost" data-cancel>Cancel</button><button type="button" class="ui-button" data-variant="danger" data-remove>${this.bin.button}</button></footer>`;
+    localizedAttribute(this.dialog, 'aria-label', "userLibrary.removeLibraryItem", {});
+    localizedMarkup(this.dialog, `<h2 ${messageAttributes("userLibrary.remove", {name: item.name})}>Remove ${esc(item.name)}?</h2><p ${messageAttributes("userLibrary.copiesAlreadyInYourScenesStayAvailable", {value: item.kind === 'folder' ? {messageKey: "userLibrary.thisFolderAndItsContents"} : {messageKey: "userLibrary.thisAssetAndItsPreview"}, dialog: {messageKey:this.bin.dialogKey}})}>${item.kind === 'folder' ? interfaceText("userLibrary.thisFolderAndItsContents") : interfaceText("userLibrary.thisAssetAndItsPreview")} ${this.bin.dialog}. Copies already in your scenes stay available.</p><div class="library-dialog-error" role="alert"></div><footer><button type="button" class="ui-button" data-variant="ghost" data-cancel data-i18n="common.cancel">${messageHTML("userLibrary.cancel", {})}</button><button type="button" class="ui-button" data-variant="danger" data-remove>${messageHTML(this.bin.buttonKey)}</button></footer>`);
     this.dialog.querySelector('[data-cancel]').onclick = () => this.dialog.close();
     this.dialog.querySelector('[data-remove]').onclick = async event => {
       event.target.disabled = true;
-      try { await this.desktop.trashLibraryItem(item.path); this.dialog.close(); this.selected = null; await this.refresh(); this.say(this.bin.done); }
-      catch (error) { this.dialog.querySelector('[role="alert"]').textContent = error.message; } finally { event.target.disabled = false; }
+      try { await this.desktop.trashLibraryItem(item.path); this.dialog.close(); this.selected = null; await this.refresh(); this.say({messageKey:this.bin.doneKey}); }
+      catch (error) { presentError(this.dialog.querySelector('[role="alert"]'), error); } finally { event.target.disabled = false; }
     };
     this.dialog.showModal(); this.dialog.querySelector('[data-cancel]').focus();
   }

@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {activeVfx} from './vfx.mjs';
 import {vfxPaint} from './vfx-paint.mjs';
 import {vfxVertex as vertex,vfxFragment as fragment} from './vfx-shaders.mjs';
@@ -7,18 +8,18 @@ import {filterVfxCPU} from './vfx-cpu.mjs';
 export class VfxGPU {
  constructor(){
   this.canvas=new OffscreenCanvas(1,1);const gl=this.gl=this.canvas.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:false,depth:false,stencil:false,preserveDrawingBuffer:true});
-  if(!gl)throw new Error('VFX require an available WebGL 2 graphics context.');
+  if(!gl)throw messageError(new Error(''), "errors.vfxGpu.vfxRequireAnAvailableWebgl2GraphicsContext", {});
   this.maxDimension=Math.min(VFX_MAX_DIMENSION,gl.getParameter(gl.MAX_TEXTURE_SIZE));
-  this.compile=(type,code)=>{const shader=gl.createShader(type);gl.shaderSource(shader,code);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS)){const reason=gl.getShaderInfoLog(shader);gl.deleteShader(shader);throw new Error(`VFX shader: ${reason}`);}return shader;};
+  this.compile=(type,code)=>{const shader=gl.createShader(type);gl.shaderSource(shader,code);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS)){const reason=gl.getShaderInfoLog(shader);gl.deleteShader(shader);throw messageError(new Error(''), "errors.vfxGpu.vfxShader", {reason: reason});}return shader;};
   this.vertexShader=this.compile(gl.VERTEX_SHADER,vertex);this.programs=new Map();
   this.paintColors=new Float32Array(128);this.paintOffsets=new Float32Array(32);
   this.slots=[];this.framebuffer=gl.createFramebuffer();this.stats={passes:0,bytes:0,calls:0};
  }
  program(operation){
-  if(!Number.isInteger(operation)||operation<0||operation>27)throw new RangeError('Unknown VFX graphics operation.');
+  if(!Number.isInteger(operation)||operation<0||operation>27)throw messageError(new RangeError(''), "errors.vfxGpu.unknownVfxGraphicsOperation", {});
   let entry=this.programs.get(operation);if(entry)return entry;
   const gl=this.gl,shader=this.compile(gl.FRAGMENT_SHADER,fragment.replace('uniform int operation,paintType,stopCount;',`const int operation=${operation}; uniform int paintType,stopCount;`)),program=gl.createProgram();gl.attachShader(program,this.vertexShader);gl.attachShader(program,shader);gl.linkProgram(program);gl.deleteShader(shader);
-  if(!gl.getProgramParameter(program,gl.LINK_STATUS)){const reason=gl.getProgramInfoLog(program);gl.deleteProgram(program);throw new Error(`VFX program: ${reason}`);}
+  if(!gl.getProgramParameter(program,gl.LINK_STATUS)){const reason=gl.getProgramInfoLog(program);gl.deleteProgram(program);throw messageError(new Error(''), "errors.vfxGpu.vfxProgram", {reason: reason});}
   const uniforms=Object.fromEntries(['sourceImage','originalImage','maskImage','dimensions','origin','outputSize','p','q','paintType','paintAngle','stopCount','stops[0]','stopOffsets[0]'].map(name=>[name,gl.getUniformLocation(program,name)]));entry={program,uniforms};this.programs.set(operation,entry);return entry;
  }
  slot(index,width,height){
@@ -27,7 +28,7 @@ export class VfxGPU {
  }
  run(source,stack,{scale=1,origin={x:0,y:0},outputSize}={}){
   stack=activeVfx(stack);if(!stack.length)return source;
-  const gl=this.gl,w=source.width,h=source.height;if(gl.isContextLost())throw new Error('The VFX graphics context was lost. Retry after reloading the document.');
+  const gl=this.gl,w=source.width,h=source.height;if(gl.isContextLost())throw messageError(new Error(''), "errors.vfxGpu.theVfxGraphicsContextWasLostRetryAfter", {});
   if(!fitsVfxSurface(w,h,this.maxDimension))throw vfxSurfaceError();
   if(this.canvas.width!==w)this.canvas.width=w;if(this.canvas.height!==h)this.canvas.height=h;
   gl.disable(gl.BLEND);gl.activeTexture(gl.TEXTURE0);const input=this.slot(0,w,h);

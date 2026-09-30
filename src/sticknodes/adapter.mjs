@@ -1,3 +1,4 @@
+import {messageError} from '../localized-error.mjs';
 /** Stick Nodes -> authoritative StykAnimate document. No source bytes or runtime
  * decoder objects enter editor history. Definitions and clip timelines stay shared. */
 import {openDocument} from './decoder/project.mjs';
@@ -47,9 +48,9 @@ export async function importStickNodes(input,{filename='project.stknds',signal,o
  const started=performance.now(),check=()=>signal?.throwIfAborted();check();
  if(/\.zip$/i.test(filename)||isZip(input)){
   const entries=(await unpackZip(input,{signal})).filter(e=>/\.(nodes|nodemc|stknds)$/i.test(e.name));
-  if(!entries.length)throw new Error('The ZIP contains no Stick Nodes figures, movie clips or projects.');
+  if(!entries.length)throw messageError(new Error(''), "errors.adapter.theZipContainsNoStickNodesFiguresMovie", {});
   if(entryIndex==null)return {kind:'sticknodes-archive',filename,entries:entries.map((e,index)=>({index,name:e.name,bytes:e.bytes.length})),timings:{decode_ms:performance.now()-started}};
-  if(!Number.isInteger(entryIndex)||!entries[entryIndex])throw new Error('Choose a valid ZIP asset.');
+  if(!Number.isInteger(entryIndex)||!entries[entryIndex])throw messageError(new Error(''), "errors.adapter.chooseAValidZipAsset", {});
   const entry=entries[entryIndex];return importStickNodes(entry.bytes,{filename:entry.name,signal,onProgress,textFont});
  }
  const doc=await openDocument(input,{filename,signal,onProgress}),warnings=new Map();

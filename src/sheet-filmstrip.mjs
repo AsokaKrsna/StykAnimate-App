@@ -1,3 +1,9 @@
+import {messageTuple, translatedElement, localizedText, localizedAttribute, localizedMarkup} from './localization-bindings.mjs';
+
+import {messageError} from './localized-error.mjs';
+
+import {t as interfaceText, messageText as sayTimeline} from './localization.mjs';
+
 import {layerAppearance,thumbnailVisualChange} from './thumbnail-validity.mjs';
 import {mountTimelineNavigation} from './timeline-navigation.mjs';
 import {attachTimelineHotkeys} from './timeline-hotkeys.mjs';
@@ -9,7 +15,7 @@ import {showKeyframeEasingPopover} from './keyframe-easing-popover.mjs';
 import {showTimelineMenu} from './timeline-menu.mjs';
 import {AudioTimeline} from './audio-timeline.mjs';
 import {createLayersPopover} from './timeline-layers-popover.mjs';
-import {messageText as sayTimeline} from './localization.mjs';
+
 import {LAYER_COLORS} from './layers.mjs';
 import {bandBottom} from './shell/topbar.mjs';
 
@@ -60,7 +66,7 @@ export class SheetFilmstrip {
     this.strip = el('div', this.root, 'sheet-filmstrip-scroll');
     this.strip.tabIndex = 0;
     this.strip.setAttribute('role', 'listbox');
-    this.strip.setAttribute('aria-label', 'Animation frames');
+    localizedAttribute(this.strip, 'aria-label', "sheetFilmstrip.animationFrames", {});
     this.strip.setAttribute('aria-multiselectable', 'true');
     this.spacer = el('div', this.strip, 'sheet-filmstrip-spacer');
     // During playback the strip stays still: no card renders and no layout reads, only this line moves (by its
@@ -116,8 +122,8 @@ export class SheetFilmstrip {
     const button = el('button', parent, text ? 'ui-button' : 'ui-icon-button');
     button.type = 'button';
     button.dataset.size = 'sm';
-    if (text) { button.dataset.variant = 'ghost'; button.innerHTML = `${glyph ? icon(glyph) : ''}<span class="ui-label"></span>`; button.lastChild.textContent = text; }
-    else button.innerHTML = icon(glyph);
+    if (text) { button.dataset.variant = 'ghost'; localizedMarkup(button, `${glyph ? icon(glyph) : ''}<span class="ui-label"></span>`); button.lastChild.textContent = text; }
+    else localizedMarkup(button, icon(glyph));
     button.setAttribute('aria-label', name);
     if (command) button.dataset.hotkeyCommand = command;
     else button.dataset.tooltip = name;
@@ -134,7 +140,7 @@ export class SheetFilmstrip {
     const say = (key, params) => this.say(key, params);
     const bar = this.controls = el('div', this.root, 'sheet-filmstrip-controls sheet-framebar');
     bar.setAttribute('role', 'group');
-    bar.setAttribute('aria-label', say('filmstrip.frameBar'));
+    localizedAttribute(bar, 'aria-label', "filmstrip.frameBar", {});
     this.counter = el('div', bar, 'sheet-filmstrip-counter sheet-framebar-title');
     this.counterFrame = el('strong', this.counter);
     this.counterHold = el('span', this.counter, 'sheet-framebar-meta');
@@ -142,22 +148,22 @@ export class SheetFilmstrip {
     const grid = el('div', bar, 'sheet-framebar-grid');
     // Inbetweens: − steps every selected card down, + up; typing sets them all (Enter or leaving the field).
     const row = el('div', grid, 'ui-row sheet-framebar-row');
-    el('span', row, 'ui-row-label', say('filmstrip.inbetweens')).setAttribute('aria-hidden', 'true');
+    translatedElement(el('span', row, 'ui-row-label', say("filmstrip.inbetweens")), "filmstrip.inbetweens", {}).setAttribute('aria-hidden', 'true');
     const stepper = el('div', row, 'ui-stepper sheet-framebar-stepper');
     stepper.setAttribute('role', 'group');
-    this.fewerButton = this.button(stepper, say('filmstrip.fewer'), () => this.stepDuration(-1), {glyph: 'minus'});
+    this.fewerButton = this.button(stepper, say("filmstrip.fewer"), () => this.stepDuration(-1), {glyph: 'minus'});
     this.duration = el('input', stepper, 'ui-stepper-input');
     Object.assign(this.duration, {type: 'number', min: '0', max: '65534', step: '1'});
-    this.duration.setAttribute('aria-label', say('filmstrip.inbetweensName'));
-    this.moreButton = this.button(stepper, say('filmstrip.more'), () => this.stepDuration(1), {glyph: 'plus'});
+    localizedAttribute(this.duration, 'aria-label', "filmstrip.inbetweensName", {});
+    this.moreButton = this.button(stepper, say("filmstrip.more"), () => this.stepDuration(1), {glyph: 'plus'});
     // Easing: the current easing of the selected cards (Mixed when they differ); choosing one applies it.
     const easing = el('label', grid, 'ui-field sheet-framebar-easing');
     easing.dataset.select = '';
     easing.dataset.size = 'sm';
-    el('span', easing, 'ui-field-label', say('filmstrip.easing'));
+    translatedElement(el('span', easing, 'ui-field-label', say("filmstrip.easing")), "filmstrip.easing", {});
     this.easingSelect = el('select', easing, 'ui-field-input sheet-easing-select');
-    this.easingSelect.setAttribute('aria-label', say('filmstrip.easingName'));
-    this.mixedOption = el('option', this.easingSelect, '', say('filmstrip.mixed'));
+    localizedAttribute(this.easingSelect, 'aria-label', "filmstrip.easingName", {});
+    this.mixedOption = translatedElement(el('option', this.easingSelect, '', say("filmstrip.mixed")), "filmstrip.mixed", {});
     this.mixedOption.value = '';
     this.mixedOption.disabled = true;
     for (const mode of EASING_MODES) el('option', this.easingSelect, '', mode.label).value = mode.id;
@@ -170,20 +176,20 @@ export class SheetFilmstrip {
     // The frame clipboard and Delete: the words say what they do; the names say which frames.
     const actions = el('div', grid, 'sheet-filmstrip-actions sheet-framebar-actions');
     actions.setAttribute('role', 'group');
-    actions.setAttribute('aria-label', say('filmstrip.frameBar'));
-    this.copyButton = this.button(actions, say('filmstrip.copyName'), () => this.copySelection(), {text: say('filmstrip.copy'), command: 'copy'});
-    this.pasteButton = this.button(actions, say('filmstrip.pasteName'), () => this.pasteSelection(), {text: say('filmstrip.paste'), command: 'paste'});
-    this.deleteButton = this.button(actions, say('filmstrip.deleteName'), () => this.action('delete'), {glyph: 'trash', command: 'delete'});
+    localizedAttribute(actions, 'aria-label', "filmstrip.frameBar", {});
+    this.copyButton = this.button(actions, say("filmstrip.copyName"), () => this.copySelection(), {text: say("filmstrip.copy"), textKey: "filmstrip.copy", textParams: {}, command: 'copy'});
+    this.pasteButton = this.button(actions, say("filmstrip.pasteName"), () => this.pasteSelection(), {text: say("filmstrip.paste"), textKey: "filmstrip.paste", textParams: {}, command: 'paste'});
+    this.deleteButton = this.button(actions, say("filmstrip.deleteName"), () => this.action('delete'), {glyph: 'trash', command: 'delete'});
     // Edit together: the header's toggle-range-edit (timeline-host.mjs writes its state through setEditTogether).
     const together = this.togetherField = el('label', grid, 'ui-field sheet-framebar-together');
     together.dataset.switchField = '';
     together.dataset.size = 'sm';
-    el('span', together, 'ui-field-label', say('filmstrip.together'));
+    translatedElement(el('span', together, 'ui-field-label', say("filmstrip.together")), "filmstrip.together", {});
     this.togetherSwitch = el('input', together, 'ui-switch');
     Object.assign(this.togetherSwitch, {type: 'checkbox', disabled: true});
     this.togetherSwitch.setAttribute('role', 'switch');
     this.togetherSwitch.dataset.command = 'toggle-range-edit';
-    together.dataset.tooltip = say('filmstrip.togetherReason');
+    localizedAttribute(together, 'data-tooltip', "filmstrip.togetherReason", {});
     this._on(this.togetherSwitch, 'change', () => {
       this.togetherSwitch.checked = !this.togetherSwitch.checked;
       try { this.onToggleRangeEdit?.(); } catch (error) { this.onError?.(error); }
@@ -196,9 +202,9 @@ export class SheetFilmstrip {
     layer.dataset.variant = 'ghost';
     layer.setAttribute('aria-haspopup', 'dialog');
     layer.setAttribute('aria-expanded', 'false');
-    layer.dataset.tooltip = say('filmstrip.layerTip');
-    layer.innerHTML = `${icon('layers')}<span class="ui-label"></span><span class="ui-dot" aria-hidden="true"></span><span class="sheet-framebar-layer-name"></span>${icon('chevron-down', 'sheet-framebar-chev')}`;
-    layer.querySelector('.ui-label').textContent = say('filmstrip.layer');
+    localizedAttribute(layer, 'data-tooltip', "filmstrip.layerTip", {});
+    localizedMarkup(layer, `${icon('layers')}<span class="ui-label"></span><span class="ui-dot" aria-hidden="true"></span><span class="sheet-framebar-layer-name"></span>${icon('chevron-down', 'sheet-framebar-chev')}`);
+    localizedText(layer.querySelector('.ui-label'), "filmstrip.layer", {});
     this.layerDot = layer.querySelector('.ui-dot');
     this.layerName = layer.querySelector('.sheet-framebar-layer-name');
     this._on(layer, 'click', () => {
@@ -253,10 +259,10 @@ export class SheetFilmstrip {
   /** Sets the inbetweens of the frames at `indices`: a number for all of them, or a function of each frame's current count. */
   setDuration(indices, inbetweens) {
     const valid = value => Number.isInteger(value) && value >= 0 && value <= 65534;
-    if (typeof inbetweens !== 'function' && !valid(inbetweens)) throw new Error('Inbetweens must be 0–65,534.');
+    if (typeof inbetweens !== 'function' && !valid(inbetweens)) throw messageError(new Error(''), "errors.sheetFilmstrip.inbetweensMustBe065534", {});
     const ranges = this.ranges(indices).sort((a, b) => b.start - a.start);
     const active = this.selectedIndex, offset = this.editor.tick - this.times[active];
-    const result = this.editor.movieclipBatch('Set frame inbetweens', () => {
+    const result = this.editor.movieclipBatch(interfaceText("sheetFilmstrip.setFrameInbetweens"), () => {
       for (const {start, end} of ranges) {
         const count = typeof inbetweens === 'function' ? Math.max(0, Math.min(65534, inbetweens(end - start - 1))) : inbetweens;
         const delta = count + 1 - (end - start);
@@ -339,17 +345,17 @@ export class SheetFilmstrip {
     const seconds = ticks => { const value = ticks / fps; return value >= 1 ? value.toFixed(1) : value.toFixed(2); };
     const hold = (this.times[active + 1] ?? total) - (this.times[active] ?? 0);
     const texts = [
-      [this.counterFrame, say('filmstrip.frameOf', {frame: active + 1, total: this.times.length})],
-      [this.counterHold, say('filmstrip.holds', {seconds: seconds(hold)})],
-      [this.counterPlayback, say('filmstrip.total', {seconds: seconds(total)})],
+      messageTuple([this.counterFrame, say("filmstrip.frameOf", {frame: active + 1, total: this.times.length})], {1: {key: "filmstrip.frameOf", params: {frame: active + 1, total: this.times.length}}}),
+      messageTuple([this.counterHold, say("filmstrip.holds", {seconds: seconds(hold)})], {1: {key: "filmstrip.holds", params: {seconds: seconds(hold)}}}),
+      messageTuple([this.counterPlayback, say("filmstrip.total", {seconds: seconds(total)})], {1: {key: "filmstrip.total", params: {seconds: seconds(total)}}}),
     ];
     for (const [node, text] of texts) if (node.textContent !== text) node.textContent = text;
-    const totalTip = say('filmstrip.totalTip', {seconds: seconds(total), ticks: total, fps: Number(fps.toFixed(2))});
+    const totalTip = say("filmstrip.totalTip", {seconds: seconds(total), ticks: total, fps: Number(fps.toFixed(2))});
     if (this.counter.dataset.tooltip !== totalTip) this.counter.dataset.tooltip = totalTip;
     // Inbetweens: one number for every selected card, empty ("Mixed") when they differ.
     const amounts = this.ranges().map(({start, end}) => end - start - 1);
     if (document.activeElement !== this.duration) this.duration.value = amounts.every(n => n === amounts[0]) ? String(amounts[0] ?? 0) : '';
-    this.duration.placeholder = say('filmstrip.mixed');
+    localizedAttribute(this.duration, "placeholder", "filmstrip.mixed", {});
     this.duration.disabled = this.moreButton.disabled = this.deleteButton.disabled = this.copyButton.disabled = locked;
     this.fewerButton.disabled = locked || amounts.every(n => n <= 0);
     this.header?.setAddFrame({disabled: locked});
@@ -374,7 +380,7 @@ export class SheetFilmstrip {
   }
   applyEasing(indices, easing) {
     const ranges = this.ranges(indices);
-    return this.editor.movieclipBatch('Set scene frame easing', () => {
+    return this.editor.movieclipBatch(interfaceText("sheetFilmstrip.setSceneFrameEasing"), () => {
       for (const {start, end} of ranges) {
         // A filmstrip cell can begin inside another layer's exposure. Establish
         // its boundaries before changing easing so adjacent scene frames retain theirs.
@@ -425,7 +431,7 @@ export class SheetFilmstrip {
         preview.type = 'button';
         preview.tabIndex = -1;
         preview.setAttribute('role', 'option');
-        preview.setAttribute('aria-label', say('filmstrip.card', {frame: index + 1}));
+        localizedAttribute(preview, 'aria-label', 'filmstrip.card', {frame: index + 1});
         const canvas = el('canvas', preview);
         canvas.width = 320; canvas.height = 192;
         const number = el('span', card, 'sheet-frame-number ui-frame-num', String(index + 1));
@@ -435,7 +441,7 @@ export class SheetFilmstrip {
         const hold = el('div', card, 'sheet-inbetweens ui-frame-hold');
         const slider = el('input', hold, 'ui-frame-hold-input');
         Object.assign(slider, {type: 'range', min: '0', step: '1', tabIndex: -1});
-        slider.setAttribute('aria-label', say('filmstrip.holdName', {frame: index + 1}));
+        localizedAttribute(slider, 'aria-label', 'filmstrip.holdName', {frame: index + 1});
         listen(slider, 'input', () => this._showHold(card, index, Number(slider.value)));
         listen(slider, 'change', () => this._run(() => this.setDuration([index], Number(slider.value))));
         listen(hold, 'pointerdown', event => this._holdDown(event, card, index));
@@ -454,7 +460,7 @@ export class SheetFilmstrip {
       const dot = current && edited;
       if (card._number.hasAttribute('data-edited') !== dot) {
         card._number.toggleAttribute('data-edited', dot);
-        if (dot) card._number.dataset.tooltip = say('filmstrip.edited'); else delete card._number.dataset.tooltip;
+        if (dot) localizedAttribute(card._number, 'data-tooltip', "filmstrip.edited", {}); else delete card._number.dataset.tooltip;
       }
       const amount = (this.times[index + 1] ?? this.editor.totalTicks) - this.times[index] - 1;
       if (document.activeElement !== card._slider) {
@@ -509,7 +515,7 @@ export class SheetFilmstrip {
       if (command === 'paste' || command === 'paste-end') return this.pasteSelection(command === 'paste-end');
       if (command === 'delete') {
         const ranges = this.ranges().sort((a, b) => b.start - a.start);
-        return this.editor.movieclipBatch('Remove scene frames', () => {
+        return this.editor.movieclipBatch(interfaceText("sheetFilmstrip.removeSceneFrames"), () => {
           for (const {start, end} of ranges) this.editor.sheetRemoveFrames(this.ids, start, end - 1);
         });
       }
@@ -522,7 +528,7 @@ export class SheetFilmstrip {
   }
   extendKeyframe() {
     const ranges = this.ranges().sort((a, b) => b.start - a.start);
-    return this._run(() => this.editor.movieclipBatch('Extend keyframe', () => {
+    return this._run(() => this.editor.movieclipBatch(interfaceText("sheetFilmstrip.extendKeyframe"), () => {
       for (const {end} of ranges) this.editor.sheetInsertFrames(this.ids, end, 1);
     }));
   }
@@ -534,12 +540,12 @@ export class SheetFilmstrip {
     const locked = this.locked, canPaste = !locked && (this.sharedClipboard || this.editor._sheetClipboard);
     // Add frame's home is the header (the same place in both modes), so the card menu keeps to the selected frames.
     showTimelineMenu(this, event, [
-      [!locked && {label: 'Change easing…', symbol: 'sliders', action: () => this.showEasingPopover()}],
-      [!locked && {label: 'Copy frames', shortcut: this.shortcut('copy'), symbol: 'duplicate', action: () => this.copySelection()},
-       !locked && {label: 'Cut frames', shortcut: this.shortcut('cut'), symbol: 'cut', action: () => this.cutSelection()},
-       canPaste && {label: 'Paste frames', shortcut: this.shortcut('paste'), symbol: 'clipboard', action: () => this.pasteSelection()}],
-      [!locked && {label: 'Delete frames', shortcut: this.shortcut('delete'), symbol: 'trash', danger: true, action: () => this.action('delete')},
-       locked && {label: 'Unlock layers', symbol: 'unlock', action: () => { for (const id of this.ids) this.editor.setLayerLocked(id, false); }}],
+      [!locked && {label: interfaceText("sheetFilmstrip.changeEasing"), labelKey: "sheetFilmstrip.changeEasing", symbol: 'sliders', action: () => this.showEasingPopover()}],
+      [!locked && {label: interfaceText("sheetFilmstrip.copyFrames"), labelKey: "sheetFilmstrip.copyFrames", shortcut: this.shortcut('copy'), symbol: 'duplicate', action: () => this.copySelection()},
+       !locked && {label: interfaceText("sheetFilmstrip.cutFrames"), labelKey: "sheetFilmstrip.cutFrames", shortcut: this.shortcut('cut'), symbol: 'cut', action: () => this.cutSelection()},
+       canPaste && {label: interfaceText("sheetFilmstrip.pasteFrames"), labelKey: "sheetFilmstrip.pasteFrames", shortcut: this.shortcut('paste'), symbol: 'clipboard', action: () => this.pasteSelection()}],
+      [!locked && {label: interfaceText("sheetFilmstrip.deleteFrames"), labelKey: "sheetFilmstrip.deleteFrames", shortcut: this.shortcut('delete'), symbol: 'trash', danger: true, action: () => this.action('delete')},
+       locked && {label: interfaceText("sheetFilmstrip.unlockLayers"), labelKey: "sheetFilmstrip.unlockLayers", symbol: 'unlock', action: () => { for (const id of this.ids) this.editor.setLayerLocked(id, false); }}],
     ]);
   }
   setPaused(value) { this.paused = value; if (!value) this._drain(); }

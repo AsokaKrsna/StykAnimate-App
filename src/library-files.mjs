@@ -1,3 +1,5 @@
+import {restoreMessageError, messageError} from './localized-error.mjs';
+
 import {nativeFigureDocument} from './native-figure.mjs';
 
 export function librarySnapshot(editor) {
@@ -7,11 +9,11 @@ export function libraryPreview(report) {
   return new Promise((resolve,reject) => {
     const worker = new Worker(new URL('./library-preview-worker.mjs', import.meta.url), {type:'module'});
     const finish = (error, result) => { clearTimeout(timer); worker.terminate(); error ? reject(error) : resolve(result); };
-    const timer = setTimeout(() => finish(new Error('The library preview timed out.')), 60000);
+    const timer = setTimeout(() => finish(messageError(new Error(''), "errors.libraryFiles.theLibraryPreviewTimedOut", {})), 60000);
     worker.onerror = event => finish(new Error(event.message));
     worker.onmessage = async ({data}) => {
-      if (data.error) return finish(new Error(data.error));
-      const reader = new FileReader(); reader.onerror = () => finish(new Error('Could not encode the preview.'));
+      if (data.error) return finish(restoreMessageError(new Error(data.error), data));
+      const reader = new FileReader(); reader.onerror = () => finish(messageError(new Error(''), "errors.libraryFiles.couldNotEncodeThePreview", {}));
       reader.onload = () => finish(null, reader.result); reader.readAsDataURL(data.blob);
     };
     worker.postMessage({report, baseURL: location.href});
@@ -39,7 +41,7 @@ export async function readLibraryFile(desktop, path, {signal} = {}) {
   const transfer = await desktop.beginLibraryRead(path), parts = []; let size = 0;
   try {
     for (;;) { signal?.throwIfAborted(); const part = await desktop.readLibraryChunk(transfer.token); signal?.throwIfAborted(); parts.push(part.bytes); size += part.bytes.byteLength; if (part.done) break; }
-    if (size !== transfer.size) throw new Error('The library file changed while reading.');
+    if (size !== transfer.size) throw messageError(new Error(''), "errors.libraryFiles.theLibraryFileChangedWhileReading", {});
     return new File(parts, transfer.name);
   } finally { await desktop.cancelLibraryTransfer(transfer.token).catch(() => {}); }
 }

@@ -1,3 +1,5 @@
+import {t as interfaceText} from './localization.mjs';
+import {appendLocalized, localizedAttribute} from './localization-bindings.mjs';
 /** Room kept between a marker and the playhead's tab, so the two never share a target. */
 const GAP=2;
 
@@ -15,9 +17,9 @@ export class OnionTimelineRange {
     this.parts=['before','after'].map(direction=>{
       const sign=direction==='before'?-1:1,band=document.createElement('div'),end=document.createElement('button'),count=document.createElement('span');
       band.className=`onion-range-band ${direction}`;
-      end.type='button';end.className=`onion-range-end ${direction}`;count.className='onion-range-count';end.append(count);
-      end.setAttribute('role','slider');end.setAttribute('aria-label',`Onion frames ${direction}`);end.setAttribute('aria-orientation','horizontal');
-      this.overlay.append(band,end);
+      end.type='button';end.className=`onion-range-end ${direction}`;count.className='onion-range-count';appendLocalized(end, count);
+      end.setAttribute('role','slider');localizedAttribute(end, 'aria-label', "onionTimelineRange.onionFrames", {direction: direction});end.setAttribute('aria-orientation','horizontal');
+      appendLocalized(this.overlay, band, end);
       const part={direction,sign,band,end,count,drag:null};
       end.addEventListener('pointerdown',event=>this._press(part,event),{signal});
       end.addEventListener('pointermove',event=>this._move(part,event),{signal});
@@ -28,7 +30,7 @@ export class OnionTimelineRange {
       end.addEventListener('keydown',event=>{
         event.stopPropagation();
         if(event.key==='Escape'&&part.drag){event.preventDefault();this._finish(part,false);return;}
-        if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home'].includes(event.key)||!this.controller)return;
+        if(!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Home"].includes(event.key)||!this.controller)return;
         event.preventDefault();this._finish(part,false);
         const range=this.controller.snapshot()[direction];
         const delta=event.key==='ArrowLeft'?-sign:event.key==='ArrowRight'?sign:event.key==='ArrowUp'?1:-1;
@@ -37,7 +39,7 @@ export class OnionTimelineRange {
       return part;
     });
     window.addEventListener('blur',()=>{for(const part of this.parts)this._finish(part,false);},{signal});
-    host.main.append(this.overlay);
+    appendLocalized(host.main, this.overlay);
     // The playhead's tab grows with its frame number; follow its width without reading layout while painting.
     if(host.playheadLabel&&typeof ResizeObserver==='function'){
       this.tabObserver=new ResizeObserver(([entry])=>{const half=(entry.borderBoxSize?.[0]?.inlineSize??entry.contentRect.width)/2;if(Math.abs(half-this.tabHalf)>.25){this.tabHalf=half;this.update();}});
@@ -84,7 +86,7 @@ export class OnionTimelineRange {
       end.style.left=`${marker}px`;
       end.setAttribute('aria-valuemin','0');end.setAttribute('aria-valuemax',String(value.max));end.setAttribute('aria-valuenow',String(value.span));
       const spanLabel=`${value.span} ${value.span===1?'frame':'frames'} ${direction}`;
-      end.setAttribute('aria-valuetext',spanLabel);end.title=`${spanLabel} · Drag to change`;
+      end.setAttribute('aria-valuetext',spanLabel);localizedAttribute(end, "title", "onionTimelineRange.dragToChange", {spanLabel: spanLabel});
       if(count.textContent!==String(value.span))count.textContent=String(value.span);
       this.overlay.style.setProperty(`--onion-${direction}`,range.settings[direction==='before'?'onionBeforeColor':'onionAfterColor']);
     }

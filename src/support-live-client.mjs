@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** One receive-only connection per visible conversation. No idle polling or heartbeat. */
 export class SupportLiveUpdates {
   constructor({ subscribe, changed, status }) { Object.assign(this, { subscribe, changed, status }); this.generation = 0; }
@@ -37,9 +38,9 @@ export class SupportLiveUpdates {
 }
 export async function subscribeWebSupport(api, id, event) {
   const ticket = await api(`/threads/${id}/live`, { method: 'POST' });
-  if (!ticket.available) { const error = new Error('live_unavailable'); error.code = 'live_unavailable'; throw error; }
+  if (!ticket.available) { const error = messageError(new Error(''), "errors.supportLiveClient.liveUnavailable", {}); error.code = 'live_unavailable'; throw error; }
   const url = new URL(ticket.path, location.origin);
-  if (url.origin !== location.origin || url.pathname !== '/api/v1/support/live') throw new Error('Invalid live endpoint');
+  if (url.origin !== location.origin || url.pathname !== '/api/v1/support/live') throw messageError(new Error(''), "errors.supportLiveClient.invalidLiveEndpoint", {});
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   const socket = new WebSocket(url); let closed = false;
   socket.onopen = () => event('connected');

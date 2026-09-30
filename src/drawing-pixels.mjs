@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {TILE,TILE_BYTES,tileKey,TileStore} from './drawing-tiles.mjs';
 import {lassoContains} from './drawing-lasso.mjs';
@@ -6,7 +7,7 @@ import {brushAtlas,ensureTexture,sampleGrain,sampleTip} from './drawing-brush-te
 const clamp=(n,a=0,b=1)=>Math.max(a,Math.min(b,n));
 export function assertPixels(pixels,width,height) {
   if(!Number.isInteger(width)||!Number.isInteger(height)||width<1||height<1||width*height>DRAWING_MAX_PIXELS||
-    !(pixels instanceof Uint8ClampedArray)||pixels.length!==width*height*4)throw new Error('Invalid drawing pixel surface.');
+    !(pixels instanceof Uint8ClampedArray)||pixels.length!==width*height*4)throw messageError(new Error(''), "errors.drawingPixels.invalidDrawingPixelSurface", {});
 }
 export function compactTile(bytes){
   if(bytes==null)return null;
@@ -70,7 +71,7 @@ const tileId=tileKey;
  * for callers that paint from input points (tests, previews). */
 export class DrawingStroke {
   constructor(store,settings={},{requireTile,mask}={}) {
-    if(!(store instanceof TileStore))throw new Error('Strokes draw into a tile store.');
+    if(!(store instanceof TileStore))throw messageError(new Error(''), "errors.drawingPixels.strokesDrawIntoATileStore", {});
     const brush=normalizeBrush(settings),mode=brush.erase?'erase':brush.blend;
     Object.assign(this,brush,{store,brush,requireTile,mask:mask??settings.mask??null,workingBytes:settings.workingBytes??768*1024*1024,maxBytes:settings.maxBytes??48*1024*1024,tiles:new Map(),bytes:256,dirtyTiles:new Set(),uncomposited:new Set(),tailTiles:new Set(),tailShapes:[],tailVersion:-1,dabs:0,
       mode,smudge:mode==='smudge',lock:brush.alphaLock&&mode!=='erase'&&mode!=='behind',
@@ -84,7 +85,7 @@ export class DrawingStroke {
     const key=tileId(tx,ty);let tile=this.tiles.get(key);if(tile)return tile;
     this.requireTile?.(tx,ty);
     const grain=this.texture>0;
-    if((this.tiles.size+1)*TILE_BYTES*(grain?6:5)>this.workingBytes)throw new Error('The stroke exceeds the drawing working memory limit.');
+    if((this.tiles.size+1)*TILE_BYTES*(grain?6:5)>this.workingBytes)throw messageError(new Error(''), "errors.drawingController.theStrokeExceedsTheDrawingWorkingMemoryLimit", {});
     this.bytes+=TILE*TILE*(grain?12:8)+64;const existing=this.store.get(tx,ty);
     tile={tx,ty,before:existing?existing.pixels.slice():null,coverage:new Float32Array(TILE*TILE),pixels:this.store.writable(tx,ty).pixels,grain:grain?this.grainTile(tx,ty):null};tile.src=tile.before??ZERO_TILE;this.tiles.set(key,tile);return tile;
   }
@@ -97,7 +98,7 @@ export class DrawingStroke {
   }
   /** Rasterize final dab shapes, then optionally replace the provisional tail. */
   paint(shapes,tail){
-    if(this.closed)throw new Error('The stroke has already ended.');
+    if(this.closed)throw messageError(new Error(''), "errors.drawingBrush.theStrokeHasAlreadyEnded", {});
     for(const shape of shapes)this.addShape(shape);
     this.composite();
     // Final dabs composite over tail tiles from final coverage alone.
@@ -240,7 +241,7 @@ export class DrawingStroke {
   }
   /** Paint from one input point through the brush pipeline. */
   sample(input){
-    if(this.closed)throw new Error('The stroke has already ended.');
+    if(this.closed)throw messageError(new Error(''), "errors.drawingBrush.theStrokeHasAlreadyEnded", {});
     this.pipeline.sample(input);this.composite();
     if(this.pipeline.hasTail&&this.pipeline.tailVersion!==this.tailVersion){this.tailVersion=this.pipeline.tailVersion;this.setTail(this.pipeline.tailShapes());}
   }
@@ -283,10 +284,10 @@ function dilateL1(src,width,height,k,box){
  * confines both the flood and its growth; `select` returns the region as a
  * mask instead of painting it (the magic wand). */
 export function floodTiles(store,{x,y,color=[0,0,0,255],tolerance=16,expansion=0,gap=0,bounds,source,clip=null,select=false}={}) {
-  if(!bounds||![bounds.x,bounds.y,bounds.width,bounds.height].every(Number.isInteger)||bounds.width<1||bounds.height<1||bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw new Error('Invalid fill bounds.');
+  if(!bounds||![bounds.x,bounds.y,bounds.width,bounds.height].every(Number.isInteger)||bounds.width<1||bounds.height<1||bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw messageError(new Error(''), "errors.drawingFill.invalidFillBounds", {});
   const {width,height}=bounds,count=width*height;
   x=Math.floor(x)-bounds.x;y=Math.floor(y)-bounds.y;if(x<0||y<0||x>=width||y>=height)return;
-  if(![tolerance,expansion,gap].every(Number.isFinite)||color.length!==4||!color.every(Number.isFinite))throw new Error('Invalid fill options.');
+  if(![tolerance,expansion,gap].every(Number.isFinite)||color.length!==4||!color.every(Number.isFinite))throw messageError(new Error(''), "errors.drawingFill.invalidFillOptions", {});
   tolerance=clamp(tolerance,0,255);expansion=Math.round(clamp(expansion,0,16));gap=Math.round(clamp(gap,0,8));
   const origin=source?new Uint8ClampedArray(source):null;
   const sample=(px,py)=>{if(origin)return origin.subarray((py*width+px)*4,(py*width+px)*4+4);return store.pixel(bounds.x+px,bounds.y+py);};
@@ -371,14 +372,14 @@ export function combineMasks(a,b,mode='replace'){
   if(mode==='replace'||!a)return mode==='subtract'||mode==='intersect'?null:cropMask(b);
   if(!b)return mode==='intersect'?null:cropMask(a);
   const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y),width=Math.max(a.x+a.width,b.x+b.width)-x,height=Math.max(a.y+a.height,b.y+b.height)-y;
-  if(width*height>DRAWING_MAX_PIXELS)throw new Error('Combined selection exceeds the 16-megapixel mask limit.');
+  if(width*height>DRAWING_MAX_PIXELS)throw messageError(new Error(''), "errors.drawingPixels.combinedSelectionExceedsThe16MegapixelMaskLimit", {});
   const out=new Uint8Array(width*height),at=maskValue;
   for(let py=0;py<height;py++)for(let px=0;px<width;px++){const u=at(a,px+x,py+y),v=at(b,px+x,py+y);out[py*width+px]=mode==='add'?(u|v):mode==='subtract'?(u&&!v?1:0):(u&v);}
   return cropMask({x,y,width,height,mask:out});
 }
 /** Invert a mask within `bounds` (the canvas region selections can reach). */
 export function invertMask(m,bounds){
-  if(bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw new Error('Inverted selection exceeds the 16-megapixel mask limit.');
+  if(bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw messageError(new Error(''), "errors.drawingPixels.invertedSelectionExceedsThe16MegapixelMaskLimit", {});
   const out=new Uint8Array(bounds.width*bounds.height).fill(1);
   if(m)for(let py=0;py<m.height;py++)for(let px=0;px<m.width;px++){if(!maskValue(m,px+m.x,py+m.y))continue;const x=px+m.x-bounds.x,y=py+m.y-bounds.y;if(x>=0&&y>=0&&x<bounds.width&&y<bounds.height)out[y*bounds.width+x]=0;}
   return cropMask({...bounds,mask:out});
@@ -427,8 +428,8 @@ function boxBlur(src,dst,width,height,r){
  * never darken edges), hue/saturation/lightness, brightness/contrast and
  * invert. Pixels outside the mask keep their exact bytes. */
 export function filterTiles(store,{bounds,kind,mask=null,radius=4,hue=0,saturation=0,lightness=0,brightness=0,contrast=0}){
-  if(!bounds||!(bounds.width>0&&bounds.height>0)||bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw new Error('Invalid filter bounds.');
-  if(!['blur','hsl','brightness','invert'].includes(kind))throw new Error('Unknown drawing filter.');
+  if(!bounds||!(bounds.width>0&&bounds.height>0)||bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw messageError(new Error(''), "errors.drawingPixels.invalidFilterBounds", {});
+  if(!['blur','hsl','brightness','invert'].includes(kind))throw messageError(new Error(''), "errors.drawingController.unknownDrawingFilter", {});
   const {x:bx,y:by,width,height}=bounds,source=store.readRect(bx,by,width,height),out=new Uint8ClampedArray(source);
   const weight=(x,y)=>{if(!mask)return 1;return maskValue(mask,x+bx,y+by);};
   if(kind==='blur'){

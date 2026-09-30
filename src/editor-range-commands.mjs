@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {drawingMetadata,drawingId} from './drawing-model.mjs';
 import {inheritedKeyEasing} from './keyframe-easing.mjs';
 import {remapVfxOwner} from './vfx.mjs';
@@ -58,7 +59,7 @@ function targets(editor, options) {
   if(editor.report._styk?.layerSheet&&options.indices?.sheetTicks)options={...options,ticks:options.indices.sheetTicks};
   if (options.ticks !== undefined) {
     const ticks = [...new Set(options.ticks)].sort((a, b) => a - b);
-    if (ticks.some(tick => !Number.isInteger(tick) || tick < 0 || tick > 10000000)) throw new Error('Select whole animation ticks from 0 to 10,000,000.');
+    if (ticks.some(tick => !Number.isInteger(tick) || tick < 0 || tick > 10000000)) throw messageError(new Error(''), "errors.editorRangeCommands.selectWholeAnimationTicksFrom0To10", {});
     return {authored: true, frames: ticks.map(tick => sample(editor, tick))};
   }
   const indices = editor._frameIndices(options.indices ?? [editor.frameIndex]);
@@ -69,20 +70,20 @@ function insertionPlan(editor, operation, targetFrames) {
   let nextUid = editor._nextUid, nextType = 1;
   for (const figure of editor.report.figure_types) nextType = Math.max(nextType, figure.figure_type_id + 1);
   const definitions = [], hints = new Map();
-  const identity = () => { if (nextUid > 0x7ffffffe) throw new Error('Object identity capacity reached.'); return nextUid++; };
+  const identity = () => { if (nextUid > 0x7ffffffe) throw messageError(new Error(''), "errors.editorLayerSheet.objectIdentityCapacityReached", {}); return nextUid++; };
   if (operation.kind === 'add') {
     const figure = editor.report.figure_types.find(value => value.figure_type_id === (operation.typeId ?? editor.report.figure_types[0]?.figure_type_id));
-    if (!figure) throw new Error('Choose an existing figure definition.');
+    if (!figure) throw messageError(new Error(''), "errors.editorRangeCommands.chooseAnExistingFigureDefinition", {});
     const uid = identity(), x = operation.x ?? editor.report.canvas_width / 2, y = operation.y ?? editor.report.canvas_height / 2;
-    if (![x, y].every(Number.isFinite)) throw new Error('Figure position must be finite.');
+    if (![x, y].every(Number.isFinite)) throw messageError(new Error(''), "errors.editorRangeCommands.figurePositionMustBeFinite", {});
     return {objects: [createObject(figure, uid, x, y,figure._styk?.movieclip?{_stykMovieclip:editor.report._styk?.layerSheet?presencePlayback():{start:editor.tick,end:null,offset:0,speed:1,mode:'loop'}}: {})], order: [uid], definitions, hints, nextUid};
   }
   const clipboard = operation.clipboard ?? editor._selectionClipboard ?? editor._figureClipboard;
   if (!clipboard) return null;
   const sourceObjects = clipboard.objects ?? [clipboard.object], sourceFigures = clipboard.figures ?? [clipboard.figure];
   const pasteMode = operation.pasteMode ?? 'instance';
-  if (!['default', 'unique', 'instance'].includes(pasteMode)) throw new Error('Choose a valid figure paste mode.');
-  if (!['same', 'front'].includes(operation.pasteDepth ?? 'same')) throw new Error('Choose a valid figure paste depth.');
+  if (!['default', 'unique', 'instance'].includes(pasteMode)) throw messageError(new Error(''), "errors.editorRangeCommands.chooseAValidFigurePasteMode", {});
+  if (!['same', 'front'].includes(operation.pasteDepth ?? 'same')) throw messageError(new Error(''), "errors.editorRangeCommands.chooseAValidFigurePasteDepth", {});
   // Decide once per copied definition. A range shares the prepared definitions;
   // immutable movie documents remain shared until their editor publishes edits.
   const independent = new Set(sourceFigures.filter(figure => drawingMetadata(figure) || pasteMode === 'unique' ||
@@ -114,11 +115,11 @@ function insertionPlan(editor, operation, targetFrames) {
       handles: new Set([0, ...figure.segments.map(segment => segment.segment_id)])});
   }
   const offset = operation.offset ?? (retained.size ? 0 : operation.defaultOffset ?? 0);
-  if (!Number.isFinite(offset)) throw new Error('Paste offset must be finite.');
+  if (!Number.isFinite(offset)) throw messageError(new Error(''), "errors.editorRangeCommands.pasteOffsetMustBeFinite", {});
   const roots = sourceObjects.filter(object => !object.join), anchors = roots.length ? roots : sourceObjects;
   const dx = operation.position ? operation.position.x - anchors.reduce((sum, object) => sum + object.root_x, 0) / anchors.length : offset;
   const dy = operation.position ? operation.position.y - anchors.reduce((sum, object) => sum + object.root_y, 0) / anchors.length : offset;
-  if (![dx, dy].every(Number.isFinite)) throw new Error('Choose a valid canvas position.');
+  if (![dx, dy].every(Number.isFinite)) throw messageError(new Error(''), "errors.editorRangeCommands.chooseAValidCanvasPosition", {});
   const objects = sourceObjects.map(original => {
     const object = snapshotPoseObject(original), {figure, indices, legacyColor} = types.get(original.figure_type_id);
     if (legacyColor && editor.report.version >= 5) modernizeLegacyObjectColor(object);
@@ -154,7 +155,7 @@ function insert(frame, payload) {
   const objects = frame.objects.map(object => replacements.get(object.unique_id) ?? object);
   const present = new Set(frame.objects.map(object => object.unique_id));
   objects.push(...added.filter(object => !present.has(object.unique_id)));
-  if (objects.length > 65535) throw new Error('A native keyframe supports at most 65,535 figures.');
+  if (objects.length > 65535) throw messageError(new Error(''), "errors.editorRangeCommands.aNativeKeyframeSupportsAtMost65535", {});
   objects.sort((a,b)=>a.unique_id-b.unique_id);
   const slots = new Map(objects.map((object, i) => [object.unique_id, i]));
   const out = {...frame, objects:objects.map((object, i)=>{
@@ -199,7 +200,7 @@ function authoredDraft(editor, entries, sources = {}) {
 export const editorRangeCommandMethods = {
   /** A result reports actual changes; missing figure identities are skipped. */
   applyFigureRange(operation, options = {}) {
-    if (!operation || !labels[operation.kind]) throw new Error('Choose a supported figure range operation.');
+    if (!operation || !labels[operation.kind]) throw messageError(new Error(''), "errors.editorRangeCommands.chooseASupportedFigureRangeOperation", {});
     // Pasted and duplicated figures keep their timeline effects in the same undo step.
     const clipboard = operation.kind === 'paste' ? operation.clipboard ?? this._selectionClipboard ?? this._figureClipboard : null;
     const vfxSource = clipboard ? clipboard.vfxClips : operation.kind === 'duplicate' ? figureVfxClips(this.report, options.uids ?? this.selectedUids) : null;
@@ -216,7 +217,7 @@ export const editorRangeCommandMethods = {
       for (const entry of target.frames) for (const object of entry.frame.objects) if (wanted.has(object.unique_id)) present.add(object.unique_id);
       let nextUid = this._nextUid; const uidMap = new Map(), hints = new Map();
       for (const uid of uids) if (present.has(uid)) {
-        if (nextUid > 0x7ffffffe) throw new Error('Object identity capacity reached.');
+        if (nextUid > 0x7ffffffe) throw messageError(new Error(''), "errors.editorLayerSheet.objectIdentityCapacityReached", {});
         uidMap.set(uid, nextUid); hints.set(nextUid++, this.layerForUid(uid));
       }
       if (!uidMap.size) return zero();

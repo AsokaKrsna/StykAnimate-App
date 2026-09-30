@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {prepareEditorLoadAsync,yieldLoadTask} from './editor-load.mjs';
 import {validateSceneSteps} from './pivot/model.mjs';
 import {validateLayerStateSteps,ensureLayerState} from './layers.mjs';
@@ -14,7 +15,7 @@ const META='_stykClipboard';
 export function frameClipboardView(editor) {
   const frames=editor._frameClipboard;if(!frames?.length)return null;
   let view=views.get(frames);if(view)return view;
-  const m=frames[META];if(!m)throw new Error('Copy frames with their referenced assets.');
+  const m=frames[META];if(!m)throw messageError(new Error(''), "errors.editorClipboardAsync.copyFramesWithTheirReferencedAssets", {});
   const ids=m.layers.order,first=ids[0]??'layer-1';
   const layers={version:1,nextId:Math.max(1,...ids.map(id=>Number(id.slice(6))))+1,
     order:ids.length?ids:['layer-1'],byId:ids.length?m.layers.byId:{'layer-1':{name:'Layer 1',visible:true,locked:false}},
@@ -36,8 +37,8 @@ function inputState(editor) {
 }
 
 function context(editor,options,operation) {
-  if(editor._frameDraftStoredEdit)throw new Error('Finish the current stored-frame operation first.');
-  if(editor._animationEdit)throw new Error('Finish the current property gesture first.');
+  if(editor._frameDraftStoredEdit)throw messageError(new Error(''), "errors.editorClipboardAsync.finishTheCurrentStoredFrameOperationFirst", {});
+  if(editor._animationEdit)throw messageError(new Error(''), "errors.editorClipboardAsync.finishTheCurrentPropertyGestureFirst", {});
   const controller=new AbortController(),report=editor.report,token=editor._documentToken,revision=editor.revision;
   const clipboard=editor._frameClipboard,frame=editor.frameIndex,tick=editor.tick,draft=editor.frameDraftRevision;
   const drag=editor._drag,authored=editor._authoredPoseEdit,animationEdit=editor._animationEdit,storedEdit=editor._frameDraftStoredEdit;
@@ -57,7 +58,7 @@ async function copyProjection(editor,indices,state,check,options) {
   if(editor._drag||editor.animationChannels.length)return editor.report;
   const report=storedFrameReport(editor.report,{validate:false}),frames=[],types=new Set();let last=performance.now(),visited=0;
   for(const index of indices){
-    const frame=report.keyframes[index];if(!frame)throw new Error('Choose stored frames to copy.');frames.push(frame);
+    const frame=report.keyframes[index];if(!frame)throw messageError(new Error(''), "errors.editorClipboardAsync.chooseStoredFramesToCopy", {});frames.push(frame);
     for(const object of frame.objects){types.add(object.figure_type_id);
       if(++visited%256===0&&performance.now()-last>=4){check();options.onProgress?.({phase:'preparing',completed:visited});await(options.yieldControl??yieldLoadTask)();last=performance.now();}}
   }
@@ -95,7 +96,7 @@ async function drain(iterator,check,options) {
 }
 
 async function checkClipboard(document,check,options) {
-  if(document?._styk?.frameClipboardVersion!==1)throw new Error('The clipboard worker returned an invalid clipboard.');
+  if(document?._styk?.frameClipboardVersion!==1)throw messageError(new Error(''), "errors.editorClipboardAsync.theClipboardWorkerReturnedAnInvalidClipboard", {});
   await drain(validateSceneSteps(document),check,options);
   await drain(validateLayerStateSteps(ensureLayerState(document)),check,options);
 }
@@ -106,9 +107,9 @@ function validateResultState(wire,report) {
   if(!s||!Number.isInteger(s.frameIndex)||s.frameIndex<0||s.frameIndex>=frames.length||
     !Number.isFinite(s.tick)||s.tick<0||s.tick>10000000||!uid(s.uid)||!Array.isArray(s.uids)||s.uids.length>100000||
     s.uids.some(value=>!uid(value)||value===null)||new Set(s.uids).size!==s.uids.length||!Number.isInteger(s.joint)||s.joint< -1||s.joint>30000||
-    typeof s.activeLayerId!=='string'||(!['scene','camera'].includes(s.activeLayerId)&&!report._styk.layers.byId[s.activeLayerId]))throw new Error('The clipboard worker returned an invalid selection.');
+    typeof s.activeLayerId!=='string'||(!['scene','camera'].includes(s.activeLayerId)&&!report._styk.layers.byId[s.activeLayerId]))throw messageError(new Error(''), "errors.editorClipboardAsync.theClipboardWorkerReturnedAnInvalidSelection", {});
   if(!Array.isArray(wire.generatedFrameSources)||wire.generatedFrameSources.length>100000||wire.generatedFrameSources.some(id=>typeof id!=='string'||!/^frame-[1-9]\d{0,15}$/.test(id))||
-    typeof wire.sourceTableWasPresent!=='boolean'||typeof wire.clipboardAuthored!=='boolean')throw new Error('The clipboard worker returned invalid source metadata.');
+    typeof wire.sourceTableWasPresent!=='boolean'||typeof wire.clipboardAuthored!=='boolean')throw messageError(new Error(''), "errors.editorClipboardAsync.theClipboardWorkerReturnedInvalidSourceMetadata", {});
   return new Set(wire.generatedFrameSources);
 }
 
@@ -142,7 +143,7 @@ export function applyAsyncClipboardCommand(editor,command,direction) {
 
 async function run(editor,operation,request,options={}) {
   const started=performance.now(),client=options.client??editor._frameClipboardWorker;
-  if(!client?.run)throw new Error('The background clipboard worker is not connected.');
+  if(!client?.run)throw messageError(new Error(''), "errors.editorClipboardAsync.theBackgroundClipboardWorkerIsNotConnected", {});
   const c=context(editor,options,operation);let wire,prepared,generatedFrameSources,retainedFrameSourceIds,receivedAt,stagingPhases,assetPreflight,sparse=false;
   if(operation!=='paste')editor._emit('clipboard-pending',{clipboard:true});
   try{
@@ -157,11 +158,11 @@ async function run(editor,operation,request,options={}) {
       {signal:c.controller.signal,checkCurrent:c.check,onProgress:options.onProgress});
     receivedAt=performance.now();c.check();
     if(!wire||wire.version!==1||wire.operation!==operation||!Number.isInteger(wire.count)||wire.count<0||wire.count>100000||!wire.selection)
-      throw new Error('The clipboard worker returned an invalid result.');
+      throw messageError(new Error(''), "errors.editorClipboardAsync.theClipboardWorkerReturnedAnInvalidResult", {});
     if(wire.clipboard)await checkClipboard(wire.clipboard,c.check,options);
-    if(operation!=='paste'&&!wire.clipboard)throw new Error('The clipboard worker omitted the copied frames.');
+    if(operation!=='paste'&&!wire.clipboard)throw messageError(new Error(''), "errors.editorClipboardAsync.theClipboardWorkerOmittedTheCopiedFrames", {});
     if(wire.sparsePaste){
-      if(!nativePaste||wire.count!==wire.sparsePaste.frames?.length)throw new Error('The clipboard worker returned an unexpected sparse paste.');
+      if(!nativePaste||wire.count!==wire.sparsePaste.frames?.length)throw messageError(new Error(''), "errors.editorClipboardAsync.theClipboardWorkerReturnedAnUnexpectedSparsePaste", {});
       options.onProgress?.({phase:'staging'});
       prepared=await prepareOwnedSparseClipboardPaste(editor,{...wire.sparsePaste,precomputedBytes:client.lastTimings?.outputLogicalBytes??client.lastTimings?.outputBytes??0},
         {signal:c.controller.signal,checkCurrent:c.check,yieldControl:options.yieldControl,onProgress:progress=>options.onProgress?.({phase:'staging',...progress}),onTiming:value=>{stagingPhases=value;}});
@@ -171,7 +172,7 @@ async function run(editor,operation,request,options={}) {
       prepared=await prepareEditorLoadAsync(wire.report,{signal:c.controller.signal,checkCurrent:c.check,yieldControl:options.yieldControl,
         onProgress:progress=>options.onProgress?.({phase:'staging',...progress})});
       if(!Number.isSafeInteger(wire.nextFrameIdentity)||wire.nextFrameIdentity<prepared.nextFrameIdentity||!Number.isSafeInteger(wire.nextUid)||wire.nextUid<prepared.nextUid)
-        throw new Error('The clipboard worker returned invalid identity counters.');
+        throw messageError(new Error(''), "errors.editorClipboardAsync.theClipboardWorkerReturnedInvalidIdentityCounters", {});
     }
     if(!sparse){generatedFrameSources=validateResultState(wire,prepared?.report??c.report);
       retainedFrameSourceIds=[...new Set([...Object.keys(c.report._styk.frameSources??{}),...Object.keys(prepared?.report._styk.frameSources??{})])];}
@@ -204,7 +205,7 @@ async function run(editor,operation,request,options={}) {
 }
 
 export const editorClipboardAsyncMethods={
-  setFrameClipboardWorker(client){if(client!==null&&typeof client?.run!=='function')throw new Error('Provide a clipboard worker client.');this._frameClipboardWorker=client;return this;},
+  setFrameClipboardWorker(client){if(client!==null&&typeof client?.run!=='function')throw messageError(new Error(''), "errors.editorClipboardAsync.provideAClipboardWorkerClient", {});this._frameClipboardWorker=client;return this;},
   frameClipboardDocumentView(){return frameClipboardView(this);},
   copyFramesAsync(indices=[this.frameIndex],options={}){
     indices=this._frameIndices(indices);if(!indices.length)return Promise.resolve(0);
@@ -227,7 +228,7 @@ export const editorClipboardAsyncMethods={
     }
     if(!this.hasFrameClipboard)return 0;
     const maximum=options.storedFrames&&this.frameDraft?.empty?0:this.report.keyframes.length;
-    if(!Number.isInteger(index)||index<0||index>maximum)throw new Error('Choose a valid paste position.');
+    if(!Number.isInteger(index)||index<0||index>maximum)throw messageError(new Error(''), "errors.editorClipboardAsync.chooseAValidPastePosition", {});
     return run(this,'paste',{index},options);
   },
   async restoreFrameClipboardAsync(document,options={}){

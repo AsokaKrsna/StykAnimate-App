@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {parallaxResolver} from './layer-parallax.mjs';
 import {svgPaintDefinition, segmentPaint, textPaintGeometry, shapePaintBounds} from './paint.mjs';
 import { buildGeometry, mixColor } from './pivot/geometry.mjs';
@@ -14,7 +15,7 @@ const escape = value => String(value).replace(/[&<>"']/g, c => ({'&': '&amp;', '
 const clamp = value => Math.max(0, Math.min(1, Number(value) || 0));
 function number(value) {
   const n = Number(value);
-  if (!Number.isFinite(n)) throw new Error('SVG export encountered a non-finite scene coordinate.');
+  if (!Number.isFinite(n)) throw messageError(new Error(''), "errors.svgExport.svgExportEncounteredANonFiniteSceneCoordinate", {});
   return String(Number(n.toFixed(7)));
 }
 const rgb = value => `rgb(${(value || [0, 0, 0]).map(v => Math.round(Math.max(0, Math.min(255, Number(v) || 0)))).join(',')})`;
@@ -38,7 +39,7 @@ function strokeWidth(state, requested) {
 }
 function dimension(value, label) {
   const n = Number(value);
-  if (!Number.isInteger(n) || n < 1 || n > 65535) throw new RangeError(`${label} must be an integer from 1 to 65535.`);
+  if (!Number.isInteger(n) || n < 1 || n > 65535) throw messageError(new RangeError(''), "errors.svgExport.mustBeAnIntegerFrom1To65535", {label: label});
   return n;
 }
 async function dataURL(blob) {
@@ -56,9 +57,9 @@ async function decodeImage(href, image) {
   if (typeof image.decode === 'function') await image.decode();
   else if (!image.complete) await new Promise((resolve, reject) => {
     image.addEventListener('load', resolve, {once: true});
-    image.addEventListener('error', () => reject(new Error('Could not decode an SVG bitmap resource.')), {once: true});
+    image.addEventListener('error', () => reject(messageError(new Error(''), "errors.svgExport.couldNotDecodeAnSvgBitmapResource", {})), {once: true});
   });
-  if (!image.naturalWidth) throw new Error('Could not decode an SVG bitmap resource.');
+  if (!image.naturalWidth) throw messageError(new Error(''), "errors.svgExport.couldNotDecodeAnSvgBitmapResource", {});
   return image;
 }
 /**
@@ -69,9 +70,9 @@ async function decodeImage(href, image) {
  */
 export async function exportSVG({report, frame, frameIndex = 0, geometry, width, height, resources = {}, cameraEnabled = true, smoothing = 'edges'} = {}) {
   smoothing = normalizeExportSmoothing(smoothing);
-  if (!report) throw new TypeError('SVG export requires a decoded scene report.');
+  if (!report) throw messageError(new TypeError(''), "errors.svgExport.svgExportRequiresADecodedSceneReport", {});
   frame ??= report.keyframes?.[frameIndex];
-  if (!frame) throw new RangeError('The requested SVG frame does not exist.');
+  if (!frame) throw messageError(new RangeError(''), "errors.svgExport.theRequestedSvgFrameDoesNotExist", {});
   const sceneWidth = dimension(report.canvas_width ?? 640, 'Scene width');
   const sceneHeight = dimension(report.canvas_height ?? 480, 'Scene height');
   width = dimension(width ?? sceneWidth, 'SVG width'); height = dimension(height ?? sceneHeight, 'SVG height');
@@ -100,20 +101,20 @@ export async function exportSVG({report, frame, frameIndex = 0, geometry, width,
   const linear = (a, b, stops) => gradient('linearGradient', `x1="${number(a.x)}" y1="${number(a.y)}" x2="${number(b.x)}" y2="${number(b.y)}"`, stops);
   const bitmap = asset => {
     const url = resources.url?.(asset) || asset?.asset_url || asset?.data_url || asset?.asset_path_relative || asset?.asset_path;
-    if (!url) throw new Error('An SVG bitmap resource has no usable URL.');
+    if (!url) throw messageError(new Error(''), "errors.svgExport.anSvgBitmapResourceHasNoUsableUrl", {});
     if (!bitmaps.has(url)) bitmaps.set(url, (async () => {
       let href = url;
       if (!/^data:image\//i.test(url)) {
         const response = await (resources.fetch?.(url) ?? fetch(url));
-        if (!response.ok) throw new Error(`Could not load SVG bitmap resource (${response.status}).`);
+        if (!response.ok) throw messageError(new Error(''), "errors.svgExport.couldNotLoadSvgBitmapResource", {status: response.status});
         const blob = await response.blob();
-        if (blob.type && !blob.type.startsWith('image/') && blob.type !== 'application/octet-stream') throw new Error('SVG bitmap resource is not an image.');
+        if (blob.type && !blob.type.startsWith('image/') && blob.type !== 'application/octet-stream') throw messageError(new Error(''), "errors.svgExport.svgBitmapResourceIsNotAnImage", {});
         const embedded = blob.type.startsWith('image/') ? blob : new Blob([blob], {type: asset.mime_type || 'image/png'});
         href = await dataURL(embedded);
       }
       const image = await decodeImage(href, resources.image?.(url));
       const w = image?.naturalWidth || asset.width || asset.pixel_width, h = image?.naturalHeight || asset.height || asset.pixel_height;
-      if (!(w > 0 && h > 0)) throw new Error('An SVG bitmap resource has no valid dimensions.');
+      if (!(w > 0 && h > 0)) throw messageError(new Error(''), "errors.svgExport.anSvgBitmapResourceHasNoValidDimensions", {});
       return {href, get image() { return resources.image?.(url) || image; }, width: w, height: h};
     })());
     return bitmaps.get(url);
@@ -129,9 +130,9 @@ export async function exportSVG({report, frame, frameIndex = 0, geometry, width,
     if (!image.padded || image.padded.padding < padding) {
       const paddedWidth = image.width + 2 * padding, paddedHeight = image.height + 2 * padding;
       if (paddedWidth > 16384 || paddedHeight > 16384 || paddedWidth * paddedHeight > 32 * 1024 * 1024)
-        throw new RangeError('The aliased bitmap edge buffer exceeds 128 MiB or 16,384 pixels per side. Increase output size or use Smooth edges.');
+        throw messageError(new RangeError(''), "errors.svgExport.theAliasedBitmapEdgeBufferExceeds128Mib", {});
       const source = image.image;
-      if (!source) throw new Error('Aliased sprite export requires a decoded bitmap.');
+      if (!source) throw messageError(new Error(''), "errors.svgExport.aliasedSpriteExportRequiresADecodedBitmap", {});
       const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(paddedWidth, paddedHeight) : document.createElement('canvas');
       canvas.width = paddedWidth; canvas.height = paddedHeight;
       try {
@@ -139,7 +140,7 @@ export async function exportSVG({report, frame, frameIndex = 0, geometry, width,
         const xs = [[0,1,0,padding],[0,image.width,padding,image.width],[image.width-1,1,padding+image.width,padding]];
         const ys = [[0,1,0,padding],[0,image.height,padding,image.height],[image.height-1,1,padding+image.height,padding]];
         for (const [sx,sw,dx,dw] of xs) for (const [sy,sh,dy,dh] of ys) ctx.drawImage(source,sx,sy,sw,sh,dx,dy,dw,dh);
-        const blob = canvas.convertToBlob ? await canvas.convertToBlob({type:'image/png'}) : await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error('Could not prepare aliased bitmap edges.')),'image/png'));
+        const blob = canvas.convertToBlob ? await canvas.convertToBlob({type:'image/png'}) : await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(messageError(new Error(''), "errors.svgExport.couldNotPrepareAliasedBitmapEdges", {})),'image/png'));
         image.padded = {padding, href: await dataURL(blob), width:paddedWidth, height:paddedHeight};
       } finally {canvas.width=canvas.height=1;}
     }
@@ -186,7 +187,7 @@ export async function exportSVG({report, frame, frameIndex = 0, geometry, width,
           const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = false;
           for (const tile of raster.tiles) ctx.drawImage(image.image, ...tile);
           const blob = canvas.convertToBlob ? await canvas.convertToBlob({type:'image/png'})
-            : await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Could not extend background edges.')), 'image/png'));
+            : await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(messageError(new Error(''), "errors.svgExport.couldNotExtendBackgroundEdges", {})), 'image/png'));
           content += `<image x="${number(raster.x)}" y="${number(raster.y)}" width="${number(raster.width)}" height="${number(raster.height)}" preserveAspectRatio="none" image-rendering="pixelated" href="${escape(await dataURL(blob))}"/>`;
         } finally {canvas.width = canvas.height = 1;}
       }

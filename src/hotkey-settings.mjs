@@ -1,3 +1,6 @@
+import {descriptorAttributes, messageHTML, messageAttributes, localizedText} from './localization-bindings.mjs';
+import {t as interfaceText} from './localization.mjs';
+
 import { icon } from './icons.mjs';
 import { HOTKEY_COMMANDS, HOTKEY_BY_ID, HOTKEY_SCOPES, DEFAULT_HOTKEYS, eventBinding, formatBinding, findHotkeyConflicts } from './hotkeys.mjs';
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]));
@@ -28,12 +31,12 @@ export class HotkeySettings {
   html() {
     this.recording = null;
     const bindings = this.settings.value.hotkeys;
-    return `<div class="hotkey-toolbar"><label class="hotkey-search">${icon("search")}<input type="search" data-hotkey-search aria-label="Search shortcuts" placeholder="Search shortcuts…" value="${escape(this.query)}"></label><button type="button" class="ui-button" data-size="sm" data-hotkey-reset-all>${icon("undo")}Reset all</button></div>
-      <div class="hotkey-status" role="status" aria-live="polite">${escape(this.message)}</div><p class="hotkey-empty" data-hotkey-empty hidden>No shortcuts found.</p>
-      ${this.conflict ? `<div class="hotkey-conflict" role="alert">${icon("alert")}<div><p>${escape(this.conflict.message)}</p><div><button type="button" class="ui-button" data-size="sm" data-variant="primary" data-hotkey-replace>Replace conflicting shortcuts</button><button type="button" class="ui-button" data-size="sm" data-hotkey-cancel>Cancel</button></div></div></div>` : ''}
+    return `<div class="hotkey-toolbar"><label class="hotkey-search">${icon("search")}<input type="search" data-hotkey-search aria-label="Search shortcuts" placeholder="Search shortcuts…" value="${escape(this.query)}" data-i18n-aria-label="hotkeySettings.searchShortcuts" data-i18n-placeholder="hotkeySettings.searchShortcuts2"></label><button type="button" class="ui-button" data-size="sm" data-hotkey-reset-all>${icon("undo")}${messageHTML("hotkeySettings.resetAll", {})}</button></div>
+      <div class="hotkey-status" role="status" aria-live="polite"${descriptorAttributes(this, "message")}>${escape(this.message)}</div><p class="hotkey-empty" data-hotkey-empty hidden data-i18n="hotkeySettings.noShortcutsFound">No shortcuts found.</p>
+      ${this.conflict ? `<div class="hotkey-conflict" role="alert">${icon("alert")}<div><p${descriptorAttributes(this.conflict, "message")}>${escape(this.conflict.message)}</p><div><button type="button" class="ui-button" data-size="sm" data-variant="primary" data-hotkey-replace data-i18n="hotkeySettings.replaceConflictingShortcuts">Replace conflicting shortcuts</button><button type="button" class="ui-button" data-size="sm" data-hotkey-cancel data-i18n="hotkeySettings.cancel">Cancel</button></div></div></div>` : ''}
       ${[...new Set(HOTKEY_COMMANDS.map(c => c.category))].map(category => `<section class="styk-settings-group hotkey-group"><h4>${escape(category)}</h4><div class="styk-settings-card styk-settings-shortcuts-list">${HOTKEY_COMMANDS.filter(c => c.category === category).map(command => {
         const keys = bindings[command.id];
-        return `<div class="hotkey-row" data-hotkey-id="${command.id}" data-search="${escape(`${command.label} ${category} ${HOTKEY_SCOPES[command.scope]} ${keys.map(k => formatBinding(k)).join(' ')}`.toLowerCase())}"><div class="hotkey-name">${escape(command.label)}<small>${HOTKEY_SCOPES[command.scope]}</small></div><div class="hotkey-bindings">${keys.map((key, index) => `<span class="hotkey-binding"><button type="button" data-hotkey-record="${index}" data-label="${escape(formatBinding(key))}" aria-pressed="false" aria-label="Change ${escape(command.label)}: ${escape(formatBinding(key))}">${escape(formatBinding(key))}</button><button type="button" data-hotkey-remove="${index}" aria-label="Remove ${escape(command.label)}: ${escape(formatBinding(key))}">${icon("x")}</button></span>`).join('')}${!keys.length ? '<small class="hotkey-unassigned">Unassigned</small>' : ''}${keys.length < 4 ? `<button type="button" class="hotkey-add" data-hotkey-record="${keys.length}" data-label="+" aria-pressed="false" aria-label="Add shortcut for ${escape(command.label)}">+</button>` : ''}<button type="button" class="hotkey-reset" data-hotkey-reset title="Reset ${escape(command.label)}" aria-label="Reset ${escape(command.label)}">${icon("undo")}</button></div></div>`;
+        return `<div class="hotkey-row" data-hotkey-id="${command.id}" data-search="${escape(`${command.label} ${category} ${HOTKEY_SCOPES[command.scope]} ${keys.map(k => formatBinding(k)).join(' ')}`.toLowerCase())}"><div class="hotkey-name">${escape(command.label)}<small>${HOTKEY_SCOPES[command.scope]}</small></div><div class="hotkey-bindings">${keys.map((key, index) => `<span class="hotkey-binding"><button type="button" data-hotkey-record="${index}" data-label="${escape(formatBinding(key))}" aria-pressed="false" aria-label="Change ${escape(command.label)}: ${escape(formatBinding(key))}" ${messageAttributes("hotkeySettings.change", {label: command.label, value: formatBinding(key)}, "aria-label")}>${escape(formatBinding(key))}</button><button type="button" data-hotkey-remove="${index}" aria-label="Remove ${escape(command.label)}: ${escape(formatBinding(key))}" ${messageAttributes("hotkeySettings.remove", {label: command.label, value: formatBinding(key)}, "aria-label")}>${icon("x")}</button></span>`).join('')}${!keys.length ? `<small class="hotkey-unassigned" data-i18n="hotkeySettings.unassigned">Unassigned</small>` : ''}${keys.length < 4 ? `<button type="button" class="hotkey-add" data-hotkey-record="${keys.length}" data-label="+" aria-pressed="false" aria-label="Add shortcut for ${escape(command.label)}" ${messageAttributes("hotkeySettings.addShortcutFor", {label: command.label}, "aria-label")}>+</button>` : ''}<button type="button" class="hotkey-reset" data-hotkey-reset title="Reset ${escape(command.label)}" aria-label="Reset ${escape(command.label)}">${icon("undo")}</button></div></div>`;
       }).join('')}</div></section>`).join('')}`;
   }
   render(focusId) {
@@ -54,11 +57,11 @@ export class HotkeySettings {
     if (button.hasAttribute('data-hotkey-record')) {
       this.cancel(); this.conflict = null;
       this.recording = {id, index: Number(button.dataset.hotkeyRecord)};
-      button.setAttribute('aria-pressed', 'true'); button.textContent = 'Press keys…'; button.focus();
+      button.setAttribute('aria-pressed', 'true'); localizedText(button, "hotkeySettings.pressKeys", {}); button.focus();
     } else if (button.hasAttribute('data-hotkey-remove')) {
       const keys = [...this.settings.value.hotkeys[id]]; keys.splice(Number(button.dataset.hotkeyRemove), 1); this.assign(id, keys);
     } else if (button.hasAttribute('data-hotkey-reset')) this.assign(id, [...DEFAULT_HOTKEYS[id]]);
-    else if (button.hasAttribute('data-hotkey-reset-all')) { this.conflict = null; this.settings.commit({hotkeys: DEFAULT_HOTKEYS}); this.message = 'All shortcuts restored to defaults.'; this.render(); }
+    else if (button.hasAttribute('data-hotkey-reset-all')) { this.conflict = null; this.settings.commit({hotkeys: DEFAULT_HOTKEYS}); this.message = interfaceText("hotkeySettings.allShortcutsRestoredToDefaults"); this.render(); }
     else if (button.hasAttribute('data-hotkey-replace') && this.conflict) this.assign(this.conflict.id, this.conflict.keys, true);
     else if (button.hasAttribute('data-hotkey-cancel')) { this.conflict = null; this.render(); }
     else if (button.hasAttribute('data-tab')) { this.cancel(); this.conflict = null; }
@@ -77,7 +80,7 @@ export class HotkeySettings {
     const next = {...this.settings.value.hotkeys};
     const conflicts = [...new Set(keys.flatMap(key => findHotkeyConflicts(next, id, key)))];
     if (conflicts.length && !replace) {
-      this.conflict = {id, keys, message: `Already assigned in this context: ${conflicts.map(c => c.label).join(', ')}. Replace those bindings or cancel.`};
+      this.conflict = {id, keys, message: interfaceText("hotkeySettings.alreadyAssignedInThisContextReplaceThoseBindings", {value: conflicts.map(c => c.label).join(', ')}), messageKey: "hotkeySettings.alreadyAssignedInThisContextReplaceThoseBindings", messageParams: {value: conflicts.map(c => c.label).join(', ')}};
       this.render();
       this.settings.content.scrollTop = 0;
       this.settings.content.querySelector('[data-hotkey-cancel]')?.focus({preventScroll:true});

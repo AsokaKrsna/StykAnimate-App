@@ -1,3 +1,5 @@
+import {messageError} from './localized-error.mjs';
+import {localizedText} from './localization-bindings.mjs';
 import {builderStrokeAppearance, setBuilderStroke} from './builder-appearance.mjs';
 import {segmentBranchIndices} from './editor-builder.mjs';
 import {canvasFont} from './ui/font-loading.mjs';
@@ -47,7 +49,7 @@ export class ConstructionIndex {
 }
 function lowerBound(values,value,key){let lo=0,hi=values.length;while(lo<hi){const m=(lo+hi)>>1;if(key(values[m])<value)lo=m+1;else hi=m;}return lo;}
 export function strokeSegments(points,scale=1) {
-  if(!Number.isFinite(scale)||Math.abs(scale)<1e-8)throw new Error('Set a nonzero figure scale before drawing.');
+  if(!Number.isFinite(scale)||Math.abs(scale)<1e-8)throw messageError(new Error(''), "errors.builderConstruction.setANonzeroFigureScaleBeforeDrawing", {});
   return points.slice(1).map((p,i)=>({type:'line',length:Math.hypot(p.x-points[i].x,p.y-points[i].y)/Math.abs(scale),angle:Math.atan2(p.y-points[i].y,p.x-points[i].x)-(scale<0?Math.PI:0),start:points[0]}));
 }
 /** Owns transient pen paths and gesture-local snapping, never document topology. */
@@ -73,7 +75,7 @@ export function createConstruction({editor, state, active, render, project,
   function sync() {
     controls.hidden = !draft;
     finish.disabled = !draft || draft.points.length < 2;
-    document.getElementById('chain-count').textContent = `${Math.max(0, (draft?.points.length ?? 1) - 1)} links`;
+    localizedText(document.getElementById('chain-count'), "builderConstruction.links", {value: Math.max(0, (draft?.points.length ?? 1) - 1)});
   }
   function cancel() {
     draft = null; feedback = null; geometry = null; cache = null;
@@ -163,7 +165,7 @@ export function createConstruction({editor, state, active, render, project,
         draft = {points: [initial.point], parentId: initial.parentId, current: initial.point, appearance:builderStrokeAppearance(editor, initial.parentId)};
       } else {
         if ((editor.figure?.segments.length ?? 0) + draft.points.length > 30000) {
-          onError(new Error('Figure segment capacity reached. Finish or shorten the chain.'));
+          onError(messageError(new Error(''), "errors.builderConstruction.figureSegmentCapacityReachedFinishOrShortenThe", {}));
           return;
         }
         const next = snap(point, event, draft.points.at(-1));

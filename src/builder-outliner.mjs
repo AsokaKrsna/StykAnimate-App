@@ -1,3 +1,7 @@
+import {localizedText, localizedAttribute, messageHTML, appendLocalized, localizedMarkup, messageAttributes} from './localization-bindings.mjs';
+
+import {t as interfaceText} from './localization.mjs';
+
 /** Figure-hierarchy outliner for the builder.
  *
  * Shows one definition: its segment forest in native order (depth from the
@@ -36,15 +40,15 @@ const STYLE = `
 .builder-outliner-empty{position:absolute;top:12px;left:12px;right:12px;color:var(--theme-muted,#858585);line-height:1.5;font-size:11px;pointer-events:none}
 `;
 const esc = value => String(value).replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
-const KIND_LABEL = {line: 'Line', squareLine: 'Square line', circle: 'Circle', circleFill: 'Circle fill', circleClear: 'Circle outline', image: 'Image', text: 'Text'};
-const KIND_ICON = {line: 'line', squareLine: 'square', circle: 'circle', circleFill: 'circle', circleClear: 'circle', image: 'image', text: 'text'};
+const KIND_LABEL = {line: interfaceText("builderOutliner.line"), squareLine: interfaceText("builderOutliner.squareLine"), circle: interfaceText("builderOutliner.circle"), circleFill: interfaceText("builderOutliner.circleFill"), circleClear: interfaceText("builderOutliner.circleOutline"), image: interfaceText("builderOutliner.image"), text: interfaceText("builderOutliner.text"), textKey: "builderOutliner.text"};
+const KIND_ICON = {line: 'line', squareLine: 'square', circle: 'circle', circleFill: 'circle', circleClear: 'circle', image: 'image', text: interfaceText('builderOutliner.text2'), textKey: 'builderOutliner.text2', textParams: {}};
 const SEGMENT_KIND = ['line', 'circle', 'image', 'circleFill', 'circleClear', 'text', 'squareLine'];
 const segmentKind = segment => {
   const kind = segment.segment_kind ?? segment.segment_type ?? SEGMENT_KIND[segment.primitive_code] ?? 'line';
   return KIND_LABEL[kind] ? kind : 'line';
 };
 /** A part's name as Structure and Properties show it in Build: its own name, else its kind and id ("Line 4"). */
-export const partName = segment => segment.name || `${KIND_LABEL[segmentKind(segment)] ?? 'Segment'} ${segment.segment_id}`;
+export const partName = segment => segment.name || `${KIND_LABEL[segmentKind(segment)] ?? interfaceText("builderOutliner.segment")} ${segment.segment_id}`;
 /** A part's glyph in Structure and Properties (line, circle, image, text, square). */
 export const partGlyph = segment => KIND_ICON[segmentKind(segment)] ?? 'line';
 
@@ -66,20 +70,20 @@ export class FigureOutliner {
     this.style = document.createElement('style');
     this.style.dataset.builderOutliner = '';
     this.style.textContent = `@layer legacy{${STYLE}}`;
-    document.head.append(this.style);
-    container.innerHTML = `
+    appendLocalized(document.head, this.style);
+    localizedMarkup(container, `
       <div class="builder-outliner-head">
         <span class="builder-outliner-icon">${icon('person')}</span>
-        <input class="builder-name" aria-label="Figure name" spellcheck="false" maxlength="255">
+        <input class="builder-name" aria-label="Figure name" spellcheck="false" maxlength="255" data-i18n-aria-label="builderOutliner.figureName">
         <span class="builder-outliner-count"></span>
       </div>
-      <div class="builder-tree" role="tree" aria-multiselectable="true" aria-label="Figure hierarchy" tabindex="0"><div class="builder-tree-spacer"></div><div class="builder-drop" hidden></div><div class="builder-outliner-empty" hidden></div></div>
+      <div class="builder-tree" role="tree" aria-multiselectable="true" aria-label="Figure hierarchy" tabindex="0" data-i18n-aria-label="builderOutliner.figureHierarchy"><div class="builder-tree-spacer"></div><div class="builder-drop" hidden></div><div class="builder-outliner-empty" hidden></div></div>
       <div class="builder-footer">
-        <button id="builder-snap" aria-pressed="true" aria-label="Smart snapping" title="Smart snapping · Alt to bypass" data-strip-action="3">${icon('builder-snap')}<span>Snap</span></button>
-        <button id="builder-timeline-toggle" aria-expanded="false" aria-controls="animation-timeline" title="Show animation timeline" data-strip-action="2">${icon('frame')}<span>Timeline</span></button>
-        <button data-action="zoom-selection" title="Fit figure · Shift 2" aria-label="Fit figure" data-strip-action="1">${icon('center')}<span>Fit</span></button>
+        <button id="builder-snap" aria-pressed="true" aria-label="Smart snapping" title="Smart snapping · Alt to bypass" data-strip-action="3" data-i18n-aria-label="builderOutliner.smartSnapping" data-i18n-title="builderOutliner.smartSnappingAltToBypass">${icon('builder-snap')}<span data-i18n="builderOutliner.snap">${messageHTML("builderOutliner.snap", {})}</span></button>
+        <button id="builder-timeline-toggle" aria-expanded="false" aria-controls="animation-timeline" title="Show animation timeline" data-strip-action="2" data-i18n-title="builderOutliner.showAnimationTimeline">${icon('frame')}<span data-i18n="builderOutliner.timeline">${messageHTML("builderOutliner.timeline", {})}</span></button>
+        <button data-action="zoom-selection" title="Fit figure · Shift 2" aria-label="Fit figure" data-strip-action="1" data-i18n-title="builderOutliner.fitFigureShift2" data-i18n-aria-label="builderOutliner.fitFigure">${icon('center')}<span data-i18n="builderOutliner.fit">${messageHTML("builderOutliner.fit", {})}</span></button>
       </div>
-      `;
+      `);
     this.tree = container.querySelector('.builder-tree');
     this.spacer = container.querySelector('.builder-tree-spacer');
     this.nameInput = container.querySelector('.builder-name');
@@ -201,7 +205,7 @@ export class FigureOutliner {
     }
     const fills = figure.polyfills ?? [];
     if (fills.length) {
-      rows.push({kind: 'header', label: 'Polygons', count: fills.length});
+      rows.push({kind: 'header', label: interfaceText("builderOutliner.polygons"), labelKey: "builderOutliner.polygons", count: fills.length});
       fills.forEach((polygon, index) => rows.push({kind: 'polygon', index, id: `p${polygon.polyfill_id ?? index + 1}`, depth: 1}));
     }
     return rows;
@@ -221,14 +225,12 @@ export class FigureOutliner {
       const empty = this.container.querySelector('.builder-outliner-empty');
       empty.hidden = Boolean(figure);
       if (!figure)
-        empty.textContent = session?.mode === 'create'
-          ? 'Pick Line or Circle in the tool bar and drag on the canvas to draw the first part.'
-          : 'No instance in this frame.';
+        localizedText(empty, (session?.mode === 'create' ? "builderOutliner.pickLineOrCircleInTheToolBar" : "builderOutliner.noInstanceInThisFrame"), (session?.mode === 'create' ? {} : {}));
       this.container.querySelector('.builder-outliner-count').textContent =
-        figure ? `${figure.segments.length} part${figure.segments.length === 1 ? '' : 's'}` : '';
+        figure ? interfaceText('counts.parts', {count: figure.segments.length}) : '';
       if (document.activeElement !== this.nameInput) this.nameInput.value = figure?.name ?? '';
       this.nameInput.disabled = !figure;
-      this.nameInput.placeholder = session?.mode === 'create' ? 'New figure' : 'Figure name';
+      localizedAttribute(this.nameInput, "placeholder", (session?.mode === 'create' ? "builderOutliner.newFigure" : "builderOutliner.figureName"), (session?.mode === 'create' ? {} : {}));
       this.focus = this.rows.findIndex(row => row.kind === 'segment' && row.index === this.editor.selectedJoint);
     }
     this.render();
@@ -275,11 +277,11 @@ export class FigureOutliner {
         <span class="builder-indent" style="width:${entry.depth * 14}px"></span>
         <span class="builder-twisty"></span>
         <span class="builder-poly-swatch" style="background:${color}"></span>
-        <span class="builder-row-label">Fill ${esc(polygon?.polyfill_id ?? entry.index + 1)}</span>
+        <span class="builder-row-label" ${messageAttributes("builderOutliner.fill", {value: polygon?.polyfill_id ?? entry.index + 1})}>Fill ${esc(polygon?.polyfill_id ?? entry.index + 1)}</span>
       </div>`;
     }
     const segment = this.session.figure.segments[entry.index], kind = segmentKind(segment);
-    const badges = `${segment._stykRig?.connector ? '<b class="builder-badge" title="Connector · sliding attachment joint">C</b>' : ''}${segment._stykRig?.stretch ? '<b class="builder-badge" title="Smart Stretch driver">↔</b>' : ''}${segment._stykRig?.follow ? '<b class="builder-badge" title="Stretch follower">F</b>' : ''}${segment.static || segment.is_static ? '<b class="builder-badge" title="Static joint">S</b>' : ''}${segment.visible === false ? '<b class="builder-badge" title="Hidden">H</b>' : ''}`;
+    const badges = `${segment._stykRig?.connector ? `<b class="builder-badge" title="Connector · sliding attachment joint" data-i18n-title="builderOutliner.connectorSlidingAttachmentJoint" data-i18n="builderOutliner.c">${messageHTML("builderOutliner.c", {})}</b>` : ''}${segment._stykRig?.stretch ? `<b class="builder-badge" title="Smart Stretch driver" data-i18n-title="builderOutliner.smartStretchDriver">↔</b>` : ''}${segment._stykRig?.follow ? `<b class="builder-badge" title="Stretch follower" data-i18n-title="builderOutliner.stretchFollower" data-i18n="builderOutliner.f">${messageHTML("builderOutliner.f", {})}</b>` : ''}${segment.static || segment.is_static ? `<b class="builder-badge" title="Static joint" data-i18n-title="builderOutliner.staticJoint" data-i18n="builderOutliner.s">${messageHTML("builderOutliner.s", {})}</b>` : ''}${segment.visible === false ? `<b class="builder-badge" title="Hidden" data-i18n-title="builderOutliner.hidden">H</b>` : ''}`;
     return `<div class="builder-tree-row" id="builder-joint-${entry.id}" data-row="${index}" style="${style}" role="treeitem" aria-level="${entry.depth + 1}" ${entry.hasChildren ? `aria-expanded="${!entry.collapsed}"` : ''} aria-selected="${selected}">
       <span class="builder-indent" style="width:${entry.depth * 14}px"></span>
       <span class="builder-twisty${entry.hasChildren ? (entry.collapsed ? ' collapsed' : ' open') : ''}"></span>
@@ -290,7 +292,7 @@ export class FigureOutliner {
   }
   render() {
     if (!this.rows.length) {
-      this.spacer.innerHTML = ''; this._rendered = ''; this.spacer.style.height = '0px';
+      localizedMarkup(this.spacer, ''); this._rendered = ''; this.spacer.style.height = '0px';
       this.tree.removeAttribute('aria-activedescendant'); return;
     }
     const view = this.tree.clientHeight || 1, start = Math.max(0, Math.floor(this.tree.scrollTop / ROW_HEIGHT) - 4);
@@ -299,7 +301,7 @@ export class FigureOutliner {
     for (let i = start; i < start + count; i++) rows.push(this.rowHtml(this.rows[i], i));
     this.spacer.style.height = `${this.rows.length * ROW_HEIGHT}px`;
     const html = rows.join('');
-    if (this._rendered !== html) { this.spacer.innerHTML = html; this._rendered = html; }
+    if (this._rendered !== html) { localizedMarkup(this.spacer, html); this._rendered = html; }
     const selected = this.spacer.querySelector('[aria-selected=true]');
     if (selected) this.tree.setAttribute('aria-activedescendant', selected.id);
     else this.tree.removeAttribute('aria-activedescendant');

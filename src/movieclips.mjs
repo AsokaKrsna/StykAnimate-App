@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {validateDrawingSets} from './movieclip-drawings.mjs';
 import {validateMovieclipMeshes} from './movieclip-mesh.mjs';
 /** Movieclip assets are immutable figure definitions. Scene poses contain only
@@ -91,20 +92,20 @@ export function playbackSettings(object, defaults = {}) {
   return {start: 0, end: null, offset: 0, speed: 1, mode: 'loop', ...defaults, ...object?._stykMovieclip};
 }
 export function validatePlayback(settings) {
-  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error('Invalid movieclip playback.');
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw messageError(new Error(''), "errors.movieclips.invalidMovieclipPlayback", {});
   const value = playbackSettings({_stykMovieclip: settings});
-  if(value.clock!==undefined&&value.clock!=='presence')throw new Error('Invalid movieclip clock.');
-  if(value.clock==='presence'&&(value.restarts?.length||value.start!==0||value.end!==null))throw new Error('Presence movieclips use frame membership instead of placement bounds.');
-  if (!['loop','once','hold','single'].includes(value.mode)) throw new Error('Invalid movieclip playback mode.');
+  if(value.clock!==undefined&&value.clock!=='presence')throw messageError(new Error(''), "errors.movieclips.invalidMovieclipClock", {});
+  if(value.clock==='presence'&&(value.restarts?.length||value.start!==0||value.end!==null))throw messageError(new Error(''), "errors.movieclips.presenceMovieclipsUseFrameMembershipInsteadOfPlacement", {});
+  if (!['loop','once','hold','single'].includes(value.mode)) throw messageError(new Error(''), "errors.movieclips.invalidMovieclipPlaybackMode", {});
   if (!Number.isInteger(value.start) || value.start < 0 || value.start > 10000000 ||
       value.end !== null && (!Number.isInteger(value.end) || value.end <= value.start || value.end > 10000001))
-    throw new Error('Movieclip placement must have a valid start and end.');
+    throw messageError(new Error(''), "errors.movieclips.movieclipPlacementMustHaveAValidStartAnd", {});
   if (!Number.isFinite(value.offset) || value.offset < 0 || value.offset > 10000000 ||
       !Number.isFinite(value.speed) || value.speed <= 0 || value.speed > 100)
-    throw new Error('Movieclip offset or speed is outside the supported range.');
+    throw messageError(new Error(''), "errors.movieclips.movieclipOffsetOrSpeedIsOutsideTheSupported", {});
   if (value.restarts !== undefined && (!Array.isArray(value.restarts) || value.restarts.length > 100000 || value.restarts.some((key,i) =>
     !Number.isInteger(key.tick) || key.tick < 0 || key.tick > 10000000 || !Number.isFinite(key.offset) || key.offset < 0 || key.offset > 10000000 || i > 0 && key.tick <= value.restarts[i-1].tick)))
-    throw new Error('Invalid movieclip restart keys.');
+    throw messageError(new Error(''), "errors.movieclips.invalidMovieclipRestartKeys", {});
   return value;
 }
 export function movieclipSourceTime(asset, settings, tick, fps) {
@@ -165,18 +166,18 @@ export function movieclipFigure(id, name, document, {duration, sourceStart = 0, 
 export function validateMovieclipGraph(report) {
   const visiting = new Set(), visited = new Set(); let assets = 0;
   function visit(document, depth) {
-    if(!document || typeof document!=='object' || !Array.isArray(document.figure_types))throw new Error('Invalid movieclip document.');
-    if (visiting.has(document) || depth > 8) throw new Error('Movieclips contain a cycle or exceed eight nested levels.');
+    if(!document || typeof document!=='object' || !Array.isArray(document.figure_types))throw messageError(new Error(''), "errors.movieclips.invalidMovieclipDocument", {});
+    if (visiting.has(document) || depth > 8) throw messageError(new Error(''), "errors.movieclips.movieclipsContainACycleOrExceedEightNested", {});
     if (visited.has(document)) return;
     visiting.add(document);
     if (document._styk?.movieclipSource?.document) visit(document._styk.movieclipSource.document, depth + 1);
     for (const figure of document.figure_types ?? []) {
       const asset = movieclipAsset(figure); if (!asset) continue;
-      if (++assets > 4096) throw new Error('Movieclip asset limit exceeded.');
+      if (++assets > 4096) throw messageError(new Error(''), "errors.movieclips.movieclipAssetLimitExceeded", {});
       if (asset.version !== MOVIECLIP_VERSION || !asset.document || !Number.isInteger(asset.duration) || asset.duration < 1 || asset.duration > 10000000 ||
           !Number.isInteger(asset.sourceStart) || asset.sourceStart < 0 || !Number.isFinite(asset.pivot?.x) || !Number.isFinite(asset.pivot?.y))
-        throw new Error('Invalid movieclip asset.');
-      if (figure.segments?.length !== 1) throw new Error('Movieclip containers require one transform handle.');
+        throw messageError(new Error(''), "errors.movieclips.invalidMovieclipAsset", {});
+      if (figure.segments?.length !== 1) throw messageError(new Error(''), "errors.movieclips.movieclipContainersRequireOneTransformHandle", {});
       validateDrawingSets(asset);
       validateMovieclipMeshes(asset);
       visit(asset.document, depth + 1);

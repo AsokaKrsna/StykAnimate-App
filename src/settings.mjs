@@ -1,6 +1,12 @@
+import {tupleMessages, messageTuple, localizedAttribute, messageAttributes, localizedText, localizedMarkup, appendLocalized} from './localization-bindings.mjs';
+
+import {updateInspectorDOM} from './inspector-dom.mjs';
+
+import {t as interfaceText, Localization, normalizeLocale, SUPPORTED_LOCALES, messageText as sayDialog} from './localization.mjs';
+
 import { icon } from "./icons.mjs";
 import { PIVOT_HANDLE_COLORS } from "./canvas-interactions.mjs";
-import { Localization, normalizeLocale, SUPPORTED_LOCALES } from "./localization.mjs";
+
 import { DEFAULT_HOTKEYS, normalizeHotkeys } from './hotkeys.mjs';
 import { HotkeySettings } from './hotkey-settings.mjs';
 import { applyUIScale, autoUIScale, effectiveUIScale, normalizeUIScale, normalizeUIScaleMode, UI_SCALE } from './ui-scale.mjs';
@@ -8,7 +14,7 @@ import { applyEditorTheme, normalizeTheme } from './theme.mjs';
 import {normalizePlaybackQuality, playbackQualityOptions} from './preview-quality.mjs';
 import { normalizeSectionMemory } from './inspector-kit.mjs';
 import {normalizeExportPreferences} from './export-request.mjs';
-import { messageText as sayDialog } from './localization.mjs';
+
 import { normalizeFingerDraw, normalizeTouchSetting } from './touch/touch-mode.mjs';
 
 export const EDITOR_SETTINGS_KEY = "stykanimate.editor.settings.v1";
@@ -278,14 +284,14 @@ export class EditorSettings {
     this.tabs = onFeedback ? [...TABS, FEEDBACK_TAB] : TABS;
     this.dialog = document.createElement("dialog");
     this.dialog.className = "styk-settings";
-    this.dialog.setAttribute("aria-label", this.t("settings.editorLabel"));
-    this.dialog.innerHTML = `<header class="styk-settings-head"><img class="styk-settings-mark" src="${SYMBOL_URL}" alt=""><h2>${escape(this.t("settings.title"))}</h2><label class="styk-settings-search">${icon("search")}<input type="search" data-settings-search autocomplete="off" spellcheck="false"></label><button type="button" class="styk-settings-close" aria-label="${escape(this.t("settings.close"))}">${icon("x")}</button></header><div class="styk-settings-layout"><aside class="styk-settings-sidebar"><nav class="styk-settings-tabs" role="tablist" aria-orientation="vertical" aria-label="${escape(this.t("settings.sections"))}">${this.tabs
+    localizedAttribute(this.dialog, "aria-label", "settings.editorLabel", {});
+    localizedMarkup(this.dialog, `<header class="styk-settings-head"><img class="styk-settings-mark" src="${SYMBOL_URL}" alt=""><h2 ${messageAttributes("settings.title", {})}>${escape(this.t("settings.title"))}</h2><label class="styk-settings-search">${icon("search")}<input type="search" data-settings-search autocomplete="off" spellcheck="false"></label><button type="button" class="styk-settings-close" aria-label="${escape(this.t("settings.close"))}" ${messageAttributes("settings.close", {}, "aria-label")}>${icon("x")}</button></header><div class="styk-settings-layout"><aside class="styk-settings-sidebar"><nav class="styk-settings-tabs" role="tablist" aria-orientation="vertical" aria-label="${escape(this.t("settings.sections"))}" ${messageAttributes("settings.sections", {}, "aria-label")}>${this.tabs
       .map(
         ([id, symbol, tint]) =>
-          `<button type="button" role="tab" id="styk-settings-tab-${id}" data-tab="${id}" aria-controls="styk-settings-content"><span class="styk-settings-tab-icon" data-tint="${tint}">${icon(symbol)}</span><span data-settings-tab-label>${escape(this.t('settings.' + id))}</span></button>`,
+          `<button type="button" role="tab" id="styk-settings-tab-${id}" data-tab="${id}" aria-controls="styk-settings-content"><span class="styk-settings-tab-icon" data-tint="${tint}">${icon(symbol)}</span><span data-settings-tab-label ${messageAttributes('settings.' + id, {})}>${escape(this.t('settings.' + id))}</span></button>`,
       )
-      .join("")}</nav><div class="styk-settings-actions"></div></aside><section id="styk-settings-content" class="styk-settings-content" role="tabpanel"></section></div>`;
-    document.body.append(this.dialog);
+      .join("")}</nav><div class="styk-settings-actions"></div></aside><section id="styk-settings-content" class="styk-settings-content" role="tabpanel"></section></div>`);
+    appendLocalized(document.body, this.dialog);
     this.content = this.dialog.querySelector(".styk-settings-content");
     this.search = this.dialog.querySelector("[data-settings-search]");
     this.labelSearch();
@@ -297,18 +303,18 @@ export class EditorSettings {
     const actions = this.dialog.querySelector('.styk-settings-actions');
     if (onPrivacy) {
       const button = document.createElement('button'); button.type = 'button'; button.className = 'styk-settings-privacy'; button.dataset.settingsPrivacy = '';
-      button.innerHTML = `${icon('lock')}<span>${escape(this.say('settings.privacy'))}</span>`;
-      button.title = this.say('settings.privacy'); button.setAttribute('aria-label', button.title);
+      localizedMarkup(button, `${icon('lock')}<span ${messageAttributes('settings.privacy', {})}>${escape(this.say('settings.privacy'))}</span>`);
+      localizedAttribute(button, "title", 'settings.privacy', {}); button.setAttribute('aria-label', button.title);
       button.onclick = () => { this.close(); void this.onPrivacy(); };
-      actions.append(button);
+      appendLocalized(actions, button);
     }
     if (onDonate) {
       const button = document.createElement('button');
       button.type = 'button'; button.className = 'styk-settings-donate'; button.dataset.settingsDonate = '';
-      button.innerHTML = `<span class="styk-settings-donate-badge">${icon('heart')}</span><span class="styk-settings-donate-text"><strong>${escape(this.t('settings.donate'))}</strong><small>${escape(this.say('settings.donateNote'))}</small></span>${icon('externalLink')}`;
-      button.setAttribute('aria-label', this.t('settings.donate'));
+      localizedMarkup(button, `<span class="styk-settings-donate-badge">${icon('heart')}</span><span class="styk-settings-donate-text"><strong ${messageAttributes('settings.donate', {})}>${escape(this.t('settings.donate'))}</strong><small ${messageAttributes('settings.donateNote', {})}>${escape(this.say('settings.donateNote'))}</small></span>${icon('externalLink')}`);
+      localizedAttribute(button, 'aria-label', 'settings.donate', {});
       button.onclick = () => Promise.resolve().then(() => this.onDonate()).catch(error => this.showError(error));
-      actions.append(button);
+      appendLocalized(actions, button);
     }
     this.unsubscribeLocale = this.localization.subscribe(() => this.refreshLanguage());
     this.dialog.querySelector(".styk-settings-close").onclick = () =>
@@ -397,8 +403,7 @@ export class EditorSettings {
         this.content
           .querySelector(".styk-settings-preview")
           ?.style.setProperty("--size", size);
-        this.content.querySelector("[data-handle-value]").textContent =
-          `${size}px`;
+        localizedText(this.content.querySelector("[data-handle-value]"), 'settings.sizePx', {size: size});
         fillSlider(event.target);
       }
     });
@@ -414,29 +419,29 @@ export class EditorSettings {
   refreshLanguage() {
     this.value.locale = this.localization.locale;
     this.dialog.lang = this.localization.locale;
-    this.dialog.setAttribute('aria-label', this.t('settings.editorLabel'));
-    this.dialog.querySelector('.styk-settings-head h2').textContent = this.t('settings.title');
-    this.dialog.querySelector('.styk-settings-close').setAttribute('aria-label', this.t('settings.close'));
-    this.dialog.querySelector('[role=tablist]').setAttribute('aria-label', this.t('settings.sections'));
+    localizedAttribute(this.dialog, 'aria-label', 'settings.editorLabel', {});
+    localizedText(this.dialog.querySelector('.styk-settings-head h2'), 'settings.title', {});
+    localizedAttribute(this.dialog.querySelector('.styk-settings-close'), 'aria-label', 'settings.close', {});
+    localizedAttribute(this.dialog.querySelector('[role=tablist]'), 'aria-label', 'settings.sections', {});
     this.labelSearch();
     for (const button of this.dialog.querySelectorAll('[data-tab]'))
-      button.querySelector('[data-settings-tab-label]').textContent = this.t('settings.' + button.dataset.tab);
+      localizedText(button.querySelector('[data-settings-tab-label]'), 'settings.' + button.dataset.tab, {});
     const privacy = this.dialog.querySelector('[data-settings-privacy]');
     if (privacy) {
-      privacy.querySelector('span').textContent = privacy.title = this.say('settings.privacy');
+      privacy.querySelector('span').textContent = localizedAttribute(privacy, "title", 'settings.privacy', {});
       privacy.setAttribute('aria-label', privacy.title);
     }
     const donate = this.dialog.querySelector('[data-settings-donate]');
     if (donate) {
-      donate.querySelector('strong').textContent = this.t('settings.donate');
-      donate.setAttribute('aria-label', this.t('settings.donate'));
-      donate.querySelector('small').textContent = this.say('settings.donateNote');
+      localizedText(donate.querySelector('strong'), 'settings.donate', {});
+      localizedAttribute(donate, 'aria-label', 'settings.donate', {});
+      localizedText(donate.querySelector('small'), 'settings.donateNote', {});
     }
     if (!this.dialog.open) return;
     const active = document.activeElement, setting = active?.dataset.setting;
     const draft = active?.value;
     const scrollTop = this.content.scrollTop;
-    this.render();
+    this.render({retain: true});
     this.content.scrollTop = scrollTop;
     if (setting) {
       const candidates = [...this.content.querySelectorAll(`[data-setting="${setting}"]`)];
@@ -515,14 +520,14 @@ export class EditorSettings {
   }
   select(label, key, options, hint) {
     const hintId = hint ? `styk-settings-hint-${key}` : "";
-    return `<label class="styk-settings-row">${this.text(label, hint, hintId)}<span class="ui-select" data-size="sm"><select data-setting="${key}" aria-label="${escape(label)}"${hintId ? ` aria-describedby="${hintId}"` : ""}>${options.map(([id, name]) => `<option value="${escape(id)}" ${String(this.value[key]) === String(id) ? "selected" : ""}>${escape(name)}</option>`).join("")}</select>${icon("chevronDown")}</span></label>`;
+    return `<label class="styk-settings-row">${this.text(label, hint, hintId)}<span class="ui-select" data-size="sm"><select data-setting="${key}" aria-label="${escape(label)}"${hintId ? ` aria-describedby="${hintId}"` : ""}>${options.map((_tuple) => {const [id, name] = _tuple; const _messages = tupleMessages(_tuple); return `<option value="${escape(id)}" ${String(this.value[key]) === String(id) ? "selected" : ""}${_messages[1] ? ' ' + messageAttributes(_messages[1].key, _messages[1].params) : ''}>${escape(name)}</option>`;}).join("")}</select>${icon("chevronDown")}</span></label>`;
   }
   /** A titled card of rows. */
   group(title, rows, className = "") {
     return `<section class="styk-settings-group${className ? " " + className : ""}"><h4>${escape(title)}</h4><div class="styk-settings-card">${rows}</div></section>`;
   }
   page(tab) {
-    return `<header class="styk-settings-page"><h3>${escape(this.t("settings." + tab))}</h3><p>${escape(this.say(`settings.${tab}Lede`))}</p></header>`;
+    return `<header class="styk-settings-page"><h3 ${messageAttributes("settings." + tab, {})}>${escape(this.t("settings." + tab))}</h3><p ${messageAttributes(`settings.${tab}Lede`, {})}>${escape(this.say(`settings.${tab}Lede`))}</p></header>`;
   }
   syncScaleControl() {
     const input = this.content.querySelector('[data-setting="uiScale"]');
@@ -545,15 +550,17 @@ export class EditorSettings {
   scaleControl() {
     const available = typeof window.stykDesktop?.setUIScale === 'function';
     const shown = effectiveUIScale(this.value), auto = this.value.uiScaleMode === 'auto';
-    const mode = (value, label) => `<button type="button" class="ui-segmented-item" data-scale-mode="${value}" aria-pressed="${(value === 'auto') === auto}" ${available ? '' : 'disabled'}>${escape(label)}</button>`;
+    const mode = (value, label, _messages = {}) => `<button type="button" class="ui-segmented-item" data-scale-mode="${value}" aria-pressed="${(value === 'auto') === auto}" ${available ? '' : 'disabled'} ${_messages.label ? messageAttributes(_messages.label.key, _messages.label.params) : ''}>${escape(label)}</button>`;
     const note = available
       ? `<small class="styk-settings-hint" data-scale-auto-note ${auto ? '' : 'hidden'}>${escape(this.t('settings.autoScaleNote').replace('{scale}', `${autoUIScale()}%`))}</small>`
-      : `<small class="styk-settings-hint">${escape(this.t('settings.browserScale'))}</small>`;
-    return `<div class="styk-settings-row styk-settings-scale"><span class="styk-settings-text"><label class="styk-settings-label" for="styk-ui-scale">${escape(this.t('settings.uiScale'))}</label>${note}</span><div class="ui-segmented" data-size="sm" role="group" aria-label="${escape(this.t('settings.uiScale'))}">${mode('auto', this.t('settings.autoScale'))}${mode('manual', this.t('settings.customScale'))}</div><div class="styk-settings-slider"><input id="styk-ui-scale" class="ui-slider" type="range" data-setting="uiScale" min="${UI_SCALE.min}" max="${UI_SCALE.max}" step="${UI_SCALE.step}" value="${shown}" aria-valuetext="${shown}%" style="--_p:${sliderPercent(shown, UI_SCALE.min, UI_SCALE.max)}%" ${available ? '' : 'disabled'}><output for="styk-ui-scale" data-scale-value>${shown}%</output><button type="button" class="styk-settings-icon-button" data-scale-reset title="${escape(this.t('settings.resetScale'))}" aria-label="${escape(this.t('settings.resetScale'))}" ${auto || !available ? 'disabled' : ''}>${icon('undo')}</button></div></div>`;
+      : `<small class="styk-settings-hint" ${messageAttributes('settings.browserScale', {})}>${escape(this.t('settings.browserScale'))}</small>`;
+    return `<div class="styk-settings-row styk-settings-scale"><span class="styk-settings-text"><label class="styk-settings-label" for="styk-ui-scale" ${messageAttributes('settings.uiScale', {})}>${escape(this.t('settings.uiScale'))}</label>${note}</span><div class="ui-segmented" data-size="sm" role="group" aria-label="${escape(this.t('settings.uiScale'))}" ${messageAttributes('settings.uiScale', {}, "aria-label")}>${mode('auto', this.t('settings.autoScale'), {label: {key: 'settings.autoScale', params: {}}})}${mode('manual', this.t('settings.customScale'), {label: {key: 'settings.customScale', params: {}}})}</div><div class="styk-settings-slider"><input id="styk-ui-scale" class="ui-slider" type="range" data-setting="uiScale" min="${UI_SCALE.min}" max="${UI_SCALE.max}" step="${UI_SCALE.step}" value="${shown}" aria-valuetext="${shown}%" style="--_p:${sliderPercent(shown, UI_SCALE.min, UI_SCALE.max)}%" ${available ? '' : 'disabled'}><output for="styk-ui-scale" data-scale-value>${shown}%</output><button type="button" class="styk-settings-icon-button" data-scale-reset title="${escape(this.t('settings.resetScale'))}" aria-label="${escape(this.t('settings.resetScale'))}" ${auto || !available ? 'disabled' : ''} ${messageAttributes('settings.resetScale', {}, "title")} ${messageAttributes('settings.resetScale', {}, "aria-label")}>${icon('undo')}</button></div></div>`;
   }
-  render() {
+  render({retain = false} = {}) {
     const html = this.query.trim() ? this.resultsHTML(this.query) : this.page(this.tab) + this.tabHTML(this.tab);
-    this.content.innerHTML = `${this.error ? `<div class="styk-settings-error" role="alert">${icon('alert')}<span>${escape(this.error)}</span></div>` : ""}${html}`;
+    const markup = `${this.error ? `<div class="styk-settings-error" role="alert">${icon('alert')}<span>${escape(this.error)}</span></div>` : ""}${html}`;
+    if (retain) updateInspectorDOM(this.content, markup, {preserveDisclosure: true});
+    else localizedMarkup(this.content, markup);
     if (!this.query.trim() && this.tab === 'shortcuts') this.hotkeySettings.filter();
   }
   /**
@@ -563,7 +570,7 @@ export class EditorSettings {
   resultsHTML(query) {
     const needle = query.trim().toLocaleLowerCase(), template = document.createElement('template');
     const words = node => node.textContent.replace(/\s+/g, ' ').toLocaleLowerCase();
-    template.innerHTML = SEARCH_TABS.map(tab => `<div class="styk-settings-results" data-results-tab="${tab}"><p class="styk-settings-eyebrow">${escape(this.t('settings.' + tab))}</p>${this.tabHTML(tab)}</div>`).join('');
+    localizedMarkup(template, SEARCH_TABS.map(tab => `<div class="styk-settings-results" data-results-tab="${tab}"><p class="styk-settings-eyebrow" ${messageAttributes('settings.' + tab, {})}>${escape(this.t('settings.' + tab))}</p>${this.tabHTML(tab)}</div>`).join(''));
     for (const group of template.content.querySelectorAll('.styk-settings-group')) {
       if (words(group.querySelector('h4')).includes(needle)) continue;
       for (const row of group.querySelectorAll('.styk-settings-card > *'))
@@ -573,28 +580,28 @@ export class EditorSettings {
     for (const tab of template.content.querySelectorAll('[data-results-tab]'))
       if (!tab.querySelector('.styk-settings-group')) tab.remove();
     const found = template.content.querySelector('.styk-settings-group');
-    const heading = `<header class="styk-settings-page"><h3>${escape(this.say('settings.searchResults', {query: query.trim()}))}</h3></header>`;
-    if (!found) return `${heading}<div class="styk-settings-empty">${icon('search')}<p>${escape(this.say('settings.noResults', {query: query.trim()}))}</p></div>`;
-    const holder = document.createElement('div'); holder.append(template.content);
+    const heading = `<header class="styk-settings-page"><h3 ${messageAttributes('settings.searchResults', {query: query.trim()})}>${escape(this.say('settings.searchResults', {query: query.trim()}))}</h3></header>`;
+    if (!found) return `${heading}<div class="styk-settings-empty">${icon('search')}<p ${messageAttributes('settings.noResults', {query: query.trim()})}>${escape(this.say('settings.noResults', {query: query.trim()}))}</p></div>`;
+    const holder = document.createElement('div'); appendLocalized(holder, template.content);
     return heading + holder.innerHTML;
   }
   /** The markup of one tab's sections (render() adds its title). */
   tabHTML(tab) {
     const value = this.value, say = (key, params) => this.say(key, params);
     if (tab === "interface") {
-      const themes = `<div class="styk-settings-row styk-settings-block"><span class="styk-settings-label">${escape(this.t('settings.theme'))}</span><div class="styk-settings-tiles" data-columns="3" role="radiogroup" aria-label="${escape(this.t('settings.theme'))}">${['system', 'light', 'dark'].map(theme => `<label class="styk-settings-tile"><input type="radio" name="editor-theme" data-setting="theme" value="${theme}" ${value.theme === theme ? 'checked' : ''}><span class="styk-settings-art styk-settings-theme-art">${themeArt(theme)}</span><span class="styk-settings-tile-name">${escape(this.t('settings.' + theme))}</span></label>`).join('')}</div></div>`;
+      const themes = `<div class="styk-settings-row styk-settings-block"><span class="styk-settings-label" ${messageAttributes('settings.theme', {})}>${escape(this.t('settings.theme'))}</span><div class="styk-settings-tiles" data-columns="3" role="radiogroup" aria-label="${escape(this.t('settings.theme'))}" ${messageAttributes('settings.theme', {}, "aria-label")}>${['system', 'light', 'dark'].map(theme => `<label class="styk-settings-tile"><input type="radio" name="editor-theme" data-setting="theme" value="${theme}" ${value.theme === theme ? 'checked' : ''}><span class="styk-settings-art styk-settings-theme-art">${themeArt(theme)}</span><span class="styk-settings-tile-name" ${messageAttributes('settings.' + theme, {})}>${escape(this.t('settings.' + theme))}</span></label>`).join('')}</div></div>`;
       const language = this.select(this.t('settings.language'), 'locale', SUPPORTED_LOCALES.map(locale => [locale.id, locale.nativeName]));
-      const coverage = value.locale !== 'en' ? `<p class="styk-settings-note">${icon('alert')}<span data-locale-coverage>${escape(this.t('settings.partialLanguage'))}</span></p>` : '';
-      const timeline = `<div class="styk-settings-row styk-settings-block"><div class="styk-settings-tiles" data-columns="2" role="radiogroup" aria-label="${escape(this.t('settings.timelineMode'))}">${[
+      const coverage = value.locale !== 'en' ? `<p class="styk-settings-note">${icon('alert')}<span data-locale-coverage ${messageAttributes('settings.partialLanguage', {})}>${escape(this.t('settings.partialLanguage'))}</span></p>` : '';
+      const timeline = `<div class="styk-settings-row styk-settings-block"><div class="styk-settings-tiles" data-columns="2" role="radiogroup" aria-label="${escape(this.t('settings.timelineMode'))}" ${messageAttributes('settings.timelineMode', {}, "aria-label")}>${[
         ["advanced", this.t("timeline.advanced"), this.t("settings.advancedDescription")],
         ["simple", this.t("timeline.simple"), this.t("settings.simpleDescription")],
-      ].map(([id, label, description]) => `<label class="styk-settings-tile styk-settings-mode"><input type="radio" name="timeline-mode" data-setting="timelineMode" value="${id}" ${value.timelineMode === id ? "checked" : ""}><span class="styk-settings-art styk-settings-timeline-art" data-art="${id}">${TIMELINE_ART[id]}</span><strong class="styk-settings-tile-name">${escape(label)}</strong><small class="styk-settings-hint">${escape(description)}</small></label>`).join("")}</div></div>`;
+      ].map((_tuple) => {const [id, label, description] = _tuple; const _messages = tupleMessages(_tuple); return `<label class="styk-settings-tile styk-settings-mode"><input type="radio" name="timeline-mode" data-setting="timelineMode" value="${id}" ${value.timelineMode === id ? "checked" : ""}><span class="styk-settings-art styk-settings-timeline-art" data-art="${id}">${TIMELINE_ART[id]}</span><strong class="styk-settings-tile-name"${_messages[1] ? ' ' + messageAttributes(_messages[1].key, _messages[1].params) : ''}>${escape(label)}</strong><small class="styk-settings-hint"${_messages[2] ? ' ' + messageAttributes(_messages[2].key, _messages[2].params) : ''}>${escape(description)}</small></label>`;}).join("")}</div></div>`;
       const workspace = this.onResetWorkspace
-        ? this.group(this.t('settings.workspace'), `<div class="styk-settings-row">${this.text(say('settings.panelLayouts'), say('settings.panelLayoutsNote'))}<button type="button" class="ui-button" data-size="sm" data-settings-reset>${icon("undo")}${escape(this.t('settings.resetPanels'))}</button></div>`)
+        ? this.group(this.t('settings.workspace'), `<div class="styk-settings-row">${this.text(say("settings.panelLayouts"), say("settings.panelLayoutsNote"))}<button type="button" class="ui-button" data-size="sm" data-settings-reset>${icon("undo")}${escape(this.t('settings.resetPanels'))}</button></div>`)
         : "";
-      const touch = this.group(say('settings.touch'),
-        this.select(say('settings.touchInterface'), 'touchInterface', [['auto', say('settings.touchAuto')], ['on', say('settings.touchOn')], ['off', say('settings.touchOff')]], say('settings.touchInterfaceNote'))
-        + this.select(say('settings.fingerDraw'), 'fingerDraw', [['auto', say('settings.fingerDrawAuto')], ['always', say('settings.fingerDrawAlways')], ['never', say('settings.fingerDrawNever')]], say('settings.fingerDrawNote')));
+      const touch = this.group(say("settings.touch"),
+        this.select(say("settings.touchInterface"), 'touchInterface', [messageTuple(['auto', say("settings.touchAuto")], {1: {key: "settings.touchAuto", params: {}}}), messageTuple(['on', say("settings.touchOn")], {1: {key: "settings.touchOn", params: {}}}), messageTuple(['off', say("settings.touchOff")], {1: {key: "settings.touchOff", params: {}}})], say("settings.touchInterfaceNote"))
+        + this.select(say("settings.fingerDraw"), 'fingerDraw', [messageTuple(['auto', say("settings.fingerDrawAuto")], {1: {key: "settings.fingerDrawAuto", params: {}}}), messageTuple(['always', say("settings.fingerDrawAlways")], {1: {key: "settings.fingerDrawAlways", params: {}}}), messageTuple(['never', say("settings.fingerDrawNever")], {1: {key: "settings.fingerDrawNever", params: {}}})], say("settings.fingerDrawNote")));
       return this.group(this.t("settings.appearance"), themes + language + coverage + this.scaleControl())
         + touch
         + this.group(this.t('timeline.title'), timeline)
@@ -602,56 +609,56 @@ export class EditorSettings {
     }
     if (tab === "canvas") {
       const nodes = ['segment', 'origin', 'unselected', 'joined', 'static'];
-      const handleSize = `<div class="styk-settings-row styk-settings-block"><span class="styk-settings-handle-head">${this.text(say('settings.handleRadius'))}<span class="styk-settings-slider"><input type="range" class="ui-slider" data-setting="handleSize" min="3" max="10" step="1" value="${value.handleSize}" aria-label="${escape(say('settings.handleRadius'))}" style="--_p:${sliderPercent(value.handleSize, 3, 10)}%"><output data-handle-value>${value.handleSize}px</output></span></span><div class="styk-settings-preview" role="img" aria-label="${escape(say('settings.handlePreview'))}" style="--size:${value.handleSize};--node-outline:${value.outlineHandles ? '1px solid #000' : '0px solid transparent'}">${nodes.map(kind => `<span class="styk-settings-node-cell"><span class="styk-settings-node" style="--node-color:${PIVOT_HANDLE_COLORS[kind]}"></span><small>${escape(say('settings.handle.' + kind))}</small></span>`).join('')}</div></div>`;
-      return this.group(say('settings.navigation'),
-          this.select(say('settings.zoomGesture'), 'canvasZoomGesture', [['ctrl-scroll', say('settings.zoomCtrlScroll')], ['scroll', say('settings.zoomScroll')]])
-          + this.select(say('settings.boxSelection'), 'marqueeSelection', [['bounds', say('settings.boxBounds')], ['origins', say('settings.boxOrigins')]]))
-        + this.group('Pasting', this.select('Pasted figure depth', 'pasteDepth', [['same', 'Same Z-index (default)'], ['front', 'In front']], 'Choose whether pasted figures keep their copied depth or appear in front of other figures on the destination layer.'))
-        + this.group('Duplication',
-          this.select('Alt-drag a figure root', 'altDragDuplicate', [['instance', 'Linked instance'], ['unique', 'Independent copy']], 'Linked instances share figure edits made in Build. Independent copies have their own figure. Both can be posed and moved separately.'))
-        + this.group(say('settings.jointHandles'),
-          this.checkbox(say('settings.showHandles'), 'showHandles')
-          + this.checkbox(say('settings.showUnselected'), 'showUnselectedHandles')
-          + this.checkbox(say('settings.autoSize'), 'autoSizeHandles')
-          + this.checkbox(say('settings.outline'), 'outlineHandles')
+      const handleSize = `<div class="styk-settings-row styk-settings-block"><span class="styk-settings-handle-head">${this.text(say("settings.handleRadius"))}<span class="styk-settings-slider"><input type="range" class="ui-slider" data-setting="handleSize" min="3" max="10" step="1" value="${value.handleSize}" aria-label="${escape(say("settings.handleRadius"))}" style="--_p:${sliderPercent(value.handleSize, 3, 10)}%" ${messageAttributes("settings.handleRadius", {}, "aria-label")}><output data-handle-value>${value.handleSize}px</output></span></span><div class="styk-settings-preview" role="img" aria-label="${escape(say("settings.handlePreview"))}" style="--size:${value.handleSize};--node-outline:${value.outlineHandles ? interfaceText("settings.message1pxSolid000") : interfaceText("settings.message0pxSolidTransparent")}" ${messageAttributes("settings.handlePreview", {}, "aria-label")}>${nodes.map(kind => `<span class="styk-settings-node-cell"><span class="styk-settings-node" style="--node-color:${PIVOT_HANDLE_COLORS[kind]}"></span><small ${messageAttributes('settings.handle.' + kind, {})}>${escape(say('settings.handle.' + kind))}</small></span>`).join('')}</div></div>`;
+      return this.group(say("settings.navigation"),
+          this.select(say("settings.zoomGesture"), 'canvasZoomGesture', [messageTuple(['ctrl-scroll', say("settings.zoomCtrlScroll")], {1: {key: "settings.zoomCtrlScroll", params: {}}}), messageTuple(['scroll', say("settings.zoomScroll")], {1: {key: "settings.zoomScroll", params: {}}})])
+          + this.select(say("settings.boxSelection"), 'marqueeSelection', [messageTuple(['bounds', say("settings.boxBounds")], {1: {key: "settings.boxBounds", params: {}}}), messageTuple(['origins', say("settings.boxOrigins")], {1: {key: "settings.boxOrigins", params: {}}})]))
+        + this.group(interfaceText("settings.pasting"), this.select(interfaceText("settings.pastedFigureDepth"), 'pasteDepth', [messageTuple(['same', interfaceText("settings.sameZIndexDefault")], {1: {key: "settings.sameZIndexDefault", params: {}}}), messageTuple(['front', interfaceText("settings.inFront")], {1: {key: "settings.inFront", params: {}}})], interfaceText("settings.chooseWhetherPastedFiguresKeepTheirCopiedDepth")))
+        + this.group(interfaceText("settings.duplication"),
+          this.select('Alt-drag a figure root', 'altDragDuplicate', [messageTuple(['instance', interfaceText("settings.linkedInstance")], {1: {key: "settings.linkedInstance", params: {}}}), messageTuple(['unique', interfaceText("settings.independentCopy")], {1: {key: "settings.independentCopy", params: {}}})], interfaceText("settings.linkedInstancesShareFigureEditsMadeInBuild")))
+        + this.group(say("settings.jointHandles"),
+          this.checkbox(say("settings.showHandles"), 'showHandles')
+          + this.checkbox(say("settings.showUnselected"), 'showUnselectedHandles')
+          + this.checkbox(say("settings.autoSize"), 'autoSizeHandles')
+          + this.checkbox(say("settings.outline"), 'outlineHandles')
           + handleSize)
-        + this.group(say('settings.overlays'),
-          this.checkbox(say('settings.virtualCamera'), 'showCamera')
-          + this.checkbox(say('settings.motionPaths'), 'motionPaths'))
-        + this.group(say('settings.builder'),
-          this.checkbox(say('settings.staticHandles'), 'builderShowStaticHandles')
-          + this.checkbox(say('settings.highlightSegment'), 'builderHighlightSegment')
-          + this.checkbox(say('settings.construction'), 'useBuilderCanvasColor')
-          + `<label class="styk-settings-row">${this.text(say('settings.constructionColorShort'))}<span class="styk-settings-color"><input type="color" data-setting="builderCanvasColor" value="${value.builderCanvasColor}" aria-label="${escape(say('settings.constructionColor'))}"></span></label>`)
-        + this.group(say('settings.graphics'),
-          this.select(say('settings.graphicsMode'), 'rendererMode', [['auto', say('settings.graphicsAuto')], ['canvas', 'Canvas 2D'], ['gpu', 'WebGPU']]));
+        + this.group(say("settings.overlays"),
+          this.checkbox(say("settings.virtualCamera"), 'showCamera')
+          + this.checkbox(say("settings.motionPaths"), 'motionPaths'))
+        + this.group(say("settings.builder"),
+          this.checkbox(say("settings.staticHandles"), 'builderShowStaticHandles')
+          + this.checkbox(say("settings.highlightSegment"), 'builderHighlightSegment')
+          + this.checkbox(say("settings.construction"), 'useBuilderCanvasColor')
+          + `<label class="styk-settings-row">${this.text(say("settings.constructionColorShort"))}<span class="styk-settings-color"><input type="color" data-setting="builderCanvasColor" value="${value.builderCanvasColor}" aria-label="${escape(say("settings.constructionColor"))}" ${messageAttributes("settings.constructionColor", {}, "aria-label")}></span></label>`)
+        + this.group(say("settings.graphics"),
+          this.select(say("settings.graphicsMode"), 'rendererMode', [messageTuple(['auto', say("settings.graphicsAuto")], {1: {key: "settings.graphicsAuto", params: {}}}), messageTuple(['canvas', interfaceText("settings.canvas2d")], {1: {key: "settings.canvas2d", params: {}}}), messageTuple(['gpu', interfaceText("settings.webgpu")], {1: {key: "settings.webgpu", params: {}}})]));
     }
     if (tab === "animation") {
       const presets = [0, 2.5, 5, 10, 30, 60];
-      const autosave = [[0, say('settings.autosaveOff')], ...presets.slice(1, -1).map(seconds => [seconds, say('settings.seconds', {count: seconds})]), [60, say('settings.minute')],
-        ...(presets.includes(value.autosaveSeconds) ? [] : [[value.autosaveSeconds, say('settings.seconds', {count: value.autosaveSeconds})]])];
-      return this.group(say('settings.keyframes'), this.checkbox(say('settings.replaceOnDrop'), 'replaceKeyframesOnDrop', say('settings.replaceOnDropNote')))
-        + this.group(say('settings.playback'),
-          this.select(say('settings.playbackQuality'), 'playbackQuality', playbackQualityOptions.map(option => [option.id, option.label]), say('settings.playbackQualityNote'))
-          + this.checkbox(say('settings.loop'), 'loopPlayback')
-          + this.checkbox(say('settings.fitView'), 'fitViewOnPlayback', say('settings.fitViewNote')))
-        + this.group(say('settings.recovery'), this.select(say('settings.autosaveInterval'), 'autosaveSeconds', autosave, say('settings.autosaveNote')));
+      const autosave = [messageTuple([0, say("settings.autosaveOff")], {1: {key: "settings.autosaveOff", params: {}}}), ...presets.slice(1, -1).map(seconds => messageTuple([seconds, say("settings.seconds", {count: seconds})], {1: {key: "settings.seconds", params: {count: seconds}}})), messageTuple([60, say("settings.minute")], {1: {key: "settings.minute", params: {}}}),
+        ...(presets.includes(value.autosaveSeconds) ? [] : [messageTuple([value.autosaveSeconds, say("settings.seconds", {count: value.autosaveSeconds})], {1: {key: "settings.seconds", params: {count: value.autosaveSeconds}}})])];
+      return this.group(say("settings.keyframes"), this.checkbox(say("settings.replaceOnDrop"), 'replaceKeyframesOnDrop', say("settings.replaceOnDropNote")))
+        + this.group(say("settings.playback"),
+          this.select(say("settings.playbackQuality"), 'playbackQuality', playbackQualityOptions.map(option => [option.id, option.label]), say("settings.playbackQualityNote"))
+          + this.checkbox(say("settings.loop"), 'loopPlayback')
+          + this.checkbox(say("settings.fitView"), 'fitViewOnPlayback', say("settings.fitViewNote")))
+        + this.group(say("settings.recovery"), this.select(say("settings.autosaveInterval"), 'autosaveSeconds', autosave, say("settings.autosaveNote")));
     }
     if (tab === "shortcuts")
-      return this.hotkeySettings.html() + this.group(say('settings.gestures'), `<dl class="styk-settings-gestures">${[
+      return this.hotkeySettings.html() + this.group(say("settings.gestures"), `<dl class="styk-settings-gestures">${[
         ['barrel', 'barrelResult'],
         ['eraserEnd', 'eraserEndResult'],
         ['spaceDrag', 'spaceDragResult'],
         ['ctrlSpaceDrag', 'ctrlSpaceDragResult'],
         ['shiftSpaceDrag', 'shiftSpaceDragResult'],
-      ].map(([gesture, result]) => `<div class="styk-settings-row"><dt>${escape(say('settings.gesture.' + gesture))}</dt><dd>${escape(say('settings.gesture.' + result))}</dd></div>`).join("")}</dl>`, 'settings-pen-gestures');
+      ].map(([gesture, result]) => `<div class="styk-settings-row"><dt ${messageAttributes('settings.gesture.' + gesture, {})}>${escape(say('settings.gesture.' + gesture))}</dt><dd ${messageAttributes('settings.gesture.' + result, {})}>${escape(say('settings.gesture.' + result))}</dd></div>`).join("")}</dl>`, 'settings-pen-gestures');
     if (tab === 'feedback')
       return `<div class="settings-feedback-actions">${[
         ['bug', 'bug', 'draw'],
         ['idea', 'lightbulb', 'time'],
         ['other', 'message', 'select'],
-      ].map(([category, symbol, tint]) => `<button type="button" class="settings-feedback-tile" data-settings-feedback="${category}" data-tint="${tint}"><span class="settings-feedback-art"><span class="settings-feedback-icon">${icon(symbol)}</span></span><span class="settings-feedback-body"><strong>${escape(say('settings.feedback.' + category))}</strong><small>${escape(say(`settings.feedback.${category}Note`))}</small><span class="settings-feedback-go">${escape(say('settings.feedback.start'))}${icon('chevronRight')}</span></span></button>`).join('')}</div>`
-        + `<div class="styk-settings-card settings-feedback-private"><span class="settings-feedback-lock">${icon('lock')}</span>${this.text(say('settings.feedback.private'), say('settings.feedback.privateNote'))}<button type="button" class="ui-button" data-size="sm" data-settings-feedback="inbox">${escape(say('settings.feedback.myReports'))}</button></div>`;
+      ].map(([category, symbol, tint]) => `<button type="button" class="settings-feedback-tile" data-settings-feedback="${category}" data-tint="${tint}"><span class="settings-feedback-art"><span class="settings-feedback-icon">${icon(symbol)}</span></span><span class="settings-feedback-body"><strong ${messageAttributes('settings.feedback.' + category, {})}>${escape(say('settings.feedback.' + category))}</strong><small ${messageAttributes(interfaceText("settings.settingsFeedbackNote", {category: category}), {})}>${escape(say(interfaceText("settings.settingsFeedbackNote", {category: category})))}</small><span class="settings-feedback-go">${escape(say("settings.feedback.start"))}${icon('chevronRight')}</span></span></button>`).join('')}</div>`
+        + `<div class="styk-settings-card settings-feedback-private"><span class="settings-feedback-lock">${icon('lock')}</span>${this.text(say("settings.feedback.private"), say("settings.feedback.privateNote"))}<button type="button" class="ui-button" data-size="sm" data-settings-feedback="inbox" ${messageAttributes("settings.feedback.myReports", {})}>${escape(say("settings.feedback.myReports"))}</button></div>`;
     return "";
   }
   /**
@@ -662,7 +669,7 @@ export class EditorSettings {
     const entries = [], seen = new Set(), template = document.createElement('template');
     const text = node => node?.textContent?.replace(/\s+/g, ' ').trim() || '';
     for (const tab of SEARCH_TABS) {
-      template.innerHTML = this.tabHTML(tab);
+      localizedMarkup(template, this.tabHTML(tab));
       for (const field of template.content.querySelectorAll('[data-setting]')) {
         const setting = field.dataset.setting;
         if (seen.has(setting)) continue;
@@ -707,7 +714,7 @@ export class EditorSettings {
     this.pending = { ...next };
     this.pendingRevision = (this.pendingRevision || 0) + 1;
     clearTimeout(this.timer);
-    this.timer = setTimeout(() => void this.flush(), 200);
+    this.timer = setTimeout(() => void this.flush(), patch.locale !== undefined ? 0 : 200);
     if (patch.timelineMode !== undefined) this.render();
     if (patch.builderCanvasColor !== undefined) {
       const toggle = this.content.querySelector('[data-setting="useBuilderCanvasColor"]');
@@ -718,7 +725,7 @@ export class EditorSettings {
         .querySelector(".styk-settings-preview")
         ?.style.setProperty(
           "--node-outline",
-          next.outlineHandles ? "1px solid #000" : "0px solid transparent",
+          next.outlineHandles ? interfaceText("settings.message1pxSolid000") : interfaceText("settings.message0pxSolidTransparent"),
         );
   }
   flush() {

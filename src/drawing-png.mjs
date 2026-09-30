@@ -1,9 +1,10 @@
+import {messageError} from './localized-error.mjs';
 import {encodePNGPortable} from './sticknodes/decoder/png-browser.mjs';
 import {DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {crc32} from './sticknodes/decoder/archive.mjs';
 import {base64ToBytes,bytesToBase64} from './base64.mjs';
 export function drawingPNGBytes(url){
-  if(typeof url!=='string'||!url.startsWith('data:image/png;base64,'))throw new Error('Drawing pixels need an embedded PNG.');
+  if(typeof url!=='string'||!url.startsWith('data:image/png;base64,'))throw messageError(new Error(''), "errors.drawingPng.drawingPixelsNeedAnEmbeddedPng", {});
   return base64ToBytes(url.slice(22));
 }
 export function drawingPNGDataURL(bytes){return 'data:image/png;base64,'+bytesToBase64(bytes);}
@@ -42,32 +43,32 @@ export function decodeDrawingPNG(url){return decodeDrawingPNGBytes(drawingPNGByt
 /** Decode our portable PNG without premultiplication, including filter modes
  * emitted by other conforming RGBA/RGB encoders. All allocations are bounded. */
 export async function decodeDrawingPNGBytes(bytes,{width:expectedWidth,height:expectedHeight}={}){
-  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),signature=[137,80,78,71,13,10,26,10];if(!signature.every((n,i)=>bytes[i]===n))throw new Error('Invalid drawing PNG signature.');
+  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),signature=[137,80,78,71,13,10,26,10];if(!signature.every((n,i)=>bytes[i]===n))throw messageError(new Error(''), "errors.drawingPng.invalidDrawingPngSignature", {});
   let width,height,channels;const parts=[];
-  for(let pos=8;pos+12<=bytes.length;){const length=view.getUint32(pos),end=pos+12+length;if(end>bytes.length)throw new Error('Truncated drawing PNG.');const type=String.fromCharCode(...bytes.subarray(pos+4,pos+8)),data=bytes.subarray(pos+8,pos+8+length);
-    if(crc32(bytes.subarray(pos+4,pos+8+length))!==view.getUint32(pos+8+length))throw new Error('Drawing PNG checksum mismatch.');
-    if(type==='IHDR'){width=view.getUint32(pos+8);height=view.getUint32(pos+12);channels=data[9]===6?4:data[9]===2?3:0;if(!width||!height||width>8192||height>8192||width*height>DRAWING_MAX_PIXELS||data[8]!==8||!channels||data[12]!==0)throw new Error('Drawings require a bounded, non-interlaced 8-bit RGB/RGBA PNG.');if((expectedWidth!==undefined&&width!==expectedWidth)||(expectedHeight!==undefined&&height!==expectedHeight))throw new Error('Drawing PNG dimensions do not match its tile or clipboard.');}
+  for(let pos=8;pos+12<=bytes.length;){const length=view.getUint32(pos),end=pos+12+length;if(end>bytes.length)throw messageError(new Error(''), "errors.drawingPng.truncatedDrawingPng", {});const type=String.fromCharCode(...bytes.subarray(pos+4,pos+8)),data=bytes.subarray(pos+8,pos+8+length);
+    if(crc32(bytes.subarray(pos+4,pos+8+length))!==view.getUint32(pos+8+length))throw messageError(new Error(''), "errors.drawingPng.drawingPngChecksumMismatch", {});
+    if(type==='IHDR'){width=view.getUint32(pos+8);height=view.getUint32(pos+12);channels=data[9]===6?4:data[9]===2?3:0;if(!width||!height||width>8192||height>8192||width*height>DRAWING_MAX_PIXELS||data[8]!==8||!channels||data[12]!==0)throw messageError(new Error(''), "errors.drawingPng.drawingsRequireABoundedNonInterlaced8Bit", {});if((expectedWidth!==undefined&&width!==expectedWidth)||(expectedHeight!==undefined&&height!==expectedHeight))throw messageError(new Error(''), "errors.drawingPng.drawingPngDimensionsDoNotMatchItsTile", {});}
     if(type==='IDAT')parts.push(data);if(type==='IEND')break;pos=end;
   }
-  if(!channels||!parts.length)throw new Error('Drawing PNG is missing pixel data.');
+  if(!channels||!parts.length)throw messageError(new Error(''), "errors.drawingPng.drawingPngIsMissingPixelData", {});
   const stride=width*channels,expected=(stride+1)*height;let scan;
   if(expected<=SYNC_BYTES){
     const joined=parts.length===1?parts[0]:new Uint8Array(parts.reduce((n,p)=>n+p.length,0));if(parts.length>1){let o=0;for(const p of parts){joined.set(p,o);o+=p.length;}}
-    try{scan=inflateZlib(joined,{expected});}catch(error){throw new Error(/expands/.test(error.message)?'Drawing PNG expands beyond its declared dimensions.':/size mismatch|Truncated/.test(error.message)?'Drawing PNG has incomplete pixel data.':'Drawing PNG pixel data is corrupt.');}
+    try{scan=inflateZlib(joined,{expected});}catch(error){throw messageError(new Error(''), /expands/.test(error.message)?'errors.drawingPng.drawingPngExpandsBeyondItsDeclaredDimensions':/size mismatch|Truncated/.test(error.message)?'errors.drawingPng.drawingPngHasIncompletePixelData':'errors.drawingPng.corruptPixelData');}
   }else{
   scan=new Uint8Array(expected);const stream=new DecompressionStream('deflate'),reader=stream.readable.getReader(),writer=stream.writable.getWriter();let offset=0,writeError;
   // IDAT already owns byte views. Feeding them directly avoids a Blob and its
   // asynchronous read pipeline per tile. Await backpressure and settle the
   // producer on every exit, including expansion-limit and corrupt-stream errors.
   const written=(async()=>{try{for(const part of parts)await writer.write(part);await writer.close();}catch(error){writeError=error;await writer.abort(error).catch(()=>{});}finally{writer.releaseLock();}})();
-  try{for(;;){const {done,value}=await reader.read();if(done)break;if(offset+value.length>expected)throw new Error('Drawing PNG expands beyond its declared dimensions.');scan.set(value,offset);offset+=value.length;}await written;if(writeError)throw writeError;}
+  try{for(;;){const {done,value}=await reader.read();if(done)break;if(offset+value.length>expected)throw messageError(new Error(''), "errors.drawingPng.drawingPngExpandsBeyondItsDeclaredDimensions", {});scan.set(value,offset);offset+=value.length;}await written;if(writeError)throw writeError;}
   finally{await reader.cancel().catch(()=>{});await written;reader.releaseLock();}
-  if(offset!==expected)throw new Error('Drawing PNG has incomplete pixel data.');
+  if(offset!==expected)throw messageError(new Error(''), "errors.drawingPng.drawingPngHasIncompletePixelData", {});
   }
   const output=new Uint8ClampedArray(width*height*4);
   const paeth=(a,b,c)=>{const p=a+b-c,x=Math.abs(p-a),y=Math.abs(p-b),z=Math.abs(p-c);return x<=y&&x<=z?a:y<=z?b:c;};
   for(let y=0;y<height;y++){
-    const start=y*(stride+1)+1,filter=scan[start-1];if(filter>4)throw new Error('Invalid drawing PNG filter.');
+    const start=y*(stride+1)+1,filter=scan[start-1];if(filter>4)throw messageError(new Error(''), "errors.drawingPng.invalidDrawingPngFilter", {});
     // Reconstruct filtered rows in the bounded scan buffer. Portable drawing
     // PNGs use filter zero: those RGBA rows need only a native byte copy.
     if(filter)for(let x=0;x<stride;x++){

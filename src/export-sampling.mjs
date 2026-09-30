@@ -1,26 +1,28 @@
+import {messageError} from './localized-error.mjs';
+import {t as interfaceText} from './localization.mjs';
 /** Pivot's three pixel-export sampling choices. */
 export const EXPORT_SMOOTHING = Object.freeze([
   Object.freeze({
     value: "edges",
-    label: "Smooth edges",
+    label: interfaceText("exportSampling.smoothEdges"), labelKey: "exportSampling.smoothEdges",
     description:
-      "Smooth figure edges while keeping sharp sprite pixels.",
+      interfaceText("exportSampling.smoothFigureEdgesWhileKeepingSharpSpritePixels"), descriptionKey: "exportSampling.smoothFigureEdgesWhileKeepingSharpSpritePixels",
   }),
   Object.freeze({
     value: "none",
-    label: "No smoothing",
-    description: "Aliased figure edges and unfiltered sprite pixels.",
+    label: interfaceText("exportSampling.noSmoothing"), labelKey: "exportSampling.noSmoothing",
+    description: interfaceText("exportSampling.aliasedFigureEdgesAndUnfilteredSpritePixels"), descriptionKey: "exportSampling.aliasedFigureEdgesAndUnfilteredSpritePixels",
   }),
   Object.freeze({
     value: "sprites",
-    label: "Smooth sprites",
+    label: interfaceText("exportSampling.smoothSprites"), labelKey: "exportSampling.smoothSprites",
     description:
-      "Render at twice the size, then downsample for smoother sprites.",
+      interfaceText("exportSampling.renderAtTwiceTheSizeThenDownsampleFor"), descriptionKey: "exportSampling.renderAtTwiceTheSizeThenDownsampleFor",
   }),
 ]);
 export function normalizeExportSmoothing(value = "edges") {
   if (!EXPORT_SMOOTHING.some((option) => option.value === value))
-    throw new Error("Choose Smooth edges, No smoothing, or Smooth sprites.");
+    throw messageError(new Error(''), "errors.exportSampling.chooseSmoothEdgesNoSmoothingOrSmoothSprites", {});
   return value;
 }
 
@@ -43,14 +45,10 @@ export function exportSamplingSize(width, height, smoothing = "edges") {
     height > 16384 ||
     width * height > EXPORT_MAX_PIXELS
   )
-    throw new Error(
-      `Export dimensions must be whole pixels, up to 16,384 per side and ${Math.round(EXPORT_MAX_PIXELS / 1e6)} million pixels per frame.`,
-    );
+    throw messageError(new Error(''), "errors.exportSampling.exportDimensionsMustBeWholePixelsUpTo", {value: Math.round(EXPORT_MAX_PIXELS / 1e6)});
   const factor = smoothing === "sprites" ? 2 : 1;
   if (width * factor > 16384 || height * factor > 16384)
-    throw new Error(
-      "Smooth sprites supports output dimensions up to 8,192 pixels per side.",
-    );
+    throw messageError(new Error(''), "errors.exportSampling.smoothSpritesSupportsOutputDimensionsUpTo8", {});
   return {
     width,
     height,
@@ -63,7 +61,7 @@ export function exportSamplingSize(width, height, smoothing = "edges") {
 
 /** Exact 2× box filter, averaging premultiplied colors to preserve transparent edges. */
 export function downsampleExportPixels(source, width, height) {
-  if (source.length !== width * height * 16) throw new Error('Invalid supersampled export tile.');
+  if (source.length !== width * height * 16) throw messageError(new Error(''), "errors.exportSampling.invalidSupersampledExportTile", {});
   const output = new Uint8ClampedArray(width * height * 4), stride = width * 8;
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const a = y * stride * 2 + x * 8, b = a + 4, c = a + stride, d = c + 4;

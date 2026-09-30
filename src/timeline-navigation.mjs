@@ -1,4 +1,5 @@
 import {OnionTimelineRange} from './onion-timeline-range.mjs';
+import {localizedAttribute} from './localization-bindings.mjs';
 import {installTimelineTouch} from './touch/timeline-touch.mjs';
 
 /** Shared view gestures; panning and zooming never enter document history. The zoom slider and
@@ -7,7 +8,7 @@ export function mountTimelineNavigation(host) {
   if(!host.strip)host.onionRange=new OnionTimelineRange(host);
   const surface=host.scroll??host.strip;
   const on=(target,type,fn,options={})=>target.addEventListener(type,fn,{...options,signal:host.events.signal});
-  surface.title='Middle-drag to pan · Ctrl/Cmd-wheel to zoom';
+  localizedAttribute(surface,'title','timeline.navigationHint',{zoomModifier:'Ctrl/Cmd'});
   let pan=null;
   on(host.container,'pointerdown',event=>{
     if(event.button!==1||event.target.closest?.('.tl-ruler-tools'))return;

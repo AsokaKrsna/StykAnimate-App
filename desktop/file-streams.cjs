@@ -1,4 +1,6 @@
 'use strict';
+const { messageError } = require('./localization.cjs');
+
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -16,11 +18,11 @@ class FileStreams {
   }
 
   validateSize(size) {
-    if (!Number.isSafeInteger(size) || size < 0 || size > this.maxBytes) throw new Error('The file size is invalid or exceeds the 256 MB limit.');
+    if (!Number.isSafeInteger(size) || size < 0 || size > this.maxBytes) throw messageError(new Error(''), 'desktop.fileStreams.errors.theFileSizeIsInvalidOrExceedsThe256MBLimit', {});
   }
 
   validateStreamSize(size) {
-    if (size !== null && size !== undefined && (!Number.isSafeInteger(size) || size < 0 || size > this.maxStreamBytes)) throw new Error('The streamed file size limit is invalid.');
+    if (size !== null && size !== undefined && (!Number.isSafeInteger(size) || size < 0 || size > this.maxStreamBytes)) throw messageError(new Error(''), 'desktop.fileStreams.errors.theStreamedFileSizeLimitIsInvalid', {});
   }
 
   touch(job) {
@@ -30,7 +32,7 @@ class FileStreams {
   }
 
   register(job) {
-    if (this.jobs.size >= this.maxSessions) throw new Error('Too many file transfers are active.');
+    if (this.jobs.size >= this.maxSessions) throw messageError(new Error(''), 'desktop.fileStreams.errors.tooManyFileTransfersAreActive', {});
     job.token = randomUUID();
     job.busy = false;
     this.jobs.set(job.token, job);
@@ -40,8 +42,8 @@ class FileStreams {
 
   async use(token, mode, operation) {
     const job = this.jobs.get(token);
-    if (!job || job.mode !== mode || job.cancelled) throw new Error('This file transfer is no longer active.');
-    if (job.busy) throw new Error('Wait for the previous file chunk to finish.');
+    if (!job || job.mode !== mode || job.cancelled) throw messageError(new Error(''), 'desktop.fileStreams.errors.thisFileTransferIsNoLongerActive', {});
+    if (job.busy) throw messageError(new Error(''), 'desktop.fileStreams.errors.waitForThePreviousFileChunkToFinish', {});
     job.busy = true;
     job.idle = new Promise((resolve) => { job.resolveIdle = resolve; });
     clearTimeout(job.timer);
@@ -51,8 +53,8 @@ class FileStreams {
 
   async beginWrite({ destination, size, onCommit, exclusive = false, stream = false } = {}) {
     if (stream) this.validateStreamSize(size); else this.validateSize(size);
-    if (typeof destination !== 'string' || !path.isAbsolute(destination)) throw new Error('A native-approved destination is required.');
-    if (this.jobs.size >= this.maxSessions) throw new Error('Too many file transfers are active.');
+    if (typeof destination !== 'string' || !path.isAbsolute(destination)) throw messageError(new Error(''), 'desktop.fileStreams.errors.aNativeApprovedDestinationIsRequired', {});
+    if (this.jobs.size >= this.maxSessions) throw messageError(new Error(''), 'desktop.fileStreams.errors.tooManyFileTransfersAreActive', {});
     const temporary = path.join(path.dirname(destination), `.${path.basename(destination)}.${randomUUID()}.tmp`);
     const handle = await fs.open(temporary, 'wx');
     // Streamed writes declare their final size at finish time, not up front.
@@ -65,14 +67,14 @@ class FileStreams {
       let bytes;
       if (chunk instanceof ArrayBuffer) bytes = Buffer.from(chunk);
       else if (ArrayBuffer.isView(chunk) && !(chunk instanceof DataView)) bytes = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
-      else throw new Error('Each file chunk must contain binary bytes.');
-      if (!bytes.byteLength || bytes.byteLength > this.maxChunkBytes) throw new Error('A file chunk must contain between 1 byte and 256 KB.');
-      if (job.size !== null && job.position + bytes.byteLength > job.size) throw new Error('The file transfer exceeds its declared size.');
-      if (job.size === null && job.position + bytes.byteLength > this.maxStreamBytes) throw new Error('The streamed file exceeds the 16 GB limit.');
+      else throw messageError(new Error(''), 'desktop.fileStreams.errors.eachFileChunkMustContainBinaryBytes', {});
+      if (!bytes.byteLength || bytes.byteLength > this.maxChunkBytes) throw messageError(new Error(''), 'desktop.fileStreams.errors.aFileChunkMustContainBetween1ByteAnd256KB', {});
+      if (job.size !== null && job.position + bytes.byteLength > job.size) throw messageError(new Error(''), 'desktop.fileStreams.errors.theFileTransferExceedsItsDeclaredSize', {});
+      if (job.size === null && job.position + bytes.byteLength > this.maxStreamBytes) throw messageError(new Error(''), 'desktop.fileStreams.errors.theStreamedFileExceedsThe16GBLimit', {});
       let offset = 0;
       while (offset < bytes.length) {
         const result = await job.handle.write(bytes, offset, bytes.length - offset, job.position + offset);
-        if (!result.bytesWritten) throw new Error('The file chunk could not be written.');
+        if (!result.bytesWritten) throw messageError(new Error(''), 'desktop.fileStreams.errors.theFileChunkCouldNotBeWritten', {});
         offset += result.bytesWritten;
       }
       job.position += bytes.length;
@@ -86,13 +88,13 @@ class FileStreams {
       let bytes;
       if (chunk instanceof ArrayBuffer) bytes = Buffer.from(chunk);
       else if (ArrayBuffer.isView(chunk) && !(chunk instanceof DataView)) bytes = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
-      else throw new Error('Each file patch must contain binary bytes.');
-      if (!bytes.byteLength || bytes.byteLength > this.maxChunkBytes) throw new Error('A file patch must contain between 1 byte and 256 KB.');
-      if (!Number.isSafeInteger(offset) || offset < 0 || offset + bytes.byteLength > job.position) throw new Error('A file patch must stay inside the written range.');
+      else throw messageError(new Error(''), 'desktop.fileStreams.errors.eachFilePatchMustContainBinaryBytes', {});
+      if (!bytes.byteLength || bytes.byteLength > this.maxChunkBytes) throw messageError(new Error(''), 'desktop.fileStreams.errors.aFilePatchMustContainBetween1ByteAnd256KB', {});
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset + bytes.byteLength > job.position) throw messageError(new Error(''), 'desktop.fileStreams.errors.aFilePatchMustStayInsideTheWrittenRange', {});
       let written = 0;
       while (written < bytes.length) {
         const result = await job.handle.write(bytes, written, bytes.length - written, offset + written);
-        if (!result.bytesWritten) throw new Error('The file patch could not be written.');
+        if (!result.bytesWritten) throw messageError(new Error(''), 'desktop.fileStreams.errors.theFilePatchCouldNotBeWritten', {});
         written += result.bytesWritten;
       }
       return { patched: offset, bytes: bytes.length };
@@ -101,12 +103,12 @@ class FileStreams {
 
   finish(token) {
     return this.use(token, 'write', async (job) => {
-      if (job.size !== null && job.position !== job.size) throw new Error('The file transfer is incomplete.');
+      if (job.size !== null && job.position !== job.size) throw messageError(new Error(''), 'desktop.fileStreams.errors.theFileTransferIsIncomplete', {});
       await job.handle.sync();
-      if (job.cancelled) throw new Error('The file transfer was cancelled.');
+      if (job.cancelled) throw messageError(new Error(''), 'desktop.fileStreams.errors.theFileTransferWasCancelled', {});
       await job.handle.close();
       job.handle = null;
-      if (job.cancelled) throw new Error('The file transfer was cancelled.');
+      if (job.cancelled) throw messageError(new Error(''), 'desktop.fileStreams.errors.theFileTransferWasCancelled', {});
       try {
         if (job.exclusive) await fs.link(job.temporary, job.destination);
         else await fs.rename(job.temporary, job.destination);
@@ -128,14 +130,14 @@ class FileStreams {
   }
 
   async beginRead(filename) {
-    if (typeof filename !== 'string' || !path.isAbsolute(filename)) throw new Error('A native-approved source is required.');
-    if (this.jobs.size >= this.maxSessions) throw new Error('Too many file transfers are active.');
+    if (typeof filename !== 'string' || !path.isAbsolute(filename)) throw messageError(new Error(''), 'desktop.fileStreams.errors.aNativeApprovedSourceIsRequired', {});
+    if (this.jobs.size >= this.maxSessions) throw messageError(new Error(''), 'desktop.fileStreams.errors.tooManyFileTransfersAreActive', {});
     let handle;
     try { handle = await fs.open(filename, 'r'); }
     catch (error) { if (error.code === 'ENOENT') return null; throw error; }
     try {
       const stat = await handle.stat();
-      if (!stat.isFile()) throw new Error('The recovery source is not a file.');
+      if (!stat.isFile()) throw messageError(new Error(''), 'desktop.fileStreams.errors.theRecoverySourceIsNotAFile', {});
       this.validateSize(stat.size);
       return this.register({ mode: 'read', handle, size: stat.size, position: 0, modifiedAt: stat.mtime.toISOString() });
     } catch (error) { await handle.close(); throw error; }
@@ -148,7 +150,7 @@ class FileStreams {
       let offset = 0;
       while (offset < count) {
         const result = await job.handle.read(bytes, offset, count - offset, job.position + offset);
-        if (!result.bytesRead) throw new Error('The recovery file changed during reading.');
+        if (!result.bytesRead) throw messageError(new Error(''), 'desktop.fileStreams.errors.theRecoveryFileChangedDuringReading', {});
         offset += result.bytesRead;
       }
       job.position += count;

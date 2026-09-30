@@ -1,3 +1,8 @@
+import {presentError} from './error-presentation.mjs';
+import {messageError} from './localized-error.mjs';
+import {t as interfaceText} from './localization.mjs';
+
+import {appendLocalized, localizedMarkup, messageHTML, messageAttributes, localizedText} from './localization-bindings.mjs';
 import {icon} from './icons.mjs';
 import {PIVOT_HANDLE_COLORS} from './canvas-interactions.mjs';
 import {drawingMetadata} from './drawing-model.mjs';
@@ -30,11 +35,11 @@ dialog.sprite-placement-dialog{width:min(640px,calc(100vw - 32px));max-width:640
 /** Native sprite anchors are signed integer image coordinates, including points outside the image. */
 export function placedSpriteFigure(figure,{start,end}) {
   if(!figure||figure.segments?.length!==1||figure.image_assets?.length!==1||figure.segments[0].primitive_code!==2)
-    throw new Error('Choose one imported sprite image.');
+    throw messageError(new Error(''), "errors.spritePlacementDialog.chooseOneImportedSpriteImage", {});
   for(const [name,point] of Object.entries({start,end})) for(const axis of ['x','y'])
-    if(!Number.isInteger(point?.[axis])||point[axis]<MIN||point[axis]>MAX)throw new Error(`${name==='start'?'Origin':'End'} ${axis.toUpperCase()} must be a whole image pixel.`);
+    if(!Number.isInteger(point?.[axis])||point[axis]<MIN||point[axis]>MAX)throw messageError(new Error(''), "errors.spritePlacementDialog.mustBeAWholeImagePixel", {value: name==='start'?interfaceText("spritePlacementDialog.origin"):interfaceText("spritePlacementDialog.end"), value1: axis.toUpperCase()});
   const length=Math.hypot(end.x-start.x,end.y-start.y);
-  if(!length)throw new Error('Origin and end handles must be at different positions.');
+  if(!length)throw messageError(new Error(''), "errors.spritePlacementDialog.originAndEndHandlesMustBeAtDifferent", {});
   const angle=Math.atan2(end.y-start.y,end.x-start.x);
   return {...figure,segments:[{...figure.segments[0],length,angle_rad:angle}],image_assets:[{...figure.image_assets[0],
     anchor_start:{...start},anchor_end:{...end},anchor_length:length,anchor_angle_rad:angle}]};
@@ -44,23 +49,23 @@ export function placedSpriteFigure(figure,{start,end}) {
 export class SpritePlacementDialog {
   constructor({dialog,content,onClose=()=>{}}) {
     Object.assign(this,{dialog,content,onClose});
-    if(!document.getElementById('sprite-placement-style')){const style=document.createElement('style');style.id='sprite-placement-style';style.textContent=`@layer legacy{${CSS}}`;document.head.append(style);}
+    if(!document.getElementById('sprite-placement-style')){const style=document.createElement('style');style.id='sprite-placement-style';style.textContent=`@layer legacy{${CSS}}`;appendLocalized(document.head, style);}
   }
   open(figure) {
     this.cancel();
     const asset=figure?.image_assets?.[0];
-    if(drawingMetadata(figure)?.version===2)throw new Error('Drawing cels paint from tiles; choose an imported PNG sprite.');
+    if(drawingMetadata(figure)?.version===2)throw messageError(new Error(''), "errors.spritePlacementDialog.drawingCelsPaintFromTilesChooseAnImported", {});
     if(!asset||!Number.isInteger(asset.width)||asset.width<1||!Number.isInteger(asset.height)||asset.height<1||asset.width*asset.height>16*1024*1024||
-      typeof asset.data_url!=='string'||!/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(asset.data_url))throw new Error('Choose a decoded PNG sprite of at most 16 million pixels.');
+      typeof asset.data_url!=='string'||!/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(asset.data_url))throw messageError(new Error(''), "errors.spritePlacementDialog.chooseADecodedPngSpriteOfAtMost", {});
     this.figure=figure;this.points={start:{...asset.anchor_start},end:{...asset.anchor_end}};placedSpriteFigure(figure,this.points);
     this.selected='start';this.loaded=false;this.drag=null;this.events=new AbortController();const signal=this.events.signal,session={};this.session=session;
     this.dialog.classList.add('sprite-placement-dialog');
-    this.content.innerHTML=`<div class="dialog-head"><h2>Sprite placement</h2><button class="icon-button" data-sprite-close aria-label="Close sprite placement">${icon('close')}</button></div>
-      <div class="dialog-body"><p class="sprite-placement-caption">${esc(figure.name||'Sprite')} · ${asset.width} × ${asset.height} px<br>Place the origin where the sprite rotates and the end where another part attaches.</p>
-      <div class="sprite-placement-fields">${['start','end'].map((key,index)=>`<div class="sprite-placement-group"><button data-sprite-select="${key}" aria-pressed="${index===0}"><span class="sprite-placement-dot ${index?'end':''}"></span>${index?'End handle':'Origin handle'}</button><div class="sprite-placement-xy">${['x','y'].map(axis=>`<label>${axis.toUpperCase()}<input type="number" step="1" min="${MIN}" max="${MAX}" data-sprite-point="${key}" data-sprite-axis="${axis}" aria-label="${index?'End':'Origin'} ${axis.toUpperCase()}"></label>`).join('')}</div></div>`).join('')}</div>
-      <div class="sprite-placement-measurements"><span data-sprite-angle></span><span data-sprite-length></span><span>Arrow keys · 1 px</span></div>
-      <div class="sprite-placement-preview"><canvas tabindex="0" aria-label="Sprite handles. Drag a handle or use arrow keys to move it by one image pixel."></canvas></div><p class="form-error" role="alert" data-sprite-error hidden></p></div>
-      <div class="dialog-actions"><button class="button" data-sprite-reset>Reset handles</button><span style="flex:1"></span><button class="button" data-sprite-close>Cancel</button><button class="button primary" data-sprite-apply disabled>Choose attachment</button></div>`;
+    localizedMarkup(this.content, `<div class="dialog-head"><h2 data-i18n="spritePlacementDialog.spritePlacement">${messageHTML("spritePlacementDialog.spritePlacement", {})}</h2><button class="icon-button" data-sprite-close aria-label="Close sprite placement" data-i18n-aria-label="spritePlacementDialog.closeSpritePlacement">${icon('close')}</button></div>
+      <div class="dialog-body"><p class="sprite-placement-caption">${messageHTML("spritePlacementDialog.px", {value: figure.name||interfaceText("spritePlacementDialog.sprite"), width: asset.width, height: asset.height})}<br>${messageHTML("spritePlacementDialog.placeTheOriginWhereTheSpriteRotatesAnd", {})}</p>
+      <div class="sprite-placement-fields">${['start','end'].map((key,index)=>`<div class="sprite-placement-group"><button data-sprite-select="${key}" aria-pressed="${index===0}"><span class="sprite-placement-dot ${index?'end':''}"></span>${messageHTML(index?"spritePlacementDialog.endHandle":"spritePlacementDialog.originHandle")}</button><div class="sprite-placement-xy">${['x','y'].map(axis=>`<label>${axis.toUpperCase()}<input type="number" step="1" min="${MIN}" max="${MAX}" data-sprite-point="${key}" data-sprite-axis="${axis}" aria-label="${index?interfaceText("spritePlacementDialog.end"):interfaceText("spritePlacementDialog.origin")} ${axis.toUpperCase()}" ${messageAttributes("spritePlacementDialog.coordinateLabel",{point:{messageKey:index?"spritePlacementDialog.end":"spritePlacementDialog.origin"},axis:axis.toUpperCase()},"aria-label")}></label>`).join('')}</div></div>`).join('')}</div>
+      <div class="sprite-placement-measurements"><span data-sprite-angle></span><span data-sprite-length></span><span data-i18n="spritePlacementDialog.arrowKeys1Px">${messageHTML("spritePlacementDialog.arrowKeys1Px", {})}</span></div>
+      <div class="sprite-placement-preview"><canvas tabindex="0" aria-label="Sprite handles. Drag a handle or use arrow keys to move it by one image pixel." data-i18n-aria-label="spritePlacementDialog.spriteHandlesDragAHandleOrUseArrow"></canvas></div><p class="form-error" role="alert" data-sprite-error hidden></p></div>
+      <div class="dialog-actions"><button class="button" data-sprite-reset data-i18n="spritePlacementDialog.resetHandles">${messageHTML("spritePlacementDialog.resetHandles", {})}</button><span style="flex:1"></span><button class="button" data-sprite-close data-i18n="common.cancel">${messageHTML("spritePlacementDialog.cancel", {})}</button><button class="button primary" data-sprite-apply disabled data-i18n="spritePlacementDialog.chooseAttachment">${messageHTML("spritePlacementDialog.chooseAttachment", {})}</button></div>`);
     this.canvas=this.content.querySelector('canvas');this.error=this.content.querySelector('[data-sprite-error]');this.applyButton=this.content.querySelector('[data-sprite-apply]');
     this.content.addEventListener('click',event=>{
       if(event.target.closest('[data-sprite-close]'))return this.cancel();
@@ -95,7 +100,7 @@ export class SpritePlacementDialog {
     const promise=new Promise(resolve=>this.resolve=resolve);
     this.dialog.showModal();this.fit();this.sync();this.canvas.focus();
     const image=new Image();this.image=image;image.src=asset.data_url;
-    image.decode().then(()=>{if(this.session!==session)return;if(image.naturalWidth!==asset.width||image.naturalHeight!==asset.height)throw new Error('Sprite dimensions do not match its embedded image.');this.loaded=true;this.sync();}).catch(error=>{if(this.session!==session)return;this.loadError=error.message||'The sprite preview could not be loaded.';this.sync();});
+    image.decode().then(()=>{if(this.session!==session)return;if(image.naturalWidth!==asset.width||image.naturalHeight!==asset.height)throw messageError(new Error(''), "errors.spritePlacementDialog.spriteDimensionsDoNotMatchItsEmbeddedImage", {});this.loaded=true;this.sync();}).catch(error=>{if(this.session!==session)return;this.loadError=error.message?error:{messageKey:"spritePlacementDialog.theSpritePreviewCouldNotBeLoaded"};this.sync();});
     return promise;
   }
   local(event){const rect=this.canvas.getBoundingClientRect();return{x:event.clientX-rect.left,y:event.clientY-rect.top};}
@@ -107,13 +112,13 @@ export class SpritePlacementDialog {
     this.view={scale,x:(rect.width-(maxX-minX)*scale)/2-minX*scale,y:(rect.height-(maxY-minY)*scale)/2-minY*scale};
   }
   sync({fields=true}={}){
-    if(!this.session)return;let error=this.loadError||'';try{placedSpriteFigure(this.figure,this.points);}catch(value){error=value.message;}
-    this.error.textContent=error;this.error.hidden=!error;this.applyButton.disabled=Boolean(error)||!this.loaded;
+    if(!this.session)return;let error=this.loadError||'';try{placedSpriteFigure(this.figure,this.points);}catch(value){error=value;}
+    presentError(this.error,error);this.error.hidden=!error;this.applyButton.disabled=Boolean(error)||!this.loaded;
     for(const button of this.content.querySelectorAll('[data-sprite-select]'))button.setAttribute('aria-pressed',String(button.dataset.spriteSelect===this.selected));
     if(fields)for(const input of this.content.querySelectorAll('[data-sprite-point]'))input.value=String(this.points[input.dataset.spritePoint][input.dataset.spriteAxis]);
     const {start,end}=this.points,length=Math.hypot(end.x-start.x,end.y-start.y),angle=Math.atan2(end.y-start.y,end.x-start.x)*180/Math.PI;
-    this.content.querySelector('[data-sprite-angle]').textContent=`Angle ${Number.isFinite(angle)?angle.toFixed(2):'—'}°`;
-    this.content.querySelector('[data-sprite-length]').textContent=`Length ${Number.isFinite(length)?length.toFixed(2):'—'} px`;
+    localizedText(this.content.querySelector('[data-sprite-angle]'), "spritePlacementDialog.angle", {value: Number.isFinite(angle)?angle.toFixed(2):'—'});
+    localizedText(this.content.querySelector('[data-sprite-length]'), "spritePlacementDialog.lengthPx", {value: Number.isFinite(length)?length.toFixed(2):'—'});
     this.schedule();
   }
   schedule(){if(this.pending)return;this.pending=requestAnimationFrame(()=>{this.pending=0;if(this.session)this.draw();});}

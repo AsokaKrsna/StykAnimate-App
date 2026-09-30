@@ -1,3 +1,5 @@
+import {errorMessageData, messageError} from './localized-error.mjs';
+
 import {inspectWave, wavePeaks, mixAudio, pcmWave} from './audio-pcm.mjs';
 import {AUDIO_CHUNK_BYTES} from './audio-model.mjs';
 const sources = new Map(), embedded = new Map();
@@ -22,7 +24,7 @@ async function run(data) {
   if (data.operation === 'embedded-end') { const blob = new Blob(embedded.get(data.key)); embedded.delete(data.key); return blob; }
   if (data.operation === 'clips') { clips = data.clips; return true; }
   if (data.operation === 'mix') return mixAudio(clips, sources, data.start, data.frames);
-  throw new Error('Unknown audio worker operation.');
+  throw messageError(new Error(''), "errors.audioWorker.unknownAudioWorkerOperation", {});
 }
 // Requests are ordered. A source release cannot race an in-flight mix.
 let queue = Promise.resolve();
@@ -30,6 +32,6 @@ self.addEventListener('message', ({data}) => {
   if(data.operation==='cancel-import'){if(activeImport===data.key)cancelledImport=data.key;return;}
   queue = queue.then(async () => {
     try { const result = await run(data); self.postMessage({id: data.id, result}, result instanceof Float32Array ? [result.buffer] : []); }
-    catch (error) { self.postMessage({id: data.id, error: error.message}); }
+    catch (error) { self.postMessage({id: data.id, error: error.message, ...errorMessageData(error)}); }
   });
 });

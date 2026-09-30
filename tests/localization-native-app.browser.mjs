@@ -40,13 +40,13 @@ try {
     return JSON.stringify(e.report)===b.report&&e._undo.length===b.undo&&e.revision===b.revision&&e.dirty===b.dirty&&e.selectedUid===b.uid&&e.tick===b.tick&&document.querySelector('.titlebar [data-action=save]')===nativeLocaleSave&&nativeLocaleSave.querySelector('svg')===nativeLocaleSVG;
   }));
   await page.locator('[data-setting=locale]').selectOption('ar');
-  check('Arabic source captions are readable while shell and timeline remain left-to-right',await page.evaluate(()=>document.querySelector('.titlebar [data-action=save]').textContent.trim()==='حفظ'&&document.querySelector('[data-setting=locale]').getAttribute('aria-label')==='اللغة'&&getComputedStyle(document.documentElement).direction==='ltr'&&getComputedStyle(document.querySelector('.timeline-title')).direction==='ltr'));
+  check('Arabic interface follows RTL while canvas and timeline coordinates remain left-to-right',await page.evaluate(()=>document.querySelector('.titlebar [data-action=save]').textContent.trim()==='حفظ'&&document.querySelector('[data-setting=locale]').getAttribute('aria-label')==='اللغة'&&getComputedStyle(document.documentElement).direction==='rtl'&&getComputedStyle(document.querySelector('#viewport')).direction==='ltr'&&getComputedStyle(document.querySelector('#timeline')).direction==='ltr'));
   check('Partial modern captions remain explicit English fallback',await page.locator('[data-locale-coverage]').textContent()==='Some controls are still shown in English.');
   await page.screenshot({path:path.join(output,'arabic-root-settings.png')});
   await page.locator('[data-setting=locale]').selectOption('he');
   check('Hebrew uses supplied Unicode Save text without altering document geometry',await page.evaluate(()=>document.querySelector('.titlebar [data-action=save]').textContent.trim()==='שמור'&&styk.editor.object.root_x===325.125));
   await page.locator('[data-setting=locale]').selectOption('zh-Hans');
-  check('Chinese project Save/Open use animation captions rather than Builder asset captions',await page.evaluate(()=>document.querySelector('.titlebar [data-action=save]').textContent.trim()==='保存动画'&&document.querySelector('.titlebar [data-action=open]').textContent.trim()==='打开动画'));
+  check('Chinese project Save/Open use animation captions rather than Builder asset captions',await page.evaluate(()=>document.querySelector('.titlebar [data-action=save]').textContent.trim()==='保存动画'&&styk.localization.t('menu.openProject')==='打开动画'));
   await page.setViewportSize({width:760,height:700});
   check('Native Chinese settings fit a compact window without horizontal overflow',await page.locator('.styk-settings').evaluate(dialog=>dialog.getBoundingClientRect().width<=innerWidth-30&&dialog.scrollWidth<=dialog.clientWidth&&dialog.querySelector('.styk-settings-content').scrollWidth<=dialog.querySelector('.styk-settings-content').clientWidth));
   await page.screenshot({path:path.join(output,'chinese-compact-settings.png')});

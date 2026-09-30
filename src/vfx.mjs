@@ -1,10 +1,11 @@
+import {messageError} from './localized-error.mjs';
 import {VFX_REGISTRY,isGeneratorType} from './vfx-registry.mjs';
 export {VFX_REGISTRY} from './vfx-registry.mjs';
 import {vfxPaint,interpolateVfxColor} from './vfx-paint.mjs';
 export const VFX_LIMIT=16;
 const empty=Object.freeze([]), parsed=new Map();
 export const isVfxProperty=property=>property==='vfxScope'||property==='vfxStack'||typeof property==='string'&&property.startsWith('vfx1:');
-export function vfxProperty(type,id,param){const value=`vfx1:${type}:${id}:${param}`;if(!vfxDescriptor(value))throw new Error('Invalid effect parameter.');return value;}
+export function vfxProperty(type,id,param){const value=`vfx1:${type}:${id}:${param}`;if(!vfxDescriptor(value))throw messageError(new Error(''), "errors.vfx.invalidEffectParameter", {});return value;}
 export function vfxDescriptor(property){
   if(property==='vfxScope')return {type:'number',discrete:true,min:0,max:1,label:'Include attached parts'};
   if(property==='vfxStack')return {type:'stack',discrete:true};
@@ -19,23 +20,23 @@ export function vfxDescriptor(property){
 export const vfxPropertyLabel=property=>property==='vfxScope'?'Include attached parts':property==='vfxStack'?'Effects':(()=>{const d=vfxDescriptor(property);return d?`${VFX_REGISTRY[d.effectType].name} · ${d.label}`:property;})();
 export function validateVfxValue(property,value){
   if(property==='vfxStack')return validateVfxStack(value);
-  const d=vfxDescriptor(property);if(!d)throw new Error('Unknown VFX parameter.');
+  const d=vfxDescriptor(property);if(!d)throw messageError(new Error(''), "errors.vfx.unknownVfxParameter", {});
   if(d.type==='color'&&typeof value==='object')return vfxPaint(value);
-  if(typeof value!=='number'||!Number.isFinite(value)||value<d.min||value>d.max||(d.type==='color'||d.discrete)&&!Number.isInteger(value))throw new Error(`${d.label} must be between ${d.min} and ${d.max}.`);
+  if(typeof value!=='number'||!Number.isFinite(value)||value<d.min||value>d.max||(d.type==='color'||d.discrete)&&!Number.isInteger(value))throw messageError(new Error(''), "errors.cameraMotion.mustBeBetweenAnd", {label: d.label, min: d.min, max: d.max});
   return value;
 }
 export function validateVfxStack(stack){
-  if(!Array.isArray(stack)||stack.length>VFX_LIMIT)throw new Error(`An effect stack supports up to ${VFX_LIMIT} effects.`);
+  if(!Array.isArray(stack)||stack.length>VFX_LIMIT)throw messageError(new Error(''), "errors.vfx.anEffectStackSupportsUpToEffects", {VFX_LIMIT: VFX_LIMIT});
   const ids=new Set();return stack.map(effect=>{
-    if(!effect||![1,2].includes(effect.version)||!Object.hasOwn(VFX_REGISTRY,effect.type)||typeof effect.id!=='string'||!/^[a-zA-Z0-9_-]{1,64}$/.test(effect.id)||ids.has(effect.id)||typeof effect.enabled!=='boolean'||!effect.params||typeof effect.params!=='object'||Array.isArray(effect.params))throw new Error('Invalid VFX stack.');
+    if(!effect||![1,2].includes(effect.version)||!Object.hasOwn(VFX_REGISTRY,effect.type)||typeof effect.id!=='string'||!/^[a-zA-Z0-9_-]{1,64}$/.test(effect.id)||ids.has(effect.id)||typeof effect.enabled!=='boolean'||!effect.params||typeof effect.params!=='object'||Array.isArray(effect.params))throw messageError(new Error(''), "errors.vfx.invalidVfxStack", {});
     ids.add(effect.id);const definition=VFX_REGISTRY[effect.type],params={};
-    if(Object.keys(effect.params).some(key=>!Object.hasOwn(definition.params,key)))throw new Error('Unknown VFX parameter.');
+    if(Object.keys(effect.params).some(key=>!Object.hasOwn(definition.params,key)))throw messageError(new Error(''), "errors.vfx.unknownVfxParameter", {});
     for(const [name,descriptor] of Object.entries(definition.params))params[name]=validateVfxValue(vfxProperty(effect.type,effect.id,name),effect.params[name]??descriptor.default);
     if(effect.version===1&&effect.type==='outline'&&effect.params.rounded===undefined)params.rounded=0;
     return {version:2,id:effect.id,type:effect.type,enabled:effect.enabled,params};
   });
 }
-export function createVfx(type,id){if(!Object.hasOwn(VFX_REGISTRY,type))throw new Error('Choose an available effect.');return validateVfxStack([{version:2,type,id,enabled:true,params:{}}])[0];}
+export function createVfx(type,id){if(!Object.hasOwn(VFX_REGISTRY,type))throw messageError(new Error(''), "errors.vfx.chooseAnAvailableEffect", {});return validateVfxStack([{version:2,type,id,enabled:true,params:{}}])[0];}
 export function vfxOwnerKey(target){return target.kind==='segment'?`${target.figureTypeId??'*'}/${target.handleId}`:'figure';}
 export function vfxStack(owner,target={kind:'figure'}){return (arguments.length===1&&owner?.objects?owner?._vfxTimelineScene:undefined)??owner?._stykVfx?.[vfxOwnerKey(target)]??empty;}
 export function setVfxStack(owner,target,stack){
@@ -43,10 +44,10 @@ export function setVfxStack(owner,target,stack){
   if(Object.keys(next).length)owner._stykVfx=next;else delete owner._stykVfx;
 }
 export function validateVfxOwner(owner){
-  if(owner?._stykVfxScope!==undefined&&![0,1].includes(owner._stykVfxScope))throw new Error('Invalid connected VFX scope.');
+  if(owner?._stykVfxScope!==undefined&&![0,1].includes(owner._stykVfxScope))throw messageError(new Error(''), "errors.vfx.invalidConnectedVfxScope", {});
   const value=owner?._stykVfx;if(value===undefined)return;
-  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length>65536)throw new Error('Invalid VFX owner.');
-  for(const [key,stack] of Object.entries(value)){if(key!=='figure'&&!/^(\*|[1-9]\d*)\/[1-9]\d*$/.test(key))throw new Error('Invalid VFX segment identity.');if(Array.isArray(stack)&&stack.some(e=>isGeneratorType(e?.type)))throw new Error('Generated effects belong on the effects timeline.');validateVfxStack(stack);}
+  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length>65536)throw messageError(new Error(''), "errors.vfx.invalidVfxOwner", {});
+  for(const [key,stack] of Object.entries(value)){if(key!=='figure'&&!/^(\*|[1-9]\d*)\/[1-9]\d*$/.test(key))throw messageError(new Error(''), "errors.vfx.invalidVfxSegmentIdentity", {});if(Array.isArray(stack)&&stack.some(e=>isGeneratorType(e?.type)))throw messageError(new Error(''), "errors.vfx.generatedEffectsBelongOnTheEffectsTimeline", {});validateVfxStack(stack);}
 }
 /** Preserve instance-local node ownership when definitions/physical handles change. */
 export function remapVfxOwner(owner,typeId=owner.figure_type_id,handles,sourceType=owner.figure_type_id){

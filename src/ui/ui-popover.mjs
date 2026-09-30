@@ -1,3 +1,4 @@
+import {appendLocalized, localizedMarkup} from '../localization-bindings.mjs';
 /**
  * Anchored, non-modal panels (onion settings, Go to frame, the Document
  * popover, brush presets, …): a [popover] in the top layer with an optional
@@ -46,30 +47,30 @@ export function createPopover({anchor, placement = 'bottom-start', title = '', c
     heading.className = 'ui-popover-title';
     heading.id = `${id}-title`;
     heading.textContent = title;
-    head.append(heading);
+    appendLocalized(head, heading);
     const close = doc.createElement('button');
     close.type = 'button';
     close.className = 'ui-icon-button ui-popover-close';
     close.dataset.size = 'sm';
     close.setAttribute('aria-label', closeLabel ?? kitText(t, 'common.close'));
-    if (icon) { const glyph = icon('close'); if (typeof glyph === 'string') close.innerHTML = glyph; else if (glyph) close.append(glyph); }
+    if (icon) { const glyph = icon('close'); if (typeof glyph === 'string') localizedMarkup(close, glyph); else if (glyph) appendLocalized(close, glyph); }
     else close.textContent = '×';
     close.addEventListener('click', () => hide('close-button'));
-    head.append(close);
-    element.append(head);
+    appendLocalized(head, close);
+    appendLocalized(element, head);
     element.setAttribute('aria-labelledby', heading.id);
   } else if (label) element.setAttribute('aria-label', label);
   const bodyElement = doc.createElement('div');
   bodyElement.className = 'ui-popover-body';
   const bodyNode = content(doc, body);
-  if (bodyNode) bodyElement.append(bodyNode);
-  element.append(bodyElement);
+  if (bodyNode) appendLocalized(bodyElement, bodyNode);
+  appendLocalized(element, bodyElement);
   const footNode = content(doc, foot);
   if (footNode) {
     const footElement = doc.createElement('div');
     footElement.className = 'ui-popover-foot';
-    footElement.append(footNode);
-    element.append(footElement);
+    appendLocalized(footElement, footNode);
+    appendLocalized(element, footElement);
   }
 
   let open = false, controller = null, handle = null, untether = null, invoker = null;
@@ -85,7 +86,7 @@ export function createPopover({anchor, placement = 'bottom-start', title = '', c
     if (open && !element.isConnected) finish('disconnected');
     if (open) return;
     const host = mount === 'auto' ? overlayMount(anchorElement, doc) : mount;
-    if (host && element.parentElement !== host) host.append(element);
+    if (host && element.parentElement !== host) appendLocalized(host, element);
     invoker = doc.activeElement;
     showPopoverFrom(element, anchorElement);
     open = true;

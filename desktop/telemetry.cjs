@@ -1,4 +1,6 @@
 'use strict';
+const { messageError } = require('./localization.cjs');
+
 const crypto = require('node:crypto');
 const os = require('node:os');
 const { pathToFileURL } = require('node:url');
@@ -91,7 +93,7 @@ class TelemetryService {
   }
   notify() { this.onState(this.getState()); }
   async setConsent(value) {
-    if (typeof value?.analytics !== 'boolean' || typeof value?.diagnostics !== 'boolean') throw new TypeError('Choose analytics and diagnostics separately.');
+    if (typeof value?.analytics !== 'boolean' || typeof value?.diagnostics !== 'boolean') throw messageError(new TypeError(''), 'desktop.telemetry.errors.chooseAnalyticsAndDiagnosticsSeparately', {});
     this.epoch++; this.controller?.abort();
     this.state.consent = { analytics: value.analytics, diagnostics: value.diagnostics, policyVersion: this.schema.POLICY_VERSION, updatedAt: this.now() };
     this.state.decided = true; this.state.running = enabled(value);
@@ -213,7 +215,7 @@ class TelemetryService {
     try {
       for (const deletion of [...this.state.deletions]) {
         const response = await this.fetch(deletion.url + '/api/v1/telemetry', { method: 'DELETE', headers: { Authorization: 'Bearer ' + deletion.token }, signal: timeout(5000), redirect: 'error' });
-        if (!response.ok) throw new Error('Deletion unavailable');
+        if (!response.ok) throw messageError(new Error(''), 'desktop.telemetry.errors.deletionUnavailable', {});
         this.state.deletions = this.state.deletions.filter(item => item !== deletion); await this.persist();
       }
       if (!enabled(this.state.consent)) { this.refreshStatus(); this.configureTimer(); this.notify(); return true; }
@@ -232,7 +234,7 @@ class TelemetryService {
       try { response = await this.fetch(this.siteUrl + '/api/v1/telemetry', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + this.state.token }, body: payload, signal: this.controller.signal, redirect: 'error' }); }
       finally { clearTimeout(abortTimer); this.controller = null; }
       if (epoch !== this.epoch) return false;
-      if (!response.ok) { const seconds = Number(response.headers.get('Retry-After')); this.nextUpload = this.now() + Math.max(UPLOAD_INTERVAL, Number.isFinite(seconds) ? Math.min(86400, seconds) * 1000 : UPLOAD_INTERVAL); throw new Error('Service unavailable'); }
+      if (!response.ok) { const seconds = Number(response.headers.get('Retry-After')); this.nextUpload = this.now() + Math.max(UPLOAD_INTERVAL, Number.isFinite(seconds) ? Math.min(86400, seconds) * 1000 : UPLOAD_INTERVAL); throw messageError(new Error(''), 'desktop.telemetry.errors.serviceUnavailable', {}); }
       const receipt=await response.json().catch(()=>({}));
       if(Number.isSafeInteger(receipt.diagnosticGeneration)&&receipt.diagnosticGeneration>(this.state.diagnosticGeneration||0)){
         this.state.diagnosticGeneration=receipt.diagnosticGeneration;
@@ -249,7 +251,7 @@ class TelemetryService {
   async deleteData() {
     this.epoch++; this.controller?.abort();
     if (this.state.token && this.siteUrl && !this.state.deletions.some(d => d.token === this.state.token)) {
-      if (this.state.deletions.length >= 4) throw new Error('Complete the pending deletion before resetting again.');
+      if (this.state.deletions.length >= 4) throw messageError(new Error(''), 'desktop.telemetry.errors.completeThePendingDeletionBeforeResettingAgain', {});
       this.state.deletions.push({ token: this.state.token, url: this.siteUrl });
     }
     this.state.token = null; this.id = null; this.state.days = {}; this.state.milestones = {}; this.state.firstSuccess = {}; delete this.state.firstObservedAt; this.state.acknowledged = null; this.state.running = false;
@@ -257,12 +259,12 @@ class TelemetryService {
     await this.persist(); this.configureTimer(); this.refreshStatus(); this.notify(); await this.upload({ force: true }); return this.getState();
   }
   async feedback(value) {
-    if (!this.siteUrl) throw new Error('Feedback service is not configured yet. Contact ' + config.contact + '.');
-    if (!['bug', 'idea', 'other'].includes(value?.category) || typeof value?.message !== 'string' || value.message.trim().length < 5 || value.message.length > 2000) throw new Error('Use 5–2,000 characters for your feedback.');
+    if (!this.siteUrl) throw messageError(new Error(''), 'desktop.telemetry.errors.notConfigured', {contact:config.contact});
+    if (!['bug', 'idea', 'other'].includes(value?.category) || typeof value?.message !== 'string' || value.message.trim().length < 5 || value.message.length > 2000) throw messageError(new Error(''), 'desktop.telemetry.errors.use52000CharactersForYourFeedback', {});
     // Feedback is explicitly submitted; it never enables profiling or invents an installation identifier.
     this.ensureIdentity(); await this.persist();
     const response = await this.fetch(this.siteUrl + '/api/v1/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + this.state.token }, body: JSON.stringify({ id: crypto.randomUUID(), category: value.category, message: value.message.trim(), appVersion: this.version, platform: process.platform }), signal: timeout(5000), redirect: 'error' });
-    if (!response.ok) throw new Error('Feedback could not be sent. Try again later or email ' + config.contact + '.');
+    if (!response.ok) throw messageError(new Error(''), 'desktop.telemetry.errors.feedbackFailed', {contact:config.contact});
     return { sent: true };
   }
   async close() { clearInterval(this.timer); this.count('sessions_closed'); this.state.running = false; await this.persist(); }

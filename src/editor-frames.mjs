@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {getFrameById, frameIndexForId, invalidateFrameIndex} from './frame-ids.mjs';
 import {snapshotPoseFrame} from './pose-snapshot.mjs';
 const clone = value => structuredClone(value);
@@ -31,7 +32,7 @@ export function validateFrameIdentities(report) {
 export function* validateFrameIdentitySteps(report) {
   const ids = new Set(); let next = 1;
   const sources = report._styk?.frameSources;
-  if (sources !== undefined && (!sources || typeof sources !== 'object' || Array.isArray(sources))) throw new Error('Invalid retained frame sources.');
+  if (sources !== undefined && (!sources || typeof sources !== 'object' || Array.isArray(sources))) throw messageError(new Error(''), "errors.editorFrames.invalidRetainedFrameSources", {});
   function* entries() {
     for (const frame of report.keyframes) yield [null,frame];
     for (const key in sources ?? {}) if (own(sources,key)) yield [key,sources[key]];
@@ -41,11 +42,11 @@ export function* validateFrameIdentitySteps(report) {
     if (++work % 256 === 0) yield {phase:'identities', checked:work};
     const id = frame?._styk?.frameId;
     if (id === undefined && key === null) continue;
-    if (!validId(id) || (key !== null && key !== id) || ids.has(id)) throw new Error('Frame source identities must be valid and unique.');
+    if (!validId(id) || (key !== null && key !== id) || ids.has(id)) throw messageError(new Error(''), "errors.editorFrames.frameSourceIdentitiesMustBeValidAndUnique", {});
     ids.add(id);
     if (/^frame-[1-9]\d*$/.test(id)) {
       const number = Number(id.slice(6));
-      if (!Number.isSafeInteger(number)) throw new Error('Frame identity capacity exceeded.');
+      if (!Number.isSafeInteger(number)) throw messageError(new Error(''), "errors.clipboardLegacyUpgrade.frameIdentityCapacityExceeded", {});
       next = Math.max(next, number + 1);
     }
   }
@@ -66,11 +67,11 @@ export const editorFrameMethods = {
     invalidateFrameIndex(this.report);
   },
   _assignFrameId(frame) {
-    if (!Number.isSafeInteger(this._nextFrameIdentity)) throw new Error('Frame identity capacity exceeded.');
+    if (!Number.isSafeInteger(this._nextFrameIdentity)) throw messageError(new Error(''), "errors.clipboardLegacyUpgrade.frameIdentityCapacityExceeded", {});
     frame._styk = {...frame._styk, frameId: `frame-${this._nextFrameIdentity++}`}; return frame._styk.frameId;
   },
   getFrameId(index = this.frameIndex) {
-    const frame = this.report.keyframes[index]; if (!frame) throw new Error('Choose an existing source frame.');
+    const frame = this.report.keyframes[index]; if (!frame) throw messageError(new Error(''), "errors.editorFrames.chooseAnExistingSourceFrame", {});
     return frame._styk?.frameId ?? this._assignFrameId(frame);
   },
   getFrameById(id) { return getFrameById(this.report, id); },
@@ -166,7 +167,7 @@ export const editorFrameMethods = {
   },
   moveFrame(fromIndex, toIndex) {
     const frames = this.report.keyframes;
-    if (![fromIndex, toIndex].every(index => Number.isInteger(index) && index >= 0 && index < frames.length)) throw new Error('Choose valid keyframe positions.');
+    if (![fromIndex, toIndex].every(index => Number.isInteger(index) && index >= 0 && index < frames.length)) throw messageError(new Error(''), "errors.editorFrames.chooseValidKeyframePositions", {});
     if (fromIndex === toIndex) return false;
     const start = Math.min(fromIndex, toIndex), end = Math.max(fromIndex, toIndex), before = clone(frames.slice(start, end + 1)), after = clone(before);
     const [moved] = after.splice(fromIndex - start, 1); after.splice(toIndex - start, 0, moved);
@@ -174,7 +175,7 @@ export const editorFrameMethods = {
   },
   insertDuplicateFrames(indices = [this.frameIndex]) {
     const selected = this._frameIndices(indices); if (!selected.length) return 0;
-    if (this.report.keyframes.length + selected.length > 100000) throw new Error('The animation supports at most 100,000 keyframes.');
+    if (this.report.keyframes.length + selected.length > 100000) throw messageError(new Error(''), "errors.editorFrames.theAnimationSupportsAtMost100000Keyframes", {});
     const changes = selected.map(index => ({index, before: [], after: this._newInsertedFrames([clone(this.report.keyframes[index])])}));
     this._rangesEdit('Insert duplicate keyframes', changes); return changes.length;
   },

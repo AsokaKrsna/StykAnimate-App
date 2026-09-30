@@ -1,3 +1,4 @@
+import {localizedText} from './localization-bindings.mjs';
 /** View-only layer projection. Never changes document order or visibility. */
 export function organizeTimelineRows(rows, query = '', focusedIds = null) {
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
@@ -22,7 +23,7 @@ export const timelineOrganizationMethods = {
   },
   focusSelectedLayers() {
     const ids = new Set(this.ids.filter(id => this.editor.getLayer(id)?.kind === 'layer'));
-    if (!this.focusedLayerIds && !ids.size) { this.live.textContent = 'Select a figure layer to focus.'; return; }
+    if (!this.focusedLayerIds && !ids.size) { localizedText(this.live, "timelineOrganization.selectAFigureLayerToFocus", {}); return; }
     this.setLayerFilter(this.layerQuery, this.focusedLayerIds ? null : ids);
   },
   revealSelectedLayer() {

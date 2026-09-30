@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Procedural particle materials shared by the WebGPU and Canvas renderers.
  *
  * Each material is a run of 128-pixel cells (its variants) in one atlas row.
@@ -224,7 +225,7 @@ const rows=new Map();
  * with interleaved [shade×coverage, coverage] bytes. */
 export function atlasRow(row){
  let strip=rows.get(row);if(strip)return strip;
- const paint=PAINTERS[ROW_LIST[row]];if(!paint)throw new Error(`Unknown particle material row ${row}.`);
+ const paint=PAINTERS[ROW_LIST[row]];if(!paint)throw messageError(new Error(''), "errors.vfxGeneratorAtlas.unknownParticleMaterialRow", {row: row});
  const width=CELL*COLUMNS,base=new Uint8Array(width*CELL*2),A=new Float32Array(N),S=new Float32Array(N);
  for(let k=0;k<COLUMNS;k++){
   A.fill(0);S.fill(.5);paint(k,random(Math.imul(row+1,-1640531535)^Math.imul(k+1,40503)),A,S);

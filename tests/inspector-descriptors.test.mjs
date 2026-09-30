@@ -336,8 +336,8 @@ test('a figure: its name and quick actions head Transform, Appearance and Arrang
   const editor = new Editor();
   editor.select(1);
   const options = {editor}, today = legacyInspectorView(options), now = inspectorView(options), descriptor = inspectorDescriptor(options);
-  assert.deepEqual(descriptor.target, {label: 'Figure', selection: 'figure', name: 'Walker', glyph: 'person',
-    rename: {id: 'figure-name', description: 'Figure name', tip: 'Double-click to rename the figure definition'}});
+  assert.deepEqual(descriptor.target, {label: 'Figure', labelKey: 'inspectorView.figure', selection: 'figure', name: 'Walker', glyph: 'person',
+    rename: {id: 'figure-name', description: 'Figure name', descriptionKey: 'inspectorView.figureName', tip: 'Double-click to rename the figure definition', tipKey: 'inspectorView.doubleClickToRenameTheFigureDefinition'}});
   assert.deepEqual(descriptor.quick, {context: 'figure'});
   assert.deepEqual([...quickIds(descriptor)], ['mirror', 'layer-front', 'layer-back', 'duplicate', 'delete']);
   assert.deepEqual(sections(descriptor, 'core'), ['transform', 'appearance', 'arrange']);
@@ -355,7 +355,7 @@ test('a figure: its name and quick actions head Transform, Appearance and Arrang
   const join = tag(now, {'data-action': 'join-figure'});
   assert.equal(join.attrs.class, 'ui-button ui-section-action');
   assert.equal(join.attrs['data-hotkey-title'], 'Join to figure');
-  assert.ok(now.includes('<span class="ui-label">Join…</span>'));
+  assert.match(now, /<span class="ui-label" data-i18n="inspectorView.join" data-i18n-params="\{\}">Join…<\/span>/);
   // The Order steps are plain arrows, never the barred send-to-back and bring-to-front glyphs.
   assert.notEqual(descriptor.sections.find(section => section.id === 'arrange').rows[0].rows[1].down.icon, 'send-to-back');
   // Layer 1 names its kind: the select drops its label ("Layer 1 ▾", never "Layer Layer 1").
@@ -374,12 +374,12 @@ test('a figure: its name and quick actions head Transform, Appearance and Arrang
   const connected = inspectorView({editor: joined});
   assert.equal(tag(connected, {'data-action': 'join-figure'}).attrs['data-hotkey-title'], 'Unjoin figure');
   assert.ok('data-open' in tag(connected, {'data-section': 'connection'}).attrs);
-  assert.match(connected, /<span class="ui-row-label">Joined to<\/span><span class="ui-row-value">[^<]+ · 3<\/span>/);
+  assert.match(connected, /<span class="ui-row-label" data-i18n="inspectorView.joinedTo" data-i18n-params="\{\}">Joined to<\/span><span class="ui-row-value">[^<]+ · 3<\/span>/);
   tag(connected, {'data-action': 'combine-figures'});
 
   // Edit together: the scope line names the frames and offers the way back; the switch mirrors the timeline header's.
   const range = inspectorDescriptor({editor, rangeIndices: [2, 3, 4], applyRange: true});
-  assert.deepEqual(range.scope, {label: 'Editing frames 3–5', stop: {action: 'toggle-range-edit', label: 'Stop', tip: 'Edit only this frame'}});
+  assert.deepEqual(range.scope, {label: 'Editing frames 3–5', labelKey: 'inspectorView.editingFrameRange', labelParams: {first: 3, last: 5, count: 3}, stop: {action: 'toggle-range-edit', label: 'Stop', labelKey: 'inspectorView.stop', tip: 'Edit only this frame', tipKey: 'inspectorView.editOnlyThisFrame'}});
   assert.equal(inspectorDescriptor({editor, rangeIndices: [2, 5], applyRange: true}).scope.label, 'Editing 2 frames');
   assert.equal(inspectorDescriptor({editor, rangeIndices: [2, 3, 4], applyRange: false}).scope, null);
   assert.ok('checked' in tag(inspectorView({editor, rangeIndices: [2, 3, 4], applyRange: true}), {id: 'apply-range-movement'}).attrs);
@@ -464,7 +464,7 @@ test('a joint: Joint, IK, Style and its figure\'s Layer are open; the second col
   assert.equal(nameOf(now, {id: 'node-is-ik'}), 'Use IK');
   // Use IK controls a rendered region even while IK is off.
   assert.ok('hidden' in tag(now, {id: 'node-ik-options'}).attrs);
-  assert.match(now, /<label class="ui-field" data-switch-field data-tooltip="Does not turn with its parent"><span class="ui-field-label">Static<\/span><input class="ui-switch" type="checkbox" role="switch" id="static-joint"/);
+  assert.match(now, /<label class="ui-field" data-switch-field data-tooltip="Does not turn with its parent"><span class="ui-field-label" data-i18n="inspectorView.static" data-i18n-params="\{\}">Static<\/span><input class="ui-switch" type="checkbox" role="switch" id="static-joint"/);
   assertNoTitles(now);
   assertNoKeyState(now);
   assertBudget(descriptor, 'joint');

@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Lossless, byte-bounded native document snapshots with no full JSON/clone pass. */
 const TABLES = new Set(['figure_types', 'keyframes', 'backgrounds']);
 const ownSet = (object, key, value) => {
@@ -39,9 +40,9 @@ function boundedSize(value, limit) {
 export function* documentChunks(report, options = 1000) {
   if (typeof options === 'number') options = { maxRecords: options };
   const { maxRecords = 1000, maxBytes = 256 * 1024, timeBudgetMs = 3, omitRuntimeSegments = false, sharedFigures = false } = options;
-  if (!Number.isInteger(maxRecords) || maxRecords < 1) throw new Error('Document transport batch size must be a positive integer.');
-  if (!Number.isInteger(maxBytes) || maxBytes < 1024) throw new Error('Document transport byte budget must be at least 1024.');
-  if (!report || typeof report !== 'object' || Array.isArray(report)) throw new Error('Document transport requires a document record.');
+  if (!Number.isInteger(maxRecords) || maxRecords < 1) throw messageError(new Error(''), "errors.documentTransport.documentTransportBatchSizeMustBeAPositive", {});
+  if (!Number.isInteger(maxBytes) || maxBytes < 1024) throw messageError(new Error(''), "errors.documentTransport.documentTransportByteBudgetMustBeAtLeast", {});
+  if (!report || typeof report !== 'object' || Array.isArray(report)) throw messageError(new Error(''), "errors.documentTransport.documentTransportRequiresADocumentRecord", {});
   yield { header: {} };
   const stack = [{ value: report, path: [], keys: Object.keys(report), index: 0 }];
   const poseSequences = new WeakMap();
@@ -67,7 +68,7 @@ export function* documentChunks(report, options = 1000) {
     if(figureEntry){
       const reference=figures.get(value);
       if(reference){
-        if(reference.every((part,i)=>path[i]===part))throw new Error('Cyclic movieclip figure reference.');
+        if(reference.every((part,i)=>path[i]===part))throw messageError(new Error(''), "errors.documentTransport.cyclicMovieclipFigureReference", {});
         const size=pathBytes+reference.reduce((sum,part)=>sum+String(part).length*2+16,64);
         if(operations.length&&bytes+size>maxBytes){yield {operations,estimatedBytes:bytes};operations=[];bytes=64;started=performance.now();}
         operations.push({path,figureReference:reference});bytes+=size;continue;
@@ -128,54 +129,54 @@ export function* documentChunks(report, options = 1000) {
 export function applyDocumentChunk(report, chunk) {
   if (chunk.header) return chunk.header;
   if (chunk.operations) {
-    if (!report || !Array.isArray(chunk.operations)) throw new Error('Invalid document transport operations.');
+    if (!report || !Array.isArray(chunk.operations)) throw messageError(new Error(''), "errors.documentTransport.invalidDocumentTransportOperations", {});
     for (const operation of chunk.operations) {
       const path = operation.path;
-      if (!Array.isArray(path) || !path.length) throw new Error('Invalid document transport path.');
+      if (!Array.isArray(path) || !path.length) throw messageError(new Error(''), "errors.documentTransport.invalidDocumentTransportPath", {});
       let parent = report;
       for (let i = 0; i < path.length - 1; i++) {
-        if (!parent || typeof parent !== 'object' || !Object.hasOwn(parent, path[i])) throw new Error('Document transport parent has not arrived.');
+        if (!parent || typeof parent !== 'object' || !Object.hasOwn(parent, path[i])) throw messageError(new Error(''), "errors.documentTransport.documentTransportParentHasNotArrived", {});
         parent = parent[path[i]];
       }
       const key = path.at(-1);
-      if (!parent || typeof parent !== 'object' || !['string', 'number'].includes(typeof key)) throw new Error('Invalid document transport destination.');
+      if (!parent || typeof parent !== 'object' || !['string', 'number'].includes(typeof key)) throw messageError(new Error(''), "errors.documentTransport.invalidDocumentTransportDestination", {});
       if(Object.hasOwn(operation,'figureReference')){
         const reference=operation.figureReference;
         if(path.at(-2)!=='figure_types'||!Number.isInteger(key)||!Array.isArray(reference)||reference.at(-2)!=='figure_types'||!Number.isInteger(reference.at(-1))||reference.every((part,i)=>path[i]===part))
-          throw new Error('Invalid document figure reference.');
+          throw messageError(new Error(''), "errors.documentTransport.invalidDocumentFigureReference", {});
         let value=report;
-        for(const part of reference){if(!value||typeof value!=='object'||!Object.hasOwn(value,part))throw new Error('Document figure reference has not arrived.');value=value[part];}
-        if(!value||!Array.isArray(value.segments)||!Object.hasOwn(value,'figure_type_id'))throw new Error('Document reference requires a figure definition.');
+        for(const part of reference){if(!value||typeof value!=='object'||!Object.hasOwn(value,part))throw messageError(new Error(''), "errors.documentTransport.documentFigureReferenceHasNotArrived", {});value=value[part];}
+        if(!value||!Array.isArray(value.segments)||!Object.hasOwn(value,'figure_type_id'))throw messageError(new Error(''), "errors.documentTransport.documentReferenceRequiresAFigureDefinition", {});
         ownSet(parent,key,value);
       } else if (Object.hasOwn(operation, 'reference')) {
-        if(!Array.isArray(operation.reference)||!operation.reference.length)throw new Error('Invalid document sequence reference.');
+        if(!Array.isArray(operation.reference)||!operation.reference.length)throw messageError(new Error(''), "errors.documentTransport.invalidDocumentSequenceReference", {});
         let value=report;
         for(const part of operation.reference){
-          if(!value||typeof value!=='object'||!Object.hasOwn(value,part))throw new Error('Document sequence reference has not arrived.');
+          if(!value||typeof value!=='object'||!Object.hasOwn(value,part))throw messageError(new Error(''), "errors.documentTransport.documentSequenceReferenceHasNotArrived", {});
           value=value[part];
         }
-        if(!Array.isArray(value)||key!=='keys'||parent.property!=='pose')throw new Error('Document references require a pose key sequence.');
+        if(!Array.isArray(value)||key!=='keys'||parent.property!=='pose')throw messageError(new Error(''), "errors.documentTransport.documentReferencesRequireAPoseKeySequence", {});
         ownSet(parent,key,value);
       } else if (Object.hasOwn(operation, 'extend')) {
-        if (!Array.isArray(parent[key]) || !Array.isArray(operation.extend)) throw new Error('Document array fragments arrived out of order.');
+        if (!Array.isArray(parent[key]) || !Array.isArray(operation.extend)) throw messageError(new Error(''), "errors.documentTransport.documentArrayFragmentsArrivedOutOfOrder", {});
         const target = parent[key];
         for (const item of operation.extend) target.push(item);
       } else if (Object.hasOwn(operation, 'append')) {
-        if (!Object.hasOwn(parent, key) || typeof parent[key] !== 'string' || typeof operation.append !== 'string') throw new Error('Document string fragments arrived out of order.');
+        if (!Object.hasOwn(parent, key) || typeof parent[key] !== 'string' || typeof operation.append !== 'string') throw messageError(new Error(''), "errors.documentTransport.documentStringFragmentsArrivedOutOfOrder", {});
         ownSet(parent, key, parent[key] + operation.append);
       } else ownSet(parent, key, operation.value);
     }
     return report;
   }
   // Read compatibility for the first table-batch protocol and profiling tools.
-  if (!TABLES.has(chunk.table) || !Array.isArray(chunk.values)) throw new Error('Invalid document transport table.');
+  if (!TABLES.has(chunk.table) || !Array.isArray(chunk.values)) throw messageError(new Error(''), "errors.documentTransport.invalidDocumentTransportTable", {});
   let target = report?.[chunk.table];
   if (chunk.nested) {
     if (!((chunk.table === 'figure_types' && chunk.nested === 'segments') || (chunk.table === 'keyframes' && chunk.nested === 'objects')))
-      throw new Error('Invalid document transport records.');
+      throw messageError(new Error(''), "errors.documentTransport.invalidDocumentTransportRecords", {});
     target = target?.[chunk.index]?.[chunk.nested];
   }
-  if (!Array.isArray(target) || target.length !== chunk.offset) throw new Error('Document transport chunks arrived out of order.');
+  if (!Array.isArray(target) || target.length !== chunk.offset) throw messageError(new Error(''), "errors.documentTransport.documentTransportChunksArrivedOutOfOrder", {});
   for (const value of chunk.values) target.push(value);
   return report;
 }

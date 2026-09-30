@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Joins alias a child's origin to its parent's vertex. Compile connected native
  * figures into a temporary skeleton, then scatter derived poses back to slots.
  * No document topology is merged and no graph survives a mutable scene build. */
@@ -41,11 +42,11 @@ export function joinedIKGraph(report, frame, slots) {
   }
   function rootId(slot, seen = new Set()) {
     if (roots.has(slot)) return roots.get(slot);
-    if (seen.has(slot)) throw new Error('Figures contain a cyclic join.');
+    if (seen.has(slot)) throw messageError(new Error(''), "errors.editorSelection.figuresContainACyclicJoin", {});
     seen.add(slot);
     const join = frame.objects[slot].join;
     const id = !join ? 0 : join.target_handle_id ? maps.get(join.target_object_slot)?.get(join.target_handle_id) : rootId(join.target_object_slot, seen);
-    if (id === undefined) throw new Error('IK join target is missing.');
+    if (id === undefined) throw messageError(new Error(''), "errors.ikJoined.ikJoinTargetIsMissing", {});
     roots.set(slot, id); return id;
   }
   for (const slot of slots) {
@@ -84,7 +85,7 @@ export function joinedIKGraph(report, frame, slots) {
     object._stykIK[id] = mapController(slot, handle, c); owners.set(id, {slot, handle: Number(handle)});
   }
   const rootSlot = slots.find(slot => !frame.objects[slot].join);
-  if (rootSlot === undefined) throw new Error('Figures contain a cyclic join.');
+  if (rootSlot === undefined) throw messageError(new Error(''), "errors.editorSelection.figuresContainACyclicJoin", {});
   const sourceRoot = frame.objects[rootSlot], root = {x: sourceRoot.root_x ?? 0, y: sourceRoot.root_y ?? 0};
   return {figure, object, root, slots, entries, maps, roots, owners, layout, mapController,
     chain(slot, handle, length) {return ikChain(figure, maps.get(slot)?.get(handle), length, layout);},

@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Whole-animation adaptive GIF palette and bounded Sierra Lite diffusion. */
 import { normalizeGIFDither } from "./gif-options.mjs";
 import { EXPORT_MAX_PIXELS } from "./export-sampling.mjs";
@@ -20,9 +21,7 @@ function validate(data, width) {
     data.length % (width * 4) ||
     data.length > MAX_PIXELS * 4
   )
-    throw new RangeError(
-      "GIF quantization requires a bounded rectangular RGBA frame.",
-    );
+    throw messageError(new RangeError(''), "errors.gifQuantize.gifQuantizationRequiresABoundedRectangularRgbaFrame", {});
 }
 const rgb = (color) => [color >>> 16, (color >>> 8) & 255, color & 255];
 function box(values) {
@@ -240,7 +239,7 @@ export function mapGIFPixels(
     bottom = height - 1;
   if (previous) {
     if (previous.data.length !== data.length || pixels.length !== count)
-      throw new Error("Previous GIF frame dimensions changed.");
+      throw messageError(new Error(''), "errors.gifQuantize.previousGifFrameDimensionsChanged", {});
     left = width;
     top = height;
     right = bottom = -1;
@@ -271,9 +270,7 @@ export function mapGIFPixels(
         }
         const index = plan.exact.get(colorOf(data, i * 4));
         if (index === undefined)
-          throw new Error(
-            "Rendered GIF colors changed between palette and encoding passes.",
-          );
+          throw messageError(new Error(''), "errors.gifQuantize.renderedGifColorsChangedBetweenPaletteAndEncoding", {});
         pixels[i] = index;
       }
     return { pixels, palette: plan.palette };

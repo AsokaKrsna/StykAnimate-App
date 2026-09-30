@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import { cameraMatrix, SHAPE_BYTES, SHAPE_FLOATS, SHAPE, shapeRecord, textureBucket, textureRegion } from './renderer-geometry.mjs';
 import {bitmapKey,bitmapBytes,entryImage} from './playback-bitmap-pool.mjs';
 import {playbackMemoryBudget,playbackReuseMemoryPlan} from './playback-budget.mjs';
@@ -11,9 +12,9 @@ import {offsetGeneratorBatch,generatorSchedule,scheduleWalker} from './vfx-gener
 export function preparedCameraMode(packet, requested) {
   const mode = packet.cameraEnabled === undefined ? true : packet.cameraEnabled;
   if (typeof mode !== 'boolean' || (requested !== undefined && typeof requested !== 'boolean'))
-    throw new TypeError('Prepared frame camera mode must be a boolean.');
+    throw messageError(new TypeError(''), "errors.preparedFrames.preparedFrameCameraModeMustBeABoolean", {});
   if (requested !== undefined && requested !== mode)
-    throw new Error('Prepared frame camera mode differs from its cropped artwork. Prepare this view again.');
+    throw messageError(new Error(''), "errors.preparedFrames.preparedFrameCameraModeDiffersFromItsCropped", {});
   return mode;
 }
 
@@ -259,7 +260,7 @@ export class PreparedFrameCache {
   *prepareSteps(packet, { report, view = { scale: 1 }, cameraEnabled } = {}) {
     const start = performance.now(), renderer = this.renderer, device = renderer.device, key = String(packet.key);
     cameraEnabled = preparedCameraMode(packet, cameraEnabled);
-    if (!report) throw new TypeError('Preparing a frame requires its report.');
+    if (!report) throw messageError(new TypeError(''), "errors.preparedFrames.preparingAFrameRequiresItsReport", {});
     const epoch = packet.cacheEpoch ?? packet.revision;
     if (this.report !== report || this.generation!==renderer.generation || (this.revision !== null && this.revision !== epoch)) this.clear();
     this.report = report; this.revision = epoch;this.generation=renderer.generation;
@@ -269,7 +270,7 @@ export class PreparedFrameCache {
     // camera view replaces the retained entry instead of coexisting with it.
     if (prior?.generation === renderer.generation && prior.cameraEnabled === cameraEnabled) { this.frames.delete(key); this.frames.set(key, prior); this.stats.hits++; return key; }
     if (prior) this._remove(key);
-    if (!(packet.shapes instanceof Float32Array) || packet.shapes.length % SHAPE_FLOATS || !(packet.transforms instanceof Float32Array) || packet.transforms.length < 4 || packet.transforms.length % 4) throw new TypeError('Invalid prepared-frame buffers.');
+    if (!(packet.shapes instanceof Float32Array) || packet.shapes.length % SHAPE_FLOATS || !(packet.transforms instanceof Float32Array) || packet.transforms.length < 4 || packet.transforms.length % 4) throw messageError(new TypeError(''), "errors.preparedFrames.invalidPreparedFrameBuffers", {});
     const backgrounds = renderer.background({ report, frame: packet.frame, view, cameraEnabled }, descriptor => descriptor);
     const textures = [], ownedTextures = [];
     const backgroundTextures = new Map(backgrounds.filter(entry => entry.texture).map(entry => [entry.texture.cacheKey, entry.texture]));
@@ -278,8 +279,8 @@ export class PreparedFrameCache {
     const shapeBytesEstimate = Math.max(SHAPE_BYTES, packet.shapes.byteLength + backgroundCountEstimate * SHAPE_BYTES);
     const textureBytesEstimate = (packet.compatibility || []).reduce((sum, entry) => sum + preparedEntryBytes(entry), 0);
     const reservedBytes = shapeBytesEstimate + packet.transforms.byteLength + textureBytesEstimate + backgroundBytes;
-    if (reservedBytes > this.maxBytes || this.maxFrames < 1) throw new Error(`Prepared frame exceeds the ${Math.round(this.maxBytes / 1024 / 1024)} MB GPU cache budget.`);
-    if (shapeBytesEstimate > device.limits.maxStorageBufferBindingSize || packet.transforms.byteLength > device.limits.maxStorageBufferBindingSize) throw new Error('Prepared frame exceeds this GPU’s storage-buffer limit.');
+    if (reservedBytes > this.maxBytes || this.maxFrames < 1) throw messageError(new Error(''), "errors.preparedFrames.preparedFrameExceedsTheMbGpuCacheBudget", {value: Math.round(this.maxBytes / 1024 / 1024)});
+    if (shapeBytesEstimate > device.limits.maxStorageBufferBindingSize || packet.transforms.byteLength > device.limits.maxStorageBufferBindingSize) throw messageError(new Error(''), "errors.preparedFrames.preparedFrameExceedsThisGpuSStorageBuffer", {});
     // Evict before allocating textures so an upload does not temporarily double
     // the cache's GPU residency while an old frame is still retained.
     const incrementalBytes=()=>shapeBytesEstimate+packet.transforms.byteLength+
@@ -314,7 +315,7 @@ export class PreparedFrameCache {
           const resourceKey=bitmapKey(packet,compatibility);
           let resource=this.textures.get(resourceKey);
           if(!resource){
-            if (!source.width || !source.height) throw new Error('Prepared-frame image was released before GPU upload.');
+            if (!source.width || !source.height) throw messageError(new Error(''), "errors.preparedFrames.preparedFrameImageWasReleasedBeforeGpuUpload", {});
             // Filtered VFX and glyph masks retain their established ownership;
             // regular artwork may borrow an unused matching allocation.
             const poolable=poolableEntry(compatibility);
@@ -366,7 +367,7 @@ export class PreparedFrameCache {
             }
             this.textures.set(resourceKey,resource);this.bytes+=resource.bytes;this.stats.textureUploads++;
           }else{
-            if(source.width&&(resource.width!==source.width||resource.height!==source.height))throw new Error('Shared GPU artwork has inconsistent dimensions.');
+            if(source.width&&(resource.width!==source.width||resource.height!==source.height))throw messageError(new Error(''), "errors.preparedFrames.sharedGpuArtworkHasInconsistentDimensions", {});
             this.stats.reusedTextures++;
           }
           resource.refs++;
@@ -404,7 +405,7 @@ export class PreparedFrameCache {
       // Fallback raster dimensions are known only after object rasterization.
       // References acquired above protect shared textures during this eviction.
       while (this.frames.size && this.bytes + shapeBytes + transformBytes > this.maxBytes) this._remove(this.frames.keys().next().value, true);
-      if (this.bytes + shapeBytes + transformBytes > this.maxBytes) throw new Error('Prepared frame exceeds the GPU cache budget.');
+      if (this.bytes + shapeBytes + transformBytes > this.maxBytes) throw messageError(new Error(''), "errors.preparedFrames.preparedFrameExceedsTheGpuCacheBudget", {});
       shapeBuffer = device.createBuffer({ label: `Prepared shape packet ${key}`, size: shapeBytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
       transformBuffer = device.createBuffer({ label: `Prepared transforms ${key}`, size: transformBytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
       let offset = 0;

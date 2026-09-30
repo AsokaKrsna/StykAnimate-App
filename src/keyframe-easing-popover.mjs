@@ -1,3 +1,7 @@
+import {presentError} from './error-presentation.mjs';
+import {messageError} from './localized-error.mjs';
+import {messageHTML, appendLocalized, localizedAttribute, localizedMarkup, localizedText} from './localization-bindings.mjs';
+
 import {icon} from './icons.mjs';
 import {createEasingControls} from './keyframe-easing-view.mjs';
 import {placeFloating, presentsAsSheet} from './ui/anchor-position.mjs';
@@ -44,13 +48,13 @@ export function showKeyframeEasingPopover() {
   if (this.menu) this.menu.hidden = true;
   this.onSeek?.(this.editor.tick, this.editor.frameIndex);
   if (!document.querySelector('[data-styk-easing-style]')) {
-    const style = document.createElement('style'); style.dataset.stykEasingStyle = ''; style.textContent = `@layer legacy{${STYLES}}`; document.head.append(style);
+    const style = document.createElement('style'); style.dataset.stykEasingStyle = ''; style.textContent = `@layer legacy{${STYLES}}`; appendLocalized(document.head, style);
   }
   const anchor = keyAnchor(this, indices), popover = document.createElement('div');
   popover.className = 'styk-easing-popover'; popover.popover = 'auto';
-  popover.setAttribute('role', 'dialog'); popover.setAttribute('aria-label', 'Keyframe easing'); popover.setAttribute('aria-modal', 'false');
-  popover.innerHTML = `<div class="styk-easing-header"><span>Easing</span><button type="button" aria-label="Close easing">${icon('close')}</button></div><form><div data-controls></div><p class="styk-easing-error" role="alert"></p><button class="styk-easing-apply" type="submit">Apply</button></form>`;
-  document.body.append(popover); this.easingPopover = popover;
+  popover.setAttribute('role', 'dialog'); localizedAttribute(popover, 'aria-label', "keyframeEasingPopover.keyframeEasing", {}); popover.setAttribute('aria-modal', 'false');
+  localizedMarkup(popover, `<div class="styk-easing-header"><span data-i18n="keyframeEasingPopover.easing">${messageHTML("keyframeEasingPopover.easing", {})}</span><button type="button" aria-label="Close easing" data-i18n-aria-label="keyframeEasingPopover.closeEasing">${icon('close')}</button></div><form><div data-controls></div><p class="styk-easing-error" role="alert"></p><button class="styk-easing-apply" type="submit" data-i18n="common.apply">${messageHTML("keyframeEasingPopover.apply", {})}</button></form>`);
+  appendLocalized(document.body, popover); this.easingPopover = popover;
   const events = new AbortController(), options = {signal: events.signal};
   const apply = popover.querySelector('[type=submit]'), error = popover.querySelector('[role=alert]');
   const position = () => {
@@ -68,11 +72,11 @@ export function showKeyframeEasingPopover() {
   };
   const save = () => {
     try {
-      if (this.editor.report !== report) throw new Error('The animation document has changed. Reopen the keyframe.');
+      if (this.editor.report !== report) throw messageError(new Error(''), "errors.keyframeEasingPopover.theAnimationDocumentHasChangedReopenTheKeyframe", {});
       const easing = controls.read();
       this.applyEasing(indices, easing);
-      close(); if (this.live) this.live.textContent = 'Keyframe easing updated';
-    } catch (failure) { error.textContent = failure.message; position(); }
+      close(); if (this.live) localizedText(this.live, "keyframeEasingPopover.keyframeEasingUpdated", {});
+    } catch (failure) { presentError(error, failure); position(); }
   };
   const controls = createEasingControls(popover.querySelector('[data-controls]'), {initial,
     onChange: (valid, mode) => { apply.disabled = !valid; apply.hidden = mode !== 'bezier'; error.textContent = ''; position(); },

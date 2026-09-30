@@ -1,3 +1,4 @@
+import {messageError} from '../localized-error.mjs';
 /** Optional single-sided native fills. A local reference triangle preserves
  * winding under reflection, rotation, joining and ID remapping. Ordinary
  * polygons remain double-sided. Optional depth guides offset native painter
@@ -72,11 +73,11 @@ export function remapSurface(poly, remap) {
 }
 export function validateSurface(poly, ids) {
   const s=poly._stykSurface;if(s===undefined)return;
-  if(!s||!Array.isArray(s.basis)||s.basis.length!==3||new Set(s.basis).size!==3||s.basis.some(id=>!Number.isInteger(id)||!ids.has(id)))throw new Error('Face visibility needs three distinct existing reference joints.');
-  if(s.side!==undefined&&!['front','back'].includes(s.side))throw new Error('Choose Front, Back or Both for face visibility.');
-  if(s.flipped!==undefined&&typeof s.flipped!=='boolean')throw new Error('Face facing must be a boolean.');
-  if(s.depth!==undefined&&(!Array.isArray(s.depth)||!s.depth.length||s.depth.length>1024||s.depth.some(id=>!Number.isInteger(id)||!ids.has(id))))throw new Error('Face depth needs existing reference joints (up to 1024).');
-  if(s.depthTest!==undefined&&(typeof s.depthTest!=='boolean'||s.depthTest&&(s.depth?.length!==3||poly.segment_ids?.length!==3)))throw new Error('Depth testing needs a triangle with one depth joint per corner.');
+  if(!s||!Array.isArray(s.basis)||s.basis.length!==3||new Set(s.basis).size!==3||s.basis.some(id=>!Number.isInteger(id)||!ids.has(id)))throw messageError(new Error(''), "errors.surfaces.faceVisibilityNeedsThreeDistinctExistingReferenceJoints", {});
+  if(s.side!==undefined&&!['front','back'].includes(s.side))throw messageError(new Error(''), "errors.surfaces.chooseFrontBackOrBothForFaceVisibility", {});
+  if(s.flipped!==undefined&&typeof s.flipped!=='boolean')throw messageError(new Error(''), "errors.surfaces.faceFacingMustBeABoolean", {});
+  if(s.depth!==undefined&&(!Array.isArray(s.depth)||!s.depth.length||s.depth.length>1024||s.depth.some(id=>!Number.isInteger(id)||!ids.has(id))))throw messageError(new Error(''), "errors.surfaces.faceDepthNeedsExistingReferenceJointsUpTo", {});
+  if(s.depthTest!==undefined&&(typeof s.depthTest!=='boolean'||s.depthTest&&(s.depth?.length!==3||poly.segment_ids?.length!==3)))throw messageError(new Error(''), "errors.surfaces.depthTestingNeedsATriangleWithOneDepth", {});
 }
 
 /** Authoring validation is separate from pose evaluation: a valid reference may
@@ -86,14 +87,14 @@ export function editableSurface(surface, figure, joints, handleIds) {
   const [o,x,y]=surface.basis.map(id=>joints.get(id));
   const cross=o&&x&&y?(x.x-o.x)*(y.y-o.y)-(x.y-o.y)*(y.x-o.x):0;
   const scale=o&&x&&y?Math.hypot(x.x-o.x,x.y-o.y)*Math.hypot(y.x-o.x,y.y-o.y):0;
-  if(!scale||Math.abs(cross)<=scale*1e-7)throw new Error('Reference joints must form a triangle. Choose a different X or Y joint.');
+  if(!scale||Math.abs(cross)<=scale*1e-7)throw messageError(new Error(''), "errors.surfaces.referenceJointsMustFormATriangleChooseA", {});
   return {basis:[...surface.basis],side:surface.side??'front',flipped:surface.flipped??false,...(surface.depth?{depth:[...surface.depth]}:{}),...(surface.depthTest?{depthTest:true}:{})};
 }
 
 export function protectSurfaceReferences(figure, removed) {
   if((figure.polyfills??[]).some(p=>!p.segment_ids.some(id=>removed.has(id))&&[...(p._stykSurface?.basis??[]),...(p._stykSurface?.depth??[])].some(id=>removed.has(id))))
-    throw new Error('This joint controls face visibility. Change the fill reference joints before deleting it.');
+    throw messageError(new Error(''), "errors.editorBuilderTopology.thisJointControlsFaceVisibilityChangeTheFill", {});
   const mesh=figure._styk?.spatialMesh;
   if(mesh&&[...removed].some(id=>mesh.basis.includes(id)||mesh.bones.includes(id)))
-    throw new Error('This joint moves or orients the 3D mesh. Keep it to preserve the mesh.');
+    throw messageError(new Error(''), "errors.surfaces.thisJointMovesOrOrientsThe3dMesh", {});
 }

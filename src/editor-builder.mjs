@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Native Pivot figure authoring. Definition edits clone only the reusable figure. */
 import {validateScene} from './pivot/model.mjs';
 import {usesSegmentColors} from './figure-colors.mjs';
@@ -29,25 +30,25 @@ export function segmentBranchIndices(segments, handleId) {
 }
 const finite = (value, label, minimum = -Infinity, maximum = Infinity) => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum || value > maximum)
-    throw new Error(`${label} must be a finite number between ${minimum} and ${maximum}.`);
+    throw messageError(new Error(''), "errors.editorBuilder.mustBeAFiniteNumberBetweenAnd", {label: label, minimum: minimum, maximum: maximum});
   return value;
 };
 const rgb = value => {
   if (typeof value === 'string' && /^#[\da-f]{6}$/i.test(value)) value = [1, 3, 5].map(i => parseInt(value.slice(i, i + 2), 16));
   if (!Array.isArray(value) || value.length !== 3 || value.some(n => !Number.isInteger(n) || n < 0 || n > 255))
-    throw new Error('Color must be a six-digit hex color or three RGB bytes.');
+    throw messageError(new Error(''), "errors.editorBuilderBranch.colorMustBeASixDigitHexColor", {});
   return [...value];
 };
 const transparency = opacity => Math.round(255 * (1 - finite(opacity, 'Opacity', 0, 1)));
 const bits = value => new Uint32Array(new Float32Array([value]).buffer)[0];
 const vertexIds = (figure, values) => {
-  if (!Array.isArray(values)) throw new Error('Choose at least three figure handles for a polygon.');
+  if (!Array.isArray(values)) throw messageError(new Error(''), "errors.editorBuilder.chooseAtLeastThreeFigureHandlesForA", {});
   const ids = [...values];
   if (ids.length > 1 && ids[0] === ids.at(-1)) ids.pop();
   const valid = new Set([0, ...figure.segments.map(s => s.segment_id)]);
   if (ids.length < 3 || ids.length > 65535 || new Set(ids).size !== ids.length || ids.some((id, i) =>
     !Number.isInteger(id) || !valid.has(id) || id === ids[(i + 1) % ids.length]))
-    throw new Error('A polygon needs at least three distinct existing handles without repeated neighboring points.');
+    throw messageError(new Error(''), "errors.editorBuilder.aPolygonNeedsAtLeastThreeDistinctExisting", {});
   return ids;
 };
 // Native CheckDuplicatePolygon compares a closed ordered cycle with either
@@ -61,7 +62,7 @@ const polygonCycle = ids => {
 const rejectDuplicatePolygon = (figure, polygon) => {
   const cycle = polygonCycle(polygon.segment_ids);
   if ((figure.polyfills ?? []).some(other => other !== polygon && other.segment_ids?.length === polygon.segment_ids.length && polygonCycle(other.segment_ids) === cycle))
-    throw new Error('A polygon already uses this connection cycle.');
+    throw messageError(new Error(''), "errors.editorBuilder.aPolygonAlreadyUsesThisConnectionCycle", {});
 };
 const patchPolygon = (figure, polygon, patch) => {
   if ('handleIds' in patch) polygon.segment_ids = vertexIds(figure, patch.handleIds);
@@ -95,11 +96,11 @@ export const editorBuilderMethods = {
   ...editorBuilderStyleMethods,
   ...editorBuilderBranchMethods,
   addPolygon(handleIds, {color = '#2b2b2b', opacity = 1, zOrder} = {}) {
-    if (!this.figure) throw new Error('Select a figure before creating a polygon.');
+    if (!this.figure) throw messageError(new Error(''), "errors.editorBuilder.selectAFigureBeforeCreatingAPolygon", {});
     let polygon;
     editDefinition(this, 'Create polygon', figure => {
       figure.polyfills ??= [];
-      if (figure.polyfills.length >= 20000) throw new Error('A figure supports at most 20,000 polygons.');
+      if (figure.polyfills.length >= 20000) throw messageError(new Error(''), "errors.editorBuilder.aFigureSupportsAtMost20000Polygons", {});
       const id = Math.max(figure._styk?.nextPolygonId ?? 1, Math.max(0, ...figure.polyfills.map((p, i) => p.polyfill_id ?? i + 1)) + 1);
       figure._styk={...figure._styk,nextPolygonId:id+1};
       // Fills start behind their skeleton so posing remains visually legible.
@@ -110,8 +111,8 @@ export const editorBuilderMethods = {
     return polygon;
   },
   updatePolygon(index, patch = {}) {
-    if (!Number.isInteger(index) || !this.figure?.polyfills?.[index]) throw new Error('Select an existing polygon.');
-    for (const key of Object.keys(patch)) if (!['handleIds', 'color', 'opacity', 'zOrder', 'surface'].includes(key)) throw new Error(`Polygon property ${key} is not editable.`);
+    if (!Number.isInteger(index) || !this.figure?.polyfills?.[index]) throw messageError(new Error(''), "errors.editorBuilderStyle.selectAnExistingPolygon", {});
+    for (const key of Object.keys(patch)) if (!['handleIds', 'color', 'opacity', 'zOrder', 'surface'].includes(key)) throw messageError(new Error(''), "errors.editorBuilder.polygonPropertyIsNotEditable", {key: key});
     if ('color' in patch && this.object && Object.keys(patch).every(key=>['color','opacity'].includes(key)) &&
       (this.propertyChannels || this.object._stykStyle || !usesSegmentColors(this.report,this.figure,this.object) || Number(this.object.color_override_raw)>>>24)) {
       return this.editFigureColors({mode:'style',patch,figureTypeId:this.figure.figure_type_id,targets:{segments:[],polygons:[polygonIdentity(this.figure.polyfills[index],index)]}},{uids:[this.object.unique_id]}).changedFrames>0;
@@ -132,7 +133,7 @@ export const editorBuilderMethods = {
     });
   },
   updateFigureStyle(patch = {}) {
-    for (const key of Object.keys(patch)) if (!['name', 'outlineWidth', 'outlineColor', 'outlineOpacity'].includes(key)) throw new Error(`Figure property ${key} is not editable.`);
+    for (const key of Object.keys(patch)) if (!['name', 'outlineWidth', 'outlineColor', 'outlineOpacity'].includes(key)) throw messageError(new Error(''), "errors.editorBuilder.figurePropertyIsNotEditable", {key: key});
     if (this.propertyChannels && this.object && !('name' in patch)) {
       const target = {kind:'figure',uid:this.object.unique_id};
       return this.addAnimationKeys(Object.entries(patch).map(([property, value]) => ({target, property,
@@ -140,7 +141,7 @@ export const editorBuilderMethods = {
     }
     return editDefinition(this, 'Edit figure style', figure => {
       if ('name' in patch) {
-        if (typeof patch.name !== 'string' || !patch.name.trim() || patch.name.length > 255) throw new Error('Figure names must contain 1–255 characters.');
+        if (typeof patch.name !== 'string' || !patch.name.trim() || patch.name.length > 255) throw messageError(new Error(''), "errors.editorBuilder.figureNamesMustContain1255Characters", {});
         figure.name = patch.name.trim();
       }
       if (Object.keys(patch).some(key => key.startsWith('outline'))) {
@@ -158,20 +159,20 @@ export const editorBuilderMethods = {
   convertSegment(shape) { return this.updateSegmentStyle({shape}); },
   duplicateSegment({angleOffset = 0, parentId, branch = false, flip = false} = {}) {
     finite(angleOffset, 'Branch rotation');
-    if (typeof branch !== 'boolean' || typeof flip !== 'boolean') throw new Error('Choose whether to duplicate the whole branch and flip it.');
+    if (typeof branch !== 'boolean' || typeof flip !== 'boolean') throw messageError(new Error(''), "errors.editorBuilder.chooseWhetherToDuplicateTheWholeBranchAnd", {});
     const figure = this.figure, selected = figure?.segments[this.selectedJoint];
     if (!selected) return false;
     const anchor = parentId ?? selected.parent_id;
-    if (!Number.isInteger(anchor) || ![0, ...figure.segments.map(s => s.segment_id)].includes(anchor)) throw new Error('Choose an existing parent handle.');
+    if (!Number.isInteger(anchor) || ![0, ...figure.segments.map(s => s.segment_id)].includes(anchor)) throw messageError(new Error(''), "errors.editorBuilder.chooseAnExistingParentHandle", {});
     const indices = branch ? segmentBranchIndices(figure.segments, selected.segment_id) : [this.selectedJoint];
     const angleOf = angle => (flip ? angle < 0 ? -Math.PI - angle : Math.PI - angle : angle) + angleOffset;
     const ids = new Set(indices.map(i => figure.segments[i].segment_id));
     const firstId = Math.max(...figure.segments.map(s => s.segment_id)) + 1;
-    if (figure.segments.length + indices.length > MAX_SEGMENTS) throw new Error('A figure supports at most 30,000 segments with 16-bit joint IDs.');
+    if (figure.segments.length + indices.length > MAX_SEGMENTS) throw messageError(new Error(''), "errors.editorBuilder.aFigureSupportsAtMost30000Segments", {});
     const available = [];
     if (firstId + indices.length - 1 <= 65535) for (let i = 0; i < indices.length; i++) available.push(firstId + i);
     else {const used = new Set(figure.segments.map(segment => segment.segment_id)); for (let id = 1; id <= 65535 && available.length < indices.length; id++) if (!used.has(id)) available.push(id);}
-    if (available.length !== indices.length) throw new Error('The figure has no free native joint IDs.');
+    if (available.length !== indices.length) throw messageError(new Error(''), "errors.editorBuilder.theFigureHasNoFreeNativeJointIds", {});
     const remap = new Map(indices.map((i, offset) => [figure.segments[i].segment_id, available[offset]]));
     const initialCount = figure.segments.length;
     this._topologyEdit(`Duplicate ${branch ? 'segment branch' : 'segment'}`, next => {
@@ -190,7 +191,7 @@ export const editorBuilderMethods = {
         return segment;
       });
       const polygons = branch ? (next.polyfills ?? []).filter(poly => poly.segment_ids.every(id => ids.has(id) || id === selected.parent_id) && poly.segment_ids.some(id => ids.has(id))).map(clone) : [];
-      if ((next.polyfills?.length ?? 0) + polygons.length > 20000) throw new Error('A figure supports at most 20,000 polygons.');
+      if ((next.polyfills?.length ?? 0) + polygons.length > 20000) throw messageError(new Error(''), "errors.editorBuilder.aFigureSupportsAtMost20000Polygons", {});
       let polygonId = Math.max(0, ...(next.polyfills ?? []).map((p, i) => p.polyfill_id ?? i + 1));
       for (const polygon of polygons) {
         polygon.polyfill_id = ++polygonId; polygon.segment_ids = polygon.segment_ids.map(id => remap.get(id) ?? anchor);

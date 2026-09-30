@@ -412,7 +412,7 @@ test('format states follow today\'s buttons before and after the capability prob
     ['StykAnimate figure (.stkz) · Unavailable', 'Select a figure to export it.'], ['Pivot figure (.stk) · Unavailable', 'Select a figure to export it.'],
     ['StykAnimate movieclip (.stykmov) · Unavailable', 'Select a figure to export it.']]);
   const probed = exportFormatStates({capabilities: CAPABILITIES, totalFrames: 48, hasObject: true, movieclip: true, vfw: {listed: true, ready: true}, codecs: {avi: 'rawvideo'}});
-  assert.deepEqual(probed.get('mp4'), {id: 'mp4', label: 'MP4 video', listed: true, disabled: false, reason: '', provider: 'FFmpeg', codec: 'h264', codecLabel: 'H.264', padded: null});
+  assert.deepEqual(probed.get('mp4'), {id: 'mp4', label: 'MP4 video', listed: true, pending: false, disabled: false, reason: '', provider: 'FFmpeg', codec: 'h264', codecLabel: 'H.264', padded: null});
   assert.equal(probed.get('avi').codec, 'mpeg4', 'an unsupported codec falls back to the first supported one');
   assert.deepEqual([probed.get('wmv').disabled, probed.get('wmv').reason], [true, 'This native video encoder is unavailable.']);
   assert.deepEqual(formatChoices('editable', probed).map(choice => [choice.id, choice.disabled, choice.reason]),

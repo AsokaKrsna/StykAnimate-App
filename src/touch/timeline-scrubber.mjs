@@ -1,3 +1,7 @@
+import {messageTuple, localizedText, localizedAttribute, localizedMarkup, appendLocalized} from '../localization-bindings.mjs';
+
+import {t as interfaceText} from '../localization.mjs';
+
 /**
  * The Advanced timeline under a finger (docs/TOUCH.md): its presentation and
  * its commands, mixed into layer-timeline.mjs's Timeline (the input side is
@@ -39,19 +43,19 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 /** The action bar's buttons: [id, glyph, label]; sync decides which show and what they say. Done leads, so leaving a
  * range never needs a swipe along a bar longer than the window. */
 const BUTTONS = [
-  ['done', 'check', 'Done'],
-  ['key', 'diamond', 'Add key'],
-  ['shorter', 'minus', 'Shorter'],
-  ['longer', 'plus', 'Longer'],
-  ['left', 'chevron-left', 'Earlier'],
-  ['right', 'chevron-right', 'Later'],
-  ['copy', 'duplicate', 'Copy'],
-  ['cut', 'cut', 'Cut'],
-  ['paste', 'clipboard', 'Paste'],
-  ['delete', 'trash', 'Delete'],
-  ['easing', 'tween', 'Easing'],
-  ['select', 'sel-rect', 'Select'],
-  ['more', 'more', 'More'],
+  messageTuple(['done', 'check', interfaceText("common.done")], {2: {key: "common.done", params: {}}}),
+  messageTuple(['key', 'diamond', interfaceText("timelineScrubber.addKey")], {2: {key: "timelineScrubber.addKey", params: {}}}),
+  messageTuple(['shorter', 'minus', interfaceText("timelineScrubber.shorter")], {2: {key: "timelineScrubber.shorter", params: {}}}),
+  messageTuple(['longer', 'plus', interfaceText("timelineScrubber.longer")], {2: {key: "timelineScrubber.longer", params: {}}}),
+  messageTuple(['left', 'chevron-left', interfaceText("timelineScrubber.earlier")], {2: {key: "timelineScrubber.earlier", params: {}}}),
+  messageTuple(['right', 'chevron-right', interfaceText("timelineScrubber.later")], {2: {key: "timelineScrubber.later", params: {}}}),
+  messageTuple(['copy', 'duplicate', interfaceText("common.copy")], {2: {key: "common.copy", params: {}}}),
+  messageTuple(['cut', 'cut', interfaceText("common.cut")], {2: {key: "common.cut", params: {}}}),
+  messageTuple(['paste', 'clipboard', interfaceText("common.paste")], {2: {key: "common.paste", params: {}}}),
+  ['delete', 'trash', "Delete"],
+  messageTuple(['easing', 'tween', interfaceText("timelineScrubber.easing")], {2: {key: "timelineScrubber.easing", params: {}}}),
+  messageTuple(['select', 'sel-rect', interfaceText("timelineScrubber.select")], {2: {key: "timelineScrubber.select", params: {}}}),
+  messageTuple(['more', 'more', interfaceText("timelineScrubber.more")], {2: {key: "timelineScrubber.more", params: {}}}),
 ];
 const SINGLE = new Set(['key', 'shorter', 'longer', 'copy', 'paste', 'easing', 'select', 'more']);
 const RANGE = new Set(['left', 'right', 'copy', 'cut', 'paste', 'delete', 'easing', 'done', 'more']);
@@ -201,18 +205,18 @@ export const timelineTouchMethods = {
     const bar = this.touchActions = document.createElement('div');
     bar.className = 'tl-touch-actions';
     bar.setAttribute('role', 'toolbar');
-    bar.setAttribute('aria-label', 'Frame actions');
+    localizedAttribute(bar, 'aria-label', "timelineScrubber.frameActions", {});
     this.touchButtons = new Map();
     for (const [id, glyph, label] of BUTTONS) {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'tl-touch-action';
       button.dataset.touchAction = id;
-      button.innerHTML = `${icon(glyph)}<span></span>`;
+      localizedMarkup(button, `${icon(glyph)}<span></span>`);
       button.lastChild.textContent = label;
       button.setAttribute('aria-label', label);
       button.addEventListener('click', event => this._runTouchAction(id, event), {signal: this.events.signal});
-      bar.append(button);
+      appendLocalized(bar, button);
       this.touchButtons.set(id, button);
     }
     bar.addEventListener('scroll', () => this._fadeTouchActions(), {passive: true, signal: this.events.signal});
@@ -266,8 +270,8 @@ export const timelineTouchMethods = {
       setHidden(button, !(range ? RANGE : SINGLE).has(id));
       let disabled = locked && id !== 'select' && id !== 'done' && id !== 'more' && id !== 'copy';
       if (id === 'key') {
-        const label = here ? 'Remove key' : 'Add key';
-        setText(button.lastChild, here ? 'Remove' : 'Key');
+        const label = here ? interfaceText("timelineScrubber.removeKey") : interfaceText("timelineScrubber.addKey");
+        localizedText(button.lastChild, (here ? "timelineScrubber.remove" : "timelineScrubber.key"), (here ? {} : {}));
         setAttr(button, 'aria-label', label);
         setAttr(button, 'data-on', here);
         setAttr(button, 'data-tooltip', label);

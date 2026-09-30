@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** WebGPU depth raster for evaluated figure meshes. The result is an ordinary
  * object texture, composited in painter order like any other artwork; only the
  * triangles inside it are depth tested. Depth follows surface-raster.mjs:
@@ -72,7 +73,7 @@ export const meshRasterBytes = source => source.positions.byteLength + source.de
 export function encodeMeshRaster(renderer, encoder, {source, width, height, pixelScale, bounds, target, label = 'Figure mesh artwork'}) {
   const device = renderer.device, samples = renderer.isolationSamples ?? renderer.msaaCount ?? 1;
   if (!source?.count || !Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 ||
-    width > device.limits.maxTextureDimension2D || height > device.limits.maxTextureDimension2D || !(pixelScale > 0)) throw new TypeError('Invalid mesh artwork.');
+    width > device.limits.maxTextureDimension2D || height > device.limits.maxTextureDimension2D || !(pixelScale > 0)) throw messageError(new TypeError(''), "errors.rendererMeshRaster.invalidMeshArtwork", {});
   const {pipeline, layout} = meshPipeline(device, renderer.format, samples), owned = [];
   const buffer = (data, usage = GPUBufferUsage.STORAGE) => {
     // Every source array has four-byte elements, as writeBuffer requires.

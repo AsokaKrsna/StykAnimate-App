@@ -1,3 +1,8 @@
+import {replaceLocalized, localizedAttribute, appendLocalized} from '../localization-bindings.mjs';
+import {messageError} from '../localized-error.mjs';
+
+import {t as interfaceText, messageText as toolOptionsText} from '../localization.mjs';
+
 /**
  * The tool options bar: the active tool's everyday options, one row in the
  * stage header's start (components.md "Tool options bar", experience.md §4.2,
@@ -58,9 +63,7 @@ import {formatPropertyValue} from '../property-controls.mjs';
 
 export const OPTION_KINDS = Object.freeze(['toggle', 'toggles', 'button', 'split', 'select', 'field', 'stepper', 'colors', 'recent', 'segmented']);
 
-
-
-export { messageText as toolOptionsText } from '../localization.mjs';
+export {toolOptionsText};
 
 const ID = /^[A-Za-z][\w:.-]*$/;
 const ATTRIBUTE = /^(?:data|aria)-[a-z][a-z0-9-]*$/;
@@ -83,22 +86,22 @@ export function hasDroppableLabel(descriptor) {
 }
 
 function checkDescriptor(descriptor, where, ids, sub = false) {
-  if (!descriptor || typeof descriptor !== 'object') throw new TypeError(`Tool option ${where} is not a descriptor.`);
+  if (!descriptor || typeof descriptor !== 'object') throw messageError(new TypeError(''), "errors.toolOptions.toolOptionIsNotADescriptor", {where: where});
   const {id, kind} = descriptor;
-  if (!ID.test(String(id ?? ''))) throw new TypeError(`Tool option ${where} needs an id.`);
-  if (sub ? !SUB_KINDS.has(kind) : !OPTION_KINDS.includes(kind)) throw new TypeError(`Tool option ${id} has an unsupported kind: ${kind}`);
-  if (ids.has(id)) throw new TypeError(`Duplicate tool option id: ${id}`);
+  if (!ID.test(String(id ?? ''))) throw messageError(new TypeError(''), "errors.toolOptions.toolOptionNeedsAnId", {where: where});
+  if (sub ? !SUB_KINDS.has(kind) : !OPTION_KINDS.includes(kind)) throw messageError(new TypeError(''), "errors.toolOptions.toolOptionHasAnUnsupportedKind", {id: id, kind: kind});
+  if (ids.has(id)) throw messageError(new TypeError(''), "errors.toolOptions.duplicateToolOptionId", {id: id});
   ids.add(id);
-  if (descriptor.elementId !== undefined && !ID.test(String(descriptor.elementId))) throw new TypeError(`Tool option ${id} has an invalid element id.`);
-  if (descriptor.twin !== undefined && descriptor.twin !== null && !ID.test(String(descriptor.twin))) throw new TypeError(`Tool option ${id} has an invalid twin id.`);
-  if (descriptor.home !== undefined && descriptor.home !== null && typeof descriptor.home !== 'string') throw new TypeError(`Tool option ${id} has an invalid home.`);
+  if (descriptor.elementId !== undefined && !ID.test(String(descriptor.elementId))) throw messageError(new TypeError(''), "errors.toolOptions.toolOptionHasAnInvalidElementId", {id: id});
+  if (descriptor.twin !== undefined && descriptor.twin !== null && !ID.test(String(descriptor.twin))) throw messageError(new TypeError(''), "errors.toolOptions.toolOptionHasAnInvalidTwinId", {id: id});
+  if (descriptor.home !== undefined && descriptor.home !== null && typeof descriptor.home !== 'string') throw messageError(new TypeError(''), "errors.toolOptions.toolOptionHasAnInvalidHome", {id: id});
   for (const name of Object.keys(descriptor.attributes ?? {}))
-    if (!ATTRIBUTE.test(name)) throw new TypeError(`Tool option ${id}: only data-* and aria-* attributes may be added (${name}).`);
+    if (!ATTRIBUTE.test(name)) throw messageError(new TypeError(''), "errors.toolOptions.toolOptionOnlyDataAndAriaAttributesMay", {id: id, name: name});
   if (kind === 'toggles') {
-    if (!descriptor.items?.length) throw new TypeError(`Tool option ${id} lists no toggles.`);
+    if (!descriptor.items?.length) throw messageError(new TypeError(''), "errors.toolOptions.toolOptionListsNoToggles", {id: id});
     descriptor.items.forEach((item, index) => checkDescriptor(item, `${id}.${index}`, ids, true));
   }
-  if ((kind === 'select' || kind === 'segmented') && !descriptor.options?.length) throw new TypeError(`Tool option ${id} has no options.`);
+  if ((kind === 'select' || kind === 'segmented') && !descriptor.options?.length) throw messageError(new TypeError(''), "errors.toolOptions.toolOptionHasNoOptions", {id: id});
 }
 
 /**
@@ -229,8 +232,8 @@ export function structureKey(items) {
 // ---------------------------------------------------------------------------
 // DOM
 
-const EDIT_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'Home', 'End']);
-const DELETE_KEYS = new Set(['Backspace', 'Delete']);
+const EDIT_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
+const DELETE_KEYS = new Set(["Backspace", "Delete"]);
 const GLUED_UNITS = new Set(['%', '°', '×']);
 const CONTROLS = 'button, input, select';
 
@@ -316,7 +319,7 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     if (!name || typeof icon !== 'function') return false;
     const glyph = icon(name, className);
     if (typeof glyph === 'string' && glyph) parent.insertAdjacentHTML('beforeend', glyph);
-    else if (glyph?.nodeType) parent.append(glyph);
+    else if (glyph?.nodeType) appendLocalized(parent, glyph);
     else return false;
     return true;
   }
@@ -359,7 +362,7 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     button.dataset.optionPart = part;
     if (item.command) button.dataset.action = item.command;
     if (item.shiftCommand) button.dataset.shiftAction = item.shiftCommand;
-    if (labelled) button.append(node('span', 'ui-label', name));
+    if (labelled) appendLocalized(button, node('span', 'ui-label', name));
     else button.setAttribute('aria-label', name);
     decorate(button, item, command);
     syncButton(button, item, toggle);
@@ -377,7 +380,7 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     if (item.showLabel && item.label) {
       const text = node('span', 'ui-optbar-label', item.label);
       text.setAttribute('aria-hidden', 'true');
-      root.append(text);
+      appendLocalized(root, text);
     }
     const wrap = node('span', 'ui-select');
     wrap.dataset.size = 'sm';
@@ -388,12 +391,12 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     for (const option of item.options) {
       const entry = node('option', '', option.label ?? String(option.value));
       entry.value = String(option.value);
-      select.append(entry);
+      appendLocalized(select, entry);
     }
     decorate(select, item, null);
-    wrap.append(select);
+    appendLocalized(wrap, select);
     appendGlyph(wrap, 'chevron-down', 'ui-icon ui-select-chev');
-    root.append(wrap);
+    appendLocalized(root, wrap);
     syncSelect(root, item);
     return root;
   }
@@ -430,12 +433,12 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     }
     decorate(input, item, null);
     input.addEventListener('keydown', fieldKey, {signal});
-    root.append(text, input);
+    appendLocalized(root, text, input);
     if (item.unit) {
       const suffix = node('span', 'ui-field-suffix', item.unit);
       if (GLUED_UNITS.has(item.unit)) suffix.dataset.glue = '';   // '100%', '15°'; '8 px' keeps its space
       suffix.setAttribute('aria-hidden', 'true');
-      root.append(suffix);
+      appendLocalized(root, suffix);
     }
     syncField(root, item);
     return root;
@@ -459,7 +462,7 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     if (item.showLabel && item.label) {
       const text = node('span', 'ui-optbar-label', item.label);
       text.setAttribute('aria-hidden', 'true');
-      root.append(text);
+      appendLocalized(root, text);
     }
     const stepper = node('div', 'ui-stepper');
     stepper.dataset.size = 'sm';
@@ -472,7 +475,7 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
       button.dataset.optionId = item.id;
       button.dataset.optionPart = 'step';
       button.dataset.optionStep = String(direction);
-      button.setAttribute('aria-label', say(direction < 0 ? 'toolOptions.decrease' : 'toolOptions.increase', {name}));
+      localizedAttribute(button, 'aria-label', 'toolOptions.settings', {name});
       if (!appendGlyph(button, direction < 0 ? 'minus' : 'plus')) button.textContent = direction < 0 ? '−' : '+';
       return button;
     };
@@ -486,8 +489,8 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     input.step = String(item.step ?? 1);
     decorate(input, item, null);
     input.addEventListener('keydown', fieldKey, {signal});
-    stepper.append(step(-1), input, step(1));
-    root.append(stepper);
+    appendLocalized(stepper, step(-1), input, step(1));
+    appendLocalized(root, stepper);
     syncStepper(root, item);
     return root;
   }
@@ -514,16 +517,16 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
       const swatch = node('span', 'ui-swatch');
       swatch.dataset.role = part;
       swatch.setAttribute('aria-hidden', 'true');
-      pair.append(swatch);
+      appendLocalized(pair, swatch);
     }
     decorate(pair, item, null);
-    root.append(pair);
+    appendLocalized(root, pair);
     if (item.swap) {
-      const swap = buildButton({id: `${item.id}-swap`, label: item.swap.label ?? (item.swap.command ? undefined : say('toolOptions.swap')),
+      const swap = buildButton({id: `${item.id}-swap`, label: item.swap.label ?? (item.swap.command ? undefined : say("toolOptions.swap")),
         icon: item.swap.icon, command: item.swap.command, tip: item.swap.tip}, {part: 'swap'});
       swap.dataset.size = 'sm';
       swap.dataset.optionId = item.id;
-      root.append(swap);
+      appendLocalized(root, swap);
     }
     syncColors(root, item);
     return root;
@@ -533,7 +536,7 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     const stroke = optionColor(item.stroke), fillColor = optionColor(item.fill);
     setProperty(pair.querySelector('[data-role="stroke"]'), '--swatch', stroke);
     setProperty(pair.querySelector('[data-role="fill"]'), '--swatch', fillColor);
-    setAttribute(pair, 'aria-label', say('toolOptions.colors', {name: item.label ?? item.id, stroke: (stroke ?? '').toUpperCase(), fill: (fillColor ?? '').toUpperCase()}));
+    setAttribute(pair, 'aria-label', say("toolOptions.colors", {name: item.label ?? item.id, stroke: (stroke ?? '').toUpperCase(), fill: (fillColor ?? '').toUpperCase()}));
     const disabled = Boolean(item.disabled);
     for (const control of root.querySelectorAll(CONTROLS)) if (control.disabled !== disabled) control.disabled = disabled;
   }
@@ -541,7 +544,7 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
   function buildRecent(item) {
     const root = node('div', 'ui-optbar-recent');
     root.setAttribute('role', 'group');
-    root.setAttribute('aria-label', item.label ?? say('toolOptions.recent'));
+    root.setAttribute('aria-label', item.label ?? say("toolOptions.recent"));
     syncRecent(root, item);
     return root;
   }
@@ -549,13 +552,13 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     const colors = (item.colors ?? []).map(optionColor).filter(Boolean).slice(0, Math.max(0, finiteOrNull(item.max) ?? 6));
     const current = [...root.children].map(button => button.dataset.value);
     if (current.length === colors.length && current.every((value, index) => value === colors[index])) return;
-    root.replaceChildren(...colors.map(color => {
+    replaceLocalized(root, ...colors.map(color => {
       const button = node('button', 'ui-swatch');
       button.type = 'button';
       button.dataset.optionId = item.id;
       button.dataset.optionPart = 'recent';
       button.dataset.value = color;
-      button.setAttribute('aria-label', say('toolOptions.color', {value: color.toUpperCase()}));
+      localizedAttribute(button, 'aria-label', 'toolOptions.color', {value: color.toUpperCase()});
       button.style.setProperty('--swatch', color);
       return button;
     }));
@@ -578,8 +581,8 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
       if (item.iconOnly && glyph) {
         button.setAttribute('aria-label', option.label ?? String(option.value));
         button.dataset.tooltip = option.tip ?? option.label ?? String(option.value);
-      } else button.append(node('span', 'ui-label', option.label ?? String(option.value)));
-      root.append(button);
+      } else appendLocalized(button, node('span', 'ui-label', option.label ?? String(option.value)));
+      appendLocalized(root, button);
     }
     syncSegmented(root, item);
     return root;
@@ -600,18 +603,18 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     root.setAttribute('role', 'group');
     root.setAttribute('aria-label', name);
     const toggle = item.toggle !== false;
-    root.append(buildButton({...item, showLabel: false, elementId: item.elementId}, {toggle}));
+    appendLocalized(root, buildButton({...item, showLabel: false, elementId: item.elementId}, {toggle}));
     const chevron = node('button', 'ui-split-more');
     chevron.type = 'button';
     chevron.dataset.optionId = item.id;
     chevron.dataset.optionPart = 'more';
     chevron.setAttribute('aria-haspopup', item.more?.haspopup ?? 'dialog');
     chevron.setAttribute('aria-expanded', 'false');
-    chevron.setAttribute('aria-label', item.more?.label ?? say('toolOptions.settings', {name}));
+    chevron.setAttribute('aria-label', item.more?.label ?? say("toolOptions.settings", {name}));
     if (item.more?.id) chevron.id = item.more.id;
     if (item.more?.command) chevron.dataset.action = item.more.command;
     if (!appendGlyph(chevron, 'chevron-down')) chevron.textContent = '▾';
-    root.append(chevron);
+    appendLocalized(root, chevron);
     return root;
   }
 
@@ -622,9 +625,9 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     if (item.label) {
       const text = node('span', 'ui-optbar-label', item.label);
       text.setAttribute('aria-hidden', 'true');
-      root.append(text);
+      appendLocalized(root, text);
     }
-    for (const sub of item.items) root.append(buildButton(sub, {toggle: sub.kind === 'toggle'}));
+    for (const sub of item.items) appendLocalized(root, buildButton(sub, {toggle: sub.kind === 'toggle'}));
     return root;
   }
 
@@ -672,10 +675,10 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
       // Dropping a label hides every word in the item: only items whose buttons all drew their glyph may drop it.
       if (item.droppable && ![root, ...root.querySelectorAll('button')].some(button => glyphless.has(button))) labelDrops.add(item.id);
       roots.set(item.id, root);
-      group.append(root);
+      appendLocalized(group, root);
       groups.at(-1).ids.push(item.id);
     }
-    element.replaceChildren(...children, more);
+    replaceLocalized(element, ...children, more);
     for (const root of roots.values()) resize?.observe(root);
     measured = null;
     // Nothing is folded until the new items are measured; the owner hears about it with the next plan (or, while
@@ -747,13 +750,13 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
 
   // More options: the folded controls themselves move into a popover while it is open, then back.
   function openMore() {
-    popover ??= createPopover({anchor: more, label: say('toolOptions.more'), overlays, t, className: 'ui-optbar-popover', mount: popoverMount ?? 'auto',
+    popover ??= createPopover({anchor: more, label: say("toolOptions.more"), labelKey: "toolOptions.more", labelParams: {}, overlays, t, className: 'ui-optbar-popover', mount: popoverMount ?? 'auto',
       onClose: restoreMore});
     const rows = plan.more.map(id => {
       const item = byId.get(id), root = roots.get(id);
       const row = node('div', 'ui-optbar-more-row');
       const labelled = item.kind === 'field' || (item.showLabel && item.label) || (item.kind === 'toggles' && item.label);
-      if (!labelled) row.append(node('span', 'ui-optbar-more-label', nameOf(item)));
+      if (!labelled) appendLocalized(row, node('span', 'ui-optbar-more-label', nameOf(item)));
       const placeholder = doc.createComment(`tool option ${id}`);
       root.before(placeholder);
       placeholders.set(root, placeholder);
@@ -761,10 +764,10 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
       root.removeAttribute('data-label-dropped');
       // Roving focus left these out of the tab order; in the popover every control is a tab stop.
       for (const control of root.querySelectorAll(CONTROLS)) control.tabIndex = 0;
-      row.append(root);
+      appendLocalized(row, root);
       return row;
     });
-    popover.body.replaceChildren(...rows);
+    replaceLocalized(popover.body, ...rows);
     popover.body.classList.add('ui-optbar-more-body');
     popover.show();
     listen(popover.element);

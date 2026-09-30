@@ -1,3 +1,6 @@
+import {messageAttributes, descriptorAttributes} from './localization-bindings.mjs';
+import {messageError} from './localized-error.mjs';
+
 import { messageText } from './localization.mjs';
 /**
  * The inspector kit: a context describes its inspector as data (sections of
@@ -122,18 +125,18 @@ export function attributes(pairs) {
 function extras(item) {
   const pairs = {};
   for (const [name, value] of Object.entries(item?.data ?? {})) {
-    if (!DATA_NAME.test(name)) throw new TypeError(`Invalid data attribute: ${name}`);
+    if (!DATA_NAME.test(name)) throw messageError(new TypeError(''), "errors.inspectorKit.invalidDataAttribute", {name: name});
     pairs[`data-${name}`] = value;
   }
   for (const [name, value] of Object.entries(item?.attrs ?? {})) {
-    if (!ATTRIBUTE_NAME.test(name)) throw new TypeError(`Attribute ${name} is not allowed in inspector descriptors.`);
+    if (!ATTRIBUTE_NAME.test(name)) throw messageError(new TypeError(''), "errors.inspectorKit.attributeIsNotAllowedInInspectorDescriptors", {name: name});
     pairs[name] = value;
   }
   return pairs;
 }
 const id = value => {
   if (value === undefined || value === null || value === '') return undefined;
-  if (!ID.test(String(value))) throw new TypeError(`Invalid control id: ${value}`);
+  if (!ID.test(String(value))) throw messageError(new TypeError(''), "errors.inspectorKit.invalidControlId", {value: value});
   return String(value);
 };
 const finite = value => (value === undefined || value === null || value === '' || !Number.isFinite(Number(value)) ? undefined : Number(value));
@@ -169,7 +172,9 @@ function sectionBadge(section, env) {
   return `<span class="ui-section-badge" data-tint="${escapeHTML(tint)}" aria-hidden="true">${glyph(env, icon, 'ui-icon')}</span>`;
 }
 /** The tooltip attributes: `tip` (else `fallback`) as data-tooltip, and today's title only when asked for. */
-const tooltip = (item, fallback) => ({'data-tooltip': item.tip ?? fallback, title: item.legacyTitle ? item.tip ?? item.label : undefined});
+const tooltip = (item, fallback) => ({'data-tooltip': item.tip ?? fallback, title: item.legacyTitle ? item.tip ?? item.label : undefined,
+  'data-i18n-tooltip': item.tipKey, 'data-i18n-tooltip-params': item.tipKey ? JSON.stringify(item.tipParams ?? {}) : undefined,
+  'data-i18n-title': item.legacyTitle ? item.tipKey ?? item.labelKey : undefined});
 
 /** Values at rest show fewer decimals than they edit with (inspector-view.mjs: 1 with a unit, 2 without, 0 for integers). */
 export const restDisplayPrecision = (precision = 3, unit = '') => (precision ? (unit ? 1 : 2) : 0);
@@ -226,7 +231,7 @@ const swatchStyle = ({color, paint}) => {
  * data-command / data-shift-action, which the app's delegated handlers own.
  */
 export function renderButton(item, env = {}, {className = '', size} = {}) {
-  if (!item?.label) throw new TypeError('A button needs a label (its accessible name).');
+  if (!item?.label) throw messageError(new TypeError(''), "errors.inspectorKit.aButtonNeedsALabelItsAccessibleName", {});
   const iconOnly = Boolean(item.icon) && !item.text;
   const classes = [iconOnly ? 'ui-icon-button' : 'ui-button', className].filter(Boolean).join(' ');
   const attrs = attributes({
@@ -235,6 +240,8 @@ export function renderButton(item, env = {}, {className = '', size} = {}) {
     'data-size': item.size ?? size,
     'data-action': item.action, 'data-shift-action': item.shiftAction, 'data-command': item.command,
     'aria-label': iconOnly ? item.label : undefined,
+    'data-i18n-aria-label': iconOnly ? item.labelKey : undefined,
+    'data-i18n-aria-label-params': iconOnly && item.labelKey ? JSON.stringify(item.labelParams ?? {}) : undefined,
     'aria-pressed': item.pressed === undefined ? undefined : String(Boolean(item.pressed)),
     'aria-expanded': item.expanded === undefined ? undefined : String(Boolean(item.expanded)),
     'aria-haspopup': item.menu ? 'menu' : undefined,
@@ -244,7 +251,7 @@ export function renderButton(item, env = {}, {className = '', size} = {}) {
     ...extras(item),
   });
   const lead = item.icon ? glyph(env, item.icon, 'ui-icon') : '';
-  return `<button${attrs}>${lead}${iconOnly ? '' : `<span class="ui-label">${escapeHTML(item.label)}</span>`}</button>`;
+  return `<button${attrs}>${lead}${iconOnly ? '' : `<span class="ui-label"${descriptorAttributes(item, "label")}>${escapeHTML(item.label)}</span>`}</button>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -253,10 +260,15 @@ export function renderButton(item, env = {}, {className = '', size} = {}) {
 /** The shared input attributes of a PropertyControls number (inspector-view.mjs's numericField order, kept for string tests). */
 function numberInput(row, env, className) {
   const {key, label, unit = ''} = row;
-  if (!key) throw new TypeError(`Number field ${label ?? ''} needs a property key.`);
+  if (!key) throw messageError(new TypeError(''), "errors.inspectorKit.numberFieldNeedsAPropertyKey", {value: label ?? ''});
   const precision = row.precision ?? 3, display = row.displayPrecision ?? restDisplayPrecision(precision, unit);
   const value = finite(row.value) ?? 0;
   const description = row.description ?? describeField(label, unit, env);
+  const labelReference = row.labelKey ? {messageKey: row.labelKey, messageParams: row.labelParams} : label;
+  const descriptionBinding = row.descriptionKey ? {labelKey: row.descriptionKey, labelParams: row.descriptionParams}
+    : unit && row.labelKey ? {labelKey: 'inspector.withUnit', labelParams: {label: labelReference, unit: unit === '°' ? {messageKey: 'inspector.unit.degrees'} : unit}}
+    : {labelKey: row.labelKey, labelParams: row.labelParams};
+  const descriptionReference = descriptionBinding.labelKey ? {messageKey: descriptionBinding.labelKey, messageParams: descriptionBinding.labelParams} : description;
   const legacy = row.field === false ? undefined : (row.field ?? key);
   const mixed = Boolean(row.mixed);
   const input = `<input${attributes({
@@ -265,11 +277,11 @@ function numberInput(row, env, className) {
     'data-property-step': row.step ?? 1, value: mixed ? '' : formatPropertyValue(value, display), step: 'any',
     'aria-label': description, min: finite(row.min), max: finite(row.max), disabled: Boolean(row.disabled),
     placeholder: mixed ? say(env, 'inspector.mixed') : undefined, 'data-mixed': mixed ? String(value) : undefined, ...extras(row),
-  })}>`;
+  })}${descriptorAttributes(descriptionBinding, 'label', 'aria-label')}>`;
   const scrub = `<span${attributes({
     class: 'ui-field-label', 'data-property-scrub': true, tabindex: 0, role: 'button',
     'aria-label': row.scrubLabel ?? say(env, 'inspector.scrubLabel', {name: description}), 'data-tooltip': row.tip ?? say(env, 'inspector.scrubTip'),
-  })}>${escapeHTML(label)}</span>`;
+  })}${descriptorAttributes(row, 'label')}${row.labelKey || row.descriptionKey ? ' ' + messageAttributes('inspector.scrubLabel', {name: descriptionReference}, 'aria-label') : ''}>${escapeHTML(label)}</span>`;
   return {input, scrub, description, value, mixed};
 }
 
@@ -287,7 +299,7 @@ function numberField(row, env) {
       'aria-label': row.description ?? describeField(row.label, row.unit, env), min: finite(row.min), max: finite(row.max),
       disabled: Boolean(row.disabled), ...extras(row),
     })}>`;
-    return `<label${attributes({class: `ui-field${span(row)}`, 'data-tooltip': row.tip})}><span class="ui-field-label">${escapeHTML(row.label)}</span>${input}${suffix}</label>`;
+    return `<label${attributes({class: `ui-field${span(row)}`, 'data-tooltip': row.tip})}><span class="ui-field-label"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>${input}${suffix}</label>`;
   }
   const {input, scrub} = numberInput(row, env, 'ui-field-input');
   return `<label${attributes({class: `ui-field${span(row)}`, 'data-property-row': row.key, 'data-mixed': Boolean(row.mixed)})}>${scrub}${input}${suffix}</label>`;
@@ -300,7 +312,7 @@ function numberField(row, env) {
  * the drawing order. Disabled with its row and at the limit it steps towards.
  */
 function stepButton(step, direction, name, env, {disabled = false} = {}) {
-  const fallback = {label: say(env, direction < 0 ? 'inspector.decrease' : 'inspector.increase', {name}), icon: direction < 0 ? 'minus' : 'plus'};
+  const fallback = {label: say(env, direction < 0 ? 'inspector.decrease' : 'inspector.increase', {name}), labelKey: direction < 0 ? 'inspector.decrease' : 'inspector.increase', labelParams: {name}, icon: direction < 0 ? 'minus' : 'plus'};
   const item = {...fallback, ...step, tabindex: -1, disabled: Boolean(step?.disabled || disabled)};
   if (!item.action && !item.command) item.data = {...item.data, 'kit-step': direction};
   return renderButton(item, env, {size: 'sm'});
@@ -342,7 +354,7 @@ function stepper(row, env) {
   const body = row.key ? `<span class="ui-field-core" data-property-row="${escapeHTML(row.key)}">${input}</span>` : input;
   const step = direction => stepButton(direction < 0 ? row.down : row.up, direction, name, env, {disabled: row.disabled || atLimit(row, value, direction)});
   const control = `<div class="ui-stepper" role="group"${attributes({'aria-label': name})}>${step(-1)}${body}${step(1)}</div>`;
-  return row.label ? `<div class="ui-row"><span class="ui-row-label" aria-hidden="true">${escapeHTML(row.label)}</span>${control}</div>` : control;
+  return row.label ? `<div class="ui-row"><span class="ui-row-label" aria-hidden="true"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>${control}</div>` : control;
 }
 
 /**
@@ -365,7 +377,7 @@ function slider(row, env) {
     'data-unit': unit || undefined, 'data-precision': precision, 'data-value-text': custom, 'data-value-at': custom === undefined ? undefined : value,
     style: `--_p:${sliderFill(value, min, max)}`, ...extras(row),
   })}>`;
-  return `<div${attributes({class: 'ui-slider-row', 'data-property-row': row.key, 'data-tooltip': row.tip})}><span class="ui-slider-label" aria-hidden="true">${escapeHTML(row.label)}</span>${input}<output class="ui-slider-value" aria-hidden="true">${escapeHTML(text)}</output></div>`;
+  return `<div${attributes({class: 'ui-slider-row', 'data-property-row': row.key, 'data-tooltip': row.tip})}><span class="ui-slider-label" aria-hidden="true"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>${input}<output class="ui-slider-value" aria-hidden="true">${escapeHTML(text)}</output></div>`;
 }
 
 /**
@@ -376,7 +388,7 @@ function slider(row, env) {
 function select(row, env) {
   const options = row.options ?? [];
   const selected = row.value === undefined ? options.some(option => option.selected) : options.some(option => String(option.value) === String(row.value));
-  const placeholder = row.placeholder && !selected ? `<option value="" disabled selected>${escapeHTML(row.placeholder)}</option>` : '';
+  const placeholder = row.placeholder && !selected ? `<option value="" disabled selected${descriptorAttributes(row, "placeholder")}>${escapeHTML(row.placeholder)}</option>` : '';
   const body = options.map(option => `<option${attributes({
     value: option.value, selected: row.value === undefined ? Boolean(option.selected) : String(option.value) === String(row.value),
     disabled: Boolean(option.disabled), ...extras(option),
@@ -384,7 +396,7 @@ function select(row, env) {
   const control = `<select${attributes({
     class: 'ui-field-input', id: id(row.id), 'aria-label': row.description ?? row.label, disabled: Boolean(row.disabled), ...extras(row),
   })}>${placeholder}${body}</select>`;
-  const label = row.bare ? '' : `<span class="ui-field-label">${escapeHTML(row.label)}</span>`;
+  const label = row.bare ? '' : `<span class="ui-field-label"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>`;
   return `<label${attributes({class: `ui-field${span(row)}`, 'data-select': true, 'data-bare': Boolean(row.bare), 'data-tooltip': row.bare ? row.tip ?? row.label : row.tip})}>` +
     `${label}${control}${glyph(env, 'chevron-down', 'ui-icon ui-field-chev')}</label>`;
 }
@@ -402,14 +414,14 @@ const switchInput = (item, {named = true} = {}) => `<input${attributes({
 })}>`;
 
 /** The field switch (revision 4.2): the one switch pattern in inspector sections, laid out in the field grid. */
-const fieldSwitch = row => `<label${attributes({class: `ui-field${span(row)}`, 'data-switch-field': true, 'data-tooltip': row.tip})}><span class="ui-field-label">${escapeHTML(row.label)}</span>${switchInput(row)}</label>`;
+const fieldSwitch = row => `<label${attributes({class: `ui-field${span(row)}`, 'data-switch-field': true, 'data-tooltip': row.tip})}><span class="ui-field-label"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>${switchInput(row)}</label>`;
 /** The switch row of popovers and dialogs: the label left, the switch right, the whole row the target. */
-const switchRow = row => `<label${attributes({class: 'ui-switch-row', 'data-tooltip': row.tip})}><span>${escapeHTML(row.label)}</span>${switchInput(row)}</label>`;
+const switchRow = row => `<label${attributes({class: 'ui-switch-row', 'data-tooltip': row.tip})}><span${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>${switchInput(row)}</label>`;
 
 const checkbox = row => `<label${attributes({class: 'ui-check-row', 'data-tooltip': row.tip})}><input${attributes({
   class: 'ui-checkbox', type: 'checkbox', id: id(row.id), checked: Boolean(row.checked), 'aria-label': row.description,
   'aria-checked': row.mixed ? 'mixed' : undefined, disabled: Boolean(row.disabled), ...extras(row),
-})}><span>${escapeHTML(row.label)}</span></label>`;
+})}><span${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span></label>`;
 
 const hexCaption = value => (HEX.test(String(value ?? '')) ? String(value).slice(1).toUpperCase() : '');
 
@@ -472,12 +484,12 @@ function swatches(row) {
  */
 function segmented(row, env) {
   const mode = row.mode ?? 'radio', options = row.options ?? [];
-  if (options.length < 2 || options.length > 4) throw new TypeError(`Segmented ${row.label ?? row.name} needs 2-4 options; use a select for more.`);
-  if (mode === 'radio' && !row.name) throw new TypeError(`Segmented ${row.label ?? ''} in radio mode needs a name, or its radios would not form one group.`);
+  if (options.length < 2 || options.length > 4) throw messageError(new TypeError(''), "errors.inspectorKit.segmentedNeeds24OptionsUseASelect", {value: row.label ?? row.name});
+  if (mode === 'radio' && !row.name) throw messageError(new TypeError(''), "errors.inspectorKit.segmentedInRadioModeNeedsANameOr", {value: row.label ?? ''});
   const current = option => String(option.value) === String(row.value);
   const items = options.map(option => {
     const lead = option.icon ? glyph(env, option.icon, 'ui-icon') : '';
-    const text = option.iconOnly ? '' : `<span class="ui-label">${escapeHTML(option.label)}</span>`;
+    const text = option.iconOnly ? '' : `<span class="ui-label"${descriptorAttributes(option, "label")}>${escapeHTML(option.label)}</span>`;
     if (mode === 'radio') {
       return `<label${attributes({class: 'ui-segmented-item', 'data-tooltip': option.tip ?? (option.iconOnly ? option.label : undefined)})}><input${attributes({
         class: 'ui-segmented-input', type: 'radio', name: row.name, value: option.value, checked: current(option),
@@ -495,7 +507,7 @@ function segmented(row, env) {
   const control = `<div${attributes({
     class: 'ui-segmented', role, 'aria-label': row.description ?? row.label, 'data-size': row.size ?? 'sm', 'data-fill': Boolean(row.fill), ...extras(row),
   })}>${items}</div>`;
-  return row.label && !row.inline ? `<div class="ui-row"><span class="ui-row-label" aria-hidden="true">${escapeHTML(row.label)}</span>${control}</div>` : control;
+  return row.label && !row.inline ? `<div class="ui-row"><span class="ui-row-label" aria-hidden="true"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>${control}</div>` : control;
 }
 
 /** A text field (names): the inline label pattern, or `stacked` for the rare form row. */
@@ -505,8 +517,8 @@ function text(row) {
     maxlength: finite(row.maxlength), placeholder: row.placeholder, ...tooltip(row), disabled: Boolean(row.disabled),
     spellcheck: row.spellcheck === undefined ? undefined : String(Boolean(row.spellcheck)), ...extras(row),
   })}>`;
-  if (row.stacked) return `<div class="ui-form-row${span(row)}"><span class="ui-form-label" aria-hidden="true">${escapeHTML(row.label)}</span><div class="ui-field">${input}</div></div>`;
-  return `<label class="ui-field${span(row)}" data-text><span class="ui-field-label">${escapeHTML(row.label)}</span>${input}</label>`;
+  if (row.stacked) return `<div class="ui-form-row${span(row)}"><span class="ui-form-label" aria-hidden="true"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span><div class="ui-field">${input}</div></div>`;
+  return `<label class="ui-field${span(row)}" data-text><span class="ui-field-label"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>${input}</label>`;
 }
 
 /** An action row: a few buttons that act on the selection (Align's six, Fit view…). */
@@ -522,8 +534,8 @@ function listRow(row, env) {
     'aria-current': row.current ? 'true' : undefined, 'data-hidden': row.muted ? 'true' : undefined,
     style: level ? `--level:${level}` : undefined, ...extras(row),
   })}>${row.lead ? `<span class="ui-list-row-lead">${glyph(env, row.lead, 'ui-icon')}</span>` : ''}` +
-    `<span class="ui-list-row-label">${escapeHTML(row.label)}</span>` +
-    `${row.meta === undefined ? '' : `<span class="ui-list-row-meta">${escapeHTML(row.meta)}</span>`}` +
+    `<span class="ui-list-row-label"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>` +
+    `${row.meta === undefined ? '' : `<span class="ui-list-row-meta"${descriptorAttributes(row, "meta")}>${escapeHTML(row.meta)}</span>`}` +
     `${controls ? `<span class="ui-list-row-actions">${controls}</span>` : ''}</div>`;
 }
 
@@ -531,12 +543,12 @@ function listRow(row, env) {
 function pager(row, env) {
   const button = item => renderButton({size: 'sm', ...item}, env, {size: 'sm'});
   return `<div${attributes({class: 'inspector-pager', role: 'group', 'aria-label': row.label, ...extras(row)})}>${button(row.previous)}` +
-    `<span class="inspector-pager-text">${escapeHTML(row.text)}</span>${button(row.next)}</div>`;
+    `<span class="inspector-pager-text"${descriptorAttributes(row, "text")}>${escapeHTML(row.text)}</span>${button(row.next)}</div>`;
 }
 
 /** An owned host: imperative widgets (graphs, curves, monitors) keep their live content across renders. */
 function owned(row) {
-  if (!row.key || !DATA_NAME.test(row.key)) throw new TypeError('An owned host needs a key (its data-inspector-owned value).');
+  if (!row.key || !DATA_NAME.test(row.key)) throw messageError(new TypeError(''), "errors.inspectorKit.anOwnedHostNeedsAKeyItsData", {});
   const tag = row.tag === 'canvas' ? 'canvas' : 'div';
   const attrs = attributes({
     class: row.className, 'data-inspector-owned': row.key, 'data-section': row.section, role: row.role, 'aria-label': row.label,
@@ -554,7 +566,7 @@ function owned(row) {
 function preview(row) {
   const media = owned({...row.media, key: row.media?.key ?? row.key, className: `inspector-preview-media${row.media?.className ? ` ${row.media.className}` : ''}`});
   const caption = (row.caption ?? []).map(part => (typeof part === 'string'
-    ? `<span>${escapeHTML(part)}</span>` : `<span${attributes(extras(part))}>${escapeHTML(part.text)}</span>`)).join('');
+    ? `<span>${escapeHTML(part)}</span>` : `<span${attributes(extras(part))}${descriptorAttributes(part, "text")}>${escapeHTML(part.text)}</span>`)).join('');
   return `<div${attributes({class: `inspector-preview${span(row)}`, 'data-section': row.section, ...extras(row)})}>${media}${caption ? `<div class="inspector-preview-caption">${caption}</div>` : ''}</div>`;
 }
 
@@ -583,8 +595,8 @@ function meta(row) {
 }
 
 /** A read-only value with its row label ("Joined to  Rival · Left hand", "Fills  No fills"). */
-const value = row => `<div${attributes({class: 'ui-row', id: id(row.id), ...extras(row)})}><span class="ui-row-label">${escapeHTML(row.label)}</span>` +
-  `<span${attributes({class: 'ui-row-value', 'data-tooltip': row.tip})}>${escapeHTML(row.text)}</span></div>`;
+const value = row => `<div${attributes({class: 'ui-row', id: id(row.id), ...extras(row)})}><span class="ui-row-label"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>` +
+  `<span${attributes({class: 'ui-row-value', 'data-tooltip': row.tip})}${descriptorAttributes(row, "text")}>${escapeHTML(row.text)}</span></div>`;
 
 /** Two columns of fields. With an id it can be a controlled region; `hidden` hides it in place. */
 function grid(row, env) {
@@ -597,7 +609,7 @@ function grid(row, env) {
  * `title` shows a quiet heading over the rows (a block of a section: the rig's Second rotation), which names the group.
  */
 function group(row, env) {
-  const title = row.title ? `<div class="inspector-group-title" aria-hidden="true">${escapeHTML(row.title)}</div>` : '';
+  const title = row.title ? `<div class="inspector-group-title" aria-hidden="true"${descriptorAttributes(row, "title")}>${escapeHTML(row.title)}</div>` : '';
   return `<div${attributes({class: 'inspector-group', id: id(row.id), role: row.role ?? (row.title ? 'group' : undefined), 'aria-label': row.label ?? row.title,
     hidden: Boolean(row.hidden), ...extras(row)})}>${title}${renderRows(row.rows, env)}</div>`;
 }
@@ -617,7 +629,7 @@ export const ROW_PLACEHOLDER = '<div hidden></div>';
 export function renderRow(row, env = {}) {
   if (!row || (row.hidden && !REGIONS.has(row.kind))) return ROW_PLACEHOLDER;
   const render = RENDERERS[row.kind];
-  if (!render) throw new TypeError(`Unknown inspector row kind: ${row?.kind}`);
+  if (!render) throw messageError(new TypeError(''), "errors.inspectorKit.unknownInspectorRowKind", {value: row?.kind});
   return render(row, env);
 }
 const renderRows = (rows, env) => (rows ?? []).map(row => renderRow(row, env)).join('');
@@ -703,7 +715,7 @@ export const sectionBodyId = (kind, sectionId) => `inspector-section-${String(ki
 function titleActions(section, env) {
   const list = [...(section.actions ?? [])];
   const count = list.length + (section.switch ? 1 : 0);
-  if (count > MAX_TITLE_ACTIONS) throw new TypeError(`Section ${section.id} has ${count} title actions; at most ${MAX_TITLE_ACTIONS}.`);
+  if (count > MAX_TITLE_ACTIONS) throw messageError(new TypeError(''), "errors.inspectorKit.sectionHasTitleActionsAtMost", {id: section.id, count: count, MAX_TITLE_ACTIONS: MAX_TITLE_ACTIONS});
   const buttons = list.map(item => renderButton({...item, variant: item.icon && !item.text ? item.variant : item.variant ?? 'ghost'}, env, {className: 'ui-section-action', size: 'sm'})).join('');
   return list.length > 1 ? `<div class="ui-section-actions">${buttons}</div>` : buttons;
 }
@@ -717,29 +729,29 @@ function titleActions(section, env) {
  */
 export function renderSection(section, env = {}) {
   if (!section) return '<section class="ui-section" hidden></section>';
-  if (!SECTION_ID.test(String(section.id))) throw new TypeError(`Invalid section id: ${section.id}`);
+  if (!SECTION_ID.test(String(section.id))) throw messageError(new TypeError(''), "errors.inspectorKit.invalidSectionId", {id: section.id});
   if (section.bare) {
-    if (section.title || section.actions?.length || section.switch || (section.place ?? 'core') !== 'core') throw new TypeError(`Bare section ${section.id} has no title, actions or place.`);
+    if (section.title || section.actions?.length || section.switch || (section.place ?? 'core') !== 'core') throw messageError(new TypeError(''), "errors.inspectorKit.bareSectionHasNoTitleActionsOrPlace", {id: section.id});
     return `<div class="inspector-bare" data-section="${section.id}"${section.hidden ? ' hidden' : ''}>${renderRows(section.rows, env)}</div>`;
   }
   if (section.hidden) return `<section class="ui-section" data-section="${section.id}" hidden></section>`;
   const place = section.place ?? 'core';
-  if (!SECTION_PLACES.includes(place)) throw new TypeError(`Section ${section.id} has an unknown place: ${place}`);
+  if (!SECTION_PLACES.includes(place)) throw messageError(new TypeError(''), "errors.inspectorKit.sectionHasAnUnknownPlace", {id: section.id, place: place});
   const kind = env.kind ?? 'default', rows = renderRows(section.rows, env), actions = titleActions(section, env);
   // Hooks a feature reads from the section (data-parallax-layer, data-motion-id).
   const hooks = attributes(extras(section));
   if (place === 'core') {
-    if (section.switch) throw new TypeError(`Core section ${section.id} cannot carry a title switch; make it titled.`);
-    const head = section.title || actions ? `<div class="ui-section-head">${section.title ? `${sectionBadge(section, env)}<h3 class="ui-section-title">${escapeHTML(section.title)}</h3>` : ''}${actions}</div>` : '';
+    if (section.switch) throw messageError(new TypeError(''), "errors.inspectorKit.coreSectionCannotCarryATitleSwitchMake", {id: section.id});
+    const head = section.title || actions ? `<div class="ui-section-head">${section.title ? `${sectionBadge(section, env)}<h3 class="ui-section-title"${descriptorAttributes(section, "title")}>${escapeHTML(section.title)}</h3>` : ''}${actions}</div>` : '';
     return `<section class="ui-section" data-section="${section.id}"${hooks}>${head}<div class="ui-section-body">${rows}</div></section>`;
   }
-  if (!section.title) throw new TypeError(`Titled section ${section.id} needs a title that says what is inside.`);
+  if (!section.title) throw messageError(new TypeError(''), "errors.inspectorKit.titledSectionNeedsATitleThatSaysWhat", {id: section.id});
   const auto = autoOpen(section, env.ctx), open = resolveSectionOpen(section, env), body = sectionBodyId(kind, section.id);
   const toggle = `<button${attributes({
     type: 'button', class: 'ui-section-toggle', 'aria-expanded': String(open), 'aria-controls': body,
     'data-section-toggle': section.id, 'data-section-kind': kind, 'data-auto': auto,
-  })}>${sectionBadge(section, env)}<span class="ui-section-title">${escapeHTML(section.title)}</span>${glyph(env, 'chevron-right', 'ui-icon ui-section-chev')}</button>`;
-  const titleSwitch = section.switch ? `<span class="ui-section-sizer" aria-hidden="true">${escapeHTML(section.title)}</span>` +
+  })}>${sectionBadge(section, env)}<span class="ui-section-title"${descriptorAttributes(section, "title")}>${escapeHTML(section.title)}</span>${glyph(env, 'chevron-right', 'ui-icon ui-section-chev')}</button>`;
+  const titleSwitch = section.switch ? `<span class="ui-section-sizer" aria-hidden="true"${descriptorAttributes(section, "title")}>${escapeHTML(section.title)}</span>` +
     `<label${attributes({class: 'ui-section-switch', 'data-tooltip': section.switch.tip ?? section.switch.label})}>${switchInput(section.switch, {named: false})}</label>` : '';
   const head = `<div${attributes({class: 'ui-section-head', 'data-switch': Boolean(section.switch)})}>${toggle}${titleSwitch}${actions}</div>`;
   return `<section class="ui-section" data-section="${section.id}" data-collapsible${open ? ' data-open' : ''}${hooks}>${head}` +
@@ -758,7 +770,7 @@ export function renderSection(section, env = {}) {
 export function renderScope(scope, env = {}) {
   if (!scope?.label) return '<div id="inspector-scope" role="status" hidden></div>';
   const stop = scope.stop ? renderButton({variant: 'ghost', ...scope.stop, label: scope.stop.label ?? say(env, 'inspector.stop')}, env, {size: 'sm'}) : '';
-  return `<div class="ui-scope" id="inspector-scope" role="status"><span class="ui-dot" data-tint="select" aria-hidden="true"></span><span>${escapeHTML(scope.label)}</span>${stop}</div>`;
+  return `<div class="ui-scope" id="inspector-scope" role="status"><span class="ui-dot" data-tint="select" aria-hidden="true"></span><span${descriptorAttributes(scope, "label")}>${escapeHTML(scope.label)}</span>${stop}</div>`;
 }
 
 /**
@@ -769,7 +781,7 @@ export function renderScope(scope, env = {}) {
  */
 export function renderQuickSlot(quick, env = {}) {
   if (!quick?.context) return '';
-  if (!SECTION_ID.test(quick.context)) throw new TypeError(`Invalid quick actions context: ${quick.context}`);
+  if (!SECTION_ID.test(quick.context)) throw messageError(new TypeError(''), "errors.inspectorKit.invalidQuickActionsContext", {context: quick.context});
   return `<div${attributes({
     class: 'ui-quick', role: 'toolbar', 'aria-label': quick.label ?? say(env, 'inspector.actions'), 'data-quick-context': quick.context,
     'data-inspector-owned': `quick-${quick.context}`,
@@ -789,7 +801,7 @@ function checkSections(inspector) {
   const seen = new Set();
   for (const section of inspector?.sections ?? []) {
     if (!section) continue;
-    if (seen.has(section.id)) throw new TypeError(`Duplicate section id: ${section.id}`);
+    if (seen.has(section.id)) throw messageError(new TypeError(''), "errors.inspectorKit.duplicateSectionId", {id: section.id});
     seen.add(section.id);
   }
 }
@@ -803,7 +815,7 @@ function checkSections(inspector) {
  */
 export function renderInspector(inspector, env = {}, {head = false, foot = false} = {}) {
   const kind = inspector?.kind ?? env.kind ?? 'default';
-  if (!SECTION_ID.test(kind)) throw new TypeError(`Invalid inspector kind: ${kind}`);
+  if (!SECTION_ID.test(kind)) throw messageError(new TypeError(''), "errors.inspectorKit.invalidInspectorKind", {kind: kind});
   checkSections(inspector);
   const scoped = {...env, kind}, sections = inspector?.sections ?? [];
   const body = sections.map(section => renderSection(section, scoped)).join('');
@@ -942,7 +954,7 @@ function syncSlider(input, format) {
  * and PropertyControls. Returns {sync, destroy}: call sync() after each render.
  */
 export function installInspectorKit(root, {memory, onToggle, onScrubHint, t, formatSlider, scroller = root} = {}) {
-  if (!root?.addEventListener) throw new TypeError('The inspector kit needs a root element.');
+  if (!root?.addEventListener) throw messageError(new TypeError(''), "errors.inspectorKit.theInspectorKitNeedsARootElement", {});
   const doc = root.ownerDocument, view = doc.defaultView ?? globalThis, abort = new AbortController(), {signal} = abort;
   let hinted = typeof onScrubHint !== 'function';
   const fade = () => {

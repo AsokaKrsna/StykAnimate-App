@@ -1,3 +1,7 @@
+import {messageError} from './localized-error.mjs';
+import {localizedText, appendLocalized} from './localization-bindings.mjs';
+import {t as interfaceText} from './localization.mjs';
+
 export const LIBRARY_DRAG_TYPE = 'application/x-stykanimate-library-asset';
 // A card of My library (a path) or of the public library (an id).
 const CARD = '[data-library-path], [data-public-id]';
@@ -15,9 +19,9 @@ export function libraryDragData(item) {
 
 export function readLibraryDrag(transfer) {
   const text = transfer?.getData(LIBRARY_DRAG_TYPE);
-  if (!text || text.length > 8192) throw new Error('Invalid library asset.');
-  let value; try { value = JSON.parse(text); } catch { throw new Error('Invalid library asset.'); }
-  if (value.version !== 1 || typeof value.path !== 'string' || !value.path || value.path.split(/[\\/]/).some(part => !part || part === '..' || part === '.') || /[:\x00-\x1f]/.test(value.path) || typeof value.name !== 'string') throw new Error('Invalid library asset.');
+  if (!text || text.length > 8192) throw messageError(new Error(''), "errors.libraryDrag.invalidLibraryAsset", {});
+  let value; try { value = JSON.parse(text); } catch { throw messageError(new Error(''), "errors.libraryDrag.invalidLibraryAsset", {}); }
+  if (value.version !== 1 || typeof value.path !== 'string' || !value.path || value.path.split(/[\\/]/).some(part => !part || part === '..' || part === '.') || /[:\x00-\x1f]/.test(value.path) || typeof value.name !== 'string') throw messageError(new Error(''), "errors.libraryDrag.invalidLibraryAsset", {});
   return value;
 }
 
@@ -43,7 +47,7 @@ export function installLibraryDrag(source, target, {getAsset, onStart, position,
       target.classList.toggle('library-drop-target', destination?.kind === 'canvas');
       if (destination?.kind === 'folder') over.classList.add('library-folder-drop-target');
       doc.documentElement.classList.toggle('library-pointer-over-target', destination?.kind === 'canvas');
-      drag.hint.textContent = destination?.kind === 'folder' ? `Move to ${destination.name}` : destination ? 'Add to scene' : 'Drop on a folder or canvas';
+      localizedText(drag.hint, (destination?.kind === 'folder' ? 'libraryDrag.moveToName' : (destination ? "libraryDrag.addToScene" : "libraryDrag.dropOnAFolderOrCanvas")), (destination?.kind === 'folder' ? {name: destination.name} : (destination ? {} : {})));
     }
     const scroll = source.parentElement, rect = scroll.getBoundingClientRect();
     if (drag.clientX >= rect.left && drag.clientX <= rect.right && drag.clientY >= rect.top && drag.clientY <= rect.bottom) {
@@ -90,10 +94,10 @@ export function installLibraryDrag(source, target, {getAsset, onStart, position,
       const ghost = doc.createElement('div'); ghost.className = 'library-drag-ghost'; ghost.setAttribute('aria-hidden', 'true');
       ghost.style.setProperty('--library-matte', win.getComputedStyle(drag.card.querySelector('.library-thumbnail')).backgroundColor);
       const thumbnail = drag.card.querySelector('.library-thumbnail img');
-      if (thumbnail) ghost.append(thumbnail.cloneNode());
-      const name = doc.createElement('span'); name.textContent = drag.asset.name; ghost.append(name);
-      const hint = doc.createElement('small'); hint.textContent = drag.asset.kind === 'folder' ? 'Drop on a folder' : 'Drop on a folder or canvas'; ghost.append(hint); drag.hint = hint;
-      doc.body.append(ghost); drag.ghost = ghost;
+      if (thumbnail) appendLocalized(ghost, thumbnail.cloneNode());
+      const name = doc.createElement('span'); name.textContent = drag.asset.name; appendLocalized(ghost, name);
+      const hint = doc.createElement('small'); localizedText(hint, (drag.asset.kind === 'folder' ? "libraryDrag.dropOnAFolder" : "libraryDrag.dropOnAFolderOrCanvas"), (drag.asset.kind === 'folder' ? {} : {})); appendLocalized(ghost, hint); drag.hint = hint;
+      appendLocalized(doc.body, ghost); drag.ghost = ghost;
       drag.card.classList.add('library-dragging');
       doc.documentElement.classList.add('library-pointer-dragging');
     }

@@ -1,4 +1,6 @@
 'use strict';
+const { messageError } = require('./localization.cjs');
+
 
 const {createHash} = require('node:crypto');
 
@@ -41,7 +43,7 @@ function siteFrom(value) {
   if (!value) return SITE;
   const url = new URL(value);
   if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || url.username || url.password)
-    throw new Error('The community library address can only be overridden with a loopback server.');
+    throw messageError(new Error(''), 'desktop.publicLibrary.errors.theCommunityLibraryAddressCanOnlyBeOverriddenWithALoopbackServer', {});
   return url.origin;
 }
 

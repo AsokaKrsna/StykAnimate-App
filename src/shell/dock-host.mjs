@@ -1,3 +1,7 @@
+import {messageError} from '../localized-error.mjs';
+import {localizedText, appendLocalized, localizedAttribute, localizedMarkup} from '../localization-bindings.mjs';
+import {t as interfaceText} from '../localization.mjs';
+
 /**
  * The dock host: lays the editor's static shell (index.html) out from the
  * layout solver, and is the single owner of which panel shows where.
@@ -48,7 +52,7 @@ import {COLLECTIONS} from './dock-keyboard.mjs';
 const SIDES = Object.freeze(['left', 'right']);
 const DEFAULT_ROOTS = Object.freeze({properties: '#properties-panel', vfx: '#vfx-panel', library: '#user-library',
   structure: '#builder-outliner', timeline: '#animation-timeline'});
-const SIDE_NAMES = Object.freeze({left: 'Left panels', right: 'Inspector'});
+const SIDE_NAMES = Object.freeze({left: interfaceText("dockHost.leftPanels"), right: interfaceText("dockHost.inspector")});
 const STEP = 12, BIG_STEP = 40;
 /** Tall timeline stores this share of the window (the solver's 60% maximum). */
 const TALL_TIMELINE = 0.6;
@@ -140,7 +144,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
   let currentMode = normalizeMode(workspace.dataset.mode);
 
   const descriptor = id => registry.get(id);
-  const title = id => descriptor(id)?.title ?? id;
+  const title = id => descriptor(id)?.titleKey ? interfaceText(descriptor(id).titleKey) : descriptor(id)?.title ?? id;
   const rootOf = id => registry.root(id) ?? doc.querySelector(DEFAULT_ROOTS[id] ?? `[data-panel="${id}"]`);
   const report = error => { globalThis.reportError?.(error); };
   const mode = () => normalizeMode(workspace.dataset.mode);
@@ -342,7 +346,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
     tabs.className = 'ui-tabs shell-tabs';
     tabs.dataset.ui = '';
     tabs.setAttribute('role', 'tablist');
-    island.append(tabs);
+    appendLocalized(island, tabs);
     return island;
   }
 
@@ -354,7 +358,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
       sheet.setAttribute('role', 'dialog');
       sheet.setAttribute('aria-label', SIDE_NAMES[side]);
       sheet.id = `${side}-sheet`;
-      hosts[side].append(sheet);
+      appendLocalized(hosts[side], sheet);
       sheetIslands[side] = sheet;
       sheet.addEventListener('focusout', event => {
         if (sheets[side].open && leaves(event, [sheet, sheets[side].invoker])) closeSheet(side, {restoreFocus: false});
@@ -369,9 +373,9 @@ export function createDockHost({document: doc = globalThis.document, window: win
       strip.className = 'ui-strip shell-strip';
       strip.dataset.ui = '';
       strip.setAttribute('role', 'toolbar');
-      strip.setAttribute('aria-label', `${SIDE_NAMES[side]}, folded`);
+      localizedAttribute(strip, 'aria-label', "dockHost.folded", {value: SIDE_NAMES[side]});
       strip.setAttribute('aria-orientation', 'vertical');
-      if (side === 'left') hosts[side].prepend(strip); else hosts[side].append(strip);
+      if (side === 'left') hosts[side].prepend(strip); else appendLocalized(hosts[side], strip);
       strips[side] = strip;
     }
     return strips[side];
@@ -386,9 +390,9 @@ export function createDockHost({document: doc = globalThis.document, window: win
         button.className = 'ui-icon-button shell-strip-button';
         button.dataset.panel = id;
         button.setAttribute('aria-haspopup', 'dialog');
-        button.innerHTML = icon(descriptor(id)?.icon ?? 'panel-right');
+        localizedMarkup(button, icon(descriptor(id)?.icon ?? 'panel-right'));
       }
-      button.setAttribute('aria-label', title(id));
+      if (descriptor(id)?.titleKey) localizedAttribute(button, 'aria-label', descriptor(id).titleKey); else button.setAttribute('aria-label', title(id));
       button.dataset.tip = title(id);
       return [button, ...stripActions(id)];
     });
@@ -421,7 +425,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
             else mirror.removeAttribute(attribute);
           }
           const glyph = source.querySelector('svg')?.outerHTML ?? '';
-          if (mirror.innerHTML !== glyph) mirror.innerHTML = glyph;
+          if (mirror.innerHTML !== glyph) localizedMarkup(mirror, glyph);
         };
         copy();
         const watch = new win.MutationObserver(copy);
@@ -450,8 +454,8 @@ export function createDockHost({document: doc = globalThis.document, window: win
       tab.id = `${id}-tab`;
       tab.setAttribute('role', 'tab');
       tab.dataset.panel = id;
-      tab.textContent = title(id);
-      tab.title = 'Drag to move panel; right-click for layout options';
+      if (descriptor(id)?.titleKey) localizedText(tab, descriptor(id).titleKey); else tab.textContent = title(id);
+      localizedAttribute(tab, "title", "dockHost.dragToMovePanelRightClickForLayout", {});
       tabElements.set(id, tab);
     }
     const target = rootOf(id);
@@ -486,7 +490,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
     if (!floatHost) {
       floatHost = doc.createElement('div');
       floatHost.className = 'shell-floats';
-      stage.append(floatHost);
+      appendLocalized(stage, floatHost);
     }
     for (const item of s.floating) {
       let island = floats.get(item.panel);
@@ -494,10 +498,10 @@ export function createDockHost({document: doc = globalThis.document, window: win
         island = makeIsland(`float-${item.panel}`);
         island.dataset.floating = '';
         island.setAttribute('role', 'region');
-        floatHost.append(island);
+        appendLocalized(floatHost, island);
         floats.set(item.panel, island);
       }
-      island.setAttribute('aria-label', title(item.panel));
+      if (descriptor(item.panel)?.titleKey) localizedAttribute(island, 'aria-label', descriptor(item.panel).titleKey); else island.setAttribute('aria-label', title(item.panel));
       Object.assign(island.style, {inlineSize: px(item.w), blockSize: px(item.h), transform: `translate(${Math.round(item.x)}px, ${Math.round(item.y)}px)`});
       fill(island, [item.panel], item.panel);
       island.querySelector(':scope > .shell-tabs').hidden = false;
@@ -529,7 +533,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
     if (expandButton) {
       const tall = isTall();
       expandButton.setAttribute('aria-pressed', String(tall));
-      expandButton.setAttribute('aria-label', tall ? 'Restore timeline height' : 'Expand timeline');
+      localizedAttribute(expandButton, 'aria-label', (tall ? "dockHost.restoreTimelineHeight" : "dockHost.expandTimeline"), (tall ? {} : {}));
     }
     for (const side of SIDES) {
       for (const button of strips[side]?.children ?? []) {
@@ -693,7 +697,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
   }, {signal});
   workspace.addEventListener('keydown', event => {
     const tab = event.target.closest?.('.shell-tabs [role="tab"]');
-    if (!tab || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    if (!tab || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     const tabs = [...tab.parentElement.querySelectorAll(':scope > [role="tab"]:not([hidden])')];
     const index = tabs.indexOf(tab);
     const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
@@ -720,7 +724,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
     const vertical = !stacked && name !== 'bottom';
     el.setAttribute('aria-orientation', vertical ? 'vertical' : 'horizontal');
     // In the tab order beside the region it resizes (the grid places it; dock.css).
-    if (stacked) { el.classList.add('shell-island-splitter'); hosts[side].append(el); }
+    if (stacked) { el.classList.add('shell-island-splitter'); appendLocalized(hosts[side], el); }
     else if (name === 'right') hosts.right.before(el);
     else if (name === 'left') hosts.left.after(el);
     else bottom.before(el);
@@ -807,14 +811,14 @@ export function createDockHost({document: doc = globalThis.document, window: win
       if (name.endsWith('-islands')) {
         const side = name.split('-')[0], groups = s.regions[side].groups;
         el.style.insetBlockStart = px(groups[0].rect.height + metrics.gutter / 2);
-        el.setAttribute('aria-label', `Resize stacked ${side} panels`);
+        localizedAttribute(el, 'aria-label', "dockHost.resizeStackedPanels", {side: side});
         el.setAttribute('aria-controls', groups.flatMap(group => group.tabs.map(id => rootOf(id)?.id)).filter(Boolean).join(' '));
         continue;
       }
       const region = s.regions[name];
       const panels = name === 'bottom' ? ['timeline'] : region.panels.docked;
-      const label = name === 'bottom' ? 'Resize timeline' : panels.includes('structure') ? 'Resize figure structure'
-        : panels.includes('properties') ? 'Resize properties panel' : `Resize ${panels.map(title).join(' and ')} panel`;
+      const label = name === 'bottom' ? interfaceText("dockHost.resizeTimeline") : panels.includes('structure') ? interfaceText("dockHost.resizeFigureStructure")
+        : panels.includes('properties') ? interfaceText("dockHost.resizePropertiesPanel") : `Resize ${panels.map(title).join(' and ')} panel`;
       el.setAttribute('aria-label', label);
       el.setAttribute('aria-controls', name === 'bottom' ? bottom.id : hosts[name].id || '');
       if (!hosts[name]?.id && name !== 'bottom') el.removeAttribute('aria-controls');
@@ -1016,8 +1020,8 @@ export function createDockHost({document: doc = globalThis.document, window: win
         return result.layout;
       });
       commit();
-      if (result?.error) throw new Error(result.error === 'limit' ? '8 presets saved. Delete one first.'
-        : result.error === 'budget' ? 'Preset storage is full. Delete one first.' : 'Name the preset first.');
+      if (result?.error) throw messageError(new Error(''), result.error === 'limit' ? "dockHost.message8PresetsSavedDeleteOneFirst"
+        : result.error === 'budget' ? "dockHost.presetStorageIsFullDeleteOneFirst" : "dockHost.nameThePresetFirst");
       return result.id;
     },
     deleteLayout(id) {
@@ -1031,7 +1035,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
         return result.layout;
       });
       commit();
-      if (result?.error) throw new Error(result.error === 'name' ? 'Name the preset first.' : 'This preset no longer exists.');
+      if (result?.error) throw messageError(new Error(''), result.error === 'name' ? "dockHost.nameThePresetFirst" : "dockHost.thisPresetNoLongerExists");
     },
     /** Replaces a saved preset with its workspace's current arrangement. */
     updateLayout(id) {
@@ -1187,4 +1191,3 @@ export function createDockHost({document: doc = globalThis.document, window: win
     destroy,
   };
 }
-

@@ -1,3 +1,5 @@
+import {t as interfaceText} from '../localization.mjs';
+import {appendLocalized, localizedMarkup} from '../localization-bindings.mjs';
 /**
  * The tool rail (experience.md §3.2, components.md "Tool button and Rail"):
  * only the current workspace's tools, in the same column and anchored to its
@@ -36,15 +38,15 @@ export const RAIL_TOOLS = Object.freeze({
 
 /** Names that differ by workspace; others keep the name in the markup. */
 const WORKSPACE_NAMES = Object.freeze({
-  animate: {add: 'Add', select: 'Select and pose'},
-  draw: {add: 'New drawing layer'},
-  rig: {rig: 'Edit joints', select: 'Select figure'},
+  animate: {add: interfaceText("rail.add"), select: interfaceText("rail.selectAndPose")},
+  draw: {add: interfaceText("rail.newDrawingLayer")},
+  rig: {rig: interfaceText("rail.editJoints"), select: interfaceText("rail.selectFigure")},
 });
 
 /** The Tweener names itself after its current type (tweener-controls.mjs); every other tool's name is the rail's. */
 const SELF_NAMED = new Set(['tweener']);
 /** What each corner tick lists, by [data-rail-menu] value: its accessible name. */
-const TICK_NAMES = Object.freeze({add: 'Add to the scene', lasso: 'Choose selection shape', shape: 'Choose shape'});
+const TICK_NAMES = Object.freeze({add: interfaceText("rail.addToTheScene"), lasso: interfaceText("rail.chooseSelectionShape"), shape: interfaceText("rail.chooseShape")});
 const LONG_PRESS_MS = 450;
 const LONG_PRESS_SLOP = 6;
 
@@ -66,16 +68,16 @@ export function installRail(rail, {openMenu, signal} = {}) {
     const slot = doc.createElement('div');
     slot.className = 'rail-slot';
     button.before(slot);
-    slot.append(button);
+    appendLocalized(slot, button);
     const tick = doc.createElement('button');
     tick.type = 'button';
     tick.className = 'rail-tick ui-tool-tick-button';
     tick.tabIndex = -1;
-    tick.setAttribute('aria-label', TICK_NAMES[button.dataset.railMenu] ?? 'More');
+    tick.setAttribute('aria-label', TICK_NAMES[button.dataset.railMenu] ?? interfaceText("rail.more"));
     tick.setAttribute('aria-haspopup', 'menu');
-    tick.dataset.tooltip = TICK_NAMES[button.dataset.railMenu] ?? 'More';
-    tick.innerHTML = '<span class="ui-tool-tick" aria-hidden="true"></span>';
-    slot.append(tick);
+    tick.dataset.tooltip = TICK_NAMES[button.dataset.railMenu] ?? interfaceText("rail.more");
+    localizedMarkup(tick, '<span class="ui-tool-tick" aria-hidden="true"></span>');
+    appendLocalized(slot, tick);
     tick.addEventListener('click', event => { event.stopPropagation(); open(button); }, options);
     slot.addEventListener('contextmenu', event => { event.preventDefault(); event.stopPropagation(); open(button); }, options);
     button.addEventListener('keydown', event => {

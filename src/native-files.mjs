@@ -1,16 +1,17 @@
+import {messageError} from './localized-error.mjs';
 const CHUNK_BYTES = 256 * 1024;
 
 function checkAbort(signal) {
-  if (signal?.aborted) throw signal.reason || new DOMException('The file transfer was cancelled.', 'AbortError');
+  if (signal?.aborted) throw signal.reason || messageError(new DOMException('', 'AbortError'), "errors.nativeFiles.theFileTransferWasCancelled", {});
 }
 
 /** Write a worker-produced Blob without whole-file ArrayBuffer/base64 conversion. */
 export async function writeNativeBlob(desktop, blob, options = {}) {
-  if (!(blob instanceof Blob)) throw new TypeError('A Blob is required for native file writing.');
+  if (!(blob instanceof Blob)) throw messageError(new TypeError(''), "errors.nativeFiles.aBlobIsRequiredForNativeFileWriting", {});
   const { recovery = false, clipboard = false, signal, onProgress, onSaved, name, defaultPath, filters, documentToken, saveAs = false } = options;
   checkAbort(signal);
   const start = clipboard ? desktop.beginClipboardWrite : recovery ? desktop.beginRecoveryWrite : documentToken ? desktop.beginProjectWrite : desktop.beginFileWrite;
-  if (typeof start !== 'function') throw new Error('Restart the latest desktop app to enable streaming file saves.');
+  if (typeof start !== 'function') throw messageError(new Error(''), "errors.nativeFiles.restartTheLatestDesktopAppToEnableStreaming", {});
   const started=options.onTiming?performance.now():0;
   const transfer = await start({ size: blob.size, name, defaultPath, filters, documentToken, saveAs });
   const writeStarted=options.onTiming?performance.now():0;
@@ -38,12 +39,12 @@ export async function writeNativeBlob(desktop, blob, options = {}) {
 
 /** Read the fixed recovery file as bounded IPC chunks; no base64 is produced. */
 export async function readNativeRecovery(desktop, { signal, onProgress } = {}) {
-  if (typeof desktop.beginRecoveryRead !== 'function') throw new Error('Restart the latest desktop app to enable streaming recovery.');
+  if (typeof desktop.beginRecoveryRead !== 'function') throw messageError(new Error(''), "errors.nativeFiles.restartTheLatestDesktopAppToEnableStreaming2", {});
   return readNativeStoredFile(desktop, desktop.beginRecoveryRead, {signal, onProgress});
 }
 
 export async function readNativeClipboard(desktop, options = {}) {
-  if (typeof desktop.beginClipboardRead !== 'function') throw new Error('Restart the latest desktop app to enable the saved frame clipboard.');
+  if (typeof desktop.beginClipboardRead !== 'function') throw messageError(new Error(''), "errors.nativeFiles.restartTheLatestDesktopAppToEnableThe", {});
   return readNativeStoredFile(desktop, desktop.beginClipboardRead, options);
 }
 
@@ -57,14 +58,14 @@ async function readNativeStoredFile(desktop, beginRead, {signal, onProgress} = {
     while (true) {
       checkAbort(signal);
       const chunk = await desktop.readFileChunk(transfer.token);
-      if (!(chunk.bytes instanceof ArrayBuffer)) throw new Error('The recovery transfer returned invalid bytes.');
+      if (!(chunk.bytes instanceof ArrayBuffer)) throw messageError(new Error(''), "errors.nativeFiles.theRecoveryTransferReturnedInvalidBytes", {});
       received += chunk.bytes.byteLength;
-      if (received > transfer.size) throw new Error('The recovery transfer exceeded its declared size.');
+      if (received > transfer.size) throw messageError(new Error(''), "errors.nativeFiles.theRecoveryTransferExceededItsDeclaredSize", {});
       parts.push(chunk.bytes);
       onProgress?.({ read: received, total: transfer.size });
       if (chunk.done) break;
     }
-    if (received !== transfer.size) throw new Error('The recovery file transfer was incomplete.');
+    if (received !== transfer.size) throw messageError(new Error(''), "errors.nativeFiles.theRecoveryFileTransferWasIncomplete", {});
     return { blob: new Blob(parts, { type: 'application/octet-stream' }), name: transfer.name || 'Recovered animation', savedAt: transfer.savedAt, size: received };
   } finally {
     await desktop.closeFileRead(transfer.token).catch(() => {});

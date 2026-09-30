@@ -1,3 +1,7 @@
+import {errorText} from './error-presentation.mjs';
+import {interfaceLocalization, t as interfaceText} from './localization.mjs';
+import {messageError} from './localized-error.mjs';
+
 /**
  * Export request: the export dialog's choices as one explicit value instead
  * of DOM ids and label visibility. Pure functions: no DOM and no I/O. The
@@ -85,30 +89,30 @@ import {exportTime} from './export-progress.mjs';
 
 /** The quality every format but the JPEG sequence exports with (today's hidden-field value). */
 export const EXPORT_DEFAULT_QUALITY = 0.94;
-const NO_FRAMES = 'Add a frame to export an animation.';
-const AUDIO_NEEDS_FFMPEG = 'Choose a desktop FFmpeg video format to include sound, or turn off Include audio for a silent export.';
+const noFrames = () => interfaceText("exportRequest.addAFrameToExportAnAnimation");
+const audioNeedsEncoder = () => interfaceText("exportRequest.chooseADesktopFfmpegVideoFormatToInclude");
 const MAX_SIDE = 16384;
 
-const entry = (id, action, category, label, short, extension, extra = {}) => Object.freeze({id, action, category, label, short, extension, ...extra});
+const entry = (id, action, category, labelKey, short, extension, extra = {}) => Object.freeze({id, action, category, labelKey, extension, ...extra, get short() { return extra.shortKey ? interfaceText(extra.shortKey) : short; }, get label() { return interfaceText(labelKey); }});
 /** Every export type, in the sheet's order within its category. `label` is today's button title. */
 export const EXPORT_FORMATS = Object.freeze([
-  entry('mp4', 'export-mp4', 'video', 'MP4 video', 'MP4', 'mp4', {codecKey: 'mp4'}),
-  entry('webm', 'export-video', 'video', 'WebM video', 'WebM', 'webm'),
-  entry('avi', 'export-avi', 'video', 'AVI video', 'AVI', 'avi', {codecKey: 'avi'}),
-  entry('wmv', 'export-wmv', 'video', 'Windows Media video', 'WMV', 'wmv'),
-  entry('vfw', 'export-vfw', 'video', 'Windows AVI', 'AVI', 'avi'),
-  entry('gif', 'export-gif', 'animated', 'Animated GIF', 'GIF', 'gif'),
-  entry('apng', 'export-apng', 'animated', 'Animated PNG', 'APNG', 'png'),
-  entry('png', 'export-png', 'frames', 'PNG frame', 'PNG', 'png', {single: true}),
-  entry('svg', 'export-svg', 'frames', 'SVG frame', 'SVG', 'svg', {single: true}),
-  entry('png-sequence', 'export-png-sequence', 'frames', 'PNG sequence', 'PNG sequence', 'zip'),
-  entry('jpeg-sequence', 'export-jpeg-sequence', 'frames', 'JPEG sequence', 'JPEG sequence', 'zip'),
-  entry('gif-sequence', 'export-gif-sequence', 'frames', 'GIF sequence', 'GIF sequence', 'zip'),
-  entry('svg-sequence', 'export-svg-sequence', 'frames', 'SVG sequence', 'SVG sequence', 'zip'),
-  entry('piv', 'export-piv', 'editable', 'Pivot animation', 'PIV', 'piv'),
-  entry('stkz', 'export-stkz', 'editable', 'StykAnimate figure', 'STKZ', 'stkz', {needsObject: true}),
-  entry('stk', 'export-stk', 'editable', 'Pivot figure', 'STK', 'stk', {needsObject: true}),
-  entry('stykmov', 'export-stykmov', 'editable', 'StykAnimate movieclip', 'STYKMOV', 'stykmov', {needsObject: true}),
+  entry('mp4', 'export-mp4', 'video', "exportRequest.mp4Video", 'MP4', 'mp4', {codecKey: 'mp4'}),
+  entry('webm', 'export-video', 'video', "exportRequest.webmVideo", 'WebM', 'webm'),
+  entry('avi', 'export-avi', 'video', "exportRequest.aviVideo", 'AVI', 'avi', {codecKey: 'avi'}),
+  entry('wmv', 'export-wmv', 'video', "exportRequest.windowsMediaVideo", 'WMV', 'wmv'),
+  entry('vfw', 'export-vfw', 'video', "exportRequest.windowsAvi", 'AVI', 'avi'),
+  entry('gif', 'export-gif', 'animated', "exportRequest.animatedGif", 'GIF', 'gif'),
+  entry('apng', 'export-apng', 'animated', "exportRequest.animatedPng", 'APNG', 'png'),
+  entry('png', 'export-png', 'frames', "exportRequest.pngFrame", 'PNG', 'png', {single: true}),
+  entry('svg', 'export-svg', 'frames', "exportRequest.svgFrame", 'SVG', 'svg', {single: true}),
+  entry('png-sequence', 'export-png-sequence', 'frames', "exportRequest.pngSequence", '', 'zip', {shortKey: 'exportRequest.pngSequence'}),
+  entry('jpeg-sequence', 'export-jpeg-sequence', 'frames', "exportRequest.jpegSequence", '', 'zip', {shortKey: 'exportRequest.jpegSequence'}),
+  entry('gif-sequence', 'export-gif-sequence', 'frames', "exportRequest.gifSequence", '', 'zip', {shortKey: 'exportRequest.gifSequence'}),
+  entry('svg-sequence', 'export-svg-sequence', 'frames', "exportRequest.svgSequence", '', 'zip', {shortKey: 'exportRequest.svgSequence'}),
+  entry('piv', 'export-piv', 'editable', "exportRequest.pivotAnimation", 'PIV', 'piv'),
+  entry('stkz', 'export-stkz', 'editable', "exportRequest.stykanimateFigure", 'STKZ', 'stkz', {needsObject: true}),
+  entry('stk', 'export-stk', 'editable', "exportRequest.pivotFigure", 'STK', 'stk', {needsObject: true}),
+  entry('stykmov', 'export-stykmov', 'editable', "exportRequest.stykanimateMovieclip", 'STYKMOV', 'stykmov', {needsObject: true}),
 ]);
 const FORMATS = new Map(EXPORT_FORMATS.map(format => [format.id, format]));
 const BY_ACTION = new Map(EXPORT_FORMATS.map(format => [format.action, format.id]));
@@ -116,42 +120,42 @@ const SINGLE_FRAME_ACTIONS = new Set(['export-piv', 'export-stk', 'export-stkz',
 
 /** Today's categories (export-panel.mjs); `short` is the revision 4 segmented label. Project follows revision 4's order. */
 export const EXPORT_CATEGORIES = Object.freeze([
-  Object.freeze({id: 'video', label: 'Video', short: 'Video', formats: Object.freeze(['mp4', 'webm', 'avi', 'wmv', 'vfw'])}),
-  Object.freeze({id: 'animated', label: 'Animated image', short: 'GIF', formats: Object.freeze(['gif', 'apng'])}),
-  Object.freeze({id: 'frames', label: 'Frames & sequences', short: 'Frames', formats: Object.freeze(['png', 'svg', 'png-sequence', 'jpeg-sequence', 'gif-sequence', 'svg-sequence'])}),
-  Object.freeze({id: 'editable', label: 'Editable file', short: 'Project', formats: Object.freeze(['piv', 'stkz', 'stk', 'stykmov'])}),
+  Object.freeze({id: 'video', get label() { return interfaceText("exportRequest.video"); }, labelKey: "exportRequest.video", get short() { return interfaceText("exportRequest.video"); }, shortKey: "exportRequest.video", formats: Object.freeze(['mp4', 'webm', 'avi', 'wmv', 'vfw'])}),
+  Object.freeze({id: 'animated', get label() { return interfaceText("exportRequest.animatedImage"); }, labelKey: "exportRequest.animatedImage", short: 'GIF', formats: Object.freeze(['gif', 'apng'])}),
+  Object.freeze({id: 'frames', get label() { return interfaceText("exportRequest.framesSequences"); }, labelKey: "exportRequest.framesSequences", get short() { return interfaceText("exportRequest.frames"); }, shortKey: "exportRequest.frames", formats: Object.freeze(['png', 'svg', 'png-sequence', 'jpeg-sequence', 'gif-sequence', 'svg-sequence'])}),
+  Object.freeze({id: 'editable', get label() { return interfaceText("exportRequest.editableFile"); }, labelKey: "exportRequest.editableFile", get short() { return interfaceText("exportRequest.project"); }, shortKey: "exportRequest.project", formats: Object.freeze(['piv', 'stkz', 'stk', 'stykmov'])}),
 ]);
 
 /** What each type is for, in a sentence the dialog shows under Type: a person who does not know the formats chooses by it. */
 const TYPE_HINTS = Object.freeze({
-  mp4: 'Plays everywhere: phones, YouTube, social apps and video editors.',
-  webm: 'An open video format for browsers and web pages.',
-  avi: 'For older editing software. A lossless codec in Encoding keeps a perfect master copy.',
-  wmv: 'For older Windows programs.',
-  vfw: 'Encodes with a video codec installed in Windows.',
-  gif: 'Loops in chats, forums and web pages. Up to 256 colours a frame.',
-  apng: 'A looping image with full colour and smooth transparency. Plays in browsers.',
-  png: 'The current frame as a picture that keeps transparency.',
-  svg: 'The current frame as a vector drawing that stays sharp at any size.',
-  'png-sequence': 'Every frame as a numbered PNG in a .zip, with transparency: for video editors and game engines.',
-  'jpeg-sequence': 'Every frame as a numbered JPEG in a .zip: small files without transparency.',
-  'gif-sequence': 'Every frame as a numbered GIF picture in a .zip.',
-  'svg-sequence': 'Every frame as a numbered vector drawing in a .zip.',
-  piv: 'The whole animation, to open in Pivot Animator.',
-  stkz: 'The selected figure, to reuse in other StykAnimate projects.',
-  stk: 'The selected figure, to use in Pivot Animator.',
-  stykmov: 'The selected movieclip, to reuse in other StykAnimate projects.',
+  mp4: "exportRequest.playsEverywherePhonesYoutubeSocialAppsAndVideo",
+  webm: "exportRequest.anOpenVideoFormatForBrowsersAndWeb",
+  avi: "exportRequest.forOlderEditingSoftwareALosslessCodecIn",
+  wmv: "exportRequest.forOlderWindowsPrograms",
+  vfw: "exportRequest.encodesWithAVideoCodecInstalledInWindows",
+  gif: "exportRequest.loopsInChatsForumsAndWebPagesUp",
+  apng: "exportRequest.aLoopingImageWithFullColourAndSmooth",
+  png: "exportRequest.theCurrentFrameAsAPictureThatKeeps",
+  svg: "exportRequest.theCurrentFrameAsAVectorDrawingThat",
+  'png-sequence': "exportRequest.everyFrameAsANumberedPngInA",
+  'jpeg-sequence': "exportRequest.everyFrameAsANumberedJpegInA",
+  'gif-sequence': "exportRequest.everyFrameAsANumberedGifPictureIn",
+  'svg-sequence': "exportRequest.everyFrameAsANumberedVectorDrawingIn",
+  piv: "exportRequest.theWholeAnimationToOpenInPivotAnimator",
+  stkz: "exportRequest.theSelectedFigureToReuseInOtherStykanimate",
+  stk: "exportRequest.theSelectedFigureToUseInPivotAnimator",
+  stykmov: "exportRequest.theSelectedMovieclipToReuseInOtherStykanimate",
 });
 /** The Type row's sentence for a format ('' for none). A movieclip's figure entry writes .stykmov, so it is described as one. */
-export const exportTypeHint = (format, {movieclip = false} = {}) => TYPE_HINTS[format === 'stkz' && movieclip ? 'stykmov' : format] ?? '';
+export const exportTypeHint = (format, {movieclip = false} = {}) => { const key = TYPE_HINTS[format === 'stkz' && movieclip ? 'stykmov' : format]; return key ? interfaceText(key) : ''; };
 
 /** Size presets scale the short side and keep the artboard's shape and orientation. */
 export const EXPORT_SIZE_PRESETS = Object.freeze([
-  Object.freeze({id: 'original', label: 'Original'}),
-  Object.freeze({id: '1080', label: '1080p', shortSide: 1080}),
-  Object.freeze({id: '720', label: '720p', shortSide: 720}),
-  Object.freeze({id: '2160', label: '4K', shortSide: 2160}),
-  Object.freeze({id: 'custom', label: 'Custom…'}),
+  Object.freeze({id: 'original', get label() { return interfaceText("exportRequest.original"); }, labelKey: "exportRequest.original"}),
+  Object.freeze({id: '1080', get label() { return interfaceText("exportRequest.message1080p"); }, labelKey: "exportRequest.message1080p", shortSide: 1080}),
+  Object.freeze({id: '720', get label() { return interfaceText("exportRequest.message720p"); }, labelKey: "exportRequest.message720p", shortSide: 720}),
+  Object.freeze({id: '2160', get label() { return interfaceText("exportRequest.message4k"); }, labelKey: "exportRequest.message4k", shortSide: 2160}),
+  Object.freeze({id: 'custom', get label() { return interfaceText("exportRequest.custom"); }, labelKey: "exportRequest.custom"}),
 ]);
 const SIZE_PRESETS = new Set(EXPORT_SIZE_PRESETS.map(preset => preset.id));
 
@@ -184,15 +188,15 @@ const rawText = (value, fallback) => (has(value) ? String(value) : fallback);
 const size = (width, height) => `${width} × ${height}`;
 /** The artboard size a size change needs; a missing one would silently give NaN. */
 function artboard({canvasWidth, canvasHeight} = {}) {
-  if (!(canvasWidth > 0 && canvasHeight > 0)) throw new TypeError('Size changes need the artboard size (context.canvasWidth and context.canvasHeight).');
+  if (!(canvasWidth > 0 && canvasHeight > 0)) throw messageError(new TypeError(''), "errors.exportRequest.sizeChangesNeedTheArtboardSizeContextCanvaswidth", {});
   return {canvasWidth, canvasHeight};
 }
-const requireNumber = (context, key, who) => {if (!Number.isFinite(context[key])) throw new TypeError(`${who} needs context.${key}.`);};
+const requireNumber = (context, key, who) => {if (!Number.isFinite(context[key])) throw messageError(new TypeError(''), "errors.exportRequest.needsContext", {who: who, key: key});};
 
 /** Width and height for a size preset, as choosing it in today's Size select writes them. */
 export function presetSize(preset, {canvasWidth, canvasHeight}, lockRatio = true) {
   const choice = EXPORT_SIZE_PRESETS.find(option => option.id === preset);
-  if (!choice || choice.id === 'custom') throw new Error('Choose a size preset.');
+  if (!choice || choice.id === 'custom') throw messageError(new Error(''), "errors.exportRequest.chooseASizePreset", {});
   const short = Math.min(canvasWidth, canvasHeight), scale = (choice.shortSide ?? short) / short;
   const width = Math.round(canvasWidth * scale);
   let height = Math.round(canvasHeight * scale);
@@ -224,7 +228,7 @@ export function sizePresetChoices(context, {lockRatio = true, maxPixels = EXPORT
     const {width, height} = presetSize(preset.id, board, lockRatio);
     const fits = [width, height].every(side => side >= 1 && side <= MAX_SIDE) && width * height <= maxPixels;
     return {id: preset.id, label: `${preset.label} · ${size(width, height)}`, width, height, disabled: !fits,
-      reason: fits ? '' : `${size(width, height)} px is larger than an export allows (${MAX_SIDE.toLocaleString()} px a side, ${Math.round(maxPixels / 1e6)} million pixels).`};
+      reason: fits ? '' : interfaceText('exportRequest.valuePxIsLargerThanAnExportAllowsValue1', {value: size(width, height), value1: interfaceLocalization.formatNumber(MAX_SIDE), value2: Math.round(maxPixels / 1e6)})};
   });
 }
 
@@ -238,7 +242,7 @@ export function sizePresetChoices(context, {lockRatio = true, maxPixels = EXPORT
 export function buildExportRequest(fields = {}, context = {}) {
   const {canvasWidth = 1, canvasHeight = 1, totalFrames = 0} = context;
   const format = FORMATS.get(fields.format ?? formatForAction(fields.action));
-  if (!format) throw new TypeError(`Unknown export format: ${fields.format ?? fields.action}`);
+  if (!format) throw messageError(new TypeError(''), "errors.exportRequest.unknownExportFormat", {value: fields.format ?? fields.action});
   const lockRatio = typeof fields.lockRatio === 'boolean' ? fields.lockRatio : true;
   const typed = has(fields.width) || has(fields.height);
   const sizePreset = SIZE_PRESETS.has(fields.sizePreset) ? fields.sizePreset : typed ? 'custom' : 'original';
@@ -335,7 +339,7 @@ export const exportQuality = request => (request.format === 'jpeg-sequence' ? re
  */
 export function exportOptionsFromRequest(request, context = {}, {animation = true} = {}) {
   const {totalFrames, defaultDither = false, maxPixels = EXPORT_MAX_PIXELS} = context;
-  if (animation) requireNumber(context, 'totalFrames', 'An animation export');
+  if (animation) requireNumber(context, 'totalFrames', interfaceText("exportRequest.anAnimationExport"));
   const options = {
     width: request.width,
     height: request.height,
@@ -347,17 +351,17 @@ export function exportOptionsFromRequest(request, context = {}, {animation = tru
   };
   if (!Number.isInteger(options.width) || !Number.isInteger(options.height) || options.width < 1 || options.height < 1 ||
     options.width > MAX_SIDE || options.height > MAX_SIDE || options.width * options.height > maxPixels)
-    throw new Error(`Export size must be whole pixels, up to ${Math.round(maxPixels / 1e6)} million pixels per frame.`);
+    throw messageError(new Error(''), "errors.exportRequest.exportSizeMustBeWholePixelsUpTo", {value: Math.round(maxPixels / 1e6)});
   if (animation && (!Number.isInteger(options.start) || !Number.isInteger(options.end) || options.start < 0 || options.start >= options.end || options.end > totalFrames))
-    throw new Error('Choose a valid export frame range.');
-  if (!Number.isFinite(options.quality) || options.quality < 0.01 || options.quality > 1) throw new Error('Quality must be between 1 and 100 percent.');
+    throw messageError(new Error(''), "errors.exportRequest.chooseAValidExportFrameRange", {});
+  if (!Number.isFinite(options.quality) || options.quality < 0.01 || options.quality > 1) throw messageError(new Error(''), "errors.exportRequest.qualityMustBeBetween1And100Percent", {});
   return options;
 }
 
 const vfwNumber = (text, min, max, label, whole = false) => {
-  if (!String(text ?? '').trim()) throw new Error(`Enter ${label.toLowerCase()}.`);
+  if (!String(text ?? '').trim()) throw messageError(new Error(''), "errors.exportRequest.enter", {value: label.toLowerCase()});
   const value = Number(text);
-  if (!Number.isFinite(value) || value < min || value > max || (whole && !Number.isInteger(value))) throw new Error(`${label} must be ${whole ? 'a whole number ' : ''}from ${min} to ${max}.`);
+  if (!Number.isFinite(value) || value < min || value > max || (whole && !Number.isInteger(value))) throw messageError(new Error(''), "errors.exportRequest.mustBeFromTo", {label: label, value: whole ? interfaceText("exportRequest.aWholeNumber") : '', min: min, max: max});
   return value;
 };
 /**
@@ -367,11 +371,11 @@ const vfwNumber = (text, min, max, label, whole = false) => {
  * configuration dialog is open; `available` is false outside the Windows app.
  */
 export function vfwEncodeOptions(vfw, {codec = null, ready = true, available = true} = {}) {
-  if (!available) throw new Error('Installed Windows codecs are unavailable in this app.');
-  if (!codec?.supported || codec.id !== vfw?.codecId || !ready) throw new Error('Wait for the installed codec check or choose a compatible codec.');
-  return {codecId: codec.id, quality: codec.quality ? vfwNumber(vfw.quality, 0, 100, 'Quality') / 100 : 0.9,
-    keyframeEvery: codec.keyframes ? vfwNumber(vfw.keyframes, 0, 1000000, 'Keyframe interval', true) : 0,
-    bitrate: codec.dataRate ? Math.round(vfwNumber(vfw.bitrateMbps, 0, 200, 'Bitrate') * 1000000) : 0,
+  if (!available) throw messageError(new Error(''), "errors.exportRequest.installedWindowsCodecsAreUnavailableInThisApp", {});
+  if (!codec?.supported || codec.id !== vfw?.codecId || !ready) throw messageError(new Error(''), "errors.exportRequest.waitForTheInstalledCodecCheckOrChoose", {});
+  return {codecId: codec.id, quality: codec.quality ? vfwNumber(vfw.quality, 0, 100, interfaceText("exportRequest.quality")) / 100 : 0.9,
+    keyframeEvery: codec.keyframes ? vfwNumber(vfw.keyframes, 0, 1000000, interfaceText("exportRequest.keyframeInterval"), true) : 0,
+    bitrate: codec.dataRate ? Math.round(vfwNumber(vfw.bitrateMbps, 0, 200, interfaceText("exportRequest.bitrate")) * 1000000) : 0,
     configurationId: vfw.configurationId};
 }
 
@@ -383,10 +387,10 @@ const RESERVED_NAME = /^(?:con|prn|aux|nul|conin\$|conout\$|(?:com|lpt)[0-9¹²�
 /** Why a typed file name cannot be saved ('' when it can). null means the default name. */
 export function exportNameError(name) {
   if (name === null || name === undefined) return '';
-  if (typeof name !== 'string' || !name.trim()) return 'Enter a file name.';
-  if (ILLEGAL_NAME.test(name)) return 'File names cannot contain \\ / : * ? " < > |.';
-  if (/[. ]$/.test(name)) return 'File names cannot end with a dot or a space.';
-  if (RESERVED_NAME.test(name)) return 'Windows reserves this name. Choose another name.';
+  if (typeof name !== 'string' || !name.trim()) return interfaceText("exportRequest.enterAFileName");
+  if (ILLEGAL_NAME.test(name)) return interfaceText('exportRequest.illegalFileName');
+  if (/[. ]$/.test(name)) return interfaceText("exportRequest.fileNamesCannotEndWithADotOr");
+  if (RESERVED_NAME.test(name)) return interfaceText("exportRequest.windowsReservesThisNameChooseAnotherName");
   return '';
 }
 
@@ -414,8 +418,8 @@ export function exportFileName(request, context = {}) {
 /** Arguments of today's exportVideo(format). context adds {fps (required), provider, audioClips, vfw} to exportOptionsFromRequest's. */
 export function videoExportArguments(request, context = {}) {
   const format = request.format;
-  if (FORMATS.get(format)?.category !== 'video') throw new Error('Choose a video format.');
-  requireNumber(context, 'fps', 'A video export');
+  if (FORMATS.get(format)?.category !== 'video') throw messageError(new Error(''), "errors.exportRequest.chooseAVideoFormat", {});
+  requireNumber(context, 'fps', interfaceText("exportRequest.aVideoExport"));
   const vfw = format === 'vfw' ? vfwEncodeOptions(request.vfw, context.vfw) : null;
   const codec = codecOf(request);
   const nativeWebm = format === 'webm' && context.provider === 'FFmpeg';
@@ -429,7 +433,7 @@ export function videoExportArguments(request, context = {}) {
   const encoder = format === 'vfw' ? 'vfw' : webcodecs ? 'webcodecs' : 'native';
   const includeAudio = request.audio && (context.audioClips ?? []).some(clip => clip.start < options.end / fps && clip.start + clip.duration > options.start / fps);
   // Browser video takes sound when its encoder reported it (context.browserAudio); the desktop's FFmpeg always can.
-  if (includeAudio && encoder !== 'native' && !(encoder === 'webcodecs' && context.browserAudio)) throw new Error('Audio export requires a desktop FFmpeg video format. Choose MP4, WebM, AVI or WMV with FFmpeg, or turn off Include audio for a silent export.');
+  if (includeAudio && encoder !== 'native' && !(encoder === 'webcodecs' && context.browserAudio)) throw messageError(new Error(''), "errors.exportRequest.audioExportRequiresADesktopFfmpegVideoFormat", {});
   return {encoder, options, fps, ticks, codec, vfw, nativeWebm, videoQuality, includeAudio, extension, filename: exportFileName(request, context),
     encode: {format, codec, ...videoQuality, ...vfw, width: options.width, height: options.height, fps, totalFrames: ticks}};
 }
@@ -437,8 +441,8 @@ export function videoExportArguments(request, context = {}) {
 /** Arguments of today's exportImages(format) (GIF, APNG and the sequences). context adds {fps (required), loop}. */
 export function imageExportArguments(request, context = {}) {
   const format = request.format, info = FORMATS.get(format);
-  if (!info || info.single || !['animated', 'frames'].includes(info.category)) throw new Error('Choose an animated image or a sequence.');
-  requireNumber(context, 'fps', 'An image export');
+  if (!info || info.single || !['animated', 'frames'].includes(info.category)) throw messageError(new Error(''), "errors.exportRequest.chooseAnAnimatedImageOrASequence", {});
+  requireNumber(context, 'fps', interfaceText("exportRequest.anImageExport"));
   const options = exportOptionsFromRequest(request, context), fps = context.fps, ticks = options.end - options.start;
   const extension = isSequence(format) ? 'zip' : format === 'apng' ? 'png' : 'gif';
   const loop = request.repeat === null ? context.loop : request.repeat === 'forever';
@@ -449,7 +453,7 @@ export function imageExportArguments(request, context = {}) {
 
 /** Arguments of today's exportPNG() and exportSVGFrame(): the current frame. */
 export function frameExportArguments(request, context = {}) {
-  if (!FORMATS.get(request.format)?.single) throw new Error('Choose PNG or SVG frame.');
+  if (!FORMATS.get(request.format)?.single) throw messageError(new Error(''), "errors.exportRequest.choosePngOrSvgFrame", {});
   const options = exportOptionsFromRequest(request, context, {animation: false});
   return {options: request.format === 'svg' ? {...options, smoothing: 'edges'} : options, filename: exportFileName(request, context)};
 }
@@ -466,7 +470,7 @@ export function frameExportArguments(request, context = {}) {
  */
 export function exportJob(request, context = {}) {
   const info = FORMATS.get(request.format);
-  if (!info) throw new TypeError(`Unknown export format: ${request.format}`);
+  if (!info) throw messageError(new TypeError(''), "errors.exportRequest.unknownExportFormat2", {format: request.format});
   if (info.category === 'editable') return {kind: 'project', action: info.action, format: projectFormat(request, context), filename: exportFileName(request, context)};
   if (info.single) return {kind: 'frame', action: info.action, ...frameExportArguments(request, context)};
   if (info.category === 'video') return {kind: 'video', action: info.action, ...videoExportArguments(request, context)};
@@ -484,9 +488,9 @@ export function exportTransparency(format, {provider} = {}) {
   if (['png', 'apng', 'png-sequence', 'svg', 'svg-sequence'].includes(format)) return {transparent: true, alpha: 'full'};
   if (format === 'gif' || format === 'gif-sequence') return {transparent: true, alpha: 'binary'};
   if (format === 'webm' && provider === 'FFmpeg') return {transparent: true, alpha: 'full'};
-  if (format === 'webm') return {transparent: false, alpha: 'none', reason: 'Browser WebM exports do not preserve transparency.'};
-  if (format === 'jpeg-sequence') return {transparent: false, alpha: 'none', matte: 'white', reason: 'JPEG has no transparency: transparent areas become white.'};
-  return {transparent: false, alpha: 'none', matte: 'black', reason: `${info.short} has no transparency: transparent areas become black.`};
+  if (format === 'webm') return {transparent: false, alpha: 'none', reason: interfaceText("exportRequest.browserWebmExportsDoNotPreserveTransparency"), reasonKey: "exportRequest.browserWebmExportsDoNotPreserveTransparency"};
+  if (format === 'jpeg-sequence') return {transparent: false, alpha: 'none', matte: 'white', reason: interfaceText("exportRequest.jpegHasNoTransparencyTransparentAreasBecomeWhite"), reasonKey: "exportRequest.jpegHasNoTransparencyTransparentAreasBecomeWhite"};
+  return {transparent: false, alpha: 'none', matte: 'black', reason: interfaceText("exportRequest.hasNoTransparencyTransparentAreasBecomeBlack", {short: info.short}), reasonKey: "exportRequest.hasNoTransparencyTransparentAreasBecomeBlack", reasonParams: {short: info.short}};
 }
 
 /** The codec a format's select shows: the one asked for (else the default) while supported, else the first supported. */
@@ -505,8 +509,8 @@ export function resolveExportCodec(capability, requested) {
 export function exportCodecChoices(capability) {
   const codecs = capability?.codecs ?? [];
   return {disabled: !codecs.some(codec => codec.supported), options: codecs.map(codec => {
-    const label = codec.label ?? codec.id;
-    return {id: codec.id, label: `${label}${codec.lossless && !/lossless|uncompressed/i.test(label) ? ' · Lossless' : ''}`, disabled: !codec.supported};
+    const label = codec.labelKey ? interfaceText(codec.labelKey, codec.labelParams) : codec.label ?? codec.id;
+    return {id: codec.id, label: `${label}${codec.lossless && !/lossless|uncompressed/i.test(label) ? interfaceText("exportRequest.lossless") : ''}`, disabled: !codec.supported};
   })};
 }
 
@@ -524,18 +528,18 @@ export function exportFormatStates({capabilities = null, capabilityError = null,
   const states = new Map();
   for (const format of EXPORT_FORMATS) {
     const empty = totalFrames === 0 && !SINGLE_FRAME_ACTIONS.has(format.action);
-    const object = format.needsObject && !hasObject ? 'Select a figure to export it.'
-      : format.id === 'stykmov' && !movieclip ? 'Select a movieclip to export it.'
-        : format.id === 'stkz' && movieclip ? 'A movieclip exports as .stykmov.' : '';
+    const object = format.needsObject && !hasObject ? interfaceText("exportRequest.selectAFigureToExportIt")
+      : format.id === 'stykmov' && !movieclip ? interfaceText("exportRequest.selectAMovieclipToExportIt")
+        : format.id === 'stkz' && movieclip ? interfaceText("exportRequest.aMovieclipExportsAsStykmov") : '';
     // Before the probe returns only MP4, AVI and WMV wait; VFW waits for its codec check.
-    const waiting = ['mp4', 'avi', 'wmv'].includes(format.id) ? 'Checking video encoders…'
-      : format.id === 'vfw' && !vfw?.ready ? vfw?.reason || 'Checking installed codecs…' : '';
+    const waiting = ['mp4', 'avi', 'wmv'].includes(format.id) ? interfaceText("exportRequest.checkingVideoEncoders")
+      : format.id === 'vfw' && !vfw?.ready ? (vfw?.reasonKey ? interfaceText(vfw.reasonKey, vfw.reasonParams) : vfw?.reason) || interfaceText("exportRequest.checkingInstalledCodecs") : '';
     states.set(format.id, {id: format.id, label: format.label, listed: format.id === 'vfw' ? Boolean(vfw?.listed) : true,
-      disabled: empty || Boolean(object) || Boolean(waiting), reason: empty ? NO_FRAMES : object || waiting,
+      pending: !empty && !object && Boolean(waiting), disabled: empty || Boolean(object) || Boolean(waiting), reason: empty ? noFrames() : object || waiting,
       provider: undefined, codec: undefined, codecLabel: '', padded: null});
   }
   if (capabilityError) {
-    for (const id of ['webm', 'mp4', 'avi', 'wmv']) Object.assign(states.get(id), {disabled: true, reason: capabilityError.message ?? String(capabilityError)});
+    for (const id of ['webm', 'mp4', 'avi', 'wmv']) Object.assign(states.get(id), {pending: false, disabled: true, reason: capabilityError.message ?? String(capabilityError)});
     return states;
   }
   for (const format of capabilities?.formats ?? []) {
@@ -545,11 +549,11 @@ export function exportFormatStates({capabilities = null, capabilityError = null,
     const codec = FORMATS.get(format.id).codecKey ? resolveExportCodec(format, codecs[format.id]) : undefined;
     const selected = format.codecs?.find(option => option.id === codec);
     const encodedWidth = selected?.encodedWidth || format.encodedWidth, encodedHeight = selected?.encodedHeight || format.encodedHeight;
-    Object.assign(state, {provider: format.provider || '', codec, codecLabel: selected?.label || format.codec || '', ...(format.audio === true ? {audio: true} : {}),
+    Object.assign(state, {pending: false, provider: format.provider || '', codec, codecLabel: (selected?.labelKey ? interfaceText(selected.labelKey, selected.labelParams) : selected?.label) || format.codec || '', ...(format.audio === true ? {audio: true} : {}),
       // Today's "960 × 544 (padded)": the encoder pads odd sizes.
       padded: format.supported && encodedWidth && (encodedWidth !== capabilities.width || encodedHeight !== capabilities.height) ? {width: encodedWidth, height: encodedHeight} : null,
       disabled: !format.supported || selected?.supported === false || empty,
-      reason: (empty ? NO_FRAMES : '') || format.reason || (selected ? selected.notice : format.notice) || ''});
+      reason: (empty ? noFrames() : '') || (format.reasonKey ? interfaceText(format.reasonKey, format.reasonParams) : format.reason) || (selected ? selected.noticeKey ? interfaceText(selected.noticeKey, selected.noticeParams) : selected.notice : format.noticeKey ? interfaceText(format.noticeKey, format.noticeParams) : format.notice) || ''});
   }
   return states;
 }
@@ -564,7 +568,7 @@ const typeName = format => `${['video', 'animated'].includes(format.category) &&
 export function formatChoices(category, states) {
   const formats = EXPORT_CATEGORIES.find(entry => entry.id === category)?.formats ?? [];
   return formats.map(id => states.get(id)).filter(state => state?.listed).map(state => {
-    const suffix = state.disabled ? ' · Unavailable' : '';
+    const suffix = state.disabled ? interfaceText("exportRequest.unavailable") : '';
     return {id: state.id, label: `${state.label}${suffix}`, type: `${typeName(FORMATS.get(state.id))}${suffix}`, extension: FORMATS.get(state.id).extension,
       disabled: state.disabled, reason: state.reason};
   });
@@ -606,34 +610,34 @@ export function validateExportRequest(request, context = {}) {
   // Sound goes in through the desktop's FFmpeg, or through a browser encoder that reported it can encode it.
   const soundEncoder = format !== 'vfw' && (state?.provider === 'FFmpeg' ? audioSupported : state?.provider === 'WebCodecs' && state.audio === true);
   if (info.category === 'video' && request.audio && audioClips.some(clip => clip.start < last / fps && clip.start + clip.duration > (first - 1) / fps) &&
-    !soundEncoder) error = AUDIO_NEEDS_FFMPEG;
+    !soundEncoder) error = audioNeedsEncoder();
   const nameError = exportNameError(request.name);
   if (nameError) mark(['name'], nameError);
   if (!editable) {
     if (![w, h].every(n => Number.isInteger(n) && n >= 1 && n <= MAX_SIDE) || w * h > maxPixels)
-      mark(['width', 'height'], `Enter whole-pixel dimensions, up to ${Math.round(maxPixels / 1e6)} million pixels per frame.`);
+      mark(['width', 'height'], interfaceText('exportRequest.dimensionsLimit', {million: Math.round(maxPixels / 1e6)}));
     if (!single && (!Number.isInteger(first) || !Number.isInteger(last) || first < 1 || last < first || last > totalFrames))
-      mark(['from', 'to'], `Choose a frame range from 1 to ${totalFrames}. The last frame must be at or after the first.`);
+      mark(['from', 'to'], interfaceText('exportRequest.rangeLimit', {total: totalFrames}));
     if (!error && !vector) {
       try {exportMemoryPlan(w, h, request.smoothing, {deviceMemory});}
-      catch (failure) {mark(['width', 'height'], failure.message);}
+      catch (failure) {mark(['width', 'height'], errorText(failure));}
     }
-    if (format === 'jpeg-sequence' && !numberFieldValid(request.jpegQuality, 1, 100, 1)) mark(['jpegQuality'], 'Enter a value between 1 and 100.');
-    if (manual && !numberFieldValid(request.bitrateMbps, 0.1, 200)) mark(['bitrateMbps'], 'Enter a value between 0.1 and 200.');
+    if (format === 'jpeg-sequence' && !numberFieldValid(request.jpegQuality, 1, 100, 1)) mark(['jpegQuality'], interfaceText("exportRequest.enterAValueBetween1And100"));
+    if (manual && !numberFieldValid(request.bitrateMbps, 0.1, 200)) mark(['bitrateMbps'], interfaceText("exportRequest.enterAValueBetween01And200"));
     if (video) {
       try {videoQualityOptions({width: w, height: h, fps, preset: request.videoQuality, provider: state?.provider || 'FFmpeg', mode: manual ? 'manual' : 'auto', manualMbps: request.bitrateMbps, lossless});}
-      catch (failure) {mark(['bitrateMbps'], failure.message);}
+      catch (failure) {mark(['bitrateMbps'], errorText(failure));}
     }
-    if (format === 'gif' && fps > 50) error ||= 'GIF supports up to 50 fps. Choose Animated PNG or Video for this animation.';
+    if (format === 'gif' && fps > 50) error ||= interfaceText("exportRequest.gifSupportsUpTo50FpsChooseAnimated");
     const maxFrames = isSequence(format) ? 65534 : info.category === 'animated' ? 100000 : 1000000;
-    if (!single && count > maxFrames) mark(['from', 'to'], `This format supports up to ${maxFrames.toLocaleString()} frames. Choose a shorter range.`);
+    if (!single && count > maxFrames) mark(['from', 'to'], interfaceText('exportRequest.frameLimit', {limit:maxFrames}));
   }
   return {error, notice: error || state?.reason || '', invalid: [...invalid], canExport: Boolean(state?.listed) && !state.disabled && !error};
 }
 
 /** The primary's words: it names the format ("Export MP4"). */
 export function exportPrimaryLabel(request, {movieclip = false} = {}) {
-  return `Export ${request.format === 'stkz' && movieclip ? 'STYKMOV' : FORMATS.get(request.format).short}`;
+  return interfaceText('exportRequest.primaryLabel', {format: request.format === 'stkz' && movieclip ? 'STYKMOV' : FORMATS.get(request.format).short});
 }
 
 /**
@@ -647,8 +651,8 @@ export function exportEncodingSummary(request, states, {vfwCodec = null} = {}) {
   if (!usesVideoQuality(request.format)) return '';
   const state = states?.get(request.format), padded = state?.padded;
   const rate = isLossless(request) ? ''
-    : request.bitrateMode === 'manual' ? `${Number.isFinite(request.bitrateMbps) ? request.bitrateMbps.toLocaleString() : '—'} Mbit/s` : 'automatic bitrate';
-  return [state?.codecLabel, rate, padded ? `${size(padded.width, padded.height)} (padded)` : ''].filter(Boolean).join(' · ');
+    : request.bitrateMode === 'manual' ? `${Number.isFinite(request.bitrateMbps) ? interfaceLocalization.formatNumber(request.bitrateMbps) : '—'} Mbit/s` : interfaceText('exportRequest.automaticBitrate');
+  return [state?.codecLabel, rate, padded ? interfaceText('exportRequest.padded', {size:size(padded.width, padded.height)}) : ''].filter(Boolean).join(' · ');
 }
 
 /** Today's foot summary: output pixels, then the frame count, duration and rate (or the current frame). */
@@ -656,10 +660,10 @@ export function exportSummary(request, {fps = 24, currentFrame = 1} = {}) {
   const info = FORMATS.get(request.format);
   if (info.category === 'editable') return {size: '', time: ''};
   const {width: w, height: h} = request, count = info.single ? 1 : request.to - request.from + 1;
-  const pixels = `${Number.isFinite(w) ? w.toLocaleString() : '—'} × ${Number.isFinite(h) ? h.toLocaleString() : '—'} px`;
-  if (info.single) return {size: pixels, time: `Current frame · ${currentFrame}`};
-  const duration = count > 0 && count / fps < 10 ? `${Number((count / fps).toFixed(2))}s` : exportTime(count > 0 ? count / fps : NaN);
-  return {size: pixels, time: `${Number.isInteger(count) && count > 0 ? count.toLocaleString() : '—'} ${count === 1 ? 'frame' : 'frames'} · ${duration} at ${Number(fps.toFixed(2))} fps`};
+  const pixels = `${Number.isFinite(w) ? interfaceLocalization.formatNumber(w) : '—'} × ${Number.isFinite(h) ? interfaceLocalization.formatNumber(h) : '—'} px`;
+  if (info.single) return {size: pixels, time: interfaceText('exportRequest.currentFrameSummary', {frame:currentFrame})};
+  const duration = count > 0 && count / fps < 10 ? `${interfaceLocalization.formatNumber(count / fps, {maximumFractionDigits:2})}s` : exportTime(count > 0 ? count / fps : NaN);
+  return {size: pixels, time: interfaceText('exportRequest.frameSummary', {count:Number.isInteger(count)&&count>0?count:0, duration, fps:{format:'number',value:fps,options:{maximumFractionDigits:2}}})};
 }
 
 /**
@@ -669,12 +673,12 @@ export function exportSummary(request, {fps = 24, currentFrame = 1} = {}) {
  */
 export function exportPlayedFramesNote(storedFrames, totalFrames) {
   if (!Number.isInteger(storedFrames) || storedFrames === totalFrames) return '';
-  return `Export counts every frame that plays. Your ${storedFrames} timeline ${storedFrames === 1 ? 'frame plays' : 'frames play'} as ${totalFrames} with inbetweens.`;
+  return interfaceText('exportRequest.playedFramesNote', {count:storedFrames,total:totalFrames});
 }
 /** Today's working-pose note: an unsaved pose being added as a frame is not exported. frameDraft: editor.frameDraft. */
 export function exportWorkingPoseNote(frameDraft, totalFrames) {
   return frameDraft?.mode === 'add' && frameDraft.dirty && totalFrames > 0
-    ? 'Add the working pose as a frame to include it in animation exports. Your .styk project keeps the working pose.' : '';
+    ? interfaceText("exportRequest.addTheWorkingPoseAsAFrameTo") : '';
 }
 /** Today's "Use entire animation" (#export-all-frames): the patch it applies. */
 export const entireAnimationPatch = totalFrames => ({from: 1, to: totalFrames});

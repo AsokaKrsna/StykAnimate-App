@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {TILE,tileKey,assertTileCoordinates} from './drawing-tiles.mjs';
 
 /** Conservative quadratic coverage. Each midpoint curve is inside its three
@@ -7,9 +8,9 @@ export function strokeRegion(points,margin,{maxTiles=65536}={}){
   const result=new Map();
   for(let i=0;i<points.length;i++){
     const hull=points.slice(Math.max(0,i-2),i+1);
-    if(!hull.every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y))||!Number.isFinite(margin))throw new Error('Invalid stroke coordinates.');
+    if(!hull.every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y))||!Number.isFinite(margin))throw messageError(new Error(''), "errors.drawingStrokeRegion.invalidStrokeCoordinates", {});
     const y0=Math.floor((Math.min(...hull.map(p=>p.y))-margin)/TILE),y1=Math.floor((Math.max(...hull.map(p=>p.y))+margin)/TILE);
-    if(y1-y0>maxTiles)throw new Error('The stroke exceeds the drawing working memory limit.');
+    if(y1-y0>maxTiles)throw messageError(new Error(''), "errors.drawingController.theStrokeExceedsTheDrawingWorkingMemoryLimit", {});
     for(let ty=y0;ty<=y1;ty++){
       const lo=ty*TILE-margin,hi=(ty+1)*TILE+margin,xs=[];
       for(let j=0;j<hull.length;j++){
@@ -19,10 +20,10 @@ export function strokeRegion(points,margin,{maxTiles=65536}={}){
       }
       if(!xs.length)continue;
       const x0=Math.floor((Math.min(...xs)-margin)/TILE),x1=Math.floor((Math.max(...xs)+margin)/TILE);
-      if(x1-x0>maxTiles)throw new Error('The stroke exceeds the drawing working memory limit.');
+      if(x1-x0>maxTiles)throw messageError(new Error(''), "errors.drawingController.theStrokeExceedsTheDrawingWorkingMemoryLimit", {});
       for(let tx=x0;tx<=x1;tx++){
         assertTileCoordinates(tx,ty);result.set(tileKey(tx,ty),[tx,ty]);
-        if(result.size>maxTiles)throw new Error('The stroke exceeds the drawing working memory limit.');
+        if(result.size>maxTiles)throw messageError(new Error(''), "errors.drawingController.theStrokeExceedsTheDrawingWorkingMemoryLimit", {});
       }
     }
   }

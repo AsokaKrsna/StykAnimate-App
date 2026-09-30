@@ -1,3 +1,4 @@
+const { messageError } = require('./localization.cjs');
 "use strict";
 
 const fs = require("node:fs/promises");
@@ -24,7 +25,7 @@ const cleanName = (value) =>
     .slice(0, 240);
 const boundedInteger = (value, minimum, maximum, label) => {
   if (!Number.isInteger(value) || value < minimum || value > maximum)
-    throw new RangeError(`Invalid ${label}.`);
+    throw messageError(new RangeError(''), 'desktop.fontService.errors.invalidLabel', {label: label});
   return value;
 };
 
@@ -80,7 +81,7 @@ async function readRange(
     length > maxBytes ||
     offset > size - length
   )
-    throw new Error("Invalid installed-font table bounds.");
+    throw messageError(new Error(''), 'desktop.fontService.errors.invalidInstalledFontTableBounds', {});
   const buffer = Buffer.alloc(length);
   let completed = 0;
   while (completed < length) {
@@ -91,7 +92,7 @@ async function readRange(
       offset + completed,
     );
     if (!bytesRead)
-      throw new Error("The installed font changed while reading.");
+      throw messageError(new Error(''), 'desktop.fontService.errors.theInstalledFontChangedWhileReading', {});
     completed += bytesRead;
   }
   return buffer;
@@ -104,10 +105,10 @@ async function faceDirectory(handle, offset, size) {
     header.readUInt32BE(0) !== 0x10000 &&
     !["OTTO", "true", "typ1"].includes(signature)
   )
-    throw new Error("Unsupported font signature.");
+    throw messageError(new Error(''), 'desktop.fontService.errors.unsupportedFontSignature', {});
   const count = header.readUInt16BE(4);
   if (!count || count > MAX_TABLES)
-    throw new Error("Invalid installed-font table count.");
+    throw messageError(new Error(''), 'desktop.fontService.errors.invalidInstalledFontTableCount', {});
   const records = await readRange(handle, offset + 12, count * 16, size);
   const tables = [],
     tags = new Set();
@@ -127,7 +128,7 @@ async function faceDirectory(handle, offset, size) {
       table.length > MAX_FONT_BYTES ||
       !/^[\x20-\x7e]{4}$/.test(tag)
     )
-      throw new Error("Invalid installed-font table directory.");
+      throw messageError(new Error(''), 'desktop.fontService.errors.invalidInstalledFontTableDirectory', {});
     tags.add(tag);
     tables.push(table);
     outputSize += align4(table.length);
@@ -138,9 +139,9 @@ async function faceDirectory(handle, offset, size) {
     !tags.has("head") ||
     !((tags.has("glyf") && tags.has("loca")) || tags.has("CFF "))
   )
-    throw new Error("The installed font has no supported outlines.");
+    throw messageError(new Error(''), 'desktop.fontService.errors.theInstalledFontHasNoSupportedOutlines', {});
   if (outputSize > MAX_FONT_BYTES)
-    throw new Error("The installed font exceeds 32 MiB.");
+    throw messageError(new Error(''), 'desktop.fontService.errors.theInstalledFontExceeds32MiB', {});
   return {
     signature,
     tables,
@@ -233,7 +234,7 @@ async function standaloneFace(handle, entry, size) {
     tables.length * 16 +
     tables.reduce((total, table) => total + align4(table.length), 0);
   if (length > MAX_FONT_BYTES)
-    throw new Error("The installed font exceeds 32 MiB.");
+    throw messageError(new Error(''), 'desktop.fontService.errors.theInstalledFontExceeds32MiB', {});
   const output = Buffer.alloc(length),
     power = 2 ** Math.floor(Math.log2(tables.length));
   output.write(directory.signature, 0, 4, "latin1");
@@ -248,7 +249,7 @@ async function standaloneFace(handle, entry, size) {
       data = await readRange(handle, table.offset, table.length, size),
       record = 12 + index * 16;
     if (table.tag === "head") {
-      if (data.length < 12) throw new Error("Invalid font header.");
+      if (data.length < 12) throw messageError(new Error(''), 'desktop.fontService.errors.invalidFontHeader', {});
       data.writeUInt32BE(0, 8);
       headOffset = offset;
     }
@@ -281,7 +282,7 @@ class FontService {
         (root) => typeof root !== "string" || !path.isAbsolute(root),
       )
     )
-      throw new TypeError("Font directories must be trusted absolute paths.");
+      throw messageError(new TypeError(''), 'desktop.fontService.errors.fontDirectoriesMustBeTrustedAbsolutePaths', {});
     this.directories = [...directories];
     this.maxFonts = boundedInteger(maxFonts, 1, 10000, "font limit");
     this.maxDepth = boundedInteger(maxDepth, 0, 12, "font folder depth");
@@ -428,7 +429,7 @@ class FontService {
     try {
       const stat = await handle.stat();
       if (!stat.isFile() || stat.size < 12 || stat.size > MAX_CONTAINER_BYTES)
-        throw new Error("Invalid installed-font file size.");
+        throw messageError(new Error(''), 'desktop.fontService.errors.invalidInstalledFontFileSize', {});
       const header = await readRange(handle, 0, 12, stat.size),
         collection = header.toString("latin1", 0, 4) === "ttcf";
       let offsets = [0];
@@ -439,13 +440,13 @@ class FontService {
           !count ||
           count > MAX_FACES
         )
-          throw new Error("Invalid font collection header.");
+          throw messageError(new Error(''), 'desktop.fontService.errors.invalidFontCollectionHeader', {});
         const table = await readRange(handle, 12, count * 4, stat.size);
         offsets = Array.from({ length: count }, (_, i) =>
           table.readUInt32BE(i * 4),
         );
       } else if (stat.size > MAX_FONT_BYTES)
-        throw new Error("The font exceeds 32 MiB.");
+        throw messageError(new Error(''), 'desktop.fontService.errors.theFontExceeds32MiB', {});
       for (
         let face = 0;
         face < offsets.length && this.entries.size < this.maxFonts;
@@ -514,14 +515,14 @@ class FontService {
   }
   async readFont(id) {
     if (typeof id !== "string" || !/^font_[a-f0-9]{32}$/.test(id))
-      throw new TypeError("Choose an installed font from the font list.");
+      throw messageError(new TypeError(''), 'desktop.fontService.errors.chooseAnInstalledFontFromTheFontList', {});
     if (this.activeReads >= 8)
-      throw new Error("Too many installed fonts are being loaded.");
+      throw messageError(new Error(''), 'desktop.fontService.errors.tooManyInstalledFontsAreBeingLoaded', {});
     this.activeReads++;
     try {
       await this.listFonts();
       const entry = this.entries.get(id);
-      if (!entry) throw new Error("The installed font is unavailable.");
+      if (!entry) throw messageError(new Error(''), 'desktop.fontService.errors.theInstalledFontIsUnavailable', {});
       if (this.bytes.has(id)) {
         const data = this.bytes.get(id);
         this.bytes.delete(id);
@@ -548,7 +549,7 @@ class FontService {
       real !== entry.filename ||
       !this.roots.some((root) => inside(real, root))
     )
-      throw new Error("The installed font location changed.");
+      throw messageError(new Error(''), 'desktop.fontService.errors.theInstalledFontLocationChanged', {});
     const handle = await fs.open(
       real,
       constants.O_RDONLY | (constants.O_NOFOLLOW || 0),
@@ -564,15 +565,13 @@ class FontService {
         stat.ino !== before.ino ||
         stat.dev !== before.dev
       )
-        throw new Error(
-          "The installed font changed. Restart StykAnimate to refresh the font list.",
-        );
+        throw messageError(new Error(''), 'desktop.fontService.errors.theInstalledFontChangedRestartStykAnimateToRefreshTheFontList', {});
       data = entry.collection
         ? await standaloneFace(handle, entry, stat.size)
         : await readRange(handle, 0, stat.size, stat.size);
       const after = await handle.stat();
       if (after.size !== stat.size || after.mtimeMs !== stat.mtimeMs)
-        throw new Error("The installed font changed while reading.");
+        throw messageError(new Error(''), 'desktop.fontService.errors.theInstalledFontChangedWhileReading', {});
     } finally {
       await handle.close();
     }

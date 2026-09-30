@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Keep instance styles and authored keys attached to physical rig segments. */
 import {animationChannelId, validateAnimationDocument} from './animation-channels.mjs';
 import {nativeSegmentOpacity} from './animation-style.mjs';
@@ -89,7 +90,7 @@ function repairStyles(editor, before, figure, explicit, reversedGradients, chann
   const handles = new Set(figure.segments.map(segment => segment.segment_id)), changes = new Map();
   for (const segment of before.figure.segments) {
     const old = segment.segment_id, next = explicit.has(old) ? explicit.get(old) : handles.has(old) ? [old] : [];
-    if (!Array.isArray(next) || new Set(next).size !== next.length || next.some(id => !handles.has(id))) throw new Error('Invalid physical segment style mapping.');
+    if (!Array.isArray(next) || new Set(next).size !== next.length || next.some(id => !handles.has(id))) throw messageError(new Error(''), "errors.editorStyleTopology.invalidPhysicalSegmentStyleMapping", {});
     if (next.length !== 1 || next[0] !== old || reversedGradients.has(old)) changes.set(old, next);
   }
   if (!changes.size) return;
@@ -144,7 +145,7 @@ function repairStyles(editor, before, figure, explicit, reversedGradients, chann
     const old=emitted.get(value.id),specific=source.target.figureTypeId!==undefined;
     if(old){
       if(old.specific&&!specific)return;
-      if(old.specific===specific)throw new Error('Physical segment mapping conflicts with another animated segment.');
+      if(old.specific===specific)throw messageError(new Error(''), "errors.editorStyleTopology.physicalSegmentMappingConflictsWithAnotherAnimatedSegment", {});
       after.channels[old.index]=value;emitted.set(value.id,{index:old.index,specific});return;
     }
     emitted.set(value.id,{index:after.channels.length,specific});after.channels.push(value);
@@ -152,7 +153,7 @@ function repairStyles(editor, before, figure, explicit, reversedGradients, chann
   const freshKey = () => {
     usedIds ??= new Set(channels.flatMap(channel => channel.keys.map(key => key.id)));
     let id;
-    do { if (!Number.isSafeInteger(after.nextKeyId) || after.nextKeyId < 1) throw new Error('Animation key identity capacity exceeded.'); id=`key-${after.nextKeyId++}`; } while (usedIds.has(id));
+    do { if (!Number.isSafeInteger(after.nextKeyId) || after.nextKeyId < 1) throw messageError(new Error(''), "errors.cameraBakeAuthored.animationKeyIdentityCapacityExceeded", {}); id=`key-${after.nextKeyId++}`; } while (usedIds.has(id));
     usedIds.add(id);return id;
   };
   for (const channel of channels) {

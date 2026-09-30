@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** The large native tables stay in the worker while editable render metadata changes. */
 const retained = new Set(['keyframes', 'figure_types', 'backgrounds', '_stykSource']);
 const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
@@ -27,13 +28,13 @@ export function applyPlaybackPatch(report, patch) {
     Object.keys(patch.properties).some(key => retained.has(key)) || own(patch.properties._styk || {}, 'frameSources') ||
     !Array.isArray(patch.frames) || !Array.isArray(patch.sources) || typeof patch.hasFrameSources !== 'boolean' ||
     (own(patch, 'figureUpdates') && !Array.isArray(patch.figureUpdates)))
-    throw new Error('Invalid playback document patch.');
+    throw messageError(new Error(''), "errors.playbackPatch.invalidPlaybackDocumentPatch", {});
   for (const table of ['figure_types', 'backgrounds']) if (own(patch, table) && !Array.isArray(patch[table]))
-    throw new Error('Invalid render media table patch.');
+    throw messageError(new Error(''), "errors.playbackPatch.invalidRenderMediaTablePatch", {});
   const frameIndices = new Set(), sourceIds = new Set(), figureIndices = new Set();
   for (const entry of patch.frames) {
     if (!Number.isInteger(entry.index) || entry.index < 0 || entry.index >= report.keyframes.length || frameIndices.has(entry.index) || !Array.isArray(entry.frame?.objects))
-      throw new Error('Playback frame update targets are invalid.');
+      throw messageError(new Error(''), "errors.playbackPatch.playbackFrameUpdateTargetsAreInvalid", {});
     frameIndices.add(entry.index);
   }
   // Sparse figure replacements must keep identity: objects reference figures by
@@ -41,17 +42,17 @@ export function applyPlaybackPatch(report, patch) {
   for (const entry of patch.figureUpdates ?? []) {
     if (!Number.isInteger(entry.index) || entry.index < 0 || entry.index >= report.figure_types.length || figureIndices.has(entry.index) ||
       entry.figure?.figure_type_id !== report.figure_types[entry.index].figure_type_id)
-      throw new Error('Playback figure update targets are invalid.');
+      throw messageError(new Error(''), "errors.playbackPatch.playbackFigureUpdateTargetsAreInvalid", {});
     figureIndices.add(entry.index);
   }
   for (const entry of patch.sources) {
     if (!sourceId(entry.id) || sourceIds.has(entry.id) ||
       (entry.frame !== null && (!patch.hasFrameSources || !Array.isArray(entry.frame?.objects) || entry.frame._styk?.frameId !== entry.id)))
-      throw new Error('Playback retained-source update targets are invalid.');
+      throw messageError(new Error(''), "errors.playbackPatch.playbackRetainedSourceUpdateTargetsAreInvalid", {});
     sourceIds.add(entry.id);
   }
   if (patch.hasFrameSources && (!patch.properties._styk || typeof patch.properties._styk !== 'object'))
-    throw new Error('Playback retained sources require document metadata.');
+    throw messageError(new Error(''), "errors.playbackPatch.playbackRetainedSourcesRequireDocumentMetadata", {});
   const sources = report._styk?.frameSources || {};
   for (const entry of patch.sources) { if (entry.frame === null) delete sources[entry.id]; else sources[entry.id] = entry.frame; }
   for (const key of Object.keys(report)) if (!retained.has(key) && !own(patch.properties, key)) delete report[key];

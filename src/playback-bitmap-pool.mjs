@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Packet metadata is private; bitmap storage may be shared across frames.
  * Identity uses a 128-bit content hash of complete unquantized worker artwork,
  * crop and resolution; within one worker the registry also compares the full
@@ -24,12 +25,12 @@ export class PlaybackBitmapPool {
     return bytes;
   }
   acquire(packet){
-    if(this.packets.has(packet))throw new Error('Playback packet already owns bitmap references.');
+    if(this.packets.has(packet))throw messageError(new Error(''), "errors.playbackBitmapPool.playbackPacketAlreadyOwnsBitmapReferences", {});
     const sizes=new Map();
     for(const entry of packet.compatibility||[])if(entry.bitmap){
       const key=bitmapKey(packet,entry),bytes=bitmapBytes(entry),existing=this.resources.get(key);
       const dimensions=`${entry.bitmap.width}:${entry.bitmap.height}`;
-      if(!Number.isFinite(bytes)||bytes<=0||(existing&&existing.dimensions!==dimensions)||(sizes.has(key)&&sizes.get(key)!==dimensions))throw new Error('Shared playback artwork has inconsistent dimensions.');
+      if(!Number.isFinite(bytes)||bytes<=0||(existing&&existing.dimensions!==dimensions)||(sizes.has(key)&&sizes.get(key)!==dimensions))throw messageError(new Error(''), "errors.playbackBitmapPool.sharedPlaybackArtworkHasInconsistentDimensions", {});
       sizes.set(key,dimensions);
     }
     let base=packet.byteLength;

@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {DocumentExporter} from './document-export.mjs';
 import {ImportClient} from './import-client.mjs';
 import {readNativeClipboard, writeNativeBlob} from './native-files.mjs';
@@ -38,7 +39,7 @@ export function installNativeFrameClipboard(editor, desktop, {onError = () => {}
       const result = await importer.importFile(new File([saved.blob], 'Copied keyframes.styk'));
       if (disposed || initial !== intentGeneration || editor.hasFrameClipboard) return false;
       if (editor.restoreFrameClipboardAsync) await editor.restoreFrameClipboardAsync(result.document,{checkCurrent:()=>{
-        if(disposed||initial!==intentGeneration||editor.hasFrameClipboard)throw new DOMException('Clipboard restoration superseded.','AbortError');
+        if(disposed||initial!==intentGeneration||editor.hasFrameClipboard)throw messageError(new DOMException('', 'AbortError'), "errors.frameClipboardStorage.clipboardRestorationSuperseded", {});
       }});
       else editor.restoreFrameClipboard(result.document);
       onRestored(editor.clipboardFrameCount);

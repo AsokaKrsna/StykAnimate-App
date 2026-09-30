@@ -1,10 +1,12 @@
+import {restoreMessageError, messageError} from './localized-error.mjs';
+
 import {drawingBarrier} from './drawing-resources.mjs';
 import {layerAppearance,thumbnailVisualChange} from './thumbnail-validity.mjs';
 import { documentChunks } from "./document-transport.mjs";
 import {playbackProperties, retainedSourceChanges} from './playback-patch.mjs';
 
 const abortError = () =>
-  new DOMException("Thumbnail superseded.", "AbortError");
+  messageError(new DOMException('', "AbortError"), "errors.thumbnailRenderer.thumbnailSuperseded", {});
 /** One worker, one native frame in flight, byte-bounded document snapshots.
  * The filmstrip owns its small bitmap LRU; this adapter never duplicates it.
  */
@@ -67,9 +69,7 @@ export class ThumbnailRenderer {
   _worker() {
     if (this.worker) return this.worker;
     if (typeof Worker === "undefined" || typeof OffscreenCanvas === "undefined")
-      throw new Error(
-        "Frame previews require a browser with worker canvas support.",
-      );
+      throw messageError(new Error(''), "errors.thumbnailRenderer.framePreviewsRequireABrowserWithWorkerCanvas", {});
     const worker = (this.worker = new Worker(
       new URL("./thumbnail-worker.mjs", import.meta.url),
       { type: "module", name: "StykAnimate frame thumbnails" },
@@ -86,7 +86,7 @@ export class ThumbnailRenderer {
       clearTimeout(request.timer);
       if (message.ok) request.resolve(message);
       else {
-        const error = new Error(message.error || "Frame preview failed.");
+        const error = restoreMessageError((message.error ? new Error(message.error) : messageError(new Error(''), "errors.thumbnailRenderer.framePreviewFailed")), message);
         error.name = message.name || "Error";
         request.reject(error);
       }
@@ -109,10 +109,10 @@ export class ThumbnailRenderer {
     };
     worker.addEventListener("error", (event) => {
       event.preventDefault();
-      fail(new Error(event.message || "Frame preview worker stopped."));
+      fail((event.message ? new Error(event.message) : messageError(new Error(''), "errors.thumbnailRenderer.framePreviewWorkerStopped")));
     });
     worker.addEventListener("messageerror", () =>
-      fail(new Error("Frame preview could not be transferred.")),
+      fail(messageError(new Error(''), "errors.thumbnailRenderer.framePreviewCouldNotBeTransferred", {})),
     );
     return worker;
   }
@@ -211,7 +211,7 @@ export class ThumbnailRenderer {
         this.loadedVersion = 0;
         this.snapshot = null;
         this._clearMirror();
-        reject(new Error("Frame preview timed out."));
+        reject(messageError(new Error(''), "errors.thumbnailRenderer.framePreviewTimedOut", {}));
       }, 60000);
       this.pending.set(id, {
         resolve: finish(resolve),

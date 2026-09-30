@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 // Bounded, content-free diagnostic contract. Kept separate from legacy histograms.
 export const PERFORMANCE_BOUNDS = Object.freeze([1,2,4,8,12,16,20,25,33,40,50,66,80,100,125,150,200,250,350,500,750,1000,2000,5000,15000,60000,300000,3600000]);
 export const RESOURCE_BOUNDS = Object.freeze([1,4,16,64,128,256,512,768,1024,1536,2048,3072,4096,8192,16384,65536,1e9]);
@@ -27,7 +28,7 @@ const priority=row=>PERFORMANCE_METRICS[row.metric].family==='recovery'?100:PERF
 const validNumber=(n,max=1e9)=>Number.isFinite(n)&&n>=0&&n<=max;
 const integer=(n,max=1e9)=>Number.isSafeInteger(n)&&validNumber(n,max);
 const sameFields=(a,b)=>b&&Object.keys(a).length===Object.keys(b).length&&Object.entries(a).every(([key,value])=>b[key]===value);
-const fail=()=>{throw new TypeError('Invalid performance diagnostics');};
+const fail=()=>{throw messageError(new TypeError(''), "errors.telemetryPerformanceSchema.invalidPerformanceDiagnostics", {});};
 export const performanceBounds=metric=>PERFORMANCE_METRICS[metric]?.unit==='ms'?PERFORMANCE_BOUNDS:RESOURCE_BOUNDS;
 export function performanceContext(value={}) {
   const result=Object.fromEntries(Object.entries(PERFORMANCE_CONTEXT).map(([key,choices])=>[key,choices.includes(value[key])?value[key]:choices[0]]));

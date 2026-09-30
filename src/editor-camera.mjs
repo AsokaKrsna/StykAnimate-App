@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {inheritedKeyEasing} from './keyframe-easing.mjs';
 /** Native camera commands and neighboring-pose alignment.
  * Camera-only edits snapshot four values per frame, never the figure arrays.
@@ -15,7 +16,7 @@ const fields = ['x', 'y', 'scale', 'angle_rad'];
 const defaults = () => ({is_default: true, x: 0, y: 0, scale: 1, angle_rad: 0});
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const finite = (value, label) => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${label} must be finite.`);
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw messageError(new Error(''), "errors.editorCamera.mustBeFinite", {label: label});
   return value;
 };
 
@@ -27,16 +28,16 @@ export function cameraValues(camera) {
 function checked(camera) {
   for (const field of fields) finite(camera[field], `Camera ${field}`);
   for (const field of ['x', 'y', 'scale']) if (!Number.isFinite(Math.fround(camera[field])))
-    throw new Error(`Camera ${field} exceeds the native range.`);
-  if (camera.scale <= 0) throw new Error('Camera scale must be positive.');
+    throw messageError(new Error(''), "errors.editorCamera.cameraExceedsTheNativeRange", {field: field});
+  if (camera.scale <= 0) throw messageError(new Error(''), "errors.editorCamera.cameraScaleMustBePositive", {});
   inverseCameraScale(camera);
   return {...camera, is_default: camera.x === 0 && camera.y === 0 && camera.scale === 1 && camera.angle_rad === 0};
 }
 
 function checkedPatch(patch) {
-  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('Provide camera position values.');
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw messageError(new Error(''), "errors.editorCamera.provideCameraPositionValues", {});
   for (const key of Object.keys(patch)) {
-    if (!fields.includes(key)) throw new Error(`Unknown camera value: ${key}.`);
+    if (!fields.includes(key)) throw messageError(new Error(''), "errors.editorCamera.unknownCameraValue", {key: key});
     finite(patch[key], `Camera ${key}`);
   }
   return patch;
@@ -151,7 +152,7 @@ function boundsOfGeometry(entry) {
 }
 
 function neighborIndex(editor, direction) {
-  if (direction !== -1 && direction !== 1) throw new Error('Choose the previous (-1) or next (1) frame.');
+  if (direction !== -1 && direction !== 1) throw messageError(new Error(''), "errors.editorCamera.chooseThePrevious1OrNext1Frame", {});
   const index = editor.frameIndex + direction;
   return index >= 0 && index < editor.report.keyframes.length ? index : -1;
 }
@@ -231,7 +232,7 @@ export const editorCameraMethods = {
     if (!this._drag?.camera && !this.beginCameraDrag()) return false;
     const drag = this._drag;
     if (drag.documentToken !== this._documentToken || drag.index !== this.frameIndex) {
-      this.cancelCameraDrag(); throw new Error('The document or frame changed during the camera gesture.');
+      this.cancelCameraDrag(); throw messageError(new Error(''), "errors.editorCamera.theDocumentOrFrameChangedDuringTheCamera", {});
     }
     try {
       const baseline = drag.cameraBaseline ?? drag.cameraBefore;
@@ -282,8 +283,8 @@ export const editorCameraMethods = {
 
   /** Follow the bounding box of the same selected UIDs in each selected key. */
   centerCamera(axis = 'both', indices = [this.frameIndex], {boundsOf = boundsOfGeometry} = {}) {
-    if (!['both', 'x', 'y'].includes(axis)) throw new Error('Camera centering axis must be both, x or y.');
-    if (typeof boundsOf !== 'function') throw new Error('Provide a figure bounds function.');
+    if (!['both', 'x', 'y'].includes(axis)) throw messageError(new Error(''), "errors.editorCamera.cameraCenteringAxisMustBeBothXOr", {});
+    if (typeof boundsOf !== 'function') throw messageError(new Error(''), "errors.editorCamera.provideAFigureBoundsFunction", {});
     const ids = new Set(this.selectedUids);
     if (!ids.size) return 0;
     return cameraEdit(this, 'Center camera on figures', indices, (camera, index, tick) => {
@@ -303,7 +304,7 @@ export const editorCameraMethods = {
   /** View x/y are local canvas pixels, scale is CSS pixels per world pixel. */
   alignCameraToView({x, y, scale, width, height}, indices = [this.frameIndex]) {
     for (const [key, value] of Object.entries({x, y, scale, width, height})) finite(value, `Canvas ${key}`);
-    if (scale <= 0 || width <= 0 || height <= 0) throw new Error('Canvas dimensions and zoom must be positive.');
+    if (scale <= 0 || width <= 0 || height <= 0) throw messageError(new Error(''), "errors.editorCamera.canvasDimensionsAndZoomMustBePositive", {});
     const w = this.report.canvas_width, h = this.report.canvas_height;
     return cameraEdit(this, 'Align camera with canvas', indices, camera => ({...camera,
       x: (width / 2 - x) / scale - w / 2, y: (height / 2 - y) / scale - h / 2,
@@ -373,7 +374,7 @@ export const editorCameraMethods = {
   },
 
   locateCamera(direction = -1, channel = 'position', indices = [this.frameIndex]) {
-    if (!['position', 'rotation', 'scale', 'pose'].includes(channel)) throw new Error('Choose camera position, rotation, scale or pose.');
+    if (!['position', 'rotation', 'scale', 'pose'].includes(channel)) throw messageError(new Error(''), "errors.editorCamera.chooseCameraPositionRotationScaleOrPose", {});
     const index = neighborIndex(this, direction); if (index < 0) return 0;
     const camera = cameraValues(composedFrame(this, index).camera);
     const keys = channel === 'position' ? ['x', 'y'] : channel === 'rotation' ? ['angle_rad'] : channel === 'scale' ? ['scale'] : fields;

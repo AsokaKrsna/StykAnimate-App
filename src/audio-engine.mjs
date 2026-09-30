@@ -1,5 +1,7 @@
+import {restoreMessageError, messageError} from './localized-error.mjs';
+
 import {AUDIO_RATE, AUDIO_CHUNK_BYTES, MAX_AUDIO_FILE_BYTES, audibleClips, audioState, freshAudioId, validateAudioAssetSteps} from './audio-model.mjs';
-const abort = () => new DOMException('Audio operation cancelled.', 'AbortError');
+const abort = () => messageError(new DOMException('', 'AbortError'), "errors.audioEngine.audioOperationCancelled", {});
 const check = signal => { if (signal?.aborted) throw abort(); };
 const CACHE_BYTES = 768 * 1024 * 1024;
 
@@ -13,12 +15,12 @@ export class AudioEngine {
     if (this.disposed) return Promise.reject(abort());
     if (!this.worker) {
       this.worker = new Worker(new URL('./audio-worker.mjs', import.meta.url), {type: 'module', name: 'StykAnimate audio'});
-      this.worker.onmessage = ({data}) => { const request = this.pending.get(data.id); if (!request) return; this.pending.delete(data.id); clearTimeout(request.timer); data.error ? request.reject(new Error(data.error)) : request.resolve(data.result); };
-      this.worker.onerror = event => { event.preventDefault(); this.failWorker(new Error(event.message || 'The audio worker stopped.')); };
-      this.worker.onmessageerror = () => this.failWorker(new Error('Audio could not be transferred.'));
+      this.worker.onmessage = ({data}) => { const request = this.pending.get(data.id); if (!request) return; this.pending.delete(data.id); clearTimeout(request.timer); data.error ? request.reject(restoreMessageError(new Error(data.error), data)) : request.resolve(data.result); };
+      this.worker.onerror = event => { event.preventDefault(); this.failWorker((event.message ? new Error(event.message) : messageError(new Error(''), "errors.audioEngine.theAudioWorkerStopped"))); };
+      this.worker.onmessageerror = () => this.failWorker(messageError(new Error(''), "errors.audioEngine.audioCouldNotBeTransferred", {}));
     }
     return new Promise((resolve, reject) => {
-      const id = ++this.sequence, timer = setTimeout(() => this.failWorker(new Error('Audio preparation timed out.')), 120000);
+      const id = ++this.sequence, timer = setTimeout(() => this.failWorker(messageError(new Error(''), "errors.audioEngine.audioPreparationTimedOut", {})), 120000);
       this.pending.set(id, {resolve, reject, timer});
       try { this.worker.postMessage({id, operation, ...fields}, transfers); } catch (error) { clearTimeout(timer); this.pending.delete(id); reject(error); }
     });
@@ -39,31 +41,31 @@ export class AudioEngine {
         const transfer = await this.desktop.beginAudioImport({size: blob.size}); token = transfer.token; check(signal);
         for (let offset = 0; offset < blob.size; offset += AUDIO_CHUNK_BYTES) { check(signal); await this.desktop.writeAudioImport(token, await blob.slice(offset, offset + AUDIO_CHUNK_BYTES).arrayBuffer()); }
         const output = await this.desktop.finishAudioImport(token); check(signal); let size = 0;
-        for (;;) { const chunk = await this.desktop.readAudioImport(token); check(signal); size += chunk.bytes.byteLength; if (size > output.size || !chunk.bytes.byteLength && !chunk.done) throw new Error('Invalid decoded audio stream.'); parts.push(new Blob([chunk.bytes])); if (chunk.done) break; }
-        if (size !== output.size) throw new Error('Decoded audio is incomplete.'); token = null;
+        for (;;) { const chunk = await this.desktop.readAudioImport(token); check(signal); size += chunk.bytes.byteLength; if (size > output.size || !chunk.bytes.byteLength && !chunk.done) throw messageError(new Error(''), "errors.audioEngine.invalidDecodedAudioStream", {}); parts.push(new Blob([chunk.bytes])); if (chunk.done) break; }
+        if (size !== output.size) throw messageError(new Error(''), "errors.audioEngine.decodedAudioIsIncomplete", {}); token = null;
         return new Blob(parts, {type: 'audio/wav'});
       } finally { signal?.removeEventListener('abort', cancel); if (token) await this.desktop.cancelAudioImport(token).catch(() => {}); }
     }
     // Browser fallback is explicitly bounded before full decoding. Desktop
     // handles long compressed sources through FFmpeg and temporary files.
-    if (blob.size > 8 * 1024 * 1024) throw new Error('Use the desktop app for compressed recordings larger than 8 MiB, or import a WAV file.');
+    if (blob.size > 8 * 1024 * 1024) throw messageError(new Error(''), "errors.audioEngine.useTheDesktopAppForCompressedRecordingsLarger", {});
     const url = URL.createObjectURL(blob), media = new Audio(); let duration;
     try {
       duration = await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('Audio metadata could not be read.')), 10000);
+        const timer = setTimeout(() => reject(messageError(new Error(''), "errors.audioEngine.audioMetadataCouldNotBeRead", {})), 10000);
         media.onloadedmetadata = () => { clearTimeout(timer); resolve(media.duration); };
-        media.onerror = () => { clearTimeout(timer); reject(new Error('This audio format is not supported by this browser.')); }; media.src = url;
+        media.onerror = () => { clearTimeout(timer); reject(messageError(new Error(''), "errors.audioEngine.thisAudioFormatIsNotSupportedByThis", {})); }; media.src = url;
       });
     } finally { media.removeAttribute('src'); media.load(); URL.revokeObjectURL(url); }
-    if (!Number.isFinite(duration) || duration > 120) throw new Error('Use the desktop app for compressed recordings longer than two minutes, or import a WAV file.');
+    if (!Number.isFinite(duration) || duration > 120) throw messageError(new Error(''), "errors.audioEngine.useTheDesktopAppForCompressedRecordingsLonger", {});
     check(signal); const context = new OfflineAudioContext(2, 1, AUDIO_RATE);
     const buffer = await context.decodeAudioData(await blob.arrayBuffer()); check(signal);
-    if (buffer.length * buffer.numberOfChannels * 4 > 64 * 1024 * 1024) throw new Error('Decoded audio exceeds the browser memory limit.');
+    if (buffer.length * buffer.numberOfChannels * 4 > 64 * 1024 * 1024) throw messageError(new Error(''), "errors.audioEngine.decodedAudioExceedsTheBrowserMemoryLimit", {});
     const channels = Array.from({length: Math.min(2, buffer.numberOfChannels)}, (_, index) => buffer.getChannelData(index));
     return this.request('wave', {channels, rate: buffer.sampleRate}, channels.map(channel => channel.buffer));
   }
   async import(file, {signal, onProgress = () => {}} = {}) {
-    if (!(file instanceof Blob) || !file.size || file.size > MAX_AUDIO_FILE_BYTES) throw new Error('Choose an audio recording up to 32 MiB.');
+    if (!(file instanceof Blob) || !file.size || file.size > MAX_AUDIO_FILE_BYTES) throw messageError(new Error(''), "errors.audioEngine.chooseAnAudioRecordingUpTo32Mib", {});
     const key = freshAudioId('sound'), cancel=()=>this.worker?.postMessage({operation:'cancel-import',key});
     signal?.addEventListener('abort',cancel,{once:true});
     try {
@@ -79,7 +81,7 @@ export class AudioEngine {
   async evict(keep) {
     let bytes = [...this.sources.values()].reduce((n, source) => n + source.size, 0);
     for (const [id, source] of this.sources) if (!keep.has(id) && bytes > CACHE_BYTES) { this.sources.delete(id); bytes -= source.size; }
-    if (bytes > CACHE_BYTES) { this.sources.clear(); await this.request('release', {ids:[]}); throw new Error('The active audio mix exceeds the 768 MiB decoded source cache. Use shorter recordings.'); }
+    if (bytes > CACHE_BYTES) { this.sources.clear(); await this.request('release', {ids:[]}); throw messageError(new Error(''), "errors.audioEngine.theActiveAudioMixExceedsThe768Mib", {}); }
     await this.request('release', {ids: [...this.sources.keys()]});
   }
   prepare(report, {start = 0, end = Infinity, signal} = {}) {
@@ -94,7 +96,7 @@ export class AudioEngine {
         const original = await this.request('embedded-end', {key: id}); check(signal);
         const blob = await this.decode(original, signal); check(signal);
         const metadata = await this.request('source', {key: id, blob});
-        if (Math.abs(metadata.duration - asset.duration) > 1 / 100) throw new Error(`The decoded duration of ${asset.name} has changed.`);
+        if (Math.abs(metadata.duration - asset.duration) > 1 / 100) throw messageError(new Error(''), "errors.audioEngine.theDecodedDurationOfHasChanged", {name: asset.name});
         this.sources.set(id, {asset, size: blob.size}); await this.evict(needed);
       }
       check(signal); await this.request('clips', {clips}); this.hasAudio = clips.length > 0; return this.hasAudio;
@@ -131,7 +133,7 @@ export class AudioEngine {
         const start = this.nextSample, frames = Math.min(12000, Math.round(this.end * AUDIO_RATE) - start);
         const pcm = await this.request('mix', {start, frames}); if (generation !== this.generation || !this.anchor) break;
         const clock = this.anchor.clock + start / AUDIO_RATE - this.anchor.time;
-        if (clock < this.context.currentTime) { this.stop(); this.onError(new Error('Audio preparation fell behind. Playback paused; try again after preparation finishes.')); break; }
+        if (clock < this.context.currentTime) { this.stop(); this.onError(messageError(new Error(''), "errors.audioEngine.audioPreparationFellBehindPlaybackPausedTryAgain", {})); break; }
         this.schedule(pcm);
       }
       if(this.anchor&&this.nextSample>=Math.round(this.end*AUDIO_RATE))clearInterval(this.timer);

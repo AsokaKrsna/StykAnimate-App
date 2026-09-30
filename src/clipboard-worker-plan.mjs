@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {Editor} from './editor.mjs';
 import {captureOwnedNativeClipboard} from './editor-frame-clipboard.mjs';
 
@@ -11,13 +12,13 @@ class PlanningEditor extends Editor {
 function validateAssetTableSummary(value,projected,key){
   if(!value||!Number.isInteger(value.count)||value.count<0||value.count>65535||!Array.isArray(value.ids)||value.ids.length!==value.count||
     value.ids.some(id=>!Number.isInteger(id)||(key==='background_id'&&id<1))||new Set(value.ids).size!==value.ids.length||
-    !Array.isArray(value.matches)||value.matches.length>65535)throw new Error('Invalid clipboard asset reservation.');
+    !Array.isArray(value.matches)||value.matches.length>65535)throw messageError(new Error(''), "errors.clipboardWorkerPlan.invalidClipboardAssetReservation", {});
   const occupied=new Set(value.ids),source=new Set(),matched=new Set();
   for(const row of value.matches){
-    if(!Array.isArray(row)||row.length!==2||!Number.isInteger(row[0])||source.has(row[0])||!occupied.has(row[1]))throw new Error('Invalid clipboard asset match.');
+    if(!Array.isArray(row)||row.length!==2||!Number.isInteger(row[0])||source.has(row[0])||!occupied.has(row[1]))throw messageError(new Error(''), "errors.clipboardWorkerPlan.invalidClipboardAssetMatch", {});
     source.add(row[0]);matched.add(row[1]);
   }
-  if(projected.length!==matched.size||projected.some(value=>!matched.has(value[key])))throw new Error('Invalid projected clipboard assets.');
+  if(projected.length!==matched.size||projected.some(value=>!matched.has(value[key])))throw messageError(new Error(''), "errors.clipboardWorkerPlan.invalidProjectedClipboardAssets", {});
 }
 
 export function restoreClipboardPlanningState(editor,state={}) {
@@ -29,7 +30,7 @@ export function restoreClipboardPlanningState(editor,state={}) {
     const summary=state.destinationSummary;
     if(!Number.isSafeInteger(summary.objectCount)||summary.objectCount<0||summary.objectCount>2000000||!Array.isArray(summary.uidCounts)||summary.uidCounts.length>2000000||
       summary.uidCounts.some(row=>!Array.isArray(row)||row.length!==2||!Number.isInteger(row[0])||row[0]<0||row[0]>0xffffffff||!Number.isSafeInteger(row[1])||row[1]<1))
-      throw new Error('Invalid native clipboard destination summary.');
+      throw messageError(new Error(''), "errors.clipboardWorkerPlan.invalidNativeClipboardDestinationSummary", {});
     editor._clipboardDestinationSummary=summary;editor._layerUidCounts=new Map(summary.uidCounts);editor._layerSeenUids=new Set(editor._layerUidCounts.keys());
     if(summary.assets){
       validateAssetTableSummary(summary.assets.figures,editor.report.figure_types,'figure_type_id');
@@ -48,7 +49,7 @@ export function restoreClipboardPlanningState(editor,state={}) {
 }
 
 export async function runClipboardWorkerRequest({report,clipboard,state,request},{onProgress=()=>{}}={}) {
-  if(!request||!['copy','paste','cut'].includes(request.operation))throw new Error('Choose a clipboard operation.');
+  if(!request||!['copy','paste','cut'].includes(request.operation))throw messageError(new Error(''), "errors.clipboardWorkerPlan.chooseAClipboardOperation", {});
   const indices=state?.indices??request.indices;
   const timings={},started=performance.now();
   onProgress({phase:'validating'});
@@ -57,10 +58,10 @@ export async function runClipboardWorkerRequest({report,clipboard,state,request}
   restoreClipboardPlanningState(editor,state);
   if(clipboard){await editor.restoreFrameClipboardAsync(clipboard,{yieldControl:()=>Promise.resolve()});editor._frameClipboard._stykClipboard.documentToken=request.sameDocument?editor._documentToken:null;}
   if(state?.destinationSummary?.assets){
-    if(!request.sparseNativePaste||clipboard?.version!==editor.report.version)throw new Error('Invalid clipboard asset projection mode.');
+    if(!request.sparseNativePaste||clipboard?.version!==editor.report.version)throw messageError(new Error(''), "errors.clipboardWorkerPlan.invalidClipboardAssetProjectionMode", {});
     for(const [name,key] of [['figures','figure_type_id'],['backgrounds','background_id']]){
       const values=clipboard[name==='figures'?'figure_types':'backgrounds']??[],ids=new Set(values.map(value=>value[key]));
-      if(state.destinationSummary.assets[name].matches.some(([id])=>!ids.has(id)))throw new Error('Unknown copied asset match.');
+      if(state.destinationSummary.assets[name].matches.some(([id])=>!ids.has(id)))throw messageError(new Error(''), "errors.clipboardWorkerPlan.unknownCopiedAssetMatch", {});
     }
   }
   // Commit only this isolated preview; the visible gesture is untouched until
@@ -84,7 +85,7 @@ export async function runClipboardWorkerRequest({report,clipboard,state,request}
     const command=editor._undo.at(-1);
     if(request.operation!=='paste'||!state.destinationSummary||editor.animationChannels.length||state.frameDraftEnabled||state.drag||
       command?.kind!=='splice'||command.layerAnimationPatch||command.frameSourceChanges||!command.clipboardAssets)
-      throw new Error('Native clipboard planning did not return a sparse paste.');
+      throw messageError(new Error(''), "errors.clipboardWorkerPlan.nativeClipboardPlanningDidNotReturnASparse", {});
     sparsePaste={index:command.index,frames:command.after,assets:command.clipboardAssets,afterSelection:editor._selectionState(),
       nextFrameIdentity:editor._nextFrameIdentity,nextUid:editor._nextUid};
   }

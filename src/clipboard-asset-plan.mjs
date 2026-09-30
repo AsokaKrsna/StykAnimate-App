@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Exact clipboard asset matching, without serializing unrelated libraries. */
 import {yieldLoadTask} from './editor-load.mjs';
 
@@ -52,7 +53,7 @@ function* matchTable(source,target,key){
 
 export async function prepareClipboardAssetProjection(clipboard,report,{checkCurrent=()=>{},signal,yieldControl=yieldLoadTask,onProgress,onTiming}={}){
   const started=performance.now(),timing={cpuMs:0,maxTaskMs:0,yields:0};
-  const check=()=>{if(signal?.aborted)throw new DOMException('Frame paste cancelled.','AbortError');checkCurrent();};
+  const check=()=>{if(signal?.aborted)throw messageError(new DOMException('', 'AbortError'), "errors.clipboardAssetPlan.framePasteCancelled", {});checkCurrent();};
   const drain=async iterator=>{try{for(;;){check();const start=performance.now();let step;
     do{step=iterator.next();}while(!step.done&&performance.now()-start<4);
     const elapsed=performance.now()-start;timing.cpuMs+=elapsed;timing.maxTaskMs=Math.max(timing.maxTaskMs,elapsed);

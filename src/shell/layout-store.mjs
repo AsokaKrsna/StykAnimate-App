@@ -1,3 +1,4 @@
+import {messageError} from '../localized-error.mjs';
 /**
  * Layout persistence: load once, then debounced, ordered, merge-on-write
  * saves over an injected `{read, write}` pair. On desktop that pair is the
@@ -66,7 +67,7 @@ export function storageLayoutBackend(storage, {key = BROWSER_LAYOUT_KEY, legacyK
       return null;
     },
     async write(value) {
-      if (!storage) throw new Error('Layout storage is unavailable.');
+      if (!storage) throw messageError(new Error(''), "errors.layoutStore.layoutStorageIsUnavailable", {});
       storage.setItem(key, JSON.stringify(value));
     },
   };
@@ -158,7 +159,7 @@ export function createLayoutStore({
   now = Date.now, setTimer = globalThis.setTimeout, clearTimer = globalThis.clearTimeout,
   onError,
 } = {}) {
-  if (typeof read !== 'function' || typeof write !== 'function') throw new TypeError('A layout store needs read() and write().');
+  if (typeof read !== 'function' || typeof write !== 'function') throw messageError(new TypeError(''), "errors.layoutStore.aLayoutStoreNeedsReadAndWrite", {});
   const panels = typeof catalog === 'function' ? () => catalog() ?? PANEL_CATALOG : () => catalog;
   const at = () => ({catalog: panels(), now: now()});
   let layout = deepFreeze(normalizeLayout(null, at()));
@@ -222,7 +223,7 @@ export function createLayoutStore({
         dropped = [];
         merged = mergeLayouts(disk.layout, layout, {...at(), trimmed: dropped});
         fitted = fitBudget(serializeLayout(merged, at()), {catalog: panels()});
-        if (!fitted.ok) throw new Error('The workspace layout does not fit in the preferences file.');
+        if (!fitted.ok) throw messageError(new Error(''), "errors.layoutStore.theWorkspaceLayoutDoesNotFitInThe", {});
         if (attempt === 1) break;
         // Another window may have written since the first read: merge again once.
         const check = await read();

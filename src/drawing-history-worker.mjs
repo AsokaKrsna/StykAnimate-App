@@ -1,3 +1,5 @@
+import {errorMessageData, messageError} from './localized-error.mjs';
+
 import {DrawingHistoryDatabase} from './drawing-history-database.mjs';
 let disk,queue=Promise.resolve();
 // IDB commits and compression must finish in message order, including close.
@@ -12,7 +14,7 @@ self.onmessage=({data})=>{queue=queue.then(async()=>{
     else if(data.kind==='read'){const tiles=await disk.read(data.record,data.part);self.postMessage({id:data.id,tiles},tiles.flatMap(t=>[t.before?.buffer,t.after?.buffer].filter(Boolean)));return;}
     else if(data.kind==='remove')await disk.remove(data.record);
     else if(data.kind==='close'){await disk.open();await disk.close();}
-    else throw new Error('Unknown drawing history operation.');
+    else throw messageError(new Error(''), "errors.drawingHistoryWorker.unknownDrawingHistoryOperation", {});
     self.postMessage({id:data.id,result});
-  }catch(error){self.postMessage({id:data.id,error:{name:error.name,message:error.message}});}
+  }catch(error){self.postMessage({id:data.id,error:{name:error.name,message:error.message, ...errorMessageData(error)}});}
 });};

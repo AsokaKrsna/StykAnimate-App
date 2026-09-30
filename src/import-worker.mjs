@@ -1,3 +1,5 @@
+import {errorMessageData, messageError, restoreMessageError} from './localized-error.mjs';
+
 /** Worker side of the file protocol. No scene rendering or UI state lives here. */
 import { documentChunks } from './document-transport.mjs';
 import {diagnosticDetails} from './telemetry-schema.mjs';
@@ -19,7 +21,7 @@ async function sendResult(id, result, signal) {
     // Acknowledging each batch bounds queued receiver allocations and gives input
     // and animation tasks room to run between native figure/frame records.
     const acknowledged = new Promise((resolve, reject) => {
-      const cancel = () => { receipts.delete(key); reject(new DOMException('Import cancelled.', 'AbortError')); };
+      const cancel = () => { receipts.delete(key); reject(messageError(new DOMException('', 'AbortError'), "errors.editorLoad.importCancelled", {})); };
       receipts.set(key, () => { signal.removeEventListener('abort', cancel); resolve(); });
       signal.addEventListener('abort', cancel, { once: true });
     });
@@ -34,14 +36,14 @@ async function sendResult(id, result, signal) {
 }
 
 function errorMessage(error, stage) {
-  return {message: error?.message || String(error), code: error?.code, status: error?.status,
+  return {message: error?.message || String(error), ...errorMessageData(error), code: error?.code, status: error?.status,
     ...diagnosticDetails(error,stage,stage === 'prepare' ? 'snapshot_failed' : 'decode_failed')};
 }
 
 async function importRequest(message, signal) {
   const started = performance.now();
   if(message.operation==='import' && /\.(nodes|nodemc|stknds|zip)$/i.test(message.filename??'')){
-    if(!(message.bytes instanceof ArrayBuffer))throw new Error('The importer did not receive the complete file bytes.');
+    if(!(message.bytes instanceof ArrayBuffer))throw messageError(new Error(''), "errors.importWorker.theImporterDidNotReceiveTheCompleteFile", {});
     const {importStickNodes}=await import('./sticknodes/adapter.mjs');
     return importStickNodes(new Uint8Array(message.bytes),{filename:message.filename,entryIndex:message.entryIndex,signal,onProgress:progress=>self.postMessage({id:message.id,progress})});
   }
@@ -50,8 +52,8 @@ async function importRequest(message, signal) {
   if (message.token) headers.Authorization = `Bearer ${message.token}`;
   let path, body;
   if (message.operation === 'import') {
-    if (!(message.bytes instanceof ArrayBuffer)) throw new Error('The importer did not receive the complete file bytes.');
-    if (typeof message.filename !== 'string') throw new Error('The imported file needs a filename.');
+    if (!(message.bytes instanceof ArrayBuffer)) throw messageError(new Error(''), "errors.importWorker.theImporterDidNotReceiveTheCompleteFile", {});
+    if (typeof message.filename !== 'string') throw messageError(new Error(''), "errors.importWorker.theImportedFileNeedsAFilename", {});
     const nativeKind = /\.(styk|stkz|stykmov)$/i.exec(message.filename)?.[1]?.toLowerCase();
     if (nativeKind) {
       // Native containers decode locally: verify, inflate and materialize in
@@ -78,11 +80,11 @@ async function importRequest(message, signal) {
     headers['Content-Type'] = 'application/octet-stream';
     body = message.bytes;
   } else if (message.operation === 'open') {
-    if (typeof message.path !== 'string') throw new Error('The sample needs a file path.');
+    if (typeof message.path !== 'string') throw messageError(new Error(''), "errors.importWorker.theSampleNeedsAFilePath", {});
     path = '/api/open';
     headers['Content-Type'] = 'application/json';
     body = JSON.stringify({path: message.path});
-  } else throw new Error('Unknown import operation.');
+  } else throw messageError(new Error(''), "errors.importWorker.unknownImportOperation", {});
   const response = await codecRequest(message, path, {method: 'POST', headers, body, signal}).catch(error => {
     error.telemetryCode = 'backend_unavailable'; error.telemetryStage = 'request'; throw error;
   });
@@ -99,19 +101,19 @@ async function importRequest(message, signal) {
   let result;
   try { result = JSON.parse(text); }
   catch {
-    const error = new Error(response.ok ? 'The file service returned an unreadable project.' : `The file service failed (${response.status}).`);
+    const error = messageError(new Error(''), response.ok ? 'errors.importWorker.unreadableProject' : 'errors.importWorker.serviceFailed', {status:response.status});
     error.status = response.status;
     error.telemetryCode = response.ok ? 'decode_failed' : response.status >= 500 ? 'backend_unavailable' : 'backend_rejected'; error.telemetryStage = response.ok ? 'decode' : 'request';
     throw error;
   }
   if (!response.ok || result?.ok === false) {
-    const error = new Error(result?.error?.message || result?.error || result?.message || `Import failed (${response.status}).`);
+    const error = restoreMessageError(result?.error?.message || result?.error || result?.message ? new Error(result?.error?.message || result?.error || result?.message) : messageError(new Error(''), 'errors.importWorker.importFailed', {status:response.status}), result?.error && typeof result.error === 'object' ? result.error : result);
     error.code = result?.code;
     error.status = response.status;
     error.telemetryCode = response.status >= 500 ? 'backend_unavailable' : 'backend_rejected'; error.telemetryStage = 'request';
     throw error;
   }
-  if (!result || typeof result !== 'object' || !result.document) throw new Error('The file service returned no editable document.');
+  if (!result || typeof result !== 'object' || !result.document) throw messageError(new Error(''), "errors.importWorker.theFileServiceReturnedNoEditableDocument", {});
   const parsed = performance.now();
   result.timings = {...result.timings, worker_fetch_ms: +(received - started).toFixed(3),
     worker_parse_ms: +(parsed - received).toFixed(3), worker_ms: +(parsed - started).toFixed(3)};

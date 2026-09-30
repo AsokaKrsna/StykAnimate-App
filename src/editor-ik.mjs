@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {unprojectJoint,unprojectSpatial} from './spatial-projection.mjs';
 import {geometryPlans} from './pivot/geometry-pose.mjs';
 import {quatMultiply,spatialQuaternion} from './rig-spatial.mjs';
@@ -86,7 +87,7 @@ function capture(figure, object, geometry, handle, controller) {
     }
     if (Math.abs(cross) > 1e-8) bendDirection = cross < 0 ? -1 : 1;
   }
-  if (index < 0 || !point) throw new Error('Select a valid IK node.');
+  if (index < 0 || !point) throw messageError(new Error(''), "errors.editorIk.selectAValidIkNode", {});
   const points = [geometry.segments[chain[0]].start, ...chain.map(i => geometry.segments[i].end)];
   const lengths = chain.map(i => {const s = geometry.segments[i]; return Math.hypot(s.end.x - s.start.x, s.end.y - s.start.y);});
   return {...captureSpatialIK(figure,object,geometry,chain,ikFollowerIndices(figure,handle,layout),rotation,controller?.spatialTarget?.swivel??0),target: {...unprojectJoint(point), rotation}, followers, bendDirection: controller?.bendDirection ?? bendDirection,
@@ -179,15 +180,15 @@ export const editorIKMethods = {
   },
   setNodeIK(patch) {
     if(Object.keys(patch).length===1&&patch.swivel!==undefined&&this.getSpatialIKPole())return this.setSpatialIKTarget({swivel:patch.swivel});
-    if(patch.enabled&&this.figure&&!rigIKAllowed(this.figure,this.selectedJoint))throw new Error('Apply IK to the driving bones. Connector, weighted and angle-locked attachments follow those controls.');
+    if(patch.enabled&&this.figure&&!rigIKAllowed(this.figure,this.selectedJoint))throw messageError(new Error(''), "errors.editorIk.applyIkToTheDrivingBonesConnectorWeighted", {});
     const {handle} = controllerAt(this);
     if (!handle) return false;
     const settings = this.getIKSettings(), next = {...settings, ...patch}; delete next.maxLength;
-    if (Object.keys(patch).some(k => !['enabled', 'pinned', 'allowStretch', 'chainLength', 'bendDirection', 'swivel'].includes(k))) throw new Error('Unknown IK setting.');
+    if (Object.keys(patch).some(k => !['enabled', 'pinned', 'allowStretch', 'chainLength', 'bendDirection', 'swivel'].includes(k))) throw messageError(new Error(''), "errors.editorIk.unknownIkSetting", {});
     if (!Number.isInteger(next.chainLength) || next.chainLength < 1 || next.chainLength > settings.maxLength)
-      throw new Error(`Chain length must be between 1 and ${settings.maxLength}.`);
+      throw messageError(new Error(''), "errors.editorIk.chainLengthMustBeBetween1And", {maxLength: settings.maxLength});
     if (typeof next.enabled !== 'boolean' || typeof next.pinned !== 'boolean' || typeof next.allowStretch !== 'boolean' || ![-1, 0, 1].includes(next.bendDirection))
-      throw new Error('Invalid IK setting.');
+      throw messageError(new Error(''), "errors.editorIk.invalidIkSetting", {});
     // Enabling creates a pinned controller at the displayed endpoint, without a jump.
     if (patch.enabled === true && !settings.enabled && patch.pinned === undefined) next.pinned = true;
     const graph = context(this), virtualHandle = graph?.maps.get(this.selectedSlot).get(handle);
@@ -195,9 +196,9 @@ export const editorIKMethods = {
       const chain = new Set(graph ? graph.chain(this.selectedSlot, handle, next.chainLength) : ikChain(this.figure, handle, next.chainLength));
       for (const [id, other] of Object.entries(graph?.object._stykIK ?? this.object._stykIK ?? {})) if (Number(id) !== (virtualHandle ?? handle) && other.enabled &&
           ikChain(graph?.figure ?? this.figure, id, other.chainLength, graph?.layout).some(i => chain.has(i)))
-        throw new Error('IK chains cannot share bones. Shorten the chain or disable the overlapping controller.');
+        throw messageError(new Error(''), "errors.editorIk.ikChainsCannotShareBonesShortenTheChain", {});
     }
-    if(patch.swivel!==undefined){if(!Number.isFinite(patch.swivel)||Math.abs(patch.swivel)>1e6||!settings.spatialTarget)throw new Error('Choose a finite spatial bend direction.');next.spatialTarget={...settings.spatialTarget,swivel:patch.swivel};delete next.swivel;}
+    if(patch.swivel!==undefined){if(!Number.isFinite(patch.swivel)||Math.abs(patch.swivel)>1e6||!settings.spatialTarget)throw messageError(new Error(''), "errors.editorIk.chooseAFiniteSpatialBendDirection", {});next.spatialTarget={...settings.spatialTarget,swivel:patch.swivel};delete next.swivel;}
     const scene = this.geometry, geometry = scene.objects.get(this.selectedSlot);
     const solved = geometry.ik?.get(handle);
     if (solved?.followers) Object.assign(next, {followers: solved.followers}, solved.joinedFollowers ? {joinedFollowers: solved.joinedFollowers} : {});
@@ -236,7 +237,7 @@ export const editorIKMethods = {
   /** `flat` solves a spatial two-bone limb as on a flat figure (see
    * _flatSpatialIKPole); otherwise its stored bend direction is kept. */
   poseIKTarget(x, y, {flat = false} = {}) {
-    if (![x, y].every(Number.isFinite)) throw new Error('IK target coordinates must be finite.');
+    if (![x, y].every(Number.isFinite)) throw messageError(new Error(''), "errors.editorIk.ikTargetCoordinatesMustBeFinite", {});
     const {handle, controller} = controllerAt(this);
     if (!controller?.enabled) return false;
     const geometry = this.geometry.objects.get(this.selectedSlot), graph = context(this);
@@ -276,7 +277,7 @@ export const editorIKMethods = {
     });
   },
   rotateIKTarget(radians) {
-    if (!Number.isFinite(radians)) throw new Error('IK rotation must be finite.');
+    if (!Number.isFinite(radians)) throw messageError(new Error(''), "errors.editorIk.ikRotationMustBeFinite", {});
     const {handle, controller} = controllerAt(this);
     if (!controller?.enabled) return false;
     const geometry = this.geometry.objects.get(this.selectedSlot), graph = context(this);

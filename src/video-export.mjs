@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Deterministic canvas -> WebCodecs -> WebM or MP4 export, without captureStream.
  * Sources: https://www.w3.org/TR/webcodecs/
  *          https://www.webmproject.org/docs/container/
@@ -25,7 +26,7 @@ function sizeVint(value) {
   let length = 1;
   // The all-ones payload is reserved for unknown-length EBML elements.
   while (value >= 2 ** (7 * length) - 1) length++;
-  if (length > 8 || !Number.isSafeInteger(value) || value < 0) throw new Error('The video container exceeds the size limit.');
+  if (length > 8 || !Number.isSafeInteger(value) || value < 0) throw messageError(new Error(''), "errors.videoExport.theVideoContainerExceedsTheSizeLimit", {});
   const result = new Uint8Array(length);
   for (let i = length - 1; i >= 0; i--) { result[i] = value % 256; value = Math.floor(value / 256); }
   result[0] |= 1 << (8 - length);
@@ -35,7 +36,7 @@ function sizeVint(value) {
 // Fixed-width 8-byte VINT used for the streamed Segment size field: written as
 // a placeholder up front and patched once the segment body size is known.
 function sizeVint8(value) {
-  if (!Number.isSafeInteger(value) || value < 0 || value >= 2 ** 56) throw new Error('The video container exceeds the size limit.');
+  if (!Number.isSafeInteger(value) || value < 0 || value >= 2 ** 56) throw messageError(new Error(''), "errors.videoExport.theVideoContainerExceedsTheSizeLimit", {});
   const result = new Uint8Array(8);
   result[0] = 0x01;
   for (let i = 7; i >= 1; i--) { result[i] = value % 256; value = Math.floor(value / 256); }
@@ -114,7 +115,7 @@ class WebMMuxer {
       const packet = packets[this.audioIndex++];
       // Track 2, a zero timecode inside the cluster, and the keyframe flag Opus packets always carry.
       const cluster = element(0x1f43b675, [uint(0xe7, packet.timestamp), element(0xa3, [new Uint8Array([0x82, 0, 0, 0x80]), packet.data])]);
-      if (this.encodedBytes + cluster.size + 64 > this.maxBytes) throw new Error('The encoded video exceeds the configured export size limit.');
+      if (this.encodedBytes + cluster.size + 64 > this.maxBytes) throw messageError(new Error(''), "errors.mp4Muxer.theEncodedVideoExceedsTheConfiguredExportSize", {});
       if (this.streamed) this.pending.push(cluster); else this.clusters.push(cluster);
       this.position += cluster.size;
       this.encodedBytes += cluster.size;
@@ -123,11 +124,11 @@ class WebMMuxer {
 
   add(chunk) {
     if (!Number.isSafeInteger(chunk.timestamp) || chunk.timestamp < 0 || chunk.timestamp < this.lastTimestamp) {
-      throw new Error('The encoder returned out-of-order video timestamps.');
+      throw messageError(new Error(''), "errors.mp4Muxer.theEncoderReturnedOutOfOrderVideoTimestamps", {});
     }
-    if (this.frames === 0 && chunk.type !== 'key') throw new Error('The video encoder did not produce an initial keyframe.');
+    if (this.frames === 0 && chunk.type !== 'key') throw messageError(new Error(''), "errors.mp4Muxer.theVideoEncoderDidNotProduceAnInitial", {});
     this.flushAudio(chunk.timestamp);
-    if (this.encodedBytes + chunk.byteLength + 64 > this.maxBytes) throw new Error('The encoded video exceeds the configured export size limit.');
+    if (this.encodedBytes + chunk.byteLength + 64 > this.maxBytes) throw messageError(new Error(''), "errors.mp4Muxer.theEncodedVideoExceedsTheConfiguredExportSize", {});
     const data = new Uint8Array(chunk.byteLength);
     chunk.copyTo(data);
     const block = element(0xa3, [new Uint8Array([0x81, 0, 0, chunk.type === 'key' ? 0x80 : 0]), data]);
@@ -143,22 +144,22 @@ class WebMMuxer {
   }
 
   finish(expectedFrames) {
-    if (this.frames !== expectedFrames) throw new Error(`Video export produced ${this.frames} of ${expectedFrames} frames.`);
+    if (this.frames !== expectedFrames) throw messageError(new Error(''), "errors.mp4Muxer.videoExportProducedOfFrames", {frames: this.frames, expectedFrames: expectedFrames});
     this.flushAudio(Infinity);
     const cues = element(0x1c53bb6b, this.cues);
     if (this.streamed) {
       const bodySize = this.position + cues.size;
-      if (bodySize + this.header.size + 12 > this.maxBytes) throw new Error('The encoded video exceeds the export size limit.');
+      if (bodySize + this.header.size + 12 > this.maxBytes) throw messageError(new Error(''), "errors.mp4Muxer.theEncodedVideoExceedsTheExportSizeLimit", {});
       this.pending.push(cues);
       return { patch: { offset: this.segmentSizeOffset, bytes: sizeVint8(bodySize) } };
     }
     const segment = element(0x18538067, [this.info, this.tracks, ...this.clusters, cues]);
-    if (segment.size + this.header.size > this.maxBytes) throw new Error('The encoded video exceeds the export size limit.');
+    if (segment.size + this.header.size > this.maxBytes) throw messageError(new Error(''), "errors.mp4Muxer.theEncodedVideoExceedsTheExportSizeLimit", {});
     return new Blob([this.header, segment], {type: 'video/webm'});
   }
 }
 
-function cancelled() { return new DOMException('Video export cancelled.', 'AbortError'); }
+function cancelled() { return messageError(new DOMException('', 'AbortError'), "errors.audioEncode.videoExportCancelled", {}); }
 
 /** H.264 encodes even dimensions; an odd width or height gains one black pixel row or column. */
 export const avcCodedSize = (width, height) => ({width: width + (width & 1), height: height + (height & 1)});
@@ -166,14 +167,14 @@ export const avcCodedSize = (width, height) => ({width: width + (width & 1), hei
 /** What differs between the containers: the codecs to try, their configuration and the muxer. */
 const CONTAINERS = {
   webm: {
-    unsupported: 'No VP8 or VP9 video encoder supports this canvas size. Try a smaller export resolution.',
+    unsupportedKey: 'errors.videoExport.unsupportedWebm',
     candidates: ({width, height, fps, bitrate}) => ['vp8', 'vp09.00.51.08'].map(codec => ({codec, width, height, framerate: fps, bitrate: Math.round(bitrate),
       latencyMode: 'quality', hardwareAcceleration: 'prefer-software', alpha: 'discard'})),
     audio: 'opus',
     muxer: options => new WebMMuxer(options),
   },
   mp4: {
-    unsupported: 'No H.264 video encoder supports this canvas size. Try a smaller export resolution or WebM.',
+    unsupportedKey: 'errors.videoExport.unsupportedMp4',
     candidates: ({width, height, fps, bitrate}) => {
       const coded = avcCodedSize(width, height);
       return avcCodecStrings(coded.width, coded.height, fps).map(codec => ({codec, ...coded, framerate: fps, bitrate: Math.round(bitrate),
@@ -203,21 +204,21 @@ async function encodeVideo(container, {width, height, fps, totalFrames, renderFr
   signal, bitrate = videoQualityOptions({width, height, fps, provider: 'WebCodecs'}).bitrate, maxBytes, sink, audioChunks}) {
   const format = CONTAINERS[container];
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 16384 || height > 16384) {
-    throw new Error('Video dimensions must be whole pixels between 1 and 16,384.');
+    throw messageError(new Error(''), "errors.videoExport.videoDimensionsMustBeWholePixelsBetween1", {});
   }
-  if (!Number.isFinite(fps) || fps < 1 || fps > 1000) throw new Error('Choose a video frame rate between 1 and 1,000 fps.');
-  if (!Number.isInteger(totalFrames) || totalFrames < 1 || totalFrames > 1000000) throw new Error('Choose between 1 and 1,000,000 video frames.');
-  if (typeof renderFrame !== 'function') throw new TypeError('Video export needs a frame renderer.');
-  if (!Number.isFinite(bitrate) || bitrate < 1 || bitrate > 200e6) throw new Error('The requested video bitrate is invalid.');
+  if (!Number.isFinite(fps) || fps < 1 || fps > 1000) throw messageError(new Error(''), "errors.videoExport.chooseAVideoFrameRateBetween1And", {});
+  if (!Number.isInteger(totalFrames) || totalFrames < 1 || totalFrames > 1000000) throw messageError(new Error(''), "errors.videoExport.chooseBetween1And1000000Video", {});
+  if (typeof renderFrame !== 'function') throw messageError(new TypeError(''), "errors.videoExport.videoExportNeedsAFrameRenderer", {});
+  if (!Number.isFinite(bitrate) || bitrate < 1 || bitrate > 200e6) throw messageError(new Error(''), "errors.videoExport.theRequestedVideoBitrateIsInvalid", {});
   const streamed = Boolean(sink);
   // The 16 GiB bound is only honest while bytes leave memory; an in-memory
   // sink keeps the same 512 MiB cap as the Blob path.
   const limit = sink?.streamed === true ? STREAM_LIMIT : LIMIT;
   maxBytes ??= limit;
-  if (!Number.isFinite(maxBytes) || maxBytes < 1024 || maxBytes > limit) throw new Error(sink?.streamed === true ? 'The video size limit must be between 1 KiB and 16 GiB.' : 'The video size limit must be between 1 KiB and 512 MiB.');
+  if (!Number.isFinite(maxBytes) || maxBytes < 1024 || maxBytes > limit) throw messageError(new Error(''), sink?.streamed === true ? 'errors.videoExport.streamSizeLimit' : 'errors.videoExport.memorySizeLimit');
   if (signal?.aborted) throw cancelled();
   if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') {
-    throw new Error('This browser does not support WebCodecs video export. Open StykAnimate in its desktop app or a current Chromium browser.');
+    throw messageError(new Error(''), "errors.videoExport.thisBrowserDoesNotSupportWebcodecsVideoExport", {});
   }
   let config;
   for (const candidate of format.candidates({width, height, fps, bitrate})) {
@@ -225,7 +226,7 @@ async function encodeVideo(container, {width, height, fps, totalFrames, renderFr
     catch { /* Try the next codec before reporting unavailable support. */ }
   }
   if (signal?.aborted) throw cancelled();
-  if (!config) throw new Error(format.unsupported);
+  if (!config) throw messageError(new Error(''), format.unsupportedKey);
   // The encoder's own picture size: H.264 pads an odd edge, so its frames are copied onto a black canvas that size.
   const coded = {width: config.width, height: config.height}, padded = coded.width !== width || coded.height !== height;
   // The soundtrack is encoded first, then placed by the muxer: after the video in MP4, interleaved with it in WebM.
@@ -261,7 +262,7 @@ async function encodeVideo(container, {width, height, fps, totalFrames, renderFr
         wake = null;
         error ? reject(error) : resolve();
       };
-      const timer = setTimeout(() => done(new Error('The video encoder stopped accepting frames.')), 30000);
+      const timer = setTimeout(() => done(messageError(new Error(''), "errors.videoExport.theVideoEncoderStoppedAcceptingFrames", {})), 30000);
       wake = done;
       // Quality mode must not drop frames. Flush the bounded window instead of
       // waiting on dequeue, which says nothing about internally retained pixels.
@@ -271,7 +272,7 @@ async function encodeVideo(container, {width, height, fps, totalFrames, renderFr
       check();
       const canvas = await renderFrame(index);
       check();
-      if (!canvas || canvas.width !== width || canvas.height !== height) throw new Error(`Rendered video frame ${index + 1} has the wrong dimensions.`);
+      if (!canvas || canvas.width !== width || canvas.height !== height) throw messageError(new Error(''), "errors.nativeVideoExport.renderedVideoFrameHasTheWrongDimensions", {value: index + 1});
       const timestamp = Math.round(index * 1e6 / fps);
       const duration = Math.round((index + 1) * 1e6 / fps) - timestamp;
       let source = canvas;
@@ -297,7 +298,7 @@ async function encodeVideo(container, {width, height, fps, totalFrames, renderFr
     let flushTimer;
     try {
       await Promise.race([encoder.flush(), new Promise((_, reject) => {
-        flushTimer = setTimeout(() => reject(new Error('The video encoder did not finish its pending frames.')), 30000);
+        flushTimer = setTimeout(() => reject(messageError(new Error(''), "errors.videoExport.theVideoEncoderDidNotFinishItsPending", {})), 30000);
       })]);
     } finally { clearTimeout(flushTimer); }
     check();

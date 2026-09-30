@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {evaluatedFrame,timeline} from './pivot/geometry.mjs';
 import {cameraAtTime,cameraTravelAt} from './camera-motion.mjs';
 import {followSamplingReport} from './camera-follow.mjs';
@@ -34,14 +35,14 @@ export function cameraBakeRange(report,start,end){
   const left=Math.max(0,sheetKeyAt(track,start).index),right=Math.min(keys.length-1,Math.max(left,sheetKeyAt(track,end-1).index+1));
   const [first,last]=autoKeyRange(keys,left,right);
   const sampleStart=Math.min(start,keys[first].tick),sampleEnd=Math.max(end,keys[last].tick);
-  if(sampleEnd-sampleStart>100000)throw new Error('Split the camera easing span before baking; at most 100,000 frames including curve guards are supported.');
+  if(sampleEnd-sampleStart>100000)throw messageError(new Error(''), "errors.cameraMotionBake.splitTheCameraEasingSpanBeforeBakingAt", {});
   return {sampleStart,sampleEnd};
 }
 export async function sampleMotionBake(report,{start,end,signal,onProgress}={}){
   const source=cameraSamplingReport(report),rows=timeline(source),frames=[],{sampleStart,sampleEnd}=cameraBakeRange(source,start,end);let index=0,deadline=performance.now()+6;
   const restore=sampleEnd<(source._styk?.layerSheet?.duration??rows.at(-1).start+rows.at(-1).count);
   for(let tick=sampleStart;tick<sampleEnd+Number(restore);tick++){
-    if(signal?.aborted)throw new DOMException('Camera bake cancelled.','AbortError');
+    if(signal?.aborted)throw messageError(new DOMException('', 'AbortError'), "errors.cameraMotionBakeClient.cameraBakeCancelled", {});
     while(index+1<rows.length&&rows[index+1].start<=tick)index++;
     const row=rows[index],frame=evaluatedFrame(source,index,row.count?(tick-row.start)/row.count:0,tick),base=frame.camera?.is_default?{x:0,y:0,scale:1,angle_rad:0}:frame.camera??{x:0,y:0,scale:1,angle_rad:0},inside=tick>=start&&tick<end;
     const moved=inside?cameraTravelAt(source,frame):null,travel=moved&&!moved.is_default?moved:base,camera=inside?(cameraAtTime(source,frame)??base):base;

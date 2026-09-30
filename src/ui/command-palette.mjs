@@ -1,3 +1,5 @@
+import {replaceLocalized, localizedAttribute, appendLocalized} from '../localization-bindings.mjs';
+
 /**
  * The command palette: type to find any command (or anything a feature
  * provides: figures, layers, tutorials, settings) and run it with Enter. It is
@@ -31,8 +33,8 @@ export function paletteGroups({commands, query = '', context, providers = [], fr
   const text = String(query).trim(), groups = [];
   if (frameJump && /^\d{1,6}$/.test(text)) {
     const frame = Number(text);
-    groups.push({id: 'goto', label: kitText(t, 'overlays.palette.goTo'), rows: [{key: `frame:${frame}`, id: null,
-      label: kitText(t, 'overlays.palette.goToFrame', {frame}), icon: 'frame', meta: '', enabled: true, reason: '', ranges: [], run: () => frameJump(frame)}]});
+    groups.push({id: 'goto', label: kitText(t, 'overlays.palette.goTo'), labelKey: 'overlays.palette.goTo', labelParams: {}, rows: [{key: `frame:${frame}`, id: null,
+      label: kitText(t, 'overlays.palette.goToFrame', {frame}), labelKey: 'overlays.palette.goToFrame', labelParams: {frame}, icon: 'frame', meta: '', enabled: true, reason: '', ranges: [], run: () => frameJump(frame)}]});
   }
   recentLabel ??= kitText(t, 'overlays.palette.recent');
   commandsLabel ??= kitText(t, 'overlays.palette.commands');
@@ -81,7 +83,7 @@ export function createCommandPalette({commands, overlays = null, providers = [],
   const search = doc.createElement('div');
   search.className = 'ui-palette-search';
   const glyph = icon?.('search');
-  if (typeof glyph === 'string') search.insertAdjacentHTML('beforeend', glyph); else if (glyph) search.append(glyph);
+  if (typeof glyph === 'string') search.insertAdjacentHTML('beforeend', glyph); else if (glyph) appendLocalized(search, glyph);
   search.firstElementChild?.classList.add('ui-icon');
   const input = doc.createElement('input');
   input.type = 'text';
@@ -93,22 +95,22 @@ export function createCommandPalette({commands, overlays = null, providers = [],
   input.setAttribute('aria-autocomplete', 'list');
   input.setAttribute('aria-expanded', 'true');
   input.setAttribute('aria-controls', `${id}-list`);
-  search.append(input);
+  appendLocalized(search, input);
   // Where the palette fills the window (compact and minimal width) it has a close button, for pointer and pen.
   const closeButton = doc.createElement('button');
   closeButton.type = 'button';
   closeButton.className = 'ui-icon-button ui-palette-close';
-  closeButton.setAttribute('aria-label', kitText(t, 'common.close'));
+  localizedAttribute(closeButton, 'aria-label', 'common.close', {});
   const closeGlyph = icon?.('close');
-  if (typeof closeGlyph === 'string') closeButton.insertAdjacentHTML('beforeend', closeGlyph); else if (closeGlyph) closeButton.append(closeGlyph); else closeButton.textContent = '×';
+  if (typeof closeGlyph === 'string') closeButton.insertAdjacentHTML('beforeend', closeGlyph); else if (closeGlyph) appendLocalized(closeButton, closeGlyph); else closeButton.textContent = '×';
   closeButton.addEventListener('click', () => close({restore: true}));
-  search.append(closeButton);
+  appendLocalized(search, closeButton);
   const list = doc.createElement('div');
   list.className = 'ui-palette-list';
   list.id = `${id}-list`;
   list.setAttribute('role', 'listbox');
   list.setAttribute('aria-label', label);
-  element.append(search, list);
+  appendLocalized(element, search, list);
 
   const sources = [...providers];
   let open = false, rows = [], active = -1, controller = null, handle = null, invoker = null;
@@ -118,19 +120,19 @@ export function createCommandPalette({commands, overlays = null, providers = [],
     const characters = Array.from(text);
     let at = 0;
     for (const [start, end] of ranges) {
-      if (start > at) target.append(doc.createTextNode(characters.slice(at, start).join('')));
+      if (start > at) appendLocalized(target, doc.createTextNode(characters.slice(at, start).join('')));
       const mark = doc.createElement('mark');
       mark.textContent = characters.slice(start, end).join('');
-      target.append(mark);
+      appendLocalized(target, mark);
       at = end;
     }
-    if (at < characters.length) target.append(doc.createTextNode(characters.slice(at).join('')));
+    if (at < characters.length) appendLocalized(target, doc.createTextNode(characters.slice(at).join('')));
   };
 
   function render() {
     const groups = paletteGroups({commands, query: input.value, context: currentContext(), providers: sources, frameJump, t});
     rows = [];
-    list.replaceChildren();
+    replaceLocalized(list);
     groups.forEach((group, groupIndex) => {
       const section = doc.createElement('div'), heading = doc.createElement('div');
       section.setAttribute('role', 'group');
@@ -138,7 +140,7 @@ export function createCommandPalette({commands, overlays = null, providers = [],
       heading.id = `${id}-group-${groupIndex}`;
       heading.textContent = group.label;
       section.setAttribute('aria-labelledby', heading.id);
-      section.append(heading);
+      appendLocalized(section, heading);
       for (const row of group.rows) {
         const option = doc.createElement('div');
         option.className = 'ui-palette-row';
@@ -148,32 +150,32 @@ export function createCommandPalette({commands, overlays = null, providers = [],
         if (!row.enabled) option.setAttribute('aria-disabled', 'true');
         if (row.id) option.dataset.command = row.id;
         const rowGlyph = row.icon && icon?.(row.icon);
-        if (typeof rowGlyph === 'string') option.insertAdjacentHTML('beforeend', rowGlyph); else if (rowGlyph) option.append(rowGlyph);
+        if (typeof rowGlyph === 'string') option.insertAdjacentHTML('beforeend', rowGlyph); else if (rowGlyph) appendLocalized(option, rowGlyph);
         option.firstElementChild?.classList.add('ui-icon');
-        if (!rowGlyph) { const pad = doc.createElement('i'); pad.className = 'ui-palette-pad'; pad.setAttribute('aria-hidden', 'true'); option.append(pad); }
+        if (!rowGlyph) { const pad = doc.createElement('i'); pad.className = 'ui-palette-pad'; pad.setAttribute('aria-hidden', 'true'); appendLocalized(option, pad); }
         const name = doc.createElement('span');
         name.className = 'ui-palette-label';
         highlight(name, row.label, row.ranges);
-        option.append(name);
+        appendLocalized(option, name);
         if (row.meta) {
           const meta = doc.createElement(row.enabled && row.id && row.meta === commands.shortcut?.(row.id) ? 'kbd' : 'span');
           meta.className = 'ui-palette-meta';
           meta.textContent = row.meta;
-          option.append(meta);
+          appendLocalized(option, meta);
         }
         const index = rows.length;
         option.addEventListener('pointermove', () => { if (active !== index) setActive(index, false); });
         option.addEventListener('click', () => { setActive(index, false); runActive(); });
         rows.push({...row, option});
-        section.append(option);
+        appendLocalized(section, option);
       }
-      list.append(section);
+      appendLocalized(list, section);
     });
     if (!rows.length) {
       const empty = doc.createElement('div');
       empty.className = 'ui-palette-empty';
       empty.textContent = emptyLabel;
-      list.append(empty);
+      appendLocalized(list, empty);
     }
     // The first row Enter can run (a disabled row still explains itself when chosen).
     const runnable = rows.findIndex(row => row.enabled);
@@ -222,7 +224,7 @@ export function createCommandPalette({commands, overlays = null, providers = [],
   function show({invoker: from = doc.activeElement} = {}) {
     if (open) { input.select(); return; }
     invoker = from;
-    if (element.parentElement !== doc.body) doc.body.append(element);
+    if (element.parentElement !== doc.body) appendLocalized(doc.body, element);
     const view = doc.defaultView ?? globalThis;
     const inset = typeof topInset === 'function' ? topInset() : topInset;
     element.style.setProperty('--palette-top', `${Math.round(Math.max(inset + 8, view.innerHeight * 0.12))}px`);

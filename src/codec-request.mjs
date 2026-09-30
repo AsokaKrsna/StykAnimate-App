@@ -1,3 +1,5 @@
+import {restoreMessageError, messageError} from './localized-error.mjs';
+
 /** One request to the Pivot codec, from a worker.
  *
  * The desktop app and the development server run the codec behind HTTP. The
@@ -39,11 +41,11 @@ function encodeBody(body) {
   if (typeof body === 'string') { const bytes = new TextEncoder().encode(body); return {bytes, transfer: [bytes.buffer]}; }
   if (body instanceof ArrayBuffer) return {bytes: body, transfer: [body]};
   if (ArrayBuffer.isView(body)) return {bytes: body, transfer: [body.buffer]};
-  throw new TypeError('The codec accepts text or binary request bodies.');
+  throw messageError(new TypeError(''), "errors.codecRequest.theCodecAcceptsTextOrBinaryRequestBodies", {});
 }
 
 function requestOverPort(port, path, {method = 'GET', headers = {}, body, signal} = {}) {
-  if (signal?.aborted) return Promise.reject(signal.reason ?? new DOMException('The codec request was cancelled.', 'AbortError'));
+  if (signal?.aborted) return Promise.reject(signal.reason ?? messageError(new DOMException('', 'AbortError'), "errors.codecRequest.theCodecRequestWasCancelled", {}));
   let encoded;
   try { encoded = encodeBody(body); } catch (error) { return Promise.reject(error); }
   const {bytes, transfer} = encoded;
@@ -53,11 +55,11 @@ function requestOverPort(port, path, {method = 'GET', headers = {}, body, signal
     let onAbort;
     const settle = message => {
       signal?.removeEventListener('abort', onAbort);
-      if (message.error) { reject(Object.assign(new Error(message.error), {name: 'TypeError'})); return; }
+      if (message.error) { reject(Object.assign(restoreMessageError(new Error(message.error), message), {name: 'TypeError'})); return; }
       const status = message.status;
       resolve(new Response(NO_BODY.has(status) ? null : message.body, {status, headers: message.headers}));
     };
-    onAbort = () => { state.pending.delete(id); reject(signal.reason ?? new DOMException('The codec request was cancelled.', 'AbortError')); };
+    onAbort = () => { state.pending.delete(id); reject(signal.reason ?? messageError(new DOMException('', 'AbortError'), "errors.codecRequest.theCodecRequestWasCancelled", {})); };
     signal?.addEventListener('abort', onAbort, {once: true});
     state.pending.set(id, {settle});
     try {

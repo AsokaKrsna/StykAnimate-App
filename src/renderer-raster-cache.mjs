@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {previewMemoryPlan} from './playback-budget.mjs';
 /** Own editor textures independently of scene entries. Evict only at publication,
  * when the complete next layout is known, never while it is being assembled. */
@@ -32,7 +33,7 @@ export class EditorRasterCache {
     let variants = this.variants.get(artwork);
     if (!variants) this.variants.set(artwork, variants = new Map());
     const key = `${resource.generation}:${resource.resolution}:${resource.contentKey??''}`;
-    if (variants.has(key)) throw new Error('An editor raster variant already exists.');
+    if (variants.has(key)) throw messageError(new Error(''), "errors.rendererRasterCache.anEditorRasterVariantAlreadyExists", {});
     variants.set(key, resource);
     // Keep only diagnostic scalars after eviction, never a destroyed GPU handle.
     this.history.set(artwork, {resolution: resource.resolution, generation: resource.generation, destroyed: true});

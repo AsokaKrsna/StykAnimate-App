@@ -1,3 +1,6 @@
+import {t as interfaceText} from './localization.mjs';
+
+import {localizedMarkup, appendLocalized, localizedAttribute, messageHTML} from './localization-bindings.mjs';
 import {icon} from './icons.mjs';
 import {PropertyControls} from './property-controls.mjs';
 
@@ -12,33 +15,33 @@ export class CanvasGuides {
     Object.assign(this, {button, trigger, viewport, getState, onChange});
     this.overlay = document.createElement('div');
     this.overlay.className = 'canvas-aids';
-    this.overlay.innerHTML = `<div class="canvas-aids-grid"></div>
-      <div class="canvas-guide vertical"><button type="button" aria-label="Move vertical guide" title="Drag vertical guide · Arrow keys to adjust"></button></div>
-      <div class="canvas-guide horizontal"><button type="button" aria-label="Move horizontal guide" title="Drag horizontal guide · Arrow keys to adjust"></button></div>`;
-    viewport.append(this.overlay);
+    localizedMarkup(this.overlay, `<div class="canvas-aids-grid"></div>
+      <div class="canvas-guide vertical"><button type="button" aria-label="Move vertical guide" title="Drag vertical guide · Arrow keys to adjust" data-i18n-aria-label="canvasGuides.moveVerticalGuide" data-i18n-title="canvasGuides.dragVerticalGuideArrowKeysToAdjust"></button></div>
+      <div class="canvas-guide horizontal"><button type="button" aria-label="Move horizontal guide" title="Drag horizontal guide · Arrow keys to adjust" data-i18n-aria-label="canvasGuides.moveHorizontalGuide" data-i18n-title="canvasGuides.dragHorizontalGuideArrowKeysToAdjust"></button></div>`);
+    appendLocalized(viewport, this.overlay);
     this.grid = this.overlay.firstElementChild;
     this.panel = document.createElement('div');
     this.panel.id = 'canvas-guides-panel';
     this.panel.className = 'canvas-guides-panel ui-popover';
     this.panel.setAttribute('popover', 'auto');
     this.panel.setAttribute('role', 'dialog');
-    this.panel.setAttribute('aria-label', 'Guides and grid');
+    localizedAttribute(this.panel, 'aria-label', "canvasGuides.guidesAndGrid", {});
     const visibility = (key, name) => `<label class="guide-icon-toggle" title="${name}"><input type="checkbox" data-setting="${key}" aria-label="${name}">${icon('eye')}</label>`;
-    this.panel.innerHTML = `<header class="ui-popover-head"><strong class="ui-popover-title">${icon('grid')}Guides & grid</strong><button type="button" class="ui-popover-close guide-close" aria-label="Close guides and grid" title="Close">${icon('close')}</button></header>
-      <section aria-label="Guides">
-        <div class="guide-section-head"><span>Guides</span><div class="guide-actions">
-          <label class="guide-icon-toggle" title="Lock guides"><input type="checkbox" data-setting="canvasGuidesLocked" aria-label="Lock guides">${icon('lock')}</label>
-          <button type="button" class="guide-center" aria-label="Center guides" title="Center guides">${icon('center')}</button>
+    localizedMarkup(this.panel, `<header class="ui-popover-head"><strong class="ui-popover-title">${icon('grid')}${messageHTML("canvasGuides.guidesGrid", {})}</strong><button type="button" class="ui-popover-close guide-close" aria-label="Close guides and grid" title="Close" data-i18n-aria-label="canvasGuides.closeGuidesAndGrid" data-i18n-title="common.close">${icon('close')}</button></header>
+      <section aria-label="Guides" data-i18n-aria-label="canvasGuides.guides">
+        <div class="guide-section-head"><span data-i18n="canvasGuides.guides">${messageHTML("canvasGuides.guides", {})}</span><div class="guide-actions">
+          <label class="guide-icon-toggle" title="Lock guides" data-i18n-title="canvasGuides.lockGuides"><input type="checkbox" data-setting="canvasGuidesLocked" aria-label="Lock guides" data-i18n-aria-label="canvasGuides.lockGuides">${icon('lock')}</label>
+          <button type="button" class="guide-center" aria-label="Center guides" title="Center guides" data-i18n-aria-label="canvasGuides.centerGuides" data-i18n-title="canvasGuides.centerGuides">${icon('center')}</button>
         </div></div>
-        <div class="guide-control-row"><span class="guide-axis">${icon('line')}<span>Vertical</span></span><label class="guide-value"><input type="number" data-position="X" min="0" step="1" aria-label="Vertical guide position"><small>px</small></label>${visibility('canvasGuideVertical', 'Show vertical guide')}</div>
-        <div class="guide-control-row"><span class="guide-axis horizontal-axis">${icon('line')}<span>Horizontal</span></span><label class="guide-value"><input type="number" data-position="Y" min="0" step="1" aria-label="Horizontal guide position"><small>px</small></label>${visibility('canvasGuideHorizontal', 'Show horizontal guide')}</div>
+        <div class="guide-control-row"><span class="guide-axis">${icon('line')}<span data-i18n="canvasGuides.vertical">${messageHTML("canvasGuides.vertical", {})}</span></span><label class="guide-value"><input type="number" data-position="X" min="0" step="1" aria-label="Vertical guide position" data-i18n-aria-label="canvasGuides.verticalGuidePosition"><small>px</small></label>${visibility('canvasGuideVertical', interfaceText("canvasGuides.showVerticalGuide"))}</div>
+        <div class="guide-control-row"><span class="guide-axis horizontal-axis">${icon('line')}<span data-i18n="canvasGuides.horizontal">${messageHTML("canvasGuides.horizontal", {})}</span></span><label class="guide-value"><input type="number" data-position="Y" min="0" step="1" aria-label="Horizontal guide position" data-i18n-aria-label="canvasGuides.horizontalGuidePosition"><small>px</small></label>${visibility('canvasGuideHorizontal', interfaceText("canvasGuides.showHorizontalGuide"))}</div>
       </section>
-      <section aria-label="Grid">
-        <div class="guide-section-head"><span class="guide-grid-title">Grid</span>${visibility('canvasGrid', 'Show grid')}</div>
-        <label class="guide-control-row"><span>Cell size</span><span class="guide-value"><input type="number" min="4" max="1000" step="1" data-setting="canvasGridSpacing" aria-label="Grid cell size"><small>px</small></span></label>
-        <label class="guide-control-row guide-opacity"><span>Opacity</span><input type="range" min="0.05" max="0.6" step="0.01" data-setting="canvasGridOpacity" aria-label="Grid opacity"><output class="guide-opacity-value"></output></label>
-      </section>`;
-    document.body.append(this.panel);
+      <section aria-label="Grid" data-i18n-aria-label="canvasGuides.grid">
+        <div class="guide-section-head"><span class="guide-grid-title" data-i18n="canvasGuides.grid">${messageHTML("canvasGuides.grid", {})}</span>${visibility('canvasGrid', interfaceText("canvasGuides.showGrid"))}</div>
+        <label class="guide-control-row"><span data-i18n="canvasGuides.cellSize">${messageHTML("canvasGuides.cellSize", {})}</span><span class="guide-value"><input type="number" min="4" max="1000" step="1" data-setting="canvasGridSpacing" aria-label="Grid cell size" data-i18n-aria-label="canvasGuides.gridCellSize"><small>px</small></span></label>
+        <label class="guide-control-row guide-opacity"><span data-i18n="canvasGuides.opacity">${messageHTML("canvasGuides.opacity", {})}</span><input type="range" min="0.05" max="0.6" step="0.01" data-setting="canvasGridOpacity" aria-label="Grid opacity" data-i18n-aria-label="canvasGuides.gridOpacity"><output class="guide-opacity-value"></output></label>
+      </section>`);
+    appendLocalized(document.body, this.panel);
     for (const input of this.panel.querySelectorAll('input[type="number"]')) {
       const key = input.dataset.position ? 'canvasGuide' + input.dataset.position : input.dataset.setting;
       input.dataset.property = key;
@@ -49,7 +52,7 @@ export class CanvasGuides {
       field.dataset.propertyRow = key;
       field.dataset.propertyScrub = '';
       field.tabIndex = -1;
-      field.title = 'Drag to adjust · Click to type · Shift: fine · Alt: extra fine';
+      localizedAttribute(field, "title", "canvasGuides.dragToAdjustClickToTypeShiftFine", {});
     }
     const sizeFor = (key, report) => key === 'canvasGuideX' ? report.canvas_width : key === 'canvasGuideY' ? report.canvas_height : 1;
     this.values = new PropertyControls(this.panel, {
@@ -110,10 +113,10 @@ export class CanvasGuides {
       handle.addEventListener('lostpointercapture', () => this.finishDrag(false));
       handle.addEventListener('keydown', e => {
         if (e.key === 'Escape' && this.drag) { e.preventDefault(); e.stopPropagation(); this.finishDrag(false); return; }
-        if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) return;
+        if (!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)) return;
         e.preventDefault(); e.stopPropagation();
         const {settings, report} = getState(); if (settings.canvasGuidesLocked) return;
-        const amount = (['ArrowLeft','ArrowUp'].includes(e.key) ? -1 : 1) * (e.shiftKey ? 10 : 1);
+        const amount = (["ArrowLeft","ArrowUp"].includes(e.key) ? -1 : 1) * (e.shiftKey ? 10 : 1);
         onChange({['canvasGuide' + axis]: clamp(settings['canvasGuide' + axis] + amount / (axis === 'X' ? report.canvas_width : report.canvas_height), 0, 1)});
       });
     }

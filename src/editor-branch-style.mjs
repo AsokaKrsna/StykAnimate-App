@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {keyEasing, inheritedKeyEasing} from './keyframe-easing.mjs';
 import {isDiscreteAnimationProperty} from './animation-properties.mjs';
 /** A uniform scalar edit across one selected branch. Native definitions remain
@@ -50,12 +51,12 @@ function publish(editor,edit,animation,live,label) {
 }
 function current(editor) {
   const edit=editor._animationEdit;
-  if(!edit?.branchStyle)throw new Error('Begin a branch opacity edit first.');
-  if(editor.report!==edit.report||editor.tick!==edit.tick){cancelBranchStyleAnimation(editor);throw new Error('The branch edit target changed.');}
+  if(!edit?.branchStyle)throw messageError(new Error(''), "errors.editorBranchStyle.beginABranchOpacityEditFirst", {});
+  if(editor.report!==edit.report||editor.tick!==edit.tick){cancelBranchStyleAnimation(editor);throw messageError(new Error(''), "errors.editorBranchStyle.theBranchEditTargetChanged", {});}
   return edit;
 }
 export function beginBranchStyleAnimation(editor,plan) {
-  if(!plan?.entries?.length)throw new Error('Choose a branch with editable opacity.');
+  if(!plan?.entries?.length)throw messageError(new Error(''), "errors.editorBranchStyle.chooseABranchWithEditableOpacity", {});
   if(editor._animationEdit)editor.commitAnimationEdit();
   if(editor.dragging)editor.commitDrag();
   const before=editor.report._styk?.animation??null;
@@ -69,7 +70,7 @@ export function beginBranchStyleAnimation(editor,plan) {
     let key=channel.keys.find(key=>key.tick===editor.tick&&!key.hidden);
     if(!key){
       const ids=new Set(channel.keys.map(key=>key.id));let keyId;
-      do{if(!Number.isSafeInteger(after.nextKeyId)||after.nextKeyId<1)throw new Error('Animation key identity capacity exceeded.');keyId=`key-${after.nextKeyId++}`;}while(ids.has(keyId));
+      do{if(!Number.isSafeInteger(after.nextKeyId)||after.nextKeyId<1)throw messageError(new Error(''), "errors.cameraBakeAuthored.animationKeyIdentityCapacityExceeded", {});keyId=`key-${after.nextKeyId++}`;}while(ids.has(keyId));
       key={id:keyId,tick:editor.tick,value:source.initialValue,...inheritedKeyEasing(channel.keys,editor.tick,{property})};channel.keys.push(key);channel.keys.sort((a,b)=>a.tick-b.tick);
     }
     delete key.passthrough;
@@ -85,7 +86,7 @@ export function previewBranchStyleAnimation(editor,value) {
 /** Combined draw order changes assign a different held value to each drawable. */
 export function previewBranchStyleValues(editor,values) {
   const edit=current(editor);
-  if(values.length!==edit.entries.length)throw new Error('Every edited drawable needs a value.');
+  if(values.length!==edit.entries.length)throw messageError(new Error(''), "errors.editorBranchStyle.everyEditedDrawableNeedsAValue", {});
   values=values.map((value,i)=>validateAnimationValue(edit.entries[i].target,edit.entries[i].property,value));
   for(let i=0;i<edit.keys.length;i++){edit.keys[i].value=values[i];edit.entries[i].value=values[i];}
   edit.changed=edit.initialValues.some((initial,i)=>initial!==values[i]);

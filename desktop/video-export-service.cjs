@@ -1,3 +1,4 @@
+const { messageError } = require('./localization.cjs');
 "use strict";
 
 const fs = require("node:fs/promises");
@@ -65,7 +66,7 @@ const CODECS = Object.freeze({
   },
   rawvideo: {
     encoder: "rawvideo",
-    label: "Uncompressed RGB",
+    label: "Uncompressed RGB", labelKey: "desktop.videoExportService.uncompressedRgb",
     pixelFormat: "bgr24",
     quality: false,
     lossless: true,
@@ -79,6 +80,8 @@ function codecDimensions(codec, width, height) {
   return {
     encodedWidth: width + Number(padRight),
     encodedHeight: height + Number(padBottom),
+    noticeKey: padRight || padBottom ? "desktop.videoExportService.edgeNotice" : undefined,
+    noticeParams: {edge: {messageKey: padRight && padBottom ? "desktop.videoExportService.edge.both" : padRight ? "desktop.videoExportService.edge.right" : "desktop.videoExportService.edge.bottom"}, width: {format:'number',value:width+Number(padRight),options:{useGrouping:false}}, height:{format:'number',value:height+Number(padBottom),options:{useGrouping:false}}},
     notice:
       padRight || padBottom
         ? `Video will include a one-pixel black edge on the ${padRight && padBottom ? "right and bottom" : padRight ? "right" : "bottom"} (${width + Number(padRight)}×${height + Number(padBottom)}).`
@@ -86,10 +89,10 @@ function codecDimensions(codec, width, height) {
   };
 }
 const aborted = () =>
-  Object.assign(new Error("Video export cancelled."), { name: "AbortError" });
+  Object.assign(messageError(new Error(''), 'desktop.videoExportService.errors.videoExportCancelled', {}), { name: "AbortError" });
 const integer = (value, min, max, name) => {
   if (!Number.isInteger(value) || value < min || value > max)
-    throw new Error(`${name} must be an integer between ${min} and ${max}.`);
+    throw messageError(new Error(''), 'desktop.videoExportService.errors.nameMustBeAnIntegerBetweenMinAndMax', {name: name, min: min, max: max});
   return value;
 };
 const finite = (value, min, max, name) => {
@@ -99,7 +102,7 @@ const finite = (value, min, max, name) => {
     value < min ||
     value > max
   )
-    throw new Error(`${name} must be between ${min} and ${max}.`);
+    throw messageError(new Error(''), 'desktop.videoExportService.errors.nameMustBeBetweenMinAndMax', {name: name, min: min, max: max});
   return value;
 };
 const binary = (value) =>
@@ -166,11 +169,11 @@ class PNGFrameValidator {
       this.position + bytes.length > this.size ||
       (this.ended && bytes.length)
     )
-      throw new Error("PNG frame contains trailing data.");
+      throw messageError(new Error(''), 'desktop.videoExportService.errors.pngFrameContainsTrailingData', {});
     this.position += bytes.length;
     let offset = 0;
     while (offset < bytes.length) {
-      if (this.ended) throw new Error("PNG frame contains trailing data.");
+      if (this.ended) throw messageError(new Error(''), 'desktop.videoExportService.errors.pngFrameContainsTrailingData', {});
       if (this.stage === "body") {
         const count = Math.min(this.remaining, bytes.length - offset),
           part = bytes.subarray(offset, offset + count);
@@ -196,7 +199,7 @@ class PNGFrameValidator {
       if (this.filled < this.buffer.length) continue;
       if (this.stage === "signature") {
         if (!this.buffer.equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])))
-          throw new Error("Video frame must be a PNG image.");
+          throw messageError(new Error(''), 'desktop.videoExportService.errors.videoFrameMustBeAPNGImage', {});
         this.stage = "header";
         this.buffer = Buffer.alloc(8);
         this.filled = 0;
@@ -209,20 +212,20 @@ class PNGFrameValidator {
           (this.chunkIndex === 0 &&
             (this.type !== "IHDR" || this.length !== 13))
         )
-          throw new Error("Invalid PNG frame chunk.");
+          throw messageError(new Error(''), 'desktop.videoExportService.errors.invalidPNGFrameChunk', {});
         if (["acTL", "fcTL", "fdAT"].includes(this.type))
-          throw new Error("Video frames must be still PNG images.");
+          throw messageError(new Error(''), 'desktop.videoExportService.errors.videoFramesMustBeStillPNGImages', {});
         if (
           !["IHDR", "IDAT", "IEND", "sRGB", "gAMA", "cHRM", "pHYs"].includes(
             this.type,
           ) ||
           (!["IHDR", "IDAT"].includes(this.type) && this.length > 64)
         )
-          throw new Error("PNG frame contains unsupported metadata.");
+          throw messageError(new Error(''), 'desktop.videoExportService.errors.pngFrameContainsUnsupportedMetadata', {});
         if (this.chunkIndex && this.type === "IHDR")
-          throw new Error("PNG frame has a repeated header.");
+          throw messageError(new Error(''), 'desktop.videoExportService.errors.pngFrameHasARepeatedHeader', {});
         if (this.type === "IEND" && (this.length || !this.sawData))
-          throw new Error("PNG frame is incomplete.");
+          throw messageError(new Error(''), 'desktop.videoExportService.errors.pngFrameIsIncomplete', {});
         if (this.type === "IDAT") this.sawData = true;
         this.chunkIndex++;
         this.checksum = crc(0xffffffff, this.buffer.subarray(4));
@@ -233,13 +236,13 @@ class PNGFrameValidator {
         this.filled = 0;
       } else {
         if ((this.checksum ^ 0xffffffff) >>> 0 !== this.buffer.readUInt32BE(0))
-          throw new Error("PNG frame checksum is invalid.");
+          throw messageError(new Error(''), 'desktop.videoExportService.errors.pngFrameChecksumIsInvalid', {});
         if (this.type === "IHDR") {
           if (
             this.ihdr.readUInt32BE(0) !== this.width ||
             this.ihdr.readUInt32BE(4) !== this.height
           )
-            throw new Error("PNG frame dimensions do not match the export.");
+            throw messageError(new Error(''), 'desktop.videoExportService.errors.pngFrameDimensionsDoNotMatchTheExport', {});
           if (
             this.ihdr[8] !== 8 ||
             ![2, 6].includes(this.ihdr[9]) ||
@@ -247,9 +250,7 @@ class PNGFrameValidator {
             this.ihdr[11] ||
             this.ihdr[12] > 1
           )
-            throw new Error(
-              "Video frames require standard 8-bit RGB or RGBA PNG images.",
-            );
+            throw messageError(new Error(''), 'desktop.videoExportService.errors.videoFramesRequireStandard8BitRGBOrRGBAPNGImages', {});
         }
         this.ended = this.type === "IEND";
         this.stage = "header";
@@ -260,27 +261,25 @@ class PNGFrameValidator {
   }
   finish() {
     if (!this.ended || this.position !== this.size)
-      throw new Error("PNG frame is incomplete.");
+      throw messageError(new Error(''), 'desktop.videoExportService.errors.pngFrameIsIncomplete', {});
   }
 }
 
 function validateConfig(value = {}) {
-  if (value.audio !== undefined && typeof value.audio !== 'boolean') throw new Error('Audio export must be enabled or disabled.');
-  if (value.audio && value.totalFrames / value.fps > 3600) throw new Error('Audio video exports support up to one hour.');
+  if (value.audio !== undefined && typeof value.audio !== 'boolean') throw messageError(new Error(''), 'desktop.videoExportService.errors.audioExportMustBeEnabledOrDisabled', {});
+  if (value.audio && value.totalFrames / value.fps > 3600) throw messageError(new Error(''), 'desktop.videoExportService.errors.audioVideoExportsSupportUpToOneHour', {});
   if (!Object.hasOwn(FORMATS, value.format))
-    throw new Error("Choose WebM, MP4, AVI, or WMV video.");
+    throw messageError(new Error(''), 'desktop.videoExportService.errors.chooseWebMMP4AVIOrWMVVideo', {});
   const codec =
     value.codec === undefined
       ? FORMATS[value.format].defaultCodec
       : value.codec;
   if (!FORMATS[value.format].codecs.includes(codec))
-    throw new Error("Choose a supported codec for the selected video format.");
+    throw messageError(new Error(''), 'desktop.videoExportService.errors.chooseASupportedCodecForTheSelectedVideoFormat', {});
   const width = integer(value.width, 1, 16384, "Video width"),
     height = integer(value.height, 1, 16384, "Video height");
   if (width * height > 16 * 1024 * 1024)
-    throw new Error(
-      "Native video export supports up to 16 million pixels per frame.",
-    );
+    throw messageError(new Error(''), 'desktop.videoExportService.errors.nativeVideoExportSupportsUpTo16MillionPixelsPerFrame', {});
   return {
     format: value.format,
     ...(value.audio ? {audio: true} : {}),
@@ -412,7 +411,7 @@ function probe(command, args) {
     let text = "";
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
-      reject(new Error("Native encoder did not respond."));
+      reject(messageError(new Error(''), 'desktop.videoExportService.errors.nativeEncoderDidNotRespond', {}));
     }, 10000);
     for (const stream of [child.stdout, child.stderr])
       stream.on("data", (chunk) => {
@@ -420,7 +419,7 @@ function probe(command, args) {
         if (text.length > 256 * 1024) {
           child.kill("SIGKILL");
           reject(
-            new Error("Native encoder returned an invalid capability list."),
+            messageError(new Error(''), 'desktop.videoExportService.errors.nativeEncoderReturnedAnInvalidCapabilityList', {}),
           );
         }
       });
@@ -432,7 +431,7 @@ function probe(command, args) {
       clearTimeout(timer);
       code === 0
         ? resolve(text)
-        : reject(new Error("Native encoder is unavailable."));
+        : reject(messageError(new Error(''), 'desktop.videoExportService.errors.nativeEncoderIsUnavailable', {}));
     });
   });
 }
@@ -448,9 +447,9 @@ class VideoExportService {
       encoderPath !== undefined &&
       (typeof encoderPath !== "string" || !path.isAbsolute(encoderPath))
     )
-      throw new Error("A native-approved encoder is required.");
+      throw messageError(new Error(''), 'desktop.videoExportService.errors.aNativeApprovedEncoderIsRequired', {});
     if (typeof tempRoot !== "string" || !path.isAbsolute(tempRoot))
-      throw new Error("A native-approved temporary folder is required.");
+      throw messageError(new Error(''), 'desktop.videoExportService.errors.aNativeApprovedTemporaryFolderIsRequired', {});
     Object.assign(this, { encoderPath, tempRoot, ttlMs, operationTimeoutMs });
     this.jobs = new Map();
     this.starting = false;
@@ -468,7 +467,7 @@ class VideoExportService {
             !this.encoderPath ||
             (await fs.stat(this.encoderPath)).isFile() !== true
           )
-            throw new Error("missing");
+            throw messageError(new Error(''), 'desktop.videoExportService.errors.missing', {});
           [version, encoders, muxers] = await Promise.all([
             probe(this.encoderPath, ["-version"]),
             probe(this.encoderPath, ["-hide_banner", "-encoders"]),
@@ -487,12 +486,14 @@ class VideoExportService {
               new RegExp(`\\b${format.muxer}\\b`).test(muxers);
             return {
               id,
-              label: codec.label,
+              label: codec.label, labelKey: codec.labelKey,
               supported,
               quality: codec.quality,
               lossless: codec.lossless,
               alpha: Boolean(codec.alpha),
               matte: codec.alpha ? null : "black",
+              reasonKey: supported ? undefined : reason ? "desktop.videoExportService.unavailable" : "desktop.videoExportService.unsupportedCodec",
+              reasonParams: {codec: codec.labelKey ? {messageKey:codec.labelKey} : codec.label},
               reason: supported
                 ? null
                 : reason ||
@@ -509,6 +510,8 @@ class VideoExportService {
             codecs,
             mimeType: format.mimeType,
             supported,
+            reasonKey: supported ? undefined : reason ? "desktop.videoExportService.unavailable" : "desktop.videoExportService.unsupportedFormat",
+            reasonParams: {format: id.toUpperCase()},
             reason: supported
               ? null
               : reason ||
@@ -517,7 +520,7 @@ class VideoExportService {
         });
         return {
           available: formats.some((format) => format.supported),
-          reason: reason || null,
+          reason: reason || null, reasonKey: reason ? "desktop.videoExportService.unavailable" : undefined,
           version: version.split(/\r?\n/)[0],
           formats,
           maxChunkBytes: MAX_CHUNK_BYTES,
@@ -561,7 +564,7 @@ class VideoExportService {
   async begin(value) {
     const config = validateConfig(value);
     if (this.starting || this.jobs.size)
-      throw new Error("Finish or cancel the current video export first.");
+      throw messageError(new Error(''), 'desktop.videoExportService.errors.finishOrCancelTheCurrentVideoExportFirst', {});
     this.starting = true;
     let directory;
     try {
@@ -579,7 +582,7 @@ class VideoExportService {
       if (config.audio) {
         const audioCodec = {mp4:'aac',webm:'libopus',avi:'pcm_s16le',wmv:'wmav2'}[config.format];
         const encoders = await probe(this.encoderPath, ['-hide_banner','-encoders']);
-        if (!new RegExp(`\\b${audioCodec}\\b`).test(encoders)) throw new Error(`This encoder does not support ${audioCodec} audio.`);
+        if (!new RegExp(`\\b${audioCodec}\\b`).test(encoders)) throw messageError(new Error(''), 'desktop.videoExportService.errors.thisEncoderDoesNotSupportAudioCodecAudio', {audioCodec: audioCodec});
       }
       await fs.mkdir(this.tempRoot, { recursive: true });
       directory = await fs.mkdtemp(
@@ -615,15 +618,11 @@ class VideoExportService {
         }),
       );
       child.on("error", (error) => {
-        job.failure = new Error(
-          `Native video encoder could not start: ${error.message}`,
-        );
+        job.failure = messageError(new Error(''), 'desktop.videoExportService.errors.nativeVideoEncoderCouldNotStartMessage', {message: error.message});
       });
       child.stdin.on("error", (error) => {
         if (!job.cancelled)
-          job.failure ||= new Error(
-            `Native video encoder stopped accepting frames: ${error.message}`,
-          );
+          job.failure ||= messageError(new Error(''), 'desktop.videoExportService.errors.nativeVideoEncoderStoppedAcceptingFramesMessage', {message: error.message});
       });
       child.stderr.on("data", (chunk) => {
         job.stderr = (job.stderr + chunk.toString()).slice(-8192);
@@ -667,9 +666,9 @@ class VideoExportService {
   async use(token, phase, operation) {
     const job = this.jobs.get(token);
     if (!job || job.phase !== phase || job.cancelled)
-      throw new Error("This video export is no longer active.");
+      throw messageError(new Error(''), 'desktop.videoExportService.errors.thisVideoExportIsNoLongerActive', {});
     if (job.busy)
-      throw new Error("Wait for the previous video chunk to finish.");
+      throw messageError(new Error(''), 'desktop.videoExportService.errors.waitForThePreviousVideoChunkToFinish', {});
     job.busy = true;
     clearTimeout(job.timer);
     job.idle = new Promise((resolve) => (job.resolveIdle = resolve));
@@ -694,18 +693,18 @@ class VideoExportService {
   }
   writeAudioChunk(token, value) {
     return this.use(token, 'writing', async job => {
-      if (!job.config.audio) throw new Error('Enable audio when beginning the video export.');
+      if (!job.config.audio) throw messageError(new Error(''), 'desktop.videoExportService.errors.enableAudioWhenBeginningTheVideoExport', {});
       const bytes = binary(value), expected = Math.round(job.config.totalFrames / job.config.fps * 48000) * 8;
-      if (!bytes?.length || bytes.length > MAX_CHUNK_BYTES || bytes.length % 8 || (job.audioBytes ?? 0) + bytes.length > expected) throw new Error('Invalid stereo audio chunk.');
-      for (let at = 0; at < bytes.length; at += 4) { const sample = bytes.readFloatLE(at); if (!Number.isFinite(sample) || Math.abs(sample) > 1) throw new Error('Audio samples must be finite and normalized.'); }
+      if (!bytes?.length || bytes.length > MAX_CHUNK_BYTES || bytes.length % 8 || (job.audioBytes ?? 0) + bytes.length > expected) throw messageError(new Error(''), 'desktop.videoExportService.errors.invalidStereoAudioChunk', {});
+      for (let at = 0; at < bytes.length; at += 4) { const sample = bytes.readFloatLE(at); if (!Number.isFinite(sample) || Math.abs(sample) > 1) throw messageError(new Error(''), 'desktop.videoExportService.errors.audioSamplesMustBeFiniteAndNormalized', {}); }
       if (!job.audioHandle) { job.audioPath = path.join(job.directory, 'mix.f32'); job.audioHandle = await fs.open(job.audioPath, 'wx'); }
-      let written = 0; while (written < bytes.length) { const result = await job.audioHandle.write(bytes, written, bytes.length - written); if (!result.bytesWritten) throw new Error('Audio writing stopped.'); written += result.bytesWritten; }
+      let written = 0; while (written < bytes.length) { const result = await job.audioHandle.write(bytes, written, bytes.length - written); if (!result.bytesWritten) throw messageError(new Error(''), 'desktop.videoExportService.errors.audioWritingStopped', {}); written += result.bytesWritten; }
       job.audioBytes = (job.audioBytes ?? 0) + bytes.length; return {written: job.audioBytes, total: expected};
     });
   }
   async muxAudio(job) {
     const expected = Math.round(job.config.totalFrames / job.config.fps * 48000) * 8;
-    if (job.audioBytes !== expected) throw new Error('Send the entire audio mix before finishing video export.');
+    if (job.audioBytes !== expected) throw messageError(new Error(''), 'desktop.videoExportService.errors.sendTheEntireAudioMixBeforeFinishingVideoExport', {});
     await job.audioHandle.close(); job.audioHandle = null;
     const output = path.join(job.directory, `mixed.${FORMATS[job.config.format].extension}`), codec = {mp4:'aac',webm:'libopus',avi:'pcm_s16le',wmv:'wmav2'}[job.config.format];
     const args = ['-hide_banner','-loglevel','error','-nostdin','-y','-i',job.output,'-f','f32le','-ar','48000','-ac','2','-i',job.audioPath,
@@ -715,8 +714,8 @@ class VideoExportService {
     job.muxClosed = new Promise(resolve => child.once('close',resolve));
     try {
       await new Promise((resolve,reject) => {
-        timer = setTimeout(() => { child.kill(); reject(new Error('Adding audio to the video timed out.')); },this.operationTimeoutMs);
-        child.once('error',reject); child.once('close',code => code === 0 ? resolve() : reject(new Error(`Audio encoding failed. ${stderr}`)));
+        timer = setTimeout(() => { child.kill(); reject(messageError(new Error(''), 'desktop.videoExportService.errors.addingAudioToTheVideoTimedOut', {})); },this.operationTimeoutMs);
+        child.once('error',reject); child.once('close',code => code === 0 ? resolve() : reject(messageError(new Error(''), 'desktop.videoExportService.errors.audioEncodingFailedStderr', {stderr: stderr})));
       });
     } finally { clearTimeout(timer); }
     if (job.cancelled) throw aborted();
@@ -724,9 +723,9 @@ class VideoExportService {
   }
   beginFrame(token, { index, size } = {}) {
     return this.use(token, "writing", async (job) => {
-      if (job.frame) throw new Error("Finish the previous PNG frame first.");
+      if (job.frame) throw messageError(new Error(''), 'desktop.videoExportService.errors.finishThePreviousPNGFrameFirst', {});
       if (index !== job.frames || index >= job.config.totalFrames)
-        throw new Error("Video frames must arrive in sequence.");
+        throw messageError(new Error(''), 'desktop.videoExportService.errors.videoFramesMustArriveInSequence', {});
       integer(size, 45, MAX_FRAME_BYTES, "PNG frame size");
       job.frame = {
         index,
@@ -741,21 +740,21 @@ class VideoExportService {
     return this.use(token, "writing", async (job) => {
       const bytes = binary(value);
       if (!bytes?.length || bytes.length > MAX_CHUNK_BYTES)
-        throw new Error("Video chunks must contain 1 byte to 256 KiB.");
+        throw messageError(new Error(''), 'desktop.videoExportService.errors.videoChunksMustContain1ByteTo256KiB', {});
       if (!job.frame)
-        throw new Error("Begin a PNG frame before sending pixels.");
+        throw messageError(new Error(''), 'desktop.videoExportService.errors.beginAPNGFrameBeforeSendingPixels', {});
       job.frame.validator.push(bytes);
       await new Promise((resolve, reject) => {
         const timer = setTimeout(
           () =>
-            reject(new Error("Native video encoder stopped accepting pixels.")),
+            reject(messageError(new Error(''), 'desktop.videoExportService.errors.nativeVideoEncoderStoppedAcceptingPixels', {})),
           this.operationTimeoutMs,
         );
         const closed = () =>
           done(
             job.cancelled
               ? aborted()
-              : new Error(`Native video encoder stopped. ${job.stderr}`),
+              : messageError(new Error(''), 'desktop.videoExportService.errors.nativeVideoEncoderStoppedStderr', {stderr: job.stderr}),
           );
         const done = (error) => {
           clearTimeout(timer);
@@ -775,7 +774,7 @@ class VideoExportService {
   }
   endFrame(token) {
     return this.use(token, "writing", async (job) => {
-      if (!job.frame) throw new Error("There is no PNG frame to finish.");
+      if (!job.frame) throw messageError(new Error(''), 'desktop.videoExportService.errors.thereIsNoPNGFrameToFinish', {});
       job.frame.validator.finish();
       job.frames++;
       job.frame = null;
@@ -785,7 +784,7 @@ class VideoExportService {
   finish(token) {
     return this.use(token, "writing", async (job) => {
       if (job.frame || job.frames !== job.config.totalFrames)
-        throw new Error("Send every video frame before finishing the export.");
+        throw messageError(new Error(''), 'desktop.videoExportService.errors.sendEveryVideoFrameBeforeFinishingTheExport', {});
       job.child.stdin.end();
       let timer;
       try {
@@ -793,7 +792,7 @@ class VideoExportService {
           job.closed,
           new Promise((_, reject) => {
             timer = setTimeout(
-              () => reject(new Error("Native video encoder did not finish.")),
+              () => reject(messageError(new Error(''), 'desktop.videoExportService.errors.nativeVideoEncoderDidNotFinish', {})),
               this.operationTimeoutMs,
             );
           }),
@@ -802,18 +801,17 @@ class VideoExportService {
         clearTimeout(timer);
       }
       if (job.cancelled) throw aborted();
-      if (job.failure || job.exit.code !== 0)
-        throw new Error(
-          `Native video encoding failed. ${job.stderr || job.failure?.message || ""}`.trim(),
-        );
+      if (job.failure || job.exit.code !== 0) {
+        const failure = messageError(new Error(''), 'desktop.videoExportService.errors.encodingFailed', {detail:job.stderr || job.failure?.message || ''});
+        failure.message = failure.message.trim();
+        throw failure;
+      }
       if (job.encodedFrames !== job.config.totalFrames)
-        throw new Error(
-          `Native video encoded ${job.encodedFrames} of ${job.config.totalFrames} frames. The video may exceed its size limit.`,
-        );
+        throw messageError(new Error(''), 'desktop.videoExportService.errors.nativeVideoEncodedEncodedFramesOfTotalFramesFramesTheVideoMayExceedItsSizeLimit', {encodedFrames: job.encodedFrames, totalFrames: job.config.totalFrames});
       if (job.config.audio) await this.muxAudio(job);
       const stat = await fs.stat(job.output);
       if (!stat.isFile() || !stat.size || stat.size > job.config.maxBytes)
-        throw new Error("Encoded video exceeds its size limit.");
+        throw messageError(new Error(''), 'desktop.videoExportService.errors.encodedVideoExceedsItsSizeLimit', {});
       job.handle = await fs.open(job.output, "r");
       job.size = stat.size;
       job.position = 0;
@@ -837,7 +835,7 @@ class VideoExportService {
   save(token, destination) {
     return this.use(token, "reading", async (job) => {
       if (typeof destination !== "string" || !path.isAbsolute(destination))
-        throw new Error("A native-approved destination is required.");
+        throw messageError(new Error(''), 'desktop.fileStreams.errors.aNativeApprovedDestinationIsRequired', {});
       if (job.handle) {
         await job.handle.close();
         job.handle = null;
@@ -867,7 +865,7 @@ class VideoExportService {
           count - filled,
           job.position + filled,
         );
-        if (!bytesRead) throw new Error("Encoded video changed while reading.");
+        if (!bytesRead) throw messageError(new Error(''), 'desktop.videoExportService.errors.encodedVideoChangedWhileReading', {});
         filled += bytesRead;
       }
       job.position += count;

@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** PNG previews decode scanlines instead of allocating the entire source image.
  * Source dimensions remain separate from the disposable preview's pixel dimensions. */
 export async function pngInfo(blob) {
@@ -62,7 +63,7 @@ export async function imageInfo(blob) {
 export async function imageBlob(url, baseURL, token = '', signal) {
   if (url.startsWith('data:')) {
     const comma = url.indexOf(','), header = url.slice(5, comma), content = url.slice(comma + 1);
-    if (comma < 0) throw new Error('Invalid embedded image.');
+    if (comma < 0) throw messageError(new Error(''), "errors.previewImage.invalidEmbeddedImage", {});
     if (/;base64/i.test(header) && typeof Uint8Array.fromBase64 === 'function')
       return new Blob([Uint8Array.fromBase64(content)], {type: header.split(';')[0] || 'image/png'});
     const binary = /;base64/i.test(header) ? atob(content) : decodeURIComponent(content);
@@ -75,7 +76,7 @@ export async function imageBlob(url, baseURL, token = '', signal) {
   const resolved = new URL(url, baseURL), headers = {};
   if (token && resolved.origin === new URL(baseURL).origin) headers.Authorization = `Bearer ${token}`;
   const response = await fetch(resolved, {headers, signal});
-  if (!response.ok) throw new Error(`Playback image could not load (${response.status}).`);
+  if (!response.ok) throw messageError(new Error(''), "errors.previewImage.playbackImageCouldNotLoad", {status: response.status});
   return response.blob();
 }
 
@@ -108,7 +109,7 @@ export async function samplePNG(blob, info, width, height, {check = () => {}, cr
     check();
     const chunk = new Uint8Array(await blob.slice(offset, offset + 8).arrayBuffer());
     const length = new DataView(chunk.buffer).getUint32(0), type = String.fromCharCode(...chunk.subarray(4));
-    if (offset + length + 12 > blob.size) throw new Error('Truncated PNG image.');
+    if (offset + length + 12 > blob.size) throw messageError(new Error(''), "errors.previewImage.truncatedPngImage", {});
     if (type === 'IDAT') parts.push(blob.slice(offset + 8, offset + 8 + length));
     if (type === 'PLTE') palette = new Uint8Array(await blob.slice(offset + 8, offset + 8 + length).arrayBuffer());
     if (type === 'tRNS') alpha = new Uint8Array(await blob.slice(offset + 8, offset + 8 + length).arrayBuffer());
@@ -117,7 +118,7 @@ export async function samplePNG(blob, info, width, height, {check = () => {}, cr
     offset += length + 12;
     if (type === 'IEND') break;
   }
-  if (!parts.length || (info.color === 3 && !palette)) throw new Error('PNG image has no pixel data.');
+  if (!parts.length || (info.color === 3 && !palette)) throw messageError(new Error(''), "errors.previewImage.pngImageHasNoPixelData", {});
   const rowBytes = Math.ceil(info.width * channels * info.depth / 8), stride = Math.max(1, Math.ceil(channels * info.depth / 8));
   const reader = new Blob(parts).stream().pipeThrough(new DecompressionStream('deflate')).getReader();
   let chunk = new Uint8Array(), offset = 0, prior = new Uint8Array(rowBytes), row = new Uint8Array(rowBytes);
@@ -127,7 +128,7 @@ export async function samplePNG(blob, info, width, height, {check = () => {}, cr
       check();
       if (offset === chunk.length) {
         const next = await reader.read();
-        if (next.done) throw new Error('Truncated PNG scanline.');
+        if (next.done) throw messageError(new Error(''), "errors.previewImage.truncatedPngScanline", {});
         chunk = next.value; offset = 0;
       }
       const count = Math.min(target.length - written, chunk.length - offset);
@@ -145,7 +146,7 @@ export async function samplePNG(blob, info, width, height, {check = () => {}, cr
   try {
     for (let y = 0; y < info.height && targetY < height; y++) {
       await readInto(filter); await readInto(row);
-      if (filter[0] > 4) throw new Error('Invalid PNG scanline filter.');
+      if (filter[0] > 4) throw messageError(new Error(''), "errors.previewImage.invalidPngScanlineFilter", {});
       // The filter is constant for a whole scanline. Dispatch once instead of
       // testing all five predictors for every byte of a large source image.
       switch (filter[0]) {

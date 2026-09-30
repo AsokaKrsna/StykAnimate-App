@@ -1,3 +1,5 @@
+import {errorMessageData, messageError} from './localized-error.mjs';
+
 import {documentHasRigConstraints} from './rig-constraints.mjs';
 import {documentHasSurfaces} from './pivot/surfaces.mjs';
 import {applyDocumentChunk} from './document-transport.mjs';
@@ -26,10 +28,10 @@ async function fetchOriginalSource() {
   if (config.token) headers.Authorization = `Bearer ${config.token}`;
   const response = await codecRequest(config, `/api/source?id=${encodeURIComponent(config.sourceId)}`, {headers});
   if (response.status === 422 || response.status === 404) return null;
-  if (!response.ok) throw Object.assign(new Error(`The original source is unavailable (${response.status}).`), {status: response.status});
+  if (!response.ok) throw Object.assign(messageError(new Error(''), "errors.documentExportWorker.theOriginalSourceIsUnavailable", {status: response.status}), {status: response.status});
   const buffer = new Uint8Array(await response.arrayBuffer());
   const magic = new TextDecoder().decode(buffer.subarray(0, 8));
-  if (magic !== 'STYKSRC1' || buffer.byteLength < 12) throw new Error('The file service returned an invalid source record.');
+  if (magic !== 'STYKSRC1' || buffer.byteLength < 12) throw messageError(new Error(''), "errors.documentExportWorker.theFileServiceReturnedAnInvalidSourceRecord", {});
   const metaLength = new DataView(buffer.buffer, buffer.byteOffset).getUint32(8, true);
   const meta = JSON.parse(new TextDecoder().decode(buffer.subarray(12, 12 + metaLength)));
   const bytes = buffer.subarray(12 + metaLength);
@@ -57,7 +59,7 @@ async function buildNativeContainer() {
 
 self.addEventListener('message', async event => {
   const message = event.data;
-  if (running) { self.postMessage({id: message.id, ok: false, error: {message: 'The document export worker is busy.', telemetryCode: 'worker_busy', telemetryStage: 'prepare'}}); return; }
+  if (running) { self.postMessage({id: message.id, ok: false, error: {message: 'The document export worker is busy.', messageKey:'errors.documentExportWorker.busy', telemetryCode: 'worker_busy', telemetryStage: 'prepare'}}); return; }
   running = true;
   let stage = 'prepare';
   try {
@@ -69,30 +71,30 @@ self.addEventListener('message', async event => {
       document = applyDocumentChunk(document, message.chunk);
       reply(message.id);
     } else if (message.operation === 'export') {
-      if (!document || !config) throw new Error('The document snapshot was not initialized.');
+      if (!document || !config) throw messageError(new Error(''), "errors.documentExportWorker.theDocumentSnapshotWasNotInitialized", {});
       const started = performance.now();
       document._styk = {...document._styk, format: 'StykAnimate', format_version: 1,
         ...(config.name ? {name: config.name} : {})};
       for (const frame of document.keyframes || []) for (const object of frame.objects || []) delete object.runtime_segments;
       stage = 'validate';
-      if(['piv','stk'].includes(config.format)&&documentHasVfx(document))throw Object.assign(new Error('Pivot files cannot preserve VFX. Save as .styk, .stkz or .stykmov to keep effects editable, or export an image/video.'),{telemetryCode:'unsupported_feature'});
+      if(['piv','stk'].includes(config.format)&&documentHasVfx(document))throw Object.assign(messageError(new Error(''), "errors.documentExportWorker.pivotFilesCannotPreserveVfxSaveAsStyk", {}),{telemetryCode:'unsupported_feature'});
       validateAnimationDocument(document);
       validateMovieclipGraph(document);
       if (config.format === 'stkz' || config.format === 'stykmov') {
         document = nativeFigureDocument(document, config);
-        if(config.format==='stykmov'&&!isMovieclip(document.figure_types[0]))throw new Error('Select a movieclip to export as .stykmov.');
+        if(config.format==='stykmov'&&!isMovieclip(document.figure_types[0]))throw messageError(new Error(''), "errors.documentExportWorker.selectAMovieclipToExportAsStykmov", {});
         config.sourceId = undefined;
         config.name = document._styk.name;
       }
       if(['piv','stk'].includes(config.format)) {
-        if(documentHasRigConstraints(document)||documentHasSurfaces(document))throw Object.assign(new Error('Pivot cannot preserve connectors, Smart Stretch or one-sided fills. Save as .styk or .stkz to keep the figure editable, or export SVG, images or video.'),{telemetryCode:'unsupported_feature'});
+        if(documentHasRigConstraints(document)||documentHasSurfaces(document))throw Object.assign(messageError(new Error(''), "errors.documentExportWorker.pivotCannotPreserveConnectorsSmartStretchOrOne", {}),{telemetryCode:'unsupported_feature'});
         const visited=new Set(),hasSourceShapes=doc=>{
           if(visited.has(doc))return false;visited.add(doc);
           return doc.figure_types.some(f=>f.segments.some(s=>s._sticknodes)||
             (f._styk?.movieclip&&hasSourceShapes(f._styk.movieclip.document)))||
             doc.keyframes.some(f=>f.objects.some(o=>o._sticknodesSprite));
         };
-        if(hasSourceShapes(document))throw Object.assign(new Error('Pivot cannot retain these Stick Nodes shapes. Save as .styk, .stykmov or .stkz to keep them editable, or export SVG, PNG or video.'), {telemetryCode: 'unsupported_feature'});
+        if(hasSourceShapes(document))throw Object.assign(messageError(new Error(''), "errors.documentExportWorker.pivotCannotRetainTheseStickNodesShapesSave", {}), {telemetryCode: 'unsupported_feature'});
       }
       if (['piv','stk'].includes(config.format)) {
         // Pivot formats cannot carry tile blobs: drawing cels flatten into
@@ -117,7 +119,7 @@ self.addEventListener('message', async event => {
         timings.source_keyframes = originalFrames; timings.export_keyframes = document.keyframes.length;
       } else if (config.format === 'stk') {
         if(isMovieclip(document.figure_types.find(f=>f.figure_type_id===config.figureTypeId)))
-          throw Object.assign(new Error('Save movieclips as .stykmov. Use Break apart to export a still figure to Pivot.'), {telemetryCode: 'unsupported_feature'});
+          throw Object.assign(messageError(new Error(''), "errors.documentExportWorker.saveMovieclipsAsStykmovUseBreakApartTo", {}), {telemetryCode: 'unsupported_feature'});
         const resolved = materializeStyledFigureForStk(document, config);
         document = resolved.report; config.figureTypeId = resolved.figureTypeId;
       }
@@ -127,7 +129,7 @@ self.addEventListener('message', async event => {
         // Native text gradients run vertically per glyph. A paint fill spans
         // the entire text run, even when it is a two-stop linear gradient.
         if(figures.some(f=>f.segments.some(s=>unsupported(s.paint)||s.paint&&s.paint.type!=='solid'&&(s.primitive_code===5||s.segment_type==='text'))) || (config.format==='piv' && document.backgrounds?.some(b=>b.paint&&b.paint.type!=='solid')))
-          throw Object.assign(new Error('Pivot files cannot represent these gradient fills. Save as .styk to keep editable gradients, or export SVG, PNG or video to preserve their appearance.'), {telemetryCode: 'unsupported_feature'});
+          throw Object.assign(messageError(new Error(''), "errors.documentExportWorker.pivotFilesCannotRepresentTheseGradientFillsSave", {}), {telemetryCode: 'unsupported_feature'});
       }
       synchronizeExistingDerived(document);
       // Zero stored frames are a valid native PIV boundary. The materializer
@@ -191,10 +193,10 @@ self.addEventListener('message', async event => {
       timings.output_bytes = blob.size;
       document = null;
       reply(message.id, {blob, timings});
-    } else throw new Error('Unknown document export operation.');
+    } else throw messageError(new Error(''), "errors.documentExportWorker.unknownDocumentExportOperation", {});
   } catch (error) {
     document = null;
-    self.postMessage({id: message.id, ok: false, error: {message: error?.message || String(error),
+    self.postMessage({id: message.id, ok: false, error: {message: error?.message || String(error), ...errorMessageData(error),
       code: error?.code, status: error?.status,
       ...diagnosticDetails(error,stage,stage === 'validate' ? 'invalid_document' : stage === 'serialize' ? 'serialize_failed' : stage === 'request' ? 'backend_unavailable' : 'snapshot_failed')}});
   } finally { running = false; }

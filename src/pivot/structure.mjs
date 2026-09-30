@@ -1,3 +1,4 @@
+import {messageError} from '../localized-error.mjs';
 // Editing operations work on frame data, preserving figure definitions and assets.
 import {isStatic} from './geometry.mjs';
 export function nextIdentity(report) {
@@ -5,7 +6,7 @@ export function nextIdentity(report) {
   for (const f of report.keyframes)
     for (const o of f.objects) max = Math.max(max, Number(o.unique_id));
   if (max >= 0x7ffffffe)
-    throw new Error("No positive object identities remain.");
+    throw messageError(new Error(''), "errors.structure.noPositiveObjectIdentitiesRemain", {});
   return max + 1;
 }
 export function frameOrder(frame) {
@@ -36,7 +37,7 @@ export function normalizeFrame(frame) {
 export function deleteObject(report, index, slot, geometry) {
   const frame = structuredClone(report.keyframes[index]),
     removed = frame.objects[slot];
-  if (!removed) throw new Error("Select a figure first.");
+  if (!removed) throw messageError(new Error(''), "errors.structure.selectAFigureFirst", {});
   for (let i = 0; i < frame.objects.length; i++) {
     const o = frame.objects[i];
     if (o.join?.target_object_slot === slot) {
@@ -78,9 +79,9 @@ export function resolveJoinSelection(frame, uids, ancestors = false) {
     if (ancestors) {
       const path = [], visiting = new Set();
       while (!resolved.has(slot) && objects[slot]?.join) {
-        if (visiting.has(slot)) throw new Error('Figures contain a cyclic join.');
+        if (visiting.has(slot)) throw messageError(new Error(''), "errors.editorSelection.figuresContainACyclicJoin", {});
         visiting.add(slot); path.push(slot); slot = objects[slot].join.target_object_slot;
-        if (!objects[slot]) throw new Error('Join target is missing.');
+        if (!objects[slot]) throw messageError(new Error(''), "errors.editorSelection.joinTargetIsMissing", {});
       }
       slot = resolved.get(slot) ?? slot;
       for (const visited of path) resolved.set(visited, slot);

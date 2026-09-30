@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {parallaxResolver,translatedPlan} from './layer-parallax.mjs';
 import {drawParallaxGeometry} from './parallax-draw.mjs';
@@ -167,7 +168,7 @@ export async function drawExportSceneTiled(context, report, frame, geometry, res
   if(!geometry.connectedVfxSource)geometry=connectedVfxGeometry(geometry,frame,report);
   checkExportContext(context);
   if (!Number.isInteger(tileSize) || tileSize < 1 || tileSize > 1024 || ![1, 2].includes(factor))
-    throw new Error('Invalid export tile dimensions.');
+    throw messageError(new Error(''), "errors.exportFrameCore.invalidExportTileDimensions", {});
   const width = context.canvas.width, height = context.canvas.height;
   const yieldWork = exportYield();
   const groups = exportDrawGroups(geometry, resources);

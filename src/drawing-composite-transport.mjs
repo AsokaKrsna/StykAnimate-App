@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {documentChunks} from './document-transport.mjs';
 
 const pick=(value,keys)=>Object.fromEntries(keys.filter(key=>value?.[key]!==undefined).map(key=>[key,value[key]]));
@@ -13,7 +14,7 @@ const yieldToInput=()=>globalThis.scheduler?.yield?globalThis.scheduler.yield():
 export async function sendDrawingComposite(worker,drawables,{visible=()=>true,signal,check=()=>{},maxBytes}={}){
   const records=[],items=[],ids=new Map();
   let projectedBytes=0;
-  const reserve=record=>{projectedBytes+=128+Object.keys(record).length*32;if(projectedBytes>maxBytes)throw new Error('The fill exceeds the drawing working memory limit.');};
+  const reserve=record=>{projectedBytes+=128+Object.keys(record).length*32;if(projectedBytes>maxBytes)throw messageError(new Error(''), "errors.drawingCompositeTransport.theFillExceedsTheDrawingWorkingMemoryLimit", {});};
   function reference(value,kind){
     if(value==null)return null;
     let id=ids.get(value);if(id!==undefined)return id;
@@ -39,7 +40,7 @@ export async function sendDrawingComposite(worker,drawables,{visible=()=>true,si
   let bytes=0;
   for(const chunk of documentChunks({records,items},{maxRecords:128,maxBytes:64*1024,timeBudgetMs:2})){
     check();bytes+=chunk.estimatedBytes??64;
-    if(bytes>maxBytes)throw new Error('The fill exceeds the drawing working memory limit.');
+    if(bytes>maxBytes)throw messageError(new Error(''), "errors.drawingCompositeTransport.theFillExceedsTheDrawingWorkingMemoryLimit", {});
     await worker.request('composite-chunk',{chunk,maxBytes},{signal});
   }
   check();return bytes;

@@ -1,3 +1,4 @@
+import {messageError} from '../localized-error.mjs';
 /**
  * The panel registry: every dockable panel described once, with its size
  * limits, allowed docks and workspaces, plus the runtime visibility that
@@ -49,13 +50,13 @@ function freezeDescriptor(descriptor) {
  * leave its root unreachable.
  */
 export function normalizePanelDescriptor(input) {
-  if (!input || typeof input !== 'object') throw new TypeError('A panel descriptor must be an object.');
+  if (!input || typeof input !== 'object') throw messageError(new TypeError(''), "errors.panelRegistry.aPanelDescriptorMustBeAnObject", {});
   const {id} = input;
-  if (typeof id !== 'string' || !ID_PATTERN.test(id)) throw new TypeError(`Invalid panel id: ${String(id)}`);
+  if (typeof id !== 'string' || !ID_PATTERN.test(id)) throw messageError(new TypeError(''), "errors.panelRegistry.invalidPanelId", {value: String(id)});
   const docks = [...new Set(input.docks ?? input.regions ?? [])];
-  if (!docks.length || docks.some(side => !DOCK_SIDES.includes(side))) throw new TypeError(`Panel ${id} needs docks from ${DOCK_SIDES.join(', ')}.`);
+  if (!docks.length || docks.some(side => !DOCK_SIDES.includes(side))) throw messageError(new TypeError(''), "errors.panelRegistry.panelNeedsDocksFrom", {id: id, value: DOCK_SIDES.join(', ')});
   const modes = input.modes == null ? null : [...new Set([...input.modes].map(workspaceId))];
-  if (modes && (!modes.length || modes.some(mode => !WORKSPACES.includes(mode)))) throw new TypeError(`Panel ${id} has unknown workspaces.`);
+  if (modes && (!modes.length || modes.some(mode => !WORKSPACES.includes(mode)))) throw messageError(new TypeError(''), "errors.panelRegistry.panelHasUnknownWorkspaces", {id: id});
   const number = (value, fallback) => Number.isFinite(value) && value >= 0 ? Math.round(value) : fallback;
   const min = number(input.min, 0);
   const max = input.max == null ? null : Math.max(min, number(input.max, min));
@@ -139,7 +140,7 @@ export function createPanelRegistry({catalog = PANEL_CATALOG} = {}) {
   };
 
   function define(input) {
-    if (!input || typeof input !== 'object') throw new TypeError('A panel descriptor must be an object.');
+    if (!input || typeof input !== 'object') throw messageError(new TypeError(''), "errors.panelRegistry.aPanelDescriptorMustBeAnObject", {});
     const known = panels.get(input.id);
     const merged = {...(known?.data ?? {}), ...Object.fromEntries(DATA_FIELDS.filter(key => input[key] !== undefined).map(key => [key, input[key]]))};
     if (input.regions !== undefined && input.docks === undefined) merged.docks = input.regions;
@@ -217,7 +218,7 @@ export function createPanelRegistry({catalog = PANEL_CATALOG} = {}) {
       return true;
     },
     on: (type, callback, {signal} = {}) => {
-      if (!listeners[type]) throw new TypeError(`Unknown panel registry event: ${type}`);
+      if (!listeners[type]) throw messageError(new TypeError(''), "errors.panelRegistry.unknownPanelRegistryEvent", {type: type});
       return subscribe(listeners[type], callback, signal);
     },
   };

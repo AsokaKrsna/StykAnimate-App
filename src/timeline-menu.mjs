@@ -1,3 +1,4 @@
+import {t as interfaceText} from './localization.mjs';
 import {icon} from './icons.mjs';
 import {openMenu} from './ui/ui-menu.mjs';
 
@@ -26,7 +27,7 @@ export function showTimelineMenu(host, event, groups) {
     ...(anchor ? {anchor} : {point: {x: event?.clientX ?? 0, y: event?.clientY ?? 0}}),
     overlays: host.overlays ?? null,
     icon: name => icon(name),
-    label: 'Timeline',
+    label: interfaceText("timelineMenu.timeline"), labelKey: "timelineMenu.timeline",
     invoker: focusTarget ?? document.activeElement,
     onClose: () => {
       events.abort();

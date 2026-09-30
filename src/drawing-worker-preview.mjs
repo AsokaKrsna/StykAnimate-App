@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {TILE,tileKey,TileStore} from './drawing-tiles.mjs';
 import {levelStore,invalidateLevels} from './drawing-raster.mjs';
 
@@ -6,7 +7,7 @@ import {levelStore,invalidateLevels} from './drawing-raster.mjs';
 let source=null;
 export function drawingWorkerPreview(data){
   const {rect,level}=data;
-  if(!rect||![rect.x,rect.y].every(Number.isSafeInteger)||![rect.width,rect.height].every(n=>Number.isInteger(n)&&n>0&&n<=4096)||!Number.isInteger(level)||level<0||level>8)throw new Error('Invalid drawing preview bounds.');
+  if(!rect||![rect.x,rect.y].every(Number.isSafeInteger)||![rect.width,rect.height].every(n=>Number.isInteger(n)&&n>0&&n<=4096)||!Number.isInteger(level)||level<0||level>8)throw messageError(new Error(''), "errors.drawingWorkerPreview.invalidDrawingPreviewBounds", {});
   if(data.reset||!source)source={store:new TileStore()};
   const keep=new Set(data.keep),input=source.store;
   for(const tile of input)if(!keep.has(tileKey(tile.tx,tile.ty))){input.delete(tile.tx,tile.ty);invalidateLevels(source,{x:tile.tx*TILE,y:tile.ty*TILE,width:TILE,height:TILE});}

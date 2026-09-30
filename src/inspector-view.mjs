@@ -1,3 +1,6 @@
+import {tupleMessages, messageTuple, messageHTML} from './localization-bindings.mjs';
+
+import {t as interfaceText} from './localization.mjs';
 /**
  * The inspector's contexts as section descriptors (architecture.md §3.13,
  * experience.md §5.1). inspectorDescriptor(options) describes what the
@@ -44,13 +47,13 @@ import {iconNames} from './icons.mjs';
 import {SectionMemory, renderInspector} from './inspector-kit.mjs';
 import {esc, grid, group, heading, numericField, propertyPrecision} from './inspector-legacy.mjs';
 
-const hex = rgb => `#${(rgb || [43, 43, 43]).map(n => Math.round(n).toString(16).padStart(2, '0')).join('')}`;
+const hex = rgb => `#${(rgb || [43, 43, 43]).map(n => (Math.round(n)).toString(16).padStart(2, '0')).join('')}`;
 const num = n => Number(Number(n ?? 0).toFixed(2));
 const degrees = radians => (radians * 180) / Math.PI;
 const opacity = raw => (1 - (raw || 0) / 255) * 100;
 const polygonOpacity = polygon => (polygon.alpha_raw !== undefined ? 1 - polygon.alpha_raw / 255 : polygon.color_alpha ?? 1) * 100;
 const pageText = (start, size, total) => `${start + 1}–${Math.min(start + size, total)} / ${total}`;
-const plural = (count, one, many = `${one}s`) => `${count.toLocaleString()} ${count === 1 ? one : many}`;
+const plural = (count, noun) => ({messageKey: 'counts.' + noun + 's', messageParams: {count}});
 const known = new Set(iconNames);
 /** The spec's glyph when icons.mjs has it (visual-system.md §10), else today's nearest drawing. */
 const glyph = (name, fallback) => (known.has(name) ? name : fallback);
@@ -88,14 +91,14 @@ function layerSelect(editor, extra = {}) {
   const layers = editor.layers.filter(layer => layer.kind === 'layer').reverse();
   const name = layers.find(layer => layer.id === current)?.name ?? '';
   return {
-    kind: 'select', id: 'figure-layer', label: 'Layer', description: 'Figure layer', placeholder: 'Mixed', value: current || undefined,
+    kind: 'select', id: 'figure-layer', label: interfaceText("inspectorView.layer"), labelKey: "inspectorView.layer", description: interfaceText("inspectorView.figureLayer"), descriptionKey: "inspectorView.figureLayer", placeholder: interfaceText("inspectorView.mixed"), placeholderKey: "inspectorView.mixed", value: current || undefined,
     bare: /^layer\b/i.test(name), options: layers.map(layer => ({value: layer.id, label: layer.name, disabled: layer.locked})), ...extra,
   };
 }
 
 /** A builder order's four steps for one drawable. */
 const orderActions = (kind, index, label) => ({kind: 'actions', label, items: [
-  ['back', 'send-to-back', 'Send to back'], ['down', STEP_DOWN, 'Send backward'], ['up', STEP_UP, 'Bring forward'], ['front', 'bring-to-front', 'Bring to front'],
+  messageTuple(['back', 'send-to-back', interfaceText("inspectorView.sendToBack")], {2: {key: "inspectorView.sendToBack", params: {}}}), messageTuple(['down', STEP_DOWN, interfaceText("inspectorView.sendBackward")], {2: {key: "inspectorView.sendBackward", params: {}}}), messageTuple(['up', STEP_UP, interfaceText("inspectorView.bringForward")], {2: {key: "inspectorView.bringForward", params: {}}}), messageTuple(['front', 'bring-to-front', interfaceText("inspectorView.bringToFront")], {2: {key: "inspectorView.bringToFront", params: {}}}),
 ].map(([direction, icon, name]) => ({action: 'builder-order', icon, label: `${name} · ${kind}`, data: {kind, index, direction}}))});
 
 /**
@@ -106,14 +109,14 @@ const orderActions = (kind, index, label) => ({kind: 'actions', label, items: [
 function scopeLine(editor, indices, applyRange) {
   if (!applyRange || indices.length < 2) return null;
   const frames = [...new Set(indices)].sort((a, b) => a - b), first = frames[0], last = frames.at(-1);
-  const label = last - first + 1 === frames.length ? `Editing frames ${first + 1}–${last + 1}` : `Editing ${frames.length} frames`;
-  return {label, stop: {action: 'toggle-range-edit', label: 'Stop', tip: 'Edit only this frame'}};
+  const label = last - first + 1 === frames.length ? interfaceText('inspectorView.editingFrameRange', {first: first + 1, last: last + 1}) : interfaceText('inspectorView.editingFrames', {count: frames.length});
+  return {label, labelKey: last - first + 1 === frames.length ? 'inspectorView.editingFrameRange' : 'inspectorView.editingFrames', labelParams: {first: first + 1, last: last + 1, count: frames.length}, stop: {action: 'toggle-range-edit', label: interfaceText("inspectorView.stop"), labelKey: "inspectorView.stop", tip: interfaceText("inspectorView.editOnlyThisFrame"), tipKey: "inspectorView.editOnlyThisFrame"}};
 }
 
 /** Edit together, as the checkbox that mirrors the timeline header's (#range-edit): shown while two or more frames are selected. */
 const rangeSection = (indices, applyRange) => ({id: 'range', hidden: indices.length <= 1, rows: [{kind: 'grid', rows: [
-  {kind: 'field-switch', id: 'apply-range-movement', label: `Edit ${indices.length} frames together`, checked: applyRange, span: 2,
-    tip: 'Apply canvas moves and figure commands to every selected frame'},
+  {kind: 'field-switch', id: 'apply-range-movement', label: interfaceText("inspectorView.editFramesTogether", {length: indices.length}), labelKey: "inspectorView.editFramesTogether", labelParams: {length: indices.length}, checked: applyRange, span: 2,
+    tip: interfaceText("inspectorView.applyCanvasMovesAndFigureCommandsToEvery"), tipKey: "inspectorView.applyCanvasMovesAndFigureCommandsToEvery"},
 ]}]});
 
 /**
@@ -122,12 +125,12 @@ const rangeSection = (indices, applyRange) => ({id: 'range', hidden: indices.len
  * Layer, Timing or Drawing.
  */
 function targetKind({editor, context = 'auto', drawing, tab = 'design'}) {
-  if (drawing?.active) return {label: 'Drawing', selection: 'drawing'};
+  if (drawing?.active) return {label: interfaceText("inspectorView.drawing"), labelKey: "inspectorView.drawing", selection: 'drawing'};
   const resolved = context === 'auto' ? (tab === 'animation' ? 'frame' : editor.object ? 'figure' : 'scene') : context;
   const count = editor.selectedUids?.size || 0, joint = editor.figure?.segments?.[editor.selectedJoint];
   if (!['camera', 'scene', 'layer', 'frame'].includes(resolved) && editor.object)
-    return count > 1 ? {label: 'Figures', selection: 'figures'} : joint ? {label: 'Joint', selection: 'joint'} : {label: 'Figure', selection: 'figure'};
-  const label = {camera: 'Camera', scene: 'Scene', layer: 'Layer', frame: 'Timing'}[resolved] ?? (count > 1 ? `${count} figures` : 'Scene');
+    return count > 1 ? {label: interfaceText("inspectorView.figures"), labelKey: "inspectorView.figures", selection: 'figures'} : joint ? {label: interfaceText("inspectorView.joint"), labelKey: "inspectorView.joint", selection: 'joint'} : {label: interfaceText("inspectorView.figure"), labelKey: "inspectorView.figure", selection: 'figure'};
+  const label = {camera: interfaceText("inspectorView.camera"), scene: interfaceText("inspectorView.scene"), layer: interfaceText("inspectorView.layer"), frame: interfaceText("inspectorView.timing")}[resolved] ?? (count > 1 ? interfaceText('inspectorView.selectedFigures', {count}) : interfaceText("inspectorView.scene"));
   return {label, selection: resolved};
 }
 
@@ -164,10 +167,10 @@ function contextDescriptor({
   const figure = resolveInstanceFigure(editor.figure, object), joint = editor.selectedJoint;
   const drawingSets = drawingSetsSection(builder ? '' : joinedDrawingSetsView(editor));
   if (!builder && figure.segments.some(segment => segment._stykRig?.spatial?.origin)) {
-    return {kind: 'spatial-rig', target: {name: figure.name || 'Figure', rename: figureRename}, quick: {context: 'figure'}, scope, sections: [
+    return {kind: 'spatial-rig', target: {name: figure.name || interfaceText("inspectorView.figure"), rename: figureRename}, quick: {context: 'figure'}, scope, sections: [
       range, drawingSets, ...spatialSections(editor, {hotkeyLabel}),
-      {id: 'placement', title: 'Placement', place: 'titled', open: true, hidden: joint >= 0, rows: [{kind: 'grid', rows: [
-        number('X', 'root_x', object.root_x, 'px'), number('Y', 'root_y', object.root_y, 'px'), number('Scale', 'scale', object.scale * 100, '%', {min: 0.01}),
+      {id: 'placement', title: interfaceText("inspectorView.placement"), titleKey: "inspectorView.placement", place: 'titled', open: true, hidden: joint >= 0, rows: [{kind: 'grid', rows: [
+        number('X', 'root_x', object.root_x, 'px'), number('Y', 'root_y', object.root_y, 'px'), number(interfaceText("inspectorView.scale"), 'scale', object.scale * 100, '%', {min: 0.01, labelKey: "inspectorView.scale", labelParams: {}}),
       ]}]},
     ]};
   }
@@ -181,10 +184,10 @@ function contextDescriptor({
     : figureDescriptor(editor, figure, number, {...shared, polygonPage, palettePage});
 }
 
-const figureRename = {id: 'figure-name', description: 'Figure name', tip: 'Double-click to rename the figure definition'};
+const figureRename = {id: 'figure-name', description: interfaceText("inspectorView.figureName"), descriptionKey: "inspectorView.figureName", tip: interfaceText("inspectorView.doubleClickToRenameTheFigureDefinition"), tipKey: "inspectorView.doubleClickToRenameTheFigureDefinition"};
 
 /** Drawing sets of the drawing banks joined to the selected figure: a titled section, open while it has any. */
-const drawingSetsSection = html => ({id: 'drawing-sets', title: 'Drawing sets', place: 'titled', open: Boolean(html), hidden: !html,
+const drawingSetsSection = html => ({id: 'drawing-sets', title: interfaceText("inspectorView.drawingSets"), titleKey: "inspectorView.drawingSets", place: 'titled', open: Boolean(html), hidden: !html,
   rows: [{kind: 'markup', html}]});
 
 /**
@@ -203,13 +206,13 @@ export function inspectorView(options) {
 function drawingDescriptor(editor, drawing, number, hotkeyLabel) {
   const o = editor.object, f = editor.figure;
   const field = (label, key, value, unit, limits = '') => numericField(label, key, number(label, key, value).value, unit, limits);
-  const pose = drawing.tool === 'transform' && o ? `<section class="inspector-section"><div class="inspector-title"><span>Transform drawing</span></div>${grid(
-    field('X', 'root_x', o.root_x, 'px') + field('Y', 'root_y', o.root_y, 'px') + field('Scale', 'scale', o.scale * 100, '%', 'min="0.01"') +
-    field('Angle', 'rotation', ((o.angles[0] ?? 0) - (f.segments[0]?.angle_rad ?? 0)) * 180 / Math.PI, '°') +
-    field('Opacity', 'figure_opacity', (1 - (o.field28 ?? 0) / 255) * 100, '%', 'min="0" max="100"'))}</section>` : '';
+  const pose = drawing.tool === 'transform' && o ? `<section class="inspector-section"><div class="inspector-title"><span data-i18n="inspectorView.transformDrawing">${messageHTML("inspectorView.transformDrawing", {})}</span></div>${grid(
+    field('X', 'root_x', o.root_x, 'px') + field('Y', 'root_y', o.root_y, 'px') + field(interfaceText("inspectorView.scale"), 'scale', o.scale * 100, '%', 'min="0.01"') +
+    field(interfaceText("inspectorView.angle"), 'rotation', ((o.angles[0] ?? 0) - (f.segments[0]?.angle_rad ?? 0)) * 180 / Math.PI, '°') +
+    field(interfaceText("inspectorView.opacity"), 'figure_opacity', (1 - (o.field28 ?? 0) / 255) * 100, '%', 'min="0" max="100"'))}</section>` : '';
   const html = drawingInspector(drawing, {numericField, group, grid, heading, hotkeyLabel, esc, propertyToggle}, pose);
   // The panel's title names the tool ("Brush", "Fill"), with its glyph; drawing-view's own heading row steps aside.
-  const [, name = 'Drawing', glyph = 'brush'] = DRAWING_TOOLS.find(entry => entry[0] === drawing.tool) ?? [];
+  const [, name = interfaceText("inspectorView.drawing"), glyph = 'brush'] = DRAWING_TOOLS.find(entry => entry[0] === drawing.tool) ?? [];
   return {kind: 'drawing', target: {name, glyph}, sections: [{id: 'drawing', bare: true, rows: [{kind: 'markup', html}]}]};
 }
 
@@ -218,20 +221,20 @@ function sceneDescriptor(editor, number, propertyState) {
   const background = report.backgrounds?.find(item => item.background_id === (backgroundState?.value ?? frame.background_id));
   const raw = colorState?.value ?? background?.color ?? 0xffffffff;
   const color = typeof raw === 'string' && /^#[0-9a-f]{6}$/i.test(raw) ? raw : `#${(raw & 0xffffff).toString(16).padStart(6, '0')}`;
-  const name = background?.name || 'White', figures = editor.frame.objects.length, frames = editor.totalTicks ?? report.keyframes.length;
+  const name = background?.name || interfaceText("inspectorView.white"), figures = editor.frame.objects.length, frames = editor.totalTicks ?? report.keyframes.length;
   const scopes = editor._movieclipScopes ?? [];
-  return {kind: 'scene', target: {name: scopes.length ? scopes.map(scope => scope.name).join(' › ') : 'Scene', glyph: scopes.length ? 'frame' : 'scene'}, sections: [
-    {id: 'summary', rows: [{kind: 'meta', text: `${plural(figures, 'figure')} · ${plural(frames, 'frame')} · ${num(frames / report.fps)} s`}]},
-    {id: 'canvas', title: 'Canvas', rows: [{kind: 'grid', rows: [
-      number('Width', 'canvas_width', report.canvas_width, 'px', {min: 1, max: 16384}), number('Height', 'canvas_height', report.canvas_height, 'px', {min: 1, max: 16384}),
+  return {kind: 'scene', target: {name: scopes.length ? scopes.map(scope => scope.name).join(' › ') : interfaceText("inspectorView.scene"), glyph: scopes.length ? 'frame' : 'scene'}, sections: [
+    {id: 'summary', rows: [{kind: 'meta', text: interfaceText("inspectorView.s", {value: plural(figures, 'figure'), value2: plural(frames, 'frame'), value3: num(frames / report.fps)}), textKey: "inspectorView.s", textParams: {value: plural(figures, 'figure'), value2: plural(frames, 'frame'), value3: num(frames / report.fps)}}]},
+    {id: 'canvas', title: interfaceText("inspectorView.canvas"), titleKey: "inspectorView.canvas", rows: [{kind: 'grid', rows: [
+      number(interfaceText("inspectorView.width"), 'canvas_width', report.canvas_width, 'px', {min: 1, max: 16384, labelKey: "inspectorView.width", labelParams: {}}), number(interfaceText("inspectorView.height"), 'canvas_height', report.canvas_height, 'px', {min: 1, max: 16384, labelKey: "inspectorView.height", labelParams: {}}),
     ]}]},
-    {id: 'background', title: 'Background', actions: [{action: 'import-background', icon: 'image', label: 'Import background', tip: 'Background image…'}], rows: [
+    {id: 'background', title: interfaceText("inspectorView.background"), titleKey: "inspectorView.background", actions: [{action: 'import-background', icon: 'image', label: interfaceText("inspectorView.importBackground"), labelKey: "inspectorView.importBackground", tip: interfaceText("inspectorView.backgroundImage"), tipKey: "inspectorView.backgroundImage"}], rows: [
       {kind: 'grid', rows: [
-        {kind: 'color', id: 'background-color', label: 'Background color', value: color, caption: name, tip: name},
-        {kind: 'actions', items: [{action: 'background-style', icon: 'sliders', label: 'Library…', text: true, variant: 'outline', tip: 'Background settings'}]},
+        {kind: 'color', id: 'background-color', label: interfaceText("inspectorView.backgroundColor"), labelKey: "inspectorView.backgroundColor", value: color, caption: name, tip: name},
+        {kind: 'actions', items: [{action: 'background-style', icon: 'sliders', label: interfaceText("inspectorView.library"), labelKey: "inspectorView.library", text: true, variant: 'outline', tip: interfaceText("inspectorView.backgroundSettings"), tipKey: "inspectorView.backgroundSettings"}]},
       ]},
     ]},
-    {id: 'playback', title: 'Playback', rows: [{kind: 'grid', rows: [number('Rate', 'fps', report.fps, 'fps', {min: 1, max: 120})]}]},
+    {id: 'playback', title: interfaceText("inspectorView.playback"), titleKey: "inspectorView.playback", rows: [{kind: 'grid', rows: [number(interfaceText("inspectorView.rate"), 'fps', report.fps, 'fps', {min: 1, max: 120, labelKey: "inspectorView.rate", labelParams: {}})]}]},
   ]};
 }
 
@@ -245,28 +248,28 @@ function cameraDescriptor(editor, number) {
   const c = cameraValues((editor.evaluatedFrame || editor.frame).camera), motion = editor._cameraInspectorTab === 'motion';
   const selected = Boolean(editor.selectedObjects?.length ?? editor.object);
   return {kind: 'camera', target: {name: 'Camera', glyph: 'camera'}, quick: {context: 'camera'}, sections: [
-    {id: 'preview', title: 'Preview', actions: [{action: 'camera-guides', icon: 'grid', label: 'Guides', tip: 'Show composition guides', pressed: true}], rows: [
-      {kind: 'preview', label: 'Live camera output', media: {tag: 'canvas', key: 'camera-monitor', label: 'Live camera output', data: {'camera-monitor': true}},
-        caption: [`${editor.report.canvas_width} × ${editor.report.canvas_height}`, {text: `${num(100 / c.scale)}% zoom`, data: {'camera-magnification': true}}]},
+    {id: 'preview', title: interfaceText("inspectorView.preview"), titleKey: "inspectorView.preview", actions: [{action: 'camera-guides', icon: 'grid', label: interfaceText("inspectorView.guides"), labelKey: "inspectorView.guides", tip: interfaceText("inspectorView.showCompositionGuides"), tipKey: "inspectorView.showCompositionGuides", pressed: true}], rows: [
+      {kind: 'preview', label: interfaceText("inspectorView.liveCameraOutput"), labelKey: "inspectorView.liveCameraOutput", media: {tag: 'canvas', key: 'camera-monitor', label: interfaceText("inspectorView.liveCameraOutput"), labelKey: "inspectorView.liveCameraOutput", data: {'camera-monitor': true}},
+        caption: [`${editor.report.canvas_width} × ${editor.report.canvas_height}`, {text: interfaceText("inspectorView.zoom2", {value: num(100 / c.scale)}), textKey: "inspectorView.zoom2", textParams: {value: num(100 / c.scale)}, data: {'camera-magnification': true}}]},
     ]},
-    {id: 'tabs', rows: [{kind: 'segmented', mode: 'tab', description: 'Camera controls', fill: true, value: motion ? 'motion' : 'transform', options: [
-      {value: 'transform', label: 'Transform', data: {'camera-tab': 'transform'}}, {value: 'motion', label: 'Motion', data: {'camera-tab': 'motion'}},
+    {id: 'tabs', rows: [{kind: 'segmented', mode: 'tab', description: interfaceText("inspectorView.cameraControls"), descriptionKey: "inspectorView.cameraControls", fill: true, value: motion ? 'motion' : 'transform', options: [
+      {value: 'transform', label: interfaceText("inspectorView.transform"), labelKey: "inspectorView.transform", data: {'camera-tab': 'transform'}}, {value: 'motion', label: interfaceText("inspectorView.motion"), labelKey: "inspectorView.motion", data: {'camera-tab': 'motion'}},
     ]}]},
-    {id: 'transform', title: 'Transform', hidden: motion, actions: [
-      {action: 'camera-copy', icon: 'duplicate', label: 'Copy camera pose'},
-      {action: 'camera-paste', icon: 'clipboard', label: 'Paste camera pose', disabled: !editor._cameraClipboard},
+    {id: 'transform', title: interfaceText("inspectorView.transform"), titleKey: "inspectorView.transform", hidden: motion, actions: [
+      {action: 'camera-copy', icon: 'duplicate', label: interfaceText("inspectorView.copyCameraPose"), labelKey: "inspectorView.copyCameraPose"},
+      {action: 'camera-paste', icon: 'clipboard', label: interfaceText("inspectorView.pasteCameraPose"), labelKey: "inspectorView.pasteCameraPose", disabled: !editor._cameraClipboard},
     ], rows: [{kind: 'grid', rows: [
       number('X', 'camera_x', c.x || 0, 'px'), number('Y', 'camera_y', c.y || 0, 'px'),
-      number('Zoom', 'camera_scale', (c.scale || 1) * 100, '%', {min: 0.01, description: 'Scale (%)'}), number('Rotation', 'camera_angle', degrees(c.angle_rad || 0), '°'),
+      number(interfaceText("inspectorView.zoom"), 'camera_scale', (c.scale || 1) * 100, '%', {min: 0.01, description: interfaceText("inspectorView.scale2"), descriptionKey: "inspectorView.scale2", labelKey: "inspectorView.zoom", labelParams: {}}), number(interfaceText("inspectorView.rotation"), 'camera_angle', degrees(c.angle_rad || 0), '°', {labelKey: "inspectorView.rotation", labelParams: {}}),
     ]}]},
-    {id: 'framing', title: 'Framing', place: 'titled', hidden: motion, rows: [
-      {kind: 'actions', label: 'Fit', items: [{action: 'camera-align-view', icon: 'fit', label: 'Fit view', text: true, variant: 'outline', tip: 'Fit camera to current canvas view'}]},
-      {kind: 'actions', label: 'Centre on selection', items: [
-        {action: 'camera-center-x', icon: 'align-horizontal-center', label: 'Center camera horizontally', disabled: !selected},
-        {action: 'camera-center-y', icon: 'align-vertical-center', label: 'Center camera vertically', disabled: !selected},
-        {action: 'camera-locate-previous', icon: 'chevron-left', label: 'Match previous camera pose', disabled: editor.frameIndex <= 0},
-        {action: 'camera-locate-next', icon: 'chevron-right', label: 'Match next camera pose', disabled: editor.frameIndex >= editor.report.keyframes.length - 1},
-        {action: 'camera-apply-figures', icon: 'check', label: 'Apply camera transform to figures'},
+    {id: 'framing', title: interfaceText("inspectorView.framing"), titleKey: "inspectorView.framing", place: 'titled', hidden: motion, rows: [
+      {kind: 'actions', label: interfaceText("inspectorView.fit"), labelKey: "inspectorView.fit", items: [{action: 'camera-align-view', icon: 'fit', label: interfaceText("inspectorView.fitView"), labelKey: "inspectorView.fitView", text: true, variant: 'outline', tip: interfaceText("inspectorView.fitCameraToCurrentCanvasView"), tipKey: "inspectorView.fitCameraToCurrentCanvasView"}]},
+      {kind: 'actions', label: interfaceText("inspectorView.centreOnSelection"), labelKey: "inspectorView.centreOnSelection", items: [
+        {action: 'camera-center-x', icon: 'align-horizontal-center', label: interfaceText("inspectorView.centerCameraHorizontally"), labelKey: "inspectorView.centerCameraHorizontally", disabled: !selected},
+        {action: 'camera-center-y', icon: 'align-vertical-center', label: interfaceText("inspectorView.centerCameraVertically"), labelKey: "inspectorView.centerCameraVertically", disabled: !selected},
+        {action: 'camera-locate-previous', icon: 'chevron-left', label: interfaceText("inspectorView.matchPreviousCameraPose"), labelKey: "inspectorView.matchPreviousCameraPose", disabled: editor.frameIndex <= 0},
+        {action: 'camera-locate-next', icon: 'chevron-right', label: interfaceText("inspectorView.matchNextCameraPose"), labelKey: "inspectorView.matchNextCameraPose", disabled: editor.frameIndex >= editor.report.keyframes.length - 1},
+        {action: 'camera-apply-figures', icon: 'check', label: interfaceText("inspectorView.applyCameraTransformToFigures"), labelKey: "inspectorView.applyCameraTransformToFigures"},
       ]},
     ]},
     {id: 'motion', bare: true, hidden: !motion, rows: [{kind: 'markup', html: cameraMotionView(editor)}]},
@@ -277,14 +280,14 @@ function frameDescriptor(editor, number) {
   if (editor.report._styk?.layerSheet) {
     const track = editor.report._styk.layerSheet.tracks[editor.activeLayerId], {key, next} = sheetKeyAt(track, editor.tick);
     return {kind: 'frame', target: {name: `Frame ${editor.tick + 1}`}, sections: [
-      {id: 'exposure', title: editor.getLayer(editor.activeLayerId)?.name ?? 'Layer',
-        actions: [{action: 'add-frame', icon: glyph('frame-plus', 'plus'), label: 'Insert keyframe (F6)', tip: 'Add frame'}], rows: [{kind: 'grid', rows: [
-          number('Exposure', 'duration', (next?.tick ?? track?.end ?? editor.tick + 1) - (key?.tick ?? editor.tick), 'frames', {min: 1, max: 65535}),
+      {id: 'exposure', title: editor.getLayer(editor.activeLayerId)?.name ?? interfaceText("inspectorView.layer"),
+        actions: [{action: 'add-frame', icon: glyph('frame-plus', 'plus'), label: interfaceText("inspectorView.insertKeyframeF6"), labelKey: "inspectorView.insertKeyframeF6", tip: interfaceText("inspectorView.addFrame"), tipKey: "inspectorView.addFrame"}], rows: [{kind: 'grid', rows: [
+          number(interfaceText("inspectorView.exposure"), 'duration', (next?.tick ?? track?.end ?? editor.tick + 1) - (key?.tick ?? editor.tick), 'frames', {min: 1, max: 65535, labelKey: "inspectorView.exposure", labelParams: {}}),
         ]}]},
     ]};
   }
-  return {kind: 'keyframe', target: {name: `Keyframe ${(editor.frameIndex ?? 0) + 1}`}, sections: [
-    {id: 'timing', title: 'Timing', rows: [{kind: 'grid', rows: [number('Duration', 'duration', editor.frame.duration_raw ?? 1, 'ticks', {min: 0, max: 65535})]}]},
+  return {kind: 'keyframe', target: {name: interfaceText('inspectorView.keyframe', {frame: (editor.frameIndex ?? 0) + 1})}, sections: [
+    {id: 'timing', title: interfaceText("inspectorView.timing"), titleKey: "inspectorView.timing", rows: [{kind: 'grid', rows: [number(interfaceText("inspectorView.duration"), 'duration', editor.frame.duration_raw ?? 1, 'ticks', {min: 0, max: 65535, labelKey: "inspectorView.duration", labelParams: {}})]}]},
   ]};
 }
 
@@ -293,8 +296,8 @@ function layerDescriptor(editor) {
   const layer = editor.getLayer?.(editor.activeLayerId) ?? {id: 'layer-1', name: 'Layer', visible: true, locked: false, figureUids: []};
   const data = {'layer-id': layer.id};
   return {kind: 'layer', target: {name: layer.name, glyph: 'layers'}, sections: [
-    {id: 'layer', title: 'Layer', rows: [{kind: 'grid', rows: [
-      {kind: 'text', id: 'inspector-layer-name', label: 'Name', description: 'Layer name', value: layer.name, maxlength: 160, data, span: 2},
+    {id: 'layer', title: interfaceText("inspectorView.layer"), titleKey: "inspectorView.layer", rows: [{kind: 'grid', rows: [
+      {kind: 'text', id: 'inspector-layer-name', label: interfaceText("common.name"), labelKey: "common.name", description: interfaceText("inspectorView.layerName"), descriptionKey: "inspectorView.layerName", value: layer.name, maxlength: 160, data, span: 2},
     ]}]},
     {id: 'parallax', bare: true, rows: [{kind: 'markup', html: parallaxView(editor, layer.id)}]},
   ]};
@@ -307,29 +310,29 @@ function selectionDescriptor(editor, number, {bounds: b, selectionCount, range, 
   const figureOf = item => resolveInstanceFigure(editor.report.figure_types.find(type => type.figure_type_id === item.figure_type_id), item);
   const colours = new Set(objects.flatMap(item => figurePalette(editor.report, figureOf(item), item).map(entry => entry.color)));
   const joined = objects.some(item => item.join) || editor.frame.objects.some(part => part.join && objects.some(item => item.object_slot === part.join.target_object_slot));
-  const align = [['left', 'align-left', 'Align left'], ['center-x', 'align-horizontal-center', 'Align center'], ['right', 'align-right', 'Align right'],
-    ['top', 'align-top', 'Align top'], ['center-y', 'align-vertical-center', 'Align middle'], ['bottom', 'align-bottom', 'Align bottom']];
-  return {kind: 'figures', target: {name: `${selectionCount} figures`}, quick: {context: 'figures'}, scope, sections: [
+  const align = [messageTuple(['left', 'align-left', interfaceText("inspectorView.alignLeft")], {2: {key: "inspectorView.alignLeft", params: {}}}), messageTuple(['center-x', 'align-horizontal-center', interfaceText("inspectorView.alignCenter")], {2: {key: "inspectorView.alignCenter", params: {}}}), messageTuple(['right', 'align-right', interfaceText("inspectorView.alignRight")], {2: {key: "inspectorView.alignRight", params: {}}}),
+    messageTuple(['top', 'align-top', interfaceText("inspectorView.alignTop")], {2: {key: "inspectorView.alignTop", params: {}}}), messageTuple(['center-y', 'align-vertical-center', interfaceText("inspectorView.alignMiddle")], {2: {key: "inspectorView.alignMiddle", params: {}}}), messageTuple(['bottom', 'align-bottom', interfaceText("inspectorView.alignBottom")], {2: {key: "inspectorView.alignBottom", params: {}}})];
+  return {kind: 'figures', target: {name: interfaceText('inspectorView.selectedFigures', {count: selectionCount})}, quick: {context: 'figures'}, scope, sections: [
     range,
-    {id: 'selection', title: 'Selection', actions: [
-      {action: 'rotate', label: 'Rotate 15°', text: true, tip: 'Rotate the selection 15°'}, {action: 'center', label: 'Center', text: true, tip: 'Center selection'},
+    {id: 'selection', title: interfaceText("inspectorView.selection"), titleKey: "inspectorView.selection", actions: [
+      {action: 'rotate', label: interfaceText("inspectorView.rotate15"), labelKey: "inspectorView.rotate15", text: true, tip: interfaceText("inspectorView.rotateTheSelection15"), tipKey: "inspectorView.rotateTheSelection15"}, {action: 'center', label: interfaceText("inspectorView.center"), labelKey: "inspectorView.center", text: true, tip: interfaceText("inspectorView.centerSelection"), tipKey: "inspectorView.centerSelection"},
     ], rows: [{kind: 'grid', rows: [
       number('X', 'group_x', b.minX, 'px'), number('Y', 'group_y', b.minY, 'px'),
-      number('W', 'group_width', b.maxX - b.minX, 'px', {min: 0.01, description: 'Width (px)'}), number('H', 'group_height', b.maxY - b.minY, 'px', {min: 0.01, description: 'Height (px)'}),
+      number('W', 'group_width', b.maxX - b.minX, 'px', {min: 0.01, description: interfaceText("inspectorView.widthPx"), descriptionKey: "inspectorView.widthPx"}), number('H', 'group_height', b.maxY - b.minY, 'px', {min: 0.01, description: interfaceText("inspectorView.heightPx"), descriptionKey: "inspectorView.heightPx"}),
     ]}]},
-    {id: 'align', title: 'Align', rows: [{kind: 'actions', label: 'Align', items: align.map(([name, icon, label]) => ({action: `align-${name}`, icon, label}))}]},
-    {id: 'appearance', title: 'Appearance', actions: [{action: 'reset-color', icon: 'reset', label: 'Reset colors'}], rows: [{kind: 'grid', rows: [
-      {kind: 'color', id: 'figure-color', label: 'Colour', description: 'Figure color', value: colours.size === 1 ? [...colours][0] : '#2b2b2b', mixed: colours.size > 1},
-      number('Opacity', 'figure_opacity', opacity(object.field28), '%', {min: 0, max: 100, id: 'figure-opacity', field: false, mixed: opacities.size > 1}),
+    {id: 'align', title: interfaceText("inspectorView.align"), titleKey: "inspectorView.align", rows: [{kind: 'actions', label: interfaceText("inspectorView.align"), labelKey: "inspectorView.align", items: align.map((_tuple) => {const [name, icon, label] = _tuple; const _messages = tupleMessages(_tuple); return {action: `align-${name}`, icon, label, ...(_messages[2] ? {labelKey: _messages[2].key, labelParams: _messages[2].params} : {})};})}]},
+    {id: 'appearance', title: interfaceText("inspectorView.appearance"), titleKey: "inspectorView.appearance", actions: [{action: 'reset-color', icon: 'reset', label: interfaceText("inspectorView.resetColors"), labelKey: "inspectorView.resetColors"}], rows: [{kind: 'grid', rows: [
+      {kind: 'color', id: 'figure-color', label: interfaceText("inspectorView.colour"), labelKey: "inspectorView.colour", description: interfaceText("inspectorView.figureColor"), descriptionKey: "inspectorView.figureColor", value: colours.size === 1 ? [...colours][0] : '#2b2b2b', mixed: colours.size > 1},
+      number(interfaceText("inspectorView.opacity"), 'figure_opacity', opacity(object.field28), '%', {min: 0, max: 100, id: 'figure-opacity', field: false, mixed: opacities.size > 1, labelKey: "inspectorView.opacity", labelParams: {}}),
     ]}]},
-    {id: 'arrange', title: 'Arrange', rows: [{kind: 'grid', ratio: '3:2', rows: [
+    {id: 'arrange', title: interfaceText("inspectorView.arrange"), titleKey: "inspectorView.arrange", rows: [{kind: 'grid', ratio: '3:2', rows: [
       layerSelect(editor),
-      {kind: 'actions', label: 'One step', items: [
-        {action: 'layer-down', icon: STEP_DOWN, label: 'Send backward'}, {action: 'layer-up', icon: STEP_UP, label: 'Bring forward'},
+      {kind: 'actions', label: interfaceText("inspectorView.oneStep"), labelKey: "inspectorView.oneStep", items: [
+        {action: 'layer-down', icon: STEP_DOWN, label: interfaceText("inspectorView.sendBackward"), labelKey: "inspectorView.sendBackward"}, {action: 'layer-up', icon: STEP_UP, label: interfaceText("inspectorView.bringForward"), labelKey: "inspectorView.bringForward"},
       ]},
     ]}]},
-    {id: 'connection', title: 'Connection', place: 'titled', hidden: !joined, rows: [{kind: 'actions', items: [
-      {action: 'combine-figures', icon: 'combine', label: 'Combine connected', text: true, variant: 'outline'},
+    {id: 'connection', title: interfaceText("inspectorView.connection"), titleKey: "inspectorView.connection", place: 'titled', hidden: !joined, rows: [{kind: 'actions', items: [
+      {action: 'combine-figures', icon: 'combine', label: interfaceText("inspectorView.combineConnected"), labelKey: "inspectorView.combineConnected", text: true, variant: 'outline'},
     ]}]},
   ]};
 }
@@ -337,14 +340,14 @@ function selectionDescriptor(editor, number, {bounds: b, selectionCount, range, 
 /** A fill picked in the builder: its colour, delete, opacity, surface and order. */
 function fillDescriptor(editor, figure, number) {
   const index = editor.selectedPolygonIndex, polygon = figure.polyfills[index];
-  return {kind: 'fill', target: {name: `Fill ${index + 1}`, glyph: 'polygon'}, sections: [{id: 'fill', title: 'Fill', rows: [
-    {kind: 'list-row', label: `Polygon ${index + 1}`, lead: 'polygon', actions: [
-      {kind: 'swatch', picker: 'native', label: 'Fill color', value: hex(displayedColor(editor.report, figure, editor.object, polygon.color_rgb)), data: {'polygon-color': index}},
-      {icon: 'trash', label: 'Delete fill', data: {'delete-polygon': index}},
+  return {kind: 'fill', target: {name: `Fill ${index + 1}`, glyph: 'polygon'}, sections: [{id: 'fill', title: interfaceText("inspectorView.fill"), titleKey: "inspectorView.fill", rows: [
+    {kind: 'list-row', label: interfaceText("inspectorView.polygon", {value: index + 1}), labelKey: "inspectorView.polygon", labelParams: {value: index + 1}, lead: 'polygon', actions: [
+      {kind: 'swatch', picker: 'native', label: interfaceText("inspectorView.fillColor"), labelKey: "inspectorView.fillColor", value: hex(displayedColor(editor.report, figure, editor.object, polygon.color_rgb)), data: {'polygon-color': index}},
+      {icon: 'trash', label: interfaceText("inspectorView.deleteFill"), labelKey: "inspectorView.deleteFill", data: {'delete-polygon': index}},
     ]},
-    {kind: 'grid', rows: [number('Opacity', `polygon_${index}_opacity`, polygonOpacity(polygon), '%', {min: 0, max: 100})]},
+    {kind: 'grid', rows: [number(interfaceText("inspectorView.opacity"), `polygon_${index}_opacity`, polygonOpacity(polygon), '%', {min: 0, max: 100, labelKey: "inspectorView.opacity", labelParams: {}})]},
     {kind: 'markup', html: polygonSurfaceView(editor, index)},
-    orderActions('polygon', index, 'Fill order'),
+    orderActions('polygon', index, interfaceText("inspectorView.fillOrder")),
   ]}]};
 }
 
@@ -353,12 +356,12 @@ function fillGroup(editor, figure, object, index, order) {
   const polygon = figure.polyfills[index], name = `Polygon ${index + 1}`;
   return {kind: 'group', label: name, data: {'polygon-index': index}, rows: [
     {kind: 'list-row', label: name, lead: 'polygon', actions: [
-      {kind: 'swatch', picker: 'native', value: hex(displayedColor(editor.report, figure, object, polygon.color_rgb)), label: `${name} color`, data: {'polygon-color': index}},
-      {icon: 'trash', label: `Delete polygon ${index + 1}`, data: {'delete-polygon': index}},
+      {kind: 'swatch', picker: 'native', value: hex(displayedColor(editor.report, figure, object, polygon.color_rgb)), label: interfaceText("inspectorView.color", {name: name}), labelKey: "inspectorView.color", labelParams: {name: name}, data: {'polygon-color': index}},
+      {icon: 'trash', label: interfaceText("inspectorView.deletePolygon", {value: index + 1}), labelKey: "inspectorView.deletePolygon", labelParams: {value: index + 1}, data: {'delete-polygon': index}},
     ]},
     {kind: 'grid', rows: [
-      {kind: 'number', key: `polygon_${index}_opacity`, label: 'Opacity', unit: '%', value: polygonOpacity(polygon), min: 0, max: 100, precision: 3},
-      {kind: 'number', key: `polygon_${index}_z_order`, label: 'Order', precision: 0, value: order.get(`polygon:${index}`), min: 1, max: order.size},
+      {kind: 'number', key: `polygon_${index}_opacity`, label: interfaceText("inspectorView.opacity"), labelKey: "inspectorView.opacity", unit: '%', value: polygonOpacity(polygon), min: 0, max: 100, precision: 3},
+      {kind: 'number', key: `polygon_${index}_z_order`, label: interfaceText("inspectorView.order"), labelKey: "inspectorView.order", precision: 0, value: order.get(`polygon:${index}`), min: 1, max: order.size},
     ]},
     orderActions('polygon', index, `${name} order`),
   ]};
@@ -376,61 +379,61 @@ function figureDescriptor(editor, figure, number, {range, scope, drawingSets, sp
   const kind = figure.segments.every(segment => segment.primitive_code === 5) ? 'text' : figure.segments.every(segment => segment.primitive_code === 2) ? 'image' : 'figure';
   const children = frame.objects.some(part => part.join?.target_object_slot === object.object_slot);
   const parent = object.join ? frame.objects[object.join.target_object_slot] : null;
-  const parentName = parent && (parent.name || report.figure_types.find(type => type.figure_type_id === parent.figure_type_id)?.name || 'Figure');
+  const parentName = parent && (parent.name || report.figure_types.find(type => type.figure_type_id === parent.figure_type_id)?.name || interfaceText("inspectorView.figure"));
   const polygons = figure.polyfills || [], start = Math.min(Math.max(0, polygonPage) * 12, Math.max(0, Math.floor((polygons.length - 1) / 12) * 12));
   const paletteStart = Math.min(Math.max(0, palettePage) * 32, Math.max(0, Math.ceil(palette.length / 32) - 1) * 32);
-  const joinLabel = parent ? 'Unjoin figure' : 'Join to figure';
+  const joinLabel = parent ? interfaceText("inspectorView.unjoinFigure") : interfaceText("inspectorView.joinToFigure");
   // In Build the figure's tiles add parts and fit it; its looks lead, and its placement in the scene (Animate's)
   // folds last behind Transform's title. The rig tool's Drag mode is its option in the stage header.
   // Every selection's title carries its kind's glyph (a figure's person, a text's T, an image's frame).
-  const transform = {id: 'transform', title: 'Transform', place: builder ? 'titled' : 'core', rows: [{kind: 'grid', rows: [
+  const transform = {id: 'transform', title: interfaceText("inspectorView.transform"), titleKey: "inspectorView.transform", place: builder ? 'titled' : 'core', rows: [{kind: 'grid', rows: [
     number('X', 'root_x', object.root_x, 'px'), number('Y', 'root_y', object.root_y, 'px'),
-    number('Angle', 'rotation', degrees((object.angles[0] ?? 0) - (figure.segments[0]?.angle_rad ?? 0)), '°'),
-    number('Scale', 'scale', object.scale * 100, '%', {min: 0.01}),
+    number(interfaceText("inspectorView.angle"), 'rotation', degrees((object.angles[0] ?? 0) - (figure.segments[0]?.angle_rad ?? 0)), '°', {labelKey: "inspectorView.angle", labelParams: {}}),
+    number(interfaceText("inspectorView.scale"), 'scale', object.scale * 100, '%', {min: 0.01, labelKey: "inspectorView.scale", labelParams: {}}),
   ]}]};
-  return {kind, target: {name: figure.name || 'Figure', glyph: kind === 'text' ? 'text' : kind === 'image' ? 'image' : 'person', rename: figureRename},
+  return {kind, target: {name: figure.name || interfaceText("inspectorView.figure"), glyph: kind === 'text' ? 'text' : kind === 'image' ? 'image' : 'person', rename: figureRename},
     quick: {context: builder ? 'build' : kind}, scope, sections: [
       range, drawingSets, ...spatial,
-      {id: 'text', title: 'Text', hidden: kind !== 'text' && !figure.text_assets?.some(asset => asset.glyphs?.length), rows: [{kind: 'actions', items: [
-        {action: 'edit-text', icon: 'text', label: 'Edit text…', text: true, variant: 'outline', tip: 'Edit text'},
+      {id: 'text', title: interfaceText("inspectorView.text"), titleKey: "inspectorView.text", hidden: kind !== 'text' && !figure.text_assets?.some(asset => asset.glyphs?.length), rows: [{kind: 'actions', items: [
+        {action: 'edit-text', icon: 'text', label: interfaceText("inspectorView.editText"), labelKey: "inspectorView.editText", text: true, variant: 'outline', tip: interfaceText("inspectorView.editText2"), tipKey: "inspectorView.editText2"},
       ]}]},
       !builder && transform,
-      {id: 'appearance', title: 'Appearance', actions: [{action: 'reset-color', icon: 'reset', label: 'Reset colors'}], rows: [{kind: 'grid', rows: [
-        {kind: 'color', id: 'figure-color', label: 'Colour', description: 'Recolor all segments', value: own[0]?.color ?? '#000000', caption: own.length > 1 ? 'Mixed' : undefined},
-        number('Opacity', 'figure_opacity', opacity(object.field28), '%', {min: 0, max: 100, id: 'figure-opacity', field: false}),
+      {id: 'appearance', title: interfaceText("inspectorView.appearance"), titleKey: "inspectorView.appearance", actions: [{action: 'reset-color', icon: 'reset', label: interfaceText("inspectorView.resetColors"), labelKey: "inspectorView.resetColors"}], rows: [{kind: 'grid', rows: [
+        {kind: 'color', id: 'figure-color', label: interfaceText("inspectorView.colour"), labelKey: "inspectorView.colour", description: interfaceText("inspectorView.recolorAllSegments"), descriptionKey: "inspectorView.recolorAllSegments", value: own[0]?.color ?? '#000000', caption: own.length > 1 ? interfaceText("inspectorView.mixed") : undefined},
+        number(interfaceText("inspectorView.opacity"), 'figure_opacity', opacity(object.field28), '%', {min: 0, max: 100, id: 'figure-opacity', field: false, labelKey: "inspectorView.opacity", labelParams: {}}),
       ]}]},
-      {id: 'arrange', title: 'Arrange', place: kind === 'text' ? 'titled' : 'core', actions: [
-        {action: 'join-figure', label: parent ? 'Unjoin' : 'Join…', text: true, tip: joinLabel, data: {'hotkey-title': joinLabel}, disabled: !figureJoinAction(editor)},
+      {id: 'arrange', title: interfaceText("inspectorView.arrange"), titleKey: "inspectorView.arrange", place: kind === 'text' ? 'titled' : 'core', actions: [
+        {action: 'join-figure', label: parent ? interfaceText("inspectorView.unjoin") : interfaceText("inspectorView.join"), labelKey: (parent ? "inspectorView.unjoin" : "inspectorView.join"), labelParams: (parent ? {} : {}), text: true, tip: joinLabel, data: {'hotkey-title': joinLabel}, disabled: !figureJoinAction(editor)},
       ], rows: [{kind: 'grid', ratio: '3:2', rows: [
         layerSelect(editor),
-        {kind: 'stepper-field', key: 'figure_z_order', label: 'Order', description: 'Z-index', groupLabel: 'Order and one-step order', value: object._stykZIndex ?? 0,
+        {kind: 'stepper-field', key: 'figure_z_order', label: interfaceText("inspectorView.order"), labelKey: "inspectorView.order", description: interfaceText("inspectorView.zIndex"), descriptionKey: "inspectorView.zIndex", groupLabel: interfaceText("inspectorView.orderAndOneStepOrder"), value: object._stykZIndex ?? 0,
           precision: 0, min: -1000000, max: 1000000,
-          down: {action: 'layer-down', label: 'Send backward', icon: STEP_DOWN}, up: {action: 'layer-up', label: 'Bring forward', icon: STEP_UP}},
+          down: {action: 'layer-down', label: interfaceText("inspectorView.sendBackward"), labelKey: "inspectorView.sendBackward", icon: STEP_DOWN}, up: {action: 'layer-up', label: interfaceText("inspectorView.bringForward"), labelKey: "inspectorView.bringForward", icon: STEP_UP}},
       ]}]},
-      {id: 'connection', title: 'Connection', place: 'titled', open: Boolean(parent), hidden: !parent && !children, rows: [
-        {kind: 'value', label: 'Joined to', text: parent ? `${parentName} · ${object.join.target_handle_id}` : 'None'},
-        {kind: 'actions', items: [{action: 'combine-figures', icon: 'combine', label: 'Combine connected', text: true, variant: 'outline', tip: 'Merge the connected figures into one'}]},
+      {id: 'connection', title: interfaceText("inspectorView.connection"), titleKey: "inspectorView.connection", place: 'titled', open: Boolean(parent), hidden: !parent && !children, rows: [
+        {kind: 'value', label: interfaceText("inspectorView.joinedTo"), labelKey: "inspectorView.joinedTo", text: parent ? `${parentName} · ${object.join.target_handle_id}` : interfaceText("inspectorView.none")},
+        {kind: 'actions', items: [{action: 'combine-figures', icon: 'combine', label: interfaceText("inspectorView.combineConnected"), labelKey: "inspectorView.combineConnected", text: true, variant: 'outline', tip: interfaceText("inspectorView.mergeTheConnectedFiguresIntoOne"), tipKey: "inspectorView.mergeTheConnectedFiguresIntoOne"}]},
       ]},
-      {id: 'colours', title: 'Colours', place: 'titled', hidden: !whole, rows: [
-        {kind: 'swatches', label: 'Figure color palette', hidden: !palette.length, items: palette.slice(paletteStart, paletteStart + 32).map(entry => ({
+      {id: 'colours', title: interfaceText("inspectorView.colours"), titleKey: "inspectorView.colours", place: 'titled', hidden: !whole, rows: [
+        {kind: 'swatches', label: interfaceText("inspectorView.figureColorPalette"), labelKey: "inspectorView.figureColorPalette", hidden: !palette.length, items: palette.slice(paletteStart, paletteStart + 32).map(entry => ({
           picker: 'paint', value: entry.color, tip: entry.color.toUpperCase(), data: {'palette-color': entry.color},
-          label: `Replace ${entry.color.toUpperCase()}, ${entry.segments.length} segments${entry.polygons.length ? `, ${entry.polygons.length} fills` : ''}`,
+          label: interfaceText("inspectorView.replaceSegments", {value: entry.color.toUpperCase(), length: entry.segments.length, value2: entry.polygons.length ? `, ${entry.polygons.length} fills` : ''}), labelKey: "inspectorView.replaceSegments", labelParams: {value: entry.color.toUpperCase(), length: entry.segments.length, value2: entry.polygons.length ? `, ${entry.polygons.length} fills` : ''},
         }))},
-        palette.length > 32 && {kind: 'pager', label: 'Colour pages', text: pageText(paletteStart, 32, palette.length),
-          previous: {action: 'palette-previous', icon: 'chevron-left', label: 'Previous colors', disabled: paletteStart === 0},
-          next: {action: 'palette-next', icon: 'chevron-right', label: 'Next colors', disabled: paletteStart + 32 >= palette.length}},
-        {kind: 'value', label: 'Fills', text: polygons.length ? plural(polygons.length, 'fill') : 'No fills'},
+        palette.length > 32 && {kind: 'pager', label: interfaceText("inspectorView.colourPages"), labelKey: "inspectorView.colourPages", text: pageText(paletteStart, 32, palette.length),
+          previous: {action: 'palette-previous', icon: 'chevron-left', label: interfaceText("inspectorView.previousColors"), labelKey: "inspectorView.previousColors", disabled: paletteStart === 0},
+          next: {action: 'palette-next', icon: 'chevron-right', label: interfaceText("inspectorView.nextColors"), labelKey: "inspectorView.nextColors", disabled: paletteStart + 32 >= palette.length}},
+        {kind: 'value', label: interfaceText("inspectorView.fills"), labelKey: "inspectorView.fills", text: polygons.length ? interfaceText('counts.fills', {count: polygons.length}) : interfaceText("inspectorView.noFills"), textKey: polygons.length ? 'counts.fills' : 'inspectorView.noFills', textParams: {count: polygons.length}},
         ...polygons.slice(start, start + 12).map((_, i) => fillGroup(editor, figure, object, start + i, order)),
-        polygons.length > 12 && {kind: 'pager', label: 'Fill pages', text: pageText(start, 12, polygons.length),
-          previous: {action: 'polygons-previous', icon: 'chevron-left', label: 'Previous polygons', disabled: start === 0},
-          next: {action: 'polygons-next', icon: 'chevron-right', label: 'Next polygons', disabled: start + 12 >= polygons.length}},
+        polygons.length > 12 && {kind: 'pager', label: interfaceText("inspectorView.fillPages"), labelKey: "inspectorView.fillPages", text: pageText(start, 12, polygons.length),
+          previous: {action: 'polygons-previous', icon: 'chevron-left', label: interfaceText("inspectorView.previousPolygons"), labelKey: "inspectorView.previousPolygons", disabled: start === 0},
+          next: {action: 'polygons-next', icon: 'chevron-right', label: interfaceText("inspectorView.nextPolygons"), labelKey: "inspectorView.nextPolygons", disabled: start + 12 >= polygons.length}},
       ]},
       builder && transform,
     ]};
 }
 
 /** A part renames in the header (double-click, F2), as a figure does. */
-const partRename = {id: 'builder-joint-name', description: 'Part name', maxlength: 120, tip: 'Double-click to rename the part'};
+const partRename = {id: 'builder-joint-name', description: interfaceText("inspectorView.partName"), descriptionKey: "inspectorView.partName", maxlength: 120, tip: interfaceText("inspectorView.doubleClickToRenameThePart"), tipKey: "inspectorView.doubleClickToRenameThePart"};
 
 /**
  * A joint (or a branch, or several segments): Joint (angle, length, bend,
@@ -461,57 +464,57 @@ function jointDescriptor(editor, figure, segment, number, {range, scope, drawing
   // In Build a joint is a part, named as Structure names it ("Line 4"); in Animate it is a joint.
   const own = builder ? partName(segment) : segment.name || `Joint ${segment.segment_id}`;
   const title = selected.size > 1 ? `${selected.size} ${builder ? 'parts' : 'segments'}` : editor.branchSelected ? `Branch from ${own}` : own;
-  const staticSwitch = {kind: 'field-switch', id: 'static-joint', label: 'Static', checked: isStatic(segment), tip: 'Does not turn with its parent'};
-  const colour = {kind: 'color', picker: 'paint', id: 'segment-color', label: 'Colour', description: 'Segment color', value: solid ? hex(paint.stops[0].color) : undefined,
-    paint: paintCSS(paint), caption: solid ? undefined : `${paint.type[0].toUpperCase()}${paint.type.slice(1)} gradient`};
-  const width = number('Width', 'thickness', segment.thickness, 'px', {min: 0});
-  const alpha = number(secondary ? 'Primary opacity' : 'Opacity', 'segment_opacity', opacity(segment.transparency), '%',
-    {min: 0, max: 100, id: 'segment-opacity', field: false, description: 'Primary color opacity'});
-  const shapeSelect = {kind: 'select', id: 'segment-shape', label: 'Shape', description: 'Segment shape', value: shape, disabled: fixed, span: 2, options: [
-    ['line', 'Round line'], ['squareLine', 'Square line'], ['circle', 'White circle'], ['circleFill', 'Filled circle'], ['circleClear', 'Clear circle'],
+  const staticSwitch = {kind: 'field-switch', id: 'static-joint', label: interfaceText("inspectorView.static"), labelKey: "inspectorView.static", checked: isStatic(segment), tip: interfaceText("inspectorView.doesNotTurnWithItsParent"), tipKey: "inspectorView.doesNotTurnWithItsParent"};
+  const colour = {kind: 'color', picker: 'paint', id: 'segment-color', label: interfaceText("inspectorView.colour"), labelKey: "inspectorView.colour", description: interfaceText("inspectorView.segmentColor"), descriptionKey: "inspectorView.segmentColor", value: solid ? hex(paint.stops[0].color) : undefined,
+    paint: paintCSS(paint), caption: solid ? undefined : interfaceText('inspectorView.valueValue1Gradient', {value: paint.type[0].toUpperCase(), value1: paint.type.slice(1)})};
+  const width = number(interfaceText("inspectorView.width"), 'thickness', segment.thickness, 'px', {min: 0, labelKey: "inspectorView.width", labelParams: {}});
+  const alpha = number(secondary ? interfaceText("inspectorView.primaryOpacity") : interfaceText("inspectorView.opacity"), 'segment_opacity', opacity(segment.transparency), '%',
+    {min: 0, max: 100, id: 'segment-opacity', field: false, description: interfaceText("inspectorView.primaryColorOpacity"), descriptionKey: "inspectorView.primaryColorOpacity", labelKey: (secondary ? "inspectorView.primaryOpacity" : "inspectorView.opacity"), labelParams: (secondary ? {} : {})});
+  const shapeSelect = {kind: 'select', id: 'segment-shape', label: interfaceText("inspectorView.shape"), labelKey: "inspectorView.shape", description: interfaceText("inspectorView.segmentShape"), descriptionKey: "inspectorView.segmentShape", value: shape, disabled: fixed, span: 2, options: [
+    messageTuple(['line', interfaceText("inspectorView.roundLine")], {1: {key: "inspectorView.roundLine", params: {}}}), messageTuple(['squareLine', interfaceText("inspectorView.squareLine")], {1: {key: "inspectorView.squareLine", params: {}}}), messageTuple(['circle', interfaceText("inspectorView.whiteCircle")], {1: {key: "inspectorView.whiteCircle", params: {}}}), messageTuple(['circleFill', interfaceText("inspectorView.filledCircle")], {1: {key: "inspectorView.filledCircle", params: {}}}), messageTuple(['circleClear', interfaceText("inspectorView.clearCircle")], {1: {key: "inspectorView.clearCircle", params: {}}}),
     ...(fixed ? [[shape, shape]] : []),
-  ].map(([value, label]) => ({value, label}))};
+  ].map((_tuple) => {const [value, label] = _tuple; const _messages = tupleMessages(_tuple); return {value, label, ...(_messages[1] ? {labelKey: _messages[1].key, labelParams: _messages[1].params} : {})};})};
   const sections = {
-    connector: {id: 'connector', title: `Connector ${segment.segment_id}`, place: 'titled', open: true, hidden: !part, rows: [
-      {kind: 'segmented', mode: 'pressed', description: 'Connector properties', value: part, fill: true, options: [
-        {value: 'segment', label: 'Segment', data: {'connector-part': 'segment'}}, {value: 'slider', label: 'Slider', data: {'connector-part': 'slider'}},
+    connector: {id: 'connector', title: interfaceText("inspectorView.connector", {segment_id: segment.segment_id}), titleKey: "inspectorView.connector", titleParams: {segment_id: segment.segment_id}, place: 'titled', open: true, hidden: !part, rows: [
+      {kind: 'segmented', mode: 'pressed', description: interfaceText("inspectorView.connectorProperties"), descriptionKey: "inspectorView.connectorProperties", value: part, fill: true, options: [
+        {value: 'segment', label: interfaceText("inspectorView.segment"), labelKey: "inspectorView.segment", data: {'connector-part': 'segment'}}, {value: 'slider', label: interfaceText("inspectorView.slider"), labelKey: "inspectorView.slider", data: {'connector-part': 'slider'}},
       ]},
     ]},
-    slider: {id: 'slider', title: 'Slider', hidden: !slider, rows: [{kind: 'grid', rows: [
-      {kind: 'number', id: 'rig-position', label: 'Position', description: 'Slide position', unit: '%', value: Math.round(position * 10000) / 100, min: 0, max: 100, precision: 2},
+    slider: {id: 'slider', title: interfaceText("inspectorView.slider"), titleKey: "inspectorView.slider", hidden: !slider, rows: [{kind: 'grid', rows: [
+      {kind: 'number', id: 'rig-position', label: interfaceText("inspectorView.position"), labelKey: "inspectorView.position", description: interfaceText("inspectorView.slidePosition"), descriptionKey: "inspectorView.slidePosition", unit: '%', value: Math.round(position * 10000) / 100, min: 0, max: 100, precision: 2},
       staticSwitch,
     ]}]},
-    joint: {id: 'joint', title: builder ? 'Geometry' : 'Joint', hidden: slider, rows: [{kind: 'grid', rows: [
-      !connector && number('Angle', 'joint_angle', degrees(lock ? editor.geometry.objects.get(editor.selectedSlot)?.segments[joint]?.angle : object.angles[joint] ?? segment.angle_rad), '°',
-        {disabled: Boolean(lock)}),
-      !connector && number('Length', 'joint_length', position, 'px', {min: 0}),
-      number('Bend', 'joint_bend', degrees(object.bend_flag ? object.bends[joint] : segment.bend_rad || 0), '°'),
+    joint: {id: 'joint', title: builder ? interfaceText("inspectorView.geometry") : interfaceText("inspectorView.joint"), titleKey: (builder ? "inspectorView.geometry" : "inspectorView.joint"), titleParams: (builder ? {} : {}), hidden: slider, rows: [{kind: 'grid', rows: [
+      !connector && number(interfaceText("inspectorView.angle"), 'joint_angle', degrees(lock ? editor.geometry.objects.get(editor.selectedSlot)?.segments[joint]?.angle : object.angles[joint] ?? segment.angle_rad), '°',
+        {disabled: Boolean(lock), labelKey: "inspectorView.angle", labelParams: {}}),
+      !connector && number(interfaceText("inspectorView.length"), 'joint_length', position, 'px', {min: 0, labelKey: "inspectorView.length", labelParams: {}}),
+      number(interfaceText("inspectorView.bend"), 'joint_bend', degrees(object.bend_flag ? object.bends[joint] : segment.bend_rad || 0), '°', {labelKey: "inspectorView.bend", labelParams: {}}),
       !connector && staticSwitch,
     ]}]},
     ik: rigIKAllowed(figure, joint) && !slider ? ikSection(editor.getIKSettings()) : {id: 'ik', hidden: true},
-    secondColour: {id: 'second-colour', title: 'Second colour', place: 'titled', open: secondary, hidden: !twoTone || slider,
-      switch: {id: 'segment-gradient-enabled', label: 'Secondary color', checked: secondary, controls: 'segment-secondary-controls'},
+    secondColour: {id: 'second-colour', title: interfaceText("inspectorView.secondColour"), titleKey: "inspectorView.secondColour", place: 'titled', open: secondary, hidden: !twoTone || slider,
+      switch: {id: 'segment-gradient-enabled', label: interfaceText("inspectorView.secondaryColor"), labelKey: "inspectorView.secondaryColor", checked: secondary, controls: 'segment-secondary-controls'},
       rows: [{kind: 'grid', id: 'segment-secondary-controls', hidden: !secondary, rows: secondary ? [
-        {kind: 'color', id: 'segment-gradient-color', label: 'Colour', description: 'Secondary color', value: hex(displayedColor(report, figure, object, segment.secondary.rgb))},
-        number('Secondary opacity', 'segment_gradient_opacity', (1 - (segment.secondary.a ?? 0) / 255) * 100, '%', {min: 0, max: 100, description: 'Secondary color opacity'}),
+        {kind: 'color', id: 'segment-gradient-color', label: interfaceText("inspectorView.colour"), labelKey: "inspectorView.colour", description: interfaceText("inspectorView.secondaryColor"), descriptionKey: "inspectorView.secondaryColor", value: hex(displayedColor(report, figure, object, segment.secondary.rgb))},
+        number(interfaceText("inspectorView.secondaryOpacity"), 'segment_gradient_opacity', (1 - (segment.secondary.a ?? 0) / 255) * 100, '%', {min: 0, max: 100, description: interfaceText("inspectorView.secondaryColorOpacity"), descriptionKey: "inspectorView.secondaryColorOpacity", labelKey: "inspectorView.secondaryOpacity", labelParams: {}}),
       ] : []}]},
   };
   if (builder) {
     // One part (not a picked branch) with Whole branch on: the scope line names what an edit reaches and stops it.
     const branchParts = builderBranch && single && !editor.branchSelected ? branchSegmentIndices(figure, joint).length : 0;
     const branchScope = branchParts > 1 && !scope
-      ? {label: `Editing the whole branch · ${plural(branchParts, 'part')}`, stop: {action: 'toggle-builder-branch', label: 'Stop', tip: 'Edit only this part · B'}} : null;
+      ? {label: interfaceText("inspectorView.editingTheWholeBranch", {value: plural(branchParts, 'part')}), labelKey: "inspectorView.editingTheWholeBranch", labelParams: {value: plural(branchParts, 'part')}, stop: {action: 'toggle-builder-branch', label: interfaceText("inspectorView.stop"), labelKey: "inspectorView.stop", tip: interfaceText("inspectorView.editOnlyThisPartB"), tipKey: "inspectorView.editOnlyThisPartB"}} : null;
     return {kind: 'joint', target: {name: title, glyph: part ? 'link' : partGlyph(segment), rename: single && !editor.branchSelected && !part ? partRename : undefined},
       quick: {context: 'part'}, scope: scope ?? branchScope, sections: [
         range, drawingSets, sections.connector, sections.slider,
-        {id: 'style', title: 'Style', hidden: slider, rows: [{kind: 'grid', rows: [{...colour, span: 2}, width, alpha, shapeSelect]}]},
+        {id: 'style', title: interfaceText("inspectorView.style"), titleKey: "inspectorView.style", hidden: slider, rows: [{kind: 'grid', rows: [{...colour, span: 2}, width, alpha, shapeSelect]}]},
         sections.secondColour,
         sections.joint,
-        {id: 'arrange', title: 'Arrange', rows: [{kind: 'grid', ratio: '3:2', rows: [
+        {id: 'arrange', title: interfaceText("inspectorView.arrange"), titleKey: "inspectorView.arrange", rows: [{kind: 'grid', ratio: '3:2', rows: [
           layerSelect(editor),
-          {kind: 'stepper-field', key: 'segment_z_order', label: 'Order', description: 'Draw order', groupLabel: 'Draw order and one-step order', hidden: slider,
+          {kind: 'stepper-field', key: 'segment_z_order', label: interfaceText("inspectorView.order"), labelKey: "inspectorView.order", description: interfaceText("inspectorView.drawOrder"), descriptionKey: "inspectorView.drawOrder", groupLabel: interfaceText("inspectorView.drawOrderAndOneStepOrder"), hidden: slider,
             value: order.get(`segment:${joint}`), precision: 0, min: 1, max: order.size,
-            down: {action: 'segment-order-down', label: 'Send part backward', icon: STEP_DOWN}, up: {action: 'segment-order-up', label: 'Bring part forward', icon: STEP_UP}},
+            down: {action: 'segment-order-down', label: interfaceText("inspectorView.sendPartBackward"), labelKey: "inspectorView.sendPartBackward", icon: STEP_DOWN}, up: {action: 'segment-order-up', label: interfaceText("inspectorView.bringPartForward"), labelKey: "inspectorView.bringPartForward", icon: STEP_UP}},
         ]}]},
         sections.ik.hidden ? sections.ik : {...sections.ik, place: 'titled', open: Boolean(editor.getIKSettings().enabled)},
         ...rigSections(editor, {hidden: slider}),
@@ -519,15 +522,15 @@ function jointDescriptor(editor, figure, segment, number, {range, scope, drawing
   }
   return {kind: 'joint', target: {name: title, glyph: part ? 'link' : 'nodes'}, quick: {context: 'joint'}, scope, sections: [
     range, drawingSets, ...spatial, sections.connector, sections.slider, sections.joint, sections.ik,
-    {id: 'style', title: 'Style', hidden: slider, rows: [
+    {id: 'style', title: interfaceText("inspectorView.style"), titleKey: "inspectorView.style", hidden: slider, rows: [
       {kind: 'grid', rows: [
         width, colour, alpha,
-        number('Order', 'segment_z_order', order.get(`segment:${joint}`), '', {min: 1, max: order.size, description: 'Draw order'}),
+        number(interfaceText("inspectorView.order"), 'segment_z_order', order.get(`segment:${joint}`), '', {min: 1, max: order.size, description: interfaceText("inspectorView.drawOrder"), descriptionKey: "inspectorView.drawOrder", labelKey: "inspectorView.order", labelParams: {}}),
         shapeSelect,
-        {kind: 'field-switch', id: 'builder-branch', label: 'Apply to branch', checked: builderBranch, span: 2, hidden: !(isBuilderContext(tool) && single)},
+        {kind: 'field-switch', id: 'builder-branch', label: interfaceText("inspectorView.applyToBranch"), labelKey: "inspectorView.applyToBranch", checked: builderBranch, span: 2, hidden: !(isBuilderContext(tool) && single)},
       ]},
     ]},
     sections.secondColour,
-    {id: 'figure', title: 'Figure', rows: [{kind: 'grid', rows: [layerSelect(editor, {span: 2})]}]},
+    {id: 'figure', title: interfaceText("inspectorView.figure"), titleKey: "inspectorView.figure", rows: [{kind: 'grid', rows: [layerSelect(editor, {span: 2})]}]},
   ]};
 }

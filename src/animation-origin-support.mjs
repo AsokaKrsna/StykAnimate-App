@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Numeric animation dependencies retained after construction joints disappear.
  * These bones never enter native geometry, selection, or the renderer. */
 const layouts = new WeakMap();
@@ -13,7 +14,7 @@ export function originSupportLayout(figure) {
     else {const list = children.get(bone.parent) ?? []; list.push(index); children.set(bone.parent, list);}
   });
   for (let cursor = 0; cursor < ready.length; cursor++) for (const child of children.get(ready[cursor]) ?? []) ready.push(child);
-  if (ready.length !== support.bones.length) throw new Error('The retained animation support contains a cycle.');
+  if (ready.length !== support.bones.length) throw messageError(new Error(''), "errors.animationOriginSupport.theRetainedAnimationSupportContainsACycle", {});
   layout = {support, segments: figure.segments, indices, ready}; layouts.set(support, layout); return layout;
 }
 export function originSupportPose(figure, object, index, layout = originSupportLayout(figure)) {

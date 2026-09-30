@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Preserve independently authored poses when figures change layer membership.
  * Planning is atomic: it shares native frames and unaffected channel objects,
  * and allocates only immutable source assets for the destination pose track. */
@@ -12,9 +13,9 @@ const isLayerPose = channel => channel.target?.kind === 'layer' && channel.prope
 
 function checkBudget(ticks, channels, limits) {
   if (!Number.isSafeInteger(ticks) || ticks < 1 || ticks > limits.maxTicks)
-    throw new Error(limits === LAYER_MIGRATION_LIMITS ? 'This layer move needs more than 10,000 sampled frames. Use the background layer migration command.' : 'Layer migration exceeds the supported animation time range.');
+    throw messageError(new Error(''), limits === LAYER_MIGRATION_LIMITS ? 'errors.editorLayerMigration.useBackgroundMigration' : 'errors.editorLayerMigration.timeRange');
   const keys = channels.reduce((sum, channel) => sum + channel.keys.length, 0);
-  if (keys + ticks > 1000000) throw new Error('Preserving this layer move would exceed the one-million-key limit.');
+  if (keys + ticks > 1000000) throw messageError(new Error(''), "errors.editorLayerMigration.preservingThisLayerMoveWouldExceedTheOne", {});
 }
 
 /** Keep the destination's figures and native ancestry needed to resolve their
@@ -27,7 +28,7 @@ function compactPoseFrame(report, frame, moving, targetLayerId) {
   for (let index = 0; index < queue.length; index++) {
     const parent = frame.objects[queue[index]].join?.target_object_slot;
     if (parent !== undefined && !keep.has(parent)) {
-      if (!frame.objects[parent]) throw new Error('Layer migration encountered a missing attachment parent.');
+      if (!frame.objects[parent]) throw messageError(new Error(''), "errors.editorLayerMigration.layerMigrationEncounteredAMissingAttachmentParent", {});
       keep.add(parent); queue.push(parent);
     }
   }
@@ -47,12 +48,12 @@ function compactPoseFrame(report, frame, moving, targetLayerId) {
  * tick preserves playback exactly; destination keys intentionally use hold. */
 export function* planLayerMembershipMigrationSteps(editor, uids, targetLayerId, {deletedLayerId, worker = false, maxSourceBytes = worker ? 128 * 1024 * 1024 : Infinity} = {}) {
   const report = editor.report, state = report._styk?.layers;
-  if (!state || !owns(state.byId, targetLayerId)) throw new Error('Choose an existing destination user layer.');
+  if (!state || !owns(state.byId, targetLayerId)) throw messageError(new Error(''), "errors.editorLayerAsync.chooseAnExistingDestinationUserLayer", {});
   if (deletedLayerId !== undefined && (!owns(state.byId, deletedLayerId) || deletedLayerId === targetLayerId))
-    throw new Error('Choose a different destination before deleting a layer.');
+    throw messageError(new Error(''), "errors.editorLayerMigration.chooseADifferentDestinationBeforeDeletingALayer", {});
   const members = [...new Set(uids)], sourceIds = new Set();
   for (const uid of members) {
-    if (!Number.isInteger(uid) || uid < 0 || uid > 0xffffffff) throw new Error('Choose valid figure identities for the layer move.');
+    if (!Number.isInteger(uid) || uid < 0 || uid > 0xffffffff) throw messageError(new Error(''), "errors.editorLayerMigration.chooseValidFigureIdentitiesForTheLayerMove", {});
     const id = layerIdForUid(report, uid); if (id !== targetLayerId) sourceIds.add(id);
   }
   const beforeAnimation = report._styk?.animation ?? null, channels = beforeAnimation?.channels ?? [];
@@ -69,7 +70,7 @@ export function* planLayerMembershipMigrationSteps(editor, uids, targetLayerId, 
 
   const entries = timeline(report), last = entries.at(-1), ticks = Math.max(1, (last?.start ?? 0) + (last?.count ?? 0));
   const limits = worker ? LAYER_MIGRATION_WORKER_LIMITS : LAYER_MIGRATION_LIMITS;
-  if (!(maxSourceBytes > 0)) throw new Error('Layer migration source memory budget must be positive.');
+  if (!(maxSourceBytes > 0)) throw messageError(new Error(''), "errors.editorLayerMigration.layerMigrationSourceMemoryBudgetMustBePositive", {});
   checkBudget(ticks, afterAnimation.channels, limits);
   // Figure scalar channels are absolute overlays. Baking them into the poses
   // and applying them again would alter attached/rotated/scaled descendants.
@@ -88,13 +89,13 @@ export function* planLayerMembershipMigrationSteps(editor, uids, targetLayerId, 
     objectPoses += compact.objects.length;
     for (const object of compact.objects) segmentValues += (object.angles?.length ?? 0) + (object.lengths?.length ?? 0) + (object.bends?.length ?? 0);
     if (objectPoses > limits.maxObjectPoses || segmentValues > limits.maxSegmentValues)
-      throw new Error('This layer migration exceeds the retained pose memory budget. Move fewer figures at once.');
+      throw messageError(new Error(''), "errors.editorLayerMigration.thisLayerMigrationExceedsTheRetainedPoseMemory", {});
     if (256 * (tick + 1) + 512 * objectPoses + 8 * segmentValues > maxSourceBytes)
-      throw new Error('This layer migration exceeds the retained source memory budget. Move fewer figures at once.');
+      throw messageError(new Error(''), "errors.editorLayerMigration.thisLayerMigrationExceedsTheRetainedSourceMemory", {});
     const frame = structuredClone(compact);
     let frameId;
     do {
-      if (!Number.isSafeInteger(nextIdentity) || nextIdentity < 1) throw new Error('Frame identity capacity exceeded.');
+      if (!Number.isSafeInteger(nextIdentity) || nextIdentity < 1) throw messageError(new Error(''), "errors.clipboardLegacyUpgrade.frameIdentityCapacityExceeded", {});
       frameId = `frame-${nextIdentity++}`;
     } while (usedIds.has(frameId));
     usedIds.add(frameId); frame._styk = {...frame._styk, frameId}; frame.duration_raw = 1;
@@ -103,7 +104,7 @@ export function* planLayerMembershipMigrationSteps(editor, uids, targetLayerId, 
     for (const object of frame.objects) delete object.runtime_segments;
     frameSources[frameId] = frame;
     frameSourceChanges.push({id: frameId, before: {exists: false}, after: {exists: true, value: frame}});
-    if (!Number.isSafeInteger(afterAnimation.nextKeyId)) throw new Error('Animation key identity capacity exceeded.');
+    if (!Number.isSafeInteger(afterAnimation.nextKeyId)) throw messageError(new Error(''), "errors.cameraBakeAuthored.animationKeyIdentityCapacityExceeded", {});
     destination.keys.push({id: `key-${afterAnimation.nextKeyId++}`, tick, value: {frameId}, interpolation: 'hold'});
     if ((tick + 1) % 8 === 0 || performance.now() - lastYield >= 8 || tick + 1 === ticks) {
       yield {phase: 'sampling', completed: tick + 1, total: ticks, sourceFrames: tick + 1, objectPoses, segmentValues}; lastYield = performance.now();

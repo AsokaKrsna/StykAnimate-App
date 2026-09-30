@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {inheritedKeyEasing} from './keyframe-easing.mjs';
 /** Sparse Scene edits. Native frames keep their timing and object-array identity. */
 import {animationChannels, sampleAnimationChannel, validateAnimationDocument, validateAnimationValue} from './animation-channels.mjs';
@@ -43,21 +44,21 @@ export function sceneValuesAt(editor, index = editor.frameIndex, tick = editor.t
 
 function editable(editor) {
   const fixed = editor.report._styk?.layers?.fixed?.scene;
-  if (fixed?.locked) throw new Error('Unlock the Scene track before editing its background.');
-  if (fixed?.visible === false) throw new Error('Show the Scene track before editing its background.');
+  if (fixed?.locked) throw messageError(new Error(''), "errors.editorScene.unlockTheSceneTrackBeforeEditingItsBackground", {});
+  if (fixed?.visible === false) throw messageError(new Error(''), "errors.editorScene.showTheSceneTrackBeforeEditingItsBackground", {});
   if (editor._animationEdit) editor.commitAnimationEdit();
   if (editor._drag) editor.commitDrag();
 }
 
 function nextBackgroundId(report) {
-  if ((report.backgrounds?.length ?? 0) >= 65534) throw new Error('The native Pivot background table is full.');
+  if ((report.backgrounds?.length ?? 0) >= 65534) throw messageError(new Error(''), "errors.editorScene.theNativePivotBackgroundTableIsFull", {});
   let id = 0; for (const asset of report.backgrounds ?? []) id = Math.max(id, asset.background_id);
-  if (!Number.isSafeInteger(id + 1)) throw new Error('Background identity capacity exceeded.');
+  if (!Number.isSafeInteger(id + 1)) throw messageError(new Error(''), "errors.editorScene.backgroundIdentityCapacityExceeded", {});
   return id + 1;
 }
 
 function validateBackground(report, background) {
-  if (!background || ![0, 1, 2, 3, 4].includes(background.kind)) throw new Error('Expected a decoded image, color or gradient background.');
+  if (!background || ![0, 1, 2, 3, 4].includes(background.kind)) throw messageError(new Error(''), "errors.editorScene.expectedADecodedImageColorOrGradientBackground", {});
   validateScene({...report, figure_types: [], backgrounds: [background], keyframes: [createFrame([])]});
 }
 
@@ -71,7 +72,7 @@ function draft(editor) {
     channel(property) {
       if (this.channels.has(property)) return this.channels.get(property);
       const original = sceneChannel(editor.report, property);
-      if (!original && !editor.propertyChannels) throw new Error('Create this Scene channel before editing its keys.');
+      if (!original && !editor.propertyChannels) throw messageError(new Error(''), "errors.editorScene.createThisSceneChannelBeforeEditingItsKeys", {});
       const source = original ?? editor.nativePropertyChannel({kind:'scene'}, property);
       const index = original ? animation.channels.indexOf(original) : animation.channels.length + [...this.channels.values()].filter(value => !value.original).length;
       const channel = {...source, target: {...source.target}, keys: source.keys.map(key => ({...key}))};
@@ -87,7 +88,7 @@ function draft(editor) {
         existing.value = checked;delete existing.passthrough;return;
       }
       let id; do {
-        if (!Number.isSafeInteger(this.nextKey) || this.nextKey < 1) throw new Error('Animation key identity capacity exceeded.');
+        if (!Number.isSafeInteger(this.nextKey) || this.nextKey < 1) throw messageError(new Error(''), "errors.cameraBakeAuthored.animationKeyIdentityCapacityExceeded", {});
         id = `key-${this.nextKey++}`;
       } while (state.ids.has(id));
       state.ids.add(id);
@@ -191,7 +192,7 @@ export const editorSceneMethods = {
   },
 
   setSceneColor(argb, {indices = [this.frameIndex]} = {}) {
-    if (!Number.isInteger(argb) || argb < 0 || argb > 0xffffffff) throw new Error('Scene color must be a 32-bit ARGB value.');
+    if (!Number.isInteger(argb) || argb < 0 || argb > 0xffffffff) throw messageError(new Error(''), "errors.editorScene.sceneColorMustBeA32BitArgb", {});
     if(this.report._styk?.layerSheet)return this._sheetPropertyEntries(this.sheetEditTimes(indices).map(tick=>({target:{kind:'scene'},property:'color',tick,value:argb})),'Set scene color');
     editable(this); const selected = this._frameIndices(indices); if (!selected.length) return 0;
     const state = draft(this), color = sceneChannel(this.report, 'color');
@@ -214,7 +215,7 @@ export const editorSceneMethods = {
 
   setSceneBackground(id, {indices = [this.frameIndex]} = {}) {
     if (!Number.isInteger(id) || id < 0 || id !== 0 && !this.report.backgrounds?.some(background => background.background_id === id))
-      throw new Error('Choose an existing background.');
+      throw messageError(new Error(''), "errors.editorScene.chooseAnExistingBackground", {});
     if(this.report._styk?.layerSheet)return this._sheetPropertyEntries(this.sheetEditTimes(indices).flatMap(tick=>['backgroundId','color'].map(property=>({target:{kind:'scene'},property,tick,value:property==='color'?null:id}))),'Set scene background');
     editable(this); const selected = this._frameIndices(indices); if (!selected.length) return 0;
     const state = draft(this); assignBackground(this, state, id, selected);
@@ -237,8 +238,8 @@ export const editorSceneMethods = {
 
   renameSceneBackground(id, name) {
     const index = this.report.backgrounds?.findIndex(background => background.background_id === id) ?? -1;
-    if (index < 0) throw new Error('Choose an existing background.');
-    if (typeof name !== 'string' || !name.trim() || name.trim().length > 160) throw new Error('Background names must contain 1–160 characters.');
+    if (index < 0) throw messageError(new Error(''), "errors.editorScene.chooseAnExistingBackground", {});
+    if (typeof name !== 'string' || !name.trim() || name.trim().length > 160) throw messageError(new Error(''), "errors.editorScene.backgroundNamesMustContain1160Characters", {});
     name = name.trim(); const background = this.report.backgrounds[index];
     if (background.name === name) return false;
     if (this._animationEdit) this.commitAnimationEdit(); if (this._drag) this.commitDrag();

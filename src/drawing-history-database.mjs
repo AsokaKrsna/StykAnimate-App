@@ -1,8 +1,9 @@
+import {messageError} from './localized-error.mjs';
 import {HISTORY_CHUNK_BYTES,encodeHistoryChunk,decodeHistoryChunk} from './drawing-history-codec.mjs';
 
 const DB_NAME='stykanimate-drawing-history-v1';
 const request=req=>new Promise((resolve,reject)=>{req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
-const complete=tx=>new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error??new Error('Drawing history transaction aborted.'));tx.onerror=()=>{};});
+const complete=tx=>new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error??messageError(new Error(''), "errors.drawingHistoryDatabase.drawingHistoryTransactionAborted", {}));tx.onerror=()=>{};});
 const range=(session,id)=>id===undefined?IDBKeyRange.bound([session],[session,[]]):IDBKeyRange.bound([session,id],[session,id,[]]);
 const digest=async bytes=>new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));
 const same=(a,b)=>a.length===b.length&&a.every((n,i)=>n===b[i]);
@@ -45,39 +46,39 @@ export class DrawingHistoryDatabase {
     tx.objectStore('sessions').delete(session);for(const store of ['records','chunks'])tx.objectStore(store).delete(range(session));await done;
   }
   async begin(id){
-    await this.open();if(this.writes.has(id))throw new Error('Drawing history write already started.');
+    await this.open();if(this.writes.has(id))throw messageError(new Error(''), "errors.drawingHistoryDatabase.drawingHistoryWriteAlreadyStarted", {});
     const state={parts:0,rawBytes:0,storedBytes:0,tiles:0,complete:false},tx=this.db.transaction('records','readwrite'),done=complete(tx);
     tx.objectStore('records').add(state,[this.session,id]);await done;this.writes.set(id,state);
   }
   async append(id,tiles){
-    const state=this.writes.get(id);if(!state)throw new Error('Drawing history write is unavailable.');
+    const state=this.writes.get(id);if(!state)throw messageError(new Error(''), "errors.drawingHistoryDatabase.drawingHistoryWriteIsUnavailable", {});
     const raw=encodeHistoryChunk(tiles),checksum=await digest(raw);
     const packed=new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
     const compressed=packed.length<raw.length,bytes=compressed?packed:raw;
-    if(this.bytes+bytes.length>this.maxBytes)throw new DOMException('Drawing undo disk cache is full.','QuotaExceededError');
+    if(this.bytes+bytes.length>this.maxBytes)throw messageError(new DOMException('', 'QuotaExceededError'), "errors.drawingHistoryDatabase.drawingUndoDiskCacheIsFull", {});
     const next={...state,parts:state.parts+1,tiles:state.tiles+tiles.length,rawBytes:state.rawBytes+raw.length,storedBytes:state.storedBytes+bytes.length};
     const tx=this.db.transaction(['chunks','records'],'readwrite'),done=complete(tx);
     tx.objectStore('chunks').put({bytes,compressed,rawBytes:raw.length,checksum},[this.session,id,state.parts]);tx.objectStore('records').put(next,[this.session,id]);await done;
     Object.assign(state,next);this.bytes+=bytes.length;
   }
   async finish(id){
-    const state=this.writes.get(id);if(!state?.parts)throw new Error('Drawing history write is incomplete.');
+    const state=this.writes.get(id);if(!state?.parts)throw messageError(new Error(''), "errors.drawingHistoryDatabase.drawingHistoryWriteIsIncomplete", {});
     const tx=this.db.transaction('records','readwrite'),done=complete(tx);tx.objectStore('records').put({...state,complete:true},[this.session,id]);await done;this.writes.delete(id);return {...state};
   }
   async info(id){
     await this.open();const tx=this.db.transaction('records','readonly'),record=await request(tx.objectStore('records').get([this.session,id]));
-    if(!record?.complete)throw new Error('Drawing undo data is unavailable. The document and history have not changed.');return record;
+    if(!record?.complete)throw messageError(new Error(''), "errors.drawingHistoryDatabase.drawingUndoDataIsUnavailableTheDocumentAnd", {});return record;
   }
   async read(id,part){
     await this.open();
     const tx=this.db.transaction('chunks','readonly'),entry=await request(tx.objectStore('chunks').get([this.session,id,part]));
-    if(!entry||!Number.isInteger(entry.rawBytes)||entry.rawBytes<12||entry.rawBytes>HISTORY_CHUNK_BYTES)throw new Error('Drawing undo data is unavailable or damaged.');
+    if(!entry||!Number.isInteger(entry.rawBytes)||entry.rawBytes<12||entry.rawBytes>HISTORY_CHUNK_BYTES)throw messageError(new Error(''), "errors.drawingHistoryDatabase.drawingUndoDataIsUnavailableOrDamaged", {});
     let bytes=entry.bytes;
     if(entry.compressed){
       const reader=new Blob([entry.bytes]).stream().pipeThrough(new DecompressionStream('deflate')).getReader();bytes=new Uint8Array(entry.rawBytes);let offset=0;
-      try{for(;;){const {done,value}=await reader.read();if(done)break;if(offset+value.length>bytes.length)throw new Error('Drawing undo data expands beyond its bounds.');bytes.set(value,offset);offset+=value.length;}if(offset!==bytes.length)throw new Error('Drawing undo data is truncated.');}finally{await reader.cancel();}
+      try{for(;;){const {done,value}=await reader.read();if(done)break;if(offset+value.length>bytes.length)throw messageError(new Error(''), "errors.drawingHistoryDatabase.drawingUndoDataExpandsBeyondItsBounds", {});bytes.set(value,offset);offset+=value.length;}if(offset!==bytes.length)throw messageError(new Error(''), "errors.drawingHistoryCodec.drawingUndoDataIsTruncated", {});}finally{await reader.cancel();}
     }
-    if(bytes.length!==entry.rawBytes||!same(await digest(bytes),entry.checksum))throw new Error('Drawing undo data checksum mismatch.');
+    if(bytes.length!==entry.rawBytes||!same(await digest(bytes),entry.checksum))throw messageError(new Error(''), "errors.drawingHistoryDatabase.drawingUndoDataChecksumMismatch", {});
     return decodeHistoryChunk(bytes);
   }
   async remove(id){

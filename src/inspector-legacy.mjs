@@ -1,3 +1,4 @@
+import {messageAttributes} from './localization-bindings.mjs';
 /**
  * Today's inspector primitives, for the one sub-module that still builds its
  * inspector as HTML with them: drawing-view.mjs (Draw's tools), which
@@ -27,7 +28,7 @@ export function numericField(label, key, value, unit = '', limits = '', state = 
     restPrecision = precision && (unit ? 1 : 2);
   value = state?.value ?? value;
   const description = options.description || `${label}${unit ? ` (${unit})` : ''}`;
-  return `<div class="property-row${animated ? ' is-animatable' : options.wide ? ' is-wide' : ''}" data-property-row="${key}"><label class="field"><span class="property-scrub" data-property-scrub tabindex="0" role="button" aria-label="Scrub ${esc(description)}" title="Drag to adjust · Shift: fine · Alt: extra fine">${label}</span><input type="number" ${options.id ? `id="${options.id}"` : ''} ${options.legacyField === false ? '' : `data-field="${key}"`} data-property="${key}" data-property-value="${esc(value)}" data-property-precision="${precision}" data-property-display-precision="${restPrecision}" data-property-step="1" value="${formatPropertyValue(value, restPrecision)}" step="any" aria-label="${esc(description)}" ${limits}><small>${unit}</small></label></div>`;
+  return `<div class="property-row${animated ? ' is-animatable' : options.wide ? ' is-wide' : ''}" data-property-row="${key}"><label class="field"><span class="property-scrub" data-property-scrub tabindex="0" role="button" aria-label="Scrub ${esc(description)}" title="Drag to adjust · Shift: fine · Alt: extra fine" ${messageAttributes("inspectorLegacy.scrub", {description: description}, "aria-label")} data-i18n-title="inspectorLegacy.dragToAdjustShiftFineAltExtraFine">${label}</span><input type="number" ${options.id ? `id="${options.id}"` : ''} ${options.legacyField === false ? '' : `data-field="${key}"`} data-property="${key}" data-property-value="${esc(value)}" data-property-precision="${precision}" data-property-display-precision="${restPrecision}" data-property-step="1" value="${formatPropertyValue(value, restPrecision)}" step="any" aria-label="${esc(description)}" ${limits}><small>${unit}</small></label></div>`;
 }
 export const heading = (title, symbol) =>
   `<div class="property-context-heading"><span>${icon(symbol)}</span><div><strong>${esc(title)}</strong></div></div>`;

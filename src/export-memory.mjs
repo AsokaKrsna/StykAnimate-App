@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {exportSamplingSize} from './export-sampling.mjs';
 import {deviceMemoryHint} from './playback-budget.mjs';
 
@@ -19,7 +20,7 @@ export function exportMemoryPlan(width, height, smoothing = 'edges', {
   const tier = Number.isFinite(deviceMemory) && deviceMemory > 0 ? deviceMemory : 4;
   const requested = maxWorkingBytes ?? Math.max(64, Math.min(EXPORT_MAX_WORKING_BYTES / MiB, tier * 64)) * MiB;
   if (!Number.isSafeInteger(requested) || requested < 8 * MiB || requested > EXPORT_MAX_WORKING_BYTES) {
-    const error = new Error(`Export memory allowance must be between 8 MiB and ${EXPORT_MAX_WORKING_BYTES / MiB / 1024} GiB.`);
+    const error = messageError(new Error(''), "errors.exportMemory.exportMemoryAllowanceMustBeBetween8Mib", {value: EXPORT_MAX_WORKING_BYTES / MiB / 1024});
     error.code = 'export_memory_limit'; throw error;
   }
   const frameBytes = width * height * 4;

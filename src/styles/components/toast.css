@@ -38,7 +38,8 @@
     pointer-events: auto;
   }
   .ui-toast:where(:not(:has(> button))) { padding-inline-end: var(--space-3); }
-  .ui-toast-text { min-inline-size: 0; white-space: normal; overflow-wrap: break-word; padding-block: var(--space-1); }
+  .ui-toast:where(:has(> .ui-toast-action)) { flex-wrap: wrap; border-radius: var(--radius-xl); }
+  .ui-toast-text { flex: 1 1 160px; min-inline-size: 0; white-space: normal; overflow-wrap: break-word; padding-block: var(--space-1); }
   .ui-toast-text > b { font-weight: var(--weight-semibold); color: var(--text-1); }
   .ui-toast-icon { flex: none; inline-size: var(--icon-size); block-size: var(--icon-size); color: var(--accent-text); }
   .ui-toast:where([data-tone="success"]) .ui-toast-icon { color: var(--success-text); }
@@ -48,7 +49,8 @@
   .ui-toast-dot { flex: none; inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--danger-dot); }
 
   .ui-toast-action {
-    flex: none; block-size: var(--control-sm); padding: 0 var(--space-2-5);
+    max-inline-size: 100%; white-space: normal; block-size: auto; min-block-size: var(--control-md);
+    flex: none; block-size: auto; padding: 0 var(--space-2-5);
     border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--accent-text);
     font: var(--type-small-strong);
   }

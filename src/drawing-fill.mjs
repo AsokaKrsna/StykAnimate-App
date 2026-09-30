@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {TILE,TILE_BYTES,TileStore,tileKey,assertTileCoordinates} from './drawing-tiles.mjs';
 import {tileChanges,maskValue} from './drawing-pixels.mjs';
 
@@ -9,11 +10,11 @@ export const FILL_SOURCE_MAX_PIXELS=64*1024*1024;
  * allocated only for tiles reached by the flood and its morphology halo.
  * Budget failure therefore leaves even direct callers' artwork untouched. */
 function prepareFloodTiles(store,{x,y,color=[0,0,0,255],tolerance=16,expansion=0,gap=0,bounds,source,clip=null,maxBytes=768*1024*1024}={}){
-  if(!bounds||![bounds.x,bounds.y,bounds.width,bounds.height].every(Number.isSafeInteger)||bounds.width<1||bounds.height<1||!Number.isSafeInteger(bounds.x+bounds.width-1)||!Number.isSafeInteger(bounds.y+bounds.height-1))throw new Error('Invalid fill bounds.');
+  if(!bounds||![bounds.x,bounds.y,bounds.width,bounds.height].every(Number.isSafeInteger)||bounds.width<1||bounds.height<1||!Number.isSafeInteger(bounds.x+bounds.width-1)||!Number.isSafeInteger(bounds.y+bounds.height-1))throw messageError(new Error(''), "errors.drawingFill.invalidFillBounds", {});
   const left=bounds.x,top=bounds.y,right=left+bounds.width,bottom=top+bounds.height;
   const tx0=Math.floor(left/TILE),ty0=Math.floor(top/TILE),tx1=Math.floor((right-1)/TILE),ty1=Math.floor((bottom-1)/TILE);
   assertTileCoordinates(tx0,ty0);assertTileCoordinates(tx1,ty1);
-  if(![x,y,tolerance,expansion,gap,maxBytes].every(Number.isFinite)||maxBytes<0||color.length!==4||!color.every(Number.isFinite)||source&&(!(source instanceof Uint8ClampedArray)||bounds.width*bounds.height>FILL_SOURCE_MAX_PIXELS||source.length!==bounds.width*bounds.height*4))throw new Error('Invalid fill options.');
+  if(![x,y,tolerance,expansion,gap,maxBytes].every(Number.isFinite)||maxBytes<0||color.length!==4||!color.every(Number.isFinite)||source&&(!(source instanceof Uint8ClampedArray)||bounds.width*bounds.height>FILL_SOURCE_MAX_PIXELS||source.length!==bounds.width*bounds.height*4))throw messageError(new Error(''), "errors.drawingFill.invalidFillOptions", {});
   const output=new TileStore(),before=new Map();x=Math.floor(x);y=Math.floor(y);
   if(x<left||y<top||x>=right||y>=bottom)return {output,before};
   tolerance=clamp(tolerance,0,255);expansion=Math.round(clamp(expansion,0,16));gap=Math.round(clamp(gap,0,8));
@@ -22,13 +23,13 @@ function prepareFloodTiles(store,{x,y,color=[0,0,0,255],tolerance=16,expansion=0
   const rgba=source?source.subarray(((y-top)*bounds.width+x-left)*4,((y-top)*bounds.width+x-left)*4+4):store.pixel(x,y),alpha=rgba[3]/255,r=rgba[0]*alpha,g=rgba[1]*alpha,b=rgba[2]*alpha;
   const matches=(red,green,blue,a)=>Math.abs(red*a/255-r)<=tolerance&&Math.abs(green*a/255-g)<=tolerance&&Math.abs(blue*a/255-b)<=tolerance&&Math.abs(a-rgba[3])<=tolerance;
   let bytes=store.bytes+(source?.byteLength??0);
-  const reserve=n=>{if(bytes+n>maxBytes)throw new Error('The fill exceeds the drawing working memory limit.');bytes+=n;};
+  const reserve=n=>{if(bytes+n>maxBytes)throw messageError(new Error(''), "errors.drawingCompositeTransport.theFillExceedsTheDrawingWorkingMemoryLimit", {});bytes+=n;};
   reserve(0);
   const masks=new Map(),indexed=[],candidates=new Set();
   function tile(tx,ty){
     if(tx<tx0||tx>tx1||ty<ty0||ty>ty1)return null;
     const key=tileKey(tx,ty);let t=masks.get(key);if(t)return t;
-    reserve(512);if(indexed.length>=0x100000)throw new Error('The fill exceeds the drawing working memory limit.');
+    reserve(512);if(indexed.length>=0x100000)throw messageError(new Error(''), "errors.drawingCompositeTransport.theFillExceedsTheDrawingWorkingMemoryLimit", {});
     t={tx,ty,key,id:indexed.length,x0:Math.max(0,left-tx*TILE),y0:Math.max(0,top-ty*TILE),x1:Math.min(TILE,right-tx*TILE),y1:Math.min(TILE,bottom-ty*TILE),filled:0};
     indexed.push(t);masks.set(key,t);return t;
   }
@@ -91,7 +92,7 @@ function prepareFloodTiles(store,{x,y,color=[0,0,0,255],tolerance=16,expansion=0
   if(blank){
     if(color.every(n=>n===0))return {output,before};
     const count=(tx1-tx0+1)*(ty1-ty0+1);
-    if(count>Math.floor((maxBytes-bytes)/(TILE_BYTES+832)))throw new Error('The fill exceeds the drawing working memory limit.');
+    if(count>Math.floor((maxBytes-bytes)/(TILE_BYTES+832)))throw messageError(new Error(''), "errors.drawingCompositeTransport.theFillExceedsTheDrawingWorkingMemoryLimit", {});
     for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++){const t=tile(tx,ty);t.full=true;t.filled=(t.x1-t.x0)*(t.y1-t.y0);filled.push(t);}
   }else{
     const start=tile(Math.floor(x/TILE),Math.floor(y/TILE));push(start,(y-start.ty*TILE)*TILE+x-start.tx*TILE);

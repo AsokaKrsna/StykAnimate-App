@@ -1,3 +1,4 @@
+import {messageError, errorMessageData} from './localized-error.mjs';
 import {vectorVfxSource,rasterizeVectorVfx} from './renderer-vfx-vector.mjs';
 import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {parallaxResolver} from './layer-parallax.mjs';
@@ -55,7 +56,7 @@ function renderPreviewVfx(renderer,field,create,render) {
     const started=renderer.measureFrame?performance.now():0;
     renderer[field]??=create();render(renderer[field]);
     if(renderer.measureFrame)(renderer.telemetryStages??={}).vfx=performance.now()-started;
-    if(renderer.vfxRetryAt){renderer.options.onRecovery?.('vfx','recovered');renderer.options.onStatus?.({backend:renderer.stats.backend,message:'Camera effects preview restored.'});}
+    if(renderer.vfxRetryAt){renderer.options.onRecovery?.('vfx','recovered');renderer.options.onStatus?.({backend:renderer.stats.backend,message:'Camera effects preview restored.',messageKey:'rendererStatus.effectsRestored'});}
     renderer.vfxRetryAt=0;return true;
   }
   catch(error){
@@ -65,9 +66,9 @@ function renderPreviewVfx(renderer,field,create,render) {
     renderer.options.onRecovery?.('vfx','started');
     try {renderer[field]?.destroy();} catch { /* A lost device may already be released. */ }
     renderer[field]=null;renderer.stats.vfxFailures=(renderer.stats.vfxFailures||0)+1;
-    const failure=error instanceof Error?error:new Error('The camera effects preview failed.');
+    const failure=error instanceof Error?error:messageError(new Error(''), "errors.renderer.theCameraEffectsPreviewFailed", {});
     failure.telemetryStage??='prepare';
-    renderer.options.onStatus?.({backend:renderer.stats.backend,message:'Camera effects preview unavailable. Showing the scene without camera effects while retrying.'});
+    renderer.options.onStatus?.({backend:renderer.stats.backend,message:'Camera effects preview unavailable. Showing the scene without camera effects while retrying.',messageKey:'rendererStatus.effectsUnavailable'});
     if(renderer.options.onError)renderer.options.onError(failure);else globalThis.reportError?.(failure);
     return false;
   }
@@ -75,7 +76,7 @@ function renderPreviewVfx(renderer,field,create,render) {
 function editorBackgroundColor(options) {
   const color=options.editorBackgroundColor;
   if(color===undefined||color===null)return undefined;
-  if(!Number.isInteger(color)||color<0||color>0xffffffff)throw new Error('Editor background must be an ARGB color.');
+  if(!Number.isInteger(color)||color<0||color>0xffffffff)throw messageError(new Error(''), "errors.renderer.editorBackgroundMustBeAnArgbColor", {});
   return color;
 }
 
@@ -236,7 +237,7 @@ class CanvasFallback {
   constructor(canvas, options, reason) {
     // Keep the compatibility surface independent of the failed GPU backend.
     this.canvas = canvas; this.context = canvas.getContext('2d', {willReadFrequently: true}); this.options = options;
-    if (!this.context) throw new Error('The compatibility canvas is unavailable.');
+    if (!this.context) throw messageError(new Error(''), "errors.renderer.theCompatibilityCanvasIsUnavailable", {});
     this.stats = { backend: 'Canvas 2D fallback', reason, drawCalls: 0, primitives: 0, frameMs: 0, objects: 0, textureObjects: 0 };
     this.onionArtwork = new Map(); this.onionArtworkBytes = 0;
     this.onionBudget = options.onionCache?.maxBytes ?? previewMemoryPlan().editorOnions;
@@ -344,7 +345,7 @@ class CanvasFallback {
     const context=canvas.getContext('2d',{willReadFrequently:true});
     if(context&&!context.isContextLost?.())return context;
     canvas.width=canvas.height=1;this.rasterRetryAt=performance.now()+1500;
-    const error=Object.assign(new Error('A preview raster canvas is unavailable; drawing directly instead.'),{telemetryCode:'device_lost',telemetryStage:'prepare'});
+    const error=Object.assign(messageError(new Error(''), "errors.renderer.aPreviewRasterCanvasIsUnavailableDrawingDirectly", {}),{telemetryCode:'device_lost',telemetryStage:'prepare'});
     this.options.onError?.(error);
     if(!this.options.onError)globalThis.reportError?.(error);
     return null;
@@ -679,9 +680,9 @@ class WebGPURenderer {
     // Claim the canvas only after asynchronous initialization succeeds, so
     // failures/timeouts can still acquire a 2D context on the same surface.
     this.context = this.canvas.getContext('webgpu');
-    if (!this.context) throw new Error('The canvas could not create a WebGPU context.');
+    if (!this.context) throw messageError(new Error(''), "errors.renderer.theCanvasCouldNotCreateAWebgpuContext", {});
     this.resize(this.canvas.clientWidth || 1, this.canvas.clientHeight || 1, globalThis.devicePixelRatio || 1);
-    this.device.lost.then(info => { if (!this.destroyed) { this.deviceLost = true; this.last = null; this.stats.reason = info.reason; this.stats.message = `Graphics device disconnected: ${info.message || info.reason}. Reinitialize the renderer to continue.`; this.stats.backend = 'WebGPU device lost'; this.options.onStatus?.(this.stats); } });
+    this.device.lost.then(info => { if (!this.destroyed) { this.deviceLost = true; this.last = null; this.stats.reason = info.reason; this.stats.message = `Graphics device disconnected: ${info.message || info.reason}. Reinitialize the renderer to continue.`; this.stats.messageKey = 'rendererStatus.deviceDisconnected'; this.stats.messageParams = {detail:info.message || info.reason}; this.stats.backend = 'WebGPU device lost'; this.options.onStatus?.(this.stats); } });
     this.device.addEventListener('uncapturederror', event => { if (this.destroyed || this.deviceLost) return; this.stats.warnings.push(event.error.message); this.options.onStatus?.(this.stats); });
     initVfxDevice(this.device);
     // Drawing cels display from GPU-resident tiles. Failure keeps the canvas
@@ -775,16 +776,16 @@ class WebGPURenderer {
   backgroundsReady(report, frame) {
     return this.backgroundAssets(report, frame).every(asset => {
       const image = this.resources.image(this.resources.url(asset));
-      if (image?.complete && !image.naturalWidth) throw new Error('An animation background image could not be decoded.');
+      if (image?.complete && !image.naturalWidth) throw messageError(new Error(''), "errors.renderer.anAnimationBackgroundImageCouldNotBeDecoded", {});
       return Boolean(image?.complete && image.naturalWidth);
     });
   }
   async prepareBackgrounds(report, frame) {
     await Promise.all(this.backgroundAssets(report, frame).map(async asset => {
       let image = this.resources.image(this.resources.url(asset));
-      if (!image) throw new Error('An animation background image has no readable asset.');
+      if (!image) throw messageError(new Error(''), "errors.renderer.anAnimationBackgroundImageHasNoReadableAsset", {});
       if (!image.complete) { await image.decode(); image = this.resources.image(this.resources.url(asset)); }
-      if (!image.naturalWidth) throw new Error('An animation background image could not be decoded.');
+      if (!image.naturalWidth) throw messageError(new Error(''), "errors.renderer.anAnimationBackgroundImageCouldNotBeDecoded", {});
     }));
   }
   prepareFrame(packet, options) { if (this.destroyed || this.deviceLost) return null; this.useReport(options.report); return this.preparedFrames.prepare(packet, options); }
@@ -1509,13 +1510,13 @@ function preparedSceneKeys(options, dpr) {
  * caller atomically publishes or cancels this preparation. */
 async function prepareSceneUpdate(renderer, request) {
   const {report, frame, geometry, signal, sliceMs=4, yieldControl, getView}=request;
-  if(renderer.activeReport!==report||!geometry)throw new Error('An editable scene update requires the active document and its geometry.');
+  if(renderer.activeReport!==report||!geometry)throw messageError(new Error(''), "errors.renderer.anEditableSceneUpdateRequiresTheActiveDocument", {});
   const generation=renderer.generation, liveGeometry=renderer.lastGeometry, started=performance.now();
   let stage, disposed=false, activated=false;
   const lease=renderer.rasterCache.lease(renderer.layout?.map(entry=>entry.texture).filter(Boolean));
   const check=()=>{
     if(disposed||signal?.aborted||renderer.destroyed||renderer.deviceLost||renderer.activeReport!==report||renderer.generation!==generation||renderer.lastGeometry!==liveGeometry||request.checkCurrent?.()===false)
-      throw new DOMException('Editable scene preparation was superseded.', 'AbortError');
+      throw messageError(new DOMException('', 'AbortError'), "errors.renderer.editableScenePreparationWasSuperseded", {});
   };
   const dispose=()=>{
     if(disposed||activated)return;disposed=true;
@@ -1553,10 +1554,10 @@ async function prepareSceneUpdate(renderer, request) {
     timings.elapsedMs=performance.now()-started;
     return {report,frame,geometry,view,timings,dispose,
       activate(){
-        check();if(activated)throw new Error('The editable scene was already published.');
+        check();if(activated)throw messageError(new Error(''), "errors.renderer.theEditableSceneWasAlreadyPublished", {});
         const fresh=preparedSceneKeys({...request,view:getView?.()||view},renderer.dpr);
         if(fresh.backgroundKey!==keys.backgroundKey||(stage.stats.textureObjects&&fresh.rasterResolution!==stage.lastRasterResolution))
-          throw new DOMException('The editable scene view changed before publication.', 'AbortError');
+          throw messageError(new DOMException('', 'AbortError'), "errors.renderer.theEditableSceneViewChangedBeforePublication", {});
         stage.copySharedEntries(renderer);
         renderer.shapeBuffer?.destroy();renderer.transformBuffer?.destroy();renderer.rasterSurfaces.dispose();
         for(const entry of renderer.backgroundImages?.values()||[])entry.texture.destroy();
@@ -1574,12 +1575,12 @@ async function prepareSceneUpdate(renderer, request) {
 async function prepareInitialScene(renderer, request) {
   const {report, frame, signal, sliceMs = 4, yieldControl, onProgress, getView} = request;
   const constructionColor = editorBackgroundColor(request);
-  if (!report || !frame) throw new Error('An initial scene requires its report and evaluated frame.');
-  if (renderer.activeReport === report || renderer.last?.report === report) throw new Error('Initial scene preparation requires a separate incoming document.');
+  if (!report || !frame) throw messageError(new Error(''), "errors.renderer.anInitialSceneRequiresItsReportAndEvaluated", {});
+  if (renderer.activeReport === report || renderer.last?.report === report) throw messageError(new Error(''), "errors.renderer.initialScenePreparationRequiresASeparateIncomingDocument", {});
   const started = performance.now(); let stage, transferred = false, imageFailure;
   const checkCurrent = () => {
-    if (renderer.destroyed || signal?.aborted) throw new DOMException('Scene preparation cancelled.', 'AbortError');
-    if (renderer.device && renderer.stats.backend !== 'WebGPU') throw new Error('The graphics device is unavailable.');
+    if (renderer.destroyed || signal?.aborted) throw messageError(new DOMException('', 'AbortError'), "errors.renderer.scenePreparationCancelled", {});
+    if (renderer.device && renderer.stats.backend !== 'WebGPU') throw messageError(new Error(''), "errors.renderer.theGraphicsDeviceIsUnavailable", {});
     request.checkCurrent?.(); if (imageFailure) throw imageFailure;
   };
   const media = createSceneImages({url: renderer.resources.url, signal, checkCurrent, imageFactory: request.imageFactory});
@@ -1644,14 +1645,14 @@ function activatePreparedScene(renderer, prepared, options = {}) {
   const constructionColor = Object.hasOwn(options, 'editorBackgroundColor') ? options.editorBackgroundColor : prepared?.editorBackgroundColor;
   if (!prepared || prepared.renderer !== renderer || prepared.activated || prepared.disposed || renderer.destroyed ||
       prepared.report !== report || prepared.frame !== frame || prepared.geometry !== geometry)
-    throw new Error('The prepared initial scene no longer matches this document.');
+    throw messageError(new Error(''), "errors.renderer.thePreparedInitialSceneNoLongerMatchesThis", {});
   const stage = prepared.stage;
   if (stage) {
     const keys = preparedSceneKeys({report, frame, view, cameraEnabled: prepared.cameraEnabled, editorBackgroundColor: constructionColor}, renderer.dpr);
     if (keys.backgroundKey !== stage.backgroundKey)
-      throw new Error('The construction background changed after scene preparation; prepare its background again.');
+      throw messageError(new Error(''), "errors.renderer.theConstructionBackgroundChangedAfterScenePreparationPrepare", {});
     if (stage.stats.textureObjects && keys.rasterResolution !== stage.lastRasterResolution)
-      throw new Error('The viewport changed after scene preparation; prepare its raster scale again.');
+      throw messageError(new Error(''), "errors.renderer.theViewportChangedAfterScenePreparationPrepareIts", {});
     renderer.useReport(report);
     renderer.shapeBuffer?.destroy(); renderer.transformBuffer?.destroy(); renderer.rasterSurfaces.dispose();
     for (const key of ['entries', 'layout', 'rasterCache', 'vectorCache', 'compatibilityCache', 'artworks', 'artworkAliases', 'generation', 'lastGeometry', 'lastGeneration',
@@ -1680,14 +1681,15 @@ async function softwareAdapter(adapter) {
 export async function createRenderer(canvas, options = {}) {
   const materialsReady = prewarmAtlas();
   let reason = options.fallbackReason || 'WebGPU is unavailable in this browser or graphics driver.';
+  let reasonKey = options.fallbackReasonKey || (!options.fallbackReason ? 'rendererStatus.unavailable' : undefined), reasonParams = options.fallbackReasonParams;
   if (!options.forceCanvas2D && globalThis.navigator?.gpu) {
     let device, renderer;
     const startup = gpuStartupBudget();
     try {
       const adapter = await startup.wait(navigator.gpu.requestAdapter({ powerPreference: 'high-performance' }));
-      if (!adapter) throw new Error('No compatible WebGPU adapter was found.');
+      if (!adapter) throw messageError(new Error(''), "errors.renderer.noCompatibleWebgpuAdapterWasFound", {});
       if (await startup.wait(softwareAdapter(adapter)) && !options.allowSoftwareAdapter)
-        throw new Error('WebGPU resolved to a software adapter; the compatibility renderer is faster on this hardware.');
+        throw messageError(new Error(''), "errors.renderer.webgpuResolvedToASoftwareAdapterTheCompatibility", {});
       device = await startup.wait(requestInstrumentedDevice(adapter), lateDevice => lateDevice.destroy());
       const info = adapter.info;
       renderer = new WebGPURenderer(canvas, device, null, navigator.gpu.getPreferredCanvasFormat(), { ...options, adapterName: [info?.vendor, info?.architecture, info?.device].filter(Boolean).join(' · ') });
@@ -1695,12 +1697,16 @@ export async function createRenderer(canvas, options = {}) {
       await renderer.initialize(startup); await materialsReady; options.onStatus?.(renderer.stats); return renderer;
     } catch (error) {
       reason = error.message;
+      const metadata = errorMessageData(error);
+      reasonKey = metadata.messageKey; reasonParams = metadata.messageParams;
       if (renderer) { renderer.destroyed = true; renderer.generators?.destroy(); renderer.gpuTiming?.destroy(); }
       device?.destroy();
       // A canvas cannot change its context type after WebGPU has been acquired.
-      if (renderer?.context) { renderer.context.unconfigure(); throw new Error(`WebGPU initialization failed: ${reason}`); }
+      if (renderer?.context) { renderer.context.unconfigure(); throw messageError(new Error(''), "errors.renderer.webgpuInitializationFailed", {reason: reason}); }
     }
   }
   await materialsReady;
-  const fallback = new CanvasFallback(canvas, options, reason); options.onStatus?.(fallback.stats); return fallback;
+  const fallback = new CanvasFallback(canvas, options, reason);
+  if (reasonKey) Object.assign(fallback.stats, {reasonKey, reasonParams});
+  options.onStatus?.(fallback.stats); return fallback;
 }

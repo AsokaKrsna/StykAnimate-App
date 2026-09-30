@@ -1,9 +1,10 @@
+import {messageError} from './localized-error.mjs';
 /** Validate retained rig origins without rescanning their support graph per pose. */
 const MAX_BONES = 100000;
 const validated = new WeakMap();
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const fail = message => {throw new Error(`Animation origin ${message}.`);};
+const fail = message => {throw messageError(new Error(''), "errors.animationOriginValidation.animationOrigin", {message: message});};
 const integer = (value, low, high, label) => {
   if (!Number.isInteger(value) || value < low || value > high) fail(`${label} must be an integer from ${low} to ${high}`);
 };

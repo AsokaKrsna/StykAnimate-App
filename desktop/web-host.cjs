@@ -1,4 +1,6 @@
 'use strict';
+const { messageError } = require('./localization.cjs');
+
 
 const http = require('node:http');
 const path = require('node:path');
@@ -13,7 +15,7 @@ const MIME = new Map(Object.entries({'.html':'text/html; charset=utf-8','.css':'
   '.woff':'font/woff','.woff2':'font/woff2','.ttf':'font/ttf','.wasm':'application/wasm'}));
 const LOOPBACK = new Set(['localhost','127.0.0.1','[::1]']);
 const MAX_BODY = 256 * 1024 * 1024;
-function error(status, code, message) { return Object.assign(new Error(message), {status,code}); }
+function error(status, code, key, params) { return Object.assign(messageError(new Error(''), key, params), {status,code}); }
 function inside(root, target) { const relative = path.relative(root,target); return !path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`); }
 function headersWithoutHop(headers) {
   const skip = new Set(['connection','keep-alive','transfer-encoding','te','trailer','upgrade','proxy-connection','proxy-authenticate','proxy-authorization',
@@ -23,8 +25,9 @@ function headersWithoutHop(headers) {
 function reject(response, failure) {
   if (response.destroyed) return;
   if (response.headersSent) { response.destroy(); return; }
+  const visible = failure.status ? failure : messageError(new Error(''), 'desktop.webHost.errors.resourceUnreadable');
   const data = Buffer.from(JSON.stringify({ok:false,code:failure.code || 'file_error',
-    error:failure.status ? failure.message : 'The local application resource could not be read.'}));
+    error:visible.message, messageKey:visible.messageKey, messageParams:visible.messageParams}));
   response.writeHead(failure.status || 500, {'Content-Type':'application/json','Content-Length':data.length,
     'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Connection':'close'});
   response.end(data);
@@ -35,14 +38,14 @@ function reject(response, failure) {
  * their upload and forward with backpressure once Python is ready. */
 async function startDesktopHost({appRoot, resourcesPath, packaged=false, onError=()=>{}, log=()=>{},
   startCodec=startBackend, maxApiRequests=16, token=''}={}) {
-  if (!Number.isInteger(maxApiRequests) || maxApiRequests<1 || maxApiRequests>64) throw new RangeError('Invalid file-operation capacity.');
+  if (!Number.isInteger(maxApiRequests) || maxApiRequests<1 || maxApiRequests>64) throw messageError(new RangeError(''), 'desktop.webHost.errors.invalidFileOperationCapacity', {});
   const root = await fs.realpath(packaged ? path.join(resourcesPath,'web') : appRoot);
   const controller = new AbortController(), jobs = new Set(), controls = new Set(), cancellations = new Set();
   const agent = new http.Agent({keepAlive:true,maxSockets:maxApiRequests,maxFreeSockets:2});
   const controlAgent = new http.Agent({keepAlive:true,maxSockets:4,maxFreeSockets:1});
   let codec, failure, stopped=false, closing;
   const notify = value => { try { onError(value); } catch { /* Diagnostics cannot stop the editor. */ } };
-  const unavailable = () => error(503,'backend_unavailable','The file conversion service is unavailable. Your animation can still be edited and saved as a StykAnimate project. Restart the app to try again.');
+  const unavailable = () => error(503,'backend_unavailable',"desktop.webHost.errors.backendUnavailable");
 
   async function serveStatic(request,response,pathname) {
     const relative = decodeURIComponent(pathname).slice(1) || 'index.html';
@@ -50,17 +53,17 @@ async function startDesktopHost({appRoot, resourcesPath, packaged=false, onError
     if (relative.includes('\\') || relative.includes(':') || parts.some(part=>part.startsWith('.')) ||
         (parts.length > 1 && !['src','vendor','assets',...(!packaged?['tests','artifacts']:[])].includes(parts[0])) ||
         (parts.length === 1 && !['.html','.css','.svg','.png','.ico'].includes(path.extname(relative).toLowerCase())))
-      throw error(403,'resource_forbidden','This resource is private.');
+      throw error(403,'resource_forbidden',"desktop.webHost.errors.resourceForbidden");
     const type = MIME.get(path.extname(relative).toLowerCase());
-    if (!type) throw error(403,'resource_forbidden','This resource is private.');
+    if (!type) throw error(403,'resource_forbidden',"desktop.webHost.errors.resourceForbidden");
     let target;
     try { target = await fs.realpath(path.join(root,relative)); }
-    catch (cause) { if (cause.code==='ENOENT') throw error(404,'file_not_found','The application resource was not found.'); throw cause; }
-    if (!inside(root,target)) throw error(403,'path_forbidden','The resource is outside the application.');
+    catch (cause) { if (cause.code==='ENOENT') throw error(404,'file_not_found',"desktop.webHost.errors.fileNotFound"); throw cause; }
+    if (!inside(root,target)) throw error(403,'path_forbidden',"desktop.webHost.errors.pathForbidden");
     const file = await fs.open(target,'r');
     try {
       const stat = await file.stat({bigint:true});
-      if (!stat.isFile()) throw error(404,'file_not_found','The application resource was not found.');
+      if (!stat.isFile()) throw error(404,'file_not_found',"desktop.webHost.errors.fileNotFound");
       const etag = `"${stat.mtimeNs.toString(16)}-${stat.size.toString(16)}"`;
       const tags = String(request.headers['if-none-match'] || '').split(',').map(tag=>tag.trim().replace(/^W\//,''));
       const unchanged = tags.includes('*') || tags.includes(etag);
@@ -87,7 +90,7 @@ async function startDesktopHost({appRoot, resourcesPath, packaged=false, onError
 
   function forward(request,response,pathname) {
     const control=pathname==='/api/cancel', collection=control?controls:jobs;
-    if (control ? controls.size>=4 : jobs.size+cancellations.size>=maxApiRequests) { reject(response,error(503,'backend_busy','Too many file operations are pending. Wait for one to finish and try again.')); return; }
+    if (control ? controls.size>=4 : jobs.size+cancellations.size>=maxApiRequests) { reject(response,error(503,'backend_busy',"desktop.webHost.errors.backendBusy")); return; }
     const cancellable=['/api/import','/api/open','/api/export','/api/source'].includes(pathname);
     const identity=cancellable?(request.headers['x-styk-job-id']||randomBytes(16).toString('hex')):null;
     let upstream, done=false;
@@ -117,36 +120,36 @@ async function startDesktopHost({appRoot, resourcesPath, packaged=false, onError
     void (async()=>{
       if (stopped) throw unavailable();
       let host; try { host = new URL(`http://${request.headers.host || ''}`); }
-      catch { throw error(403,'host_forbidden','Only the local application host is accepted.'); }
+      catch { throw error(403,'host_forbidden',"desktop.webHost.errors.hostForbidden"); }
       if (!LOOPBACK.has(host.hostname) || host.port !== String(server.address().port))
-        throw error(403,'host_forbidden','Only the local application host is accepted.');
+        throw error(403,'host_forbidden',"desktop.webHost.errors.hostForbidden");
       if (request.headers.origin) {
         let origin; try { origin = new URL(request.headers.origin); } catch { /* Invalid and null origins are rejected. */ }
         if (!origin || origin.protocol!=='http:' || !LOOPBACK.has(origin.hostname))
-          throw error(403,'origin_forbidden','Only the local editor can use this service.');
+          throw error(403,'origin_forbidden',"desktop.webHost.errors.originForbidden");
       }
-      if (!request.url.startsWith('/') || request.url.startsWith('//')) throw error(400,'invalid_request','Use a local resource path.');
+      if (!request.url.startsWith('/') || request.url.startsWith('//')) throw error(400,'invalid_request',"desktop.webHost.errors.invalidRequest");
       const url = new URL(request.url,`http://${request.headers.host}`);
       if (url.pathname.startsWith('/api/')) {
-        if (!['GET','HEAD','POST','OPTIONS'].includes(request.method)) throw error(405,'method_not_allowed','Unsupported file operation.');
+        if (!['GET','HEAD','POST','OPTIONS'].includes(request.method)) throw error(405,'method_not_allowed',"desktop.webHost.errors.methodNotAllowed");
         // Authenticate before queue admission, including while Python starts.
         // Health/preflight stay public, as on the codec's direct loopback host.
         const publicRequest=request.method==='OPTIONS'||(['GET','HEAD'].includes(request.method)&&url.pathname==='/api/health');
         if(token&&!publicRequest&&request.headers.authorization!==`Bearer ${token}`)
-          throw error(401,'unauthorized','The local application session token is required.');
+          throw error(401,'unauthorized',"desktop.webHost.errors.unauthorized");
         if (failure) throw unavailable();
         if (request.method==='POST') {
           const length = Number(request.headers['content-length']);
-          if (request.headers['transfer-encoding']) throw error(400,'unsupported_transfer','Send a bounded Content-Length upload.');
-          if (!Number.isSafeInteger(length) || length<0) throw error(411,'length_required','Content-Length is required.');
-          if (length>MAX_BODY) throw error(413,'body_too_large','The request exceeds the configured size limit.');
+          if (request.headers['transfer-encoding']) throw error(400,'unsupported_transfer',"desktop.webHost.errors.unsupportedTransfer");
+          if (!Number.isSafeInteger(length) || length<0) throw error(411,'length_required',"desktop.webHost.errors.lengthRequired");
+          if (length>MAX_BODY) throw error(413,'body_too_large',"desktop.webHost.errors.bodyTooLarge");
         }
         forward(request,response,url.pathname);
       } else {
-        if (!['GET','HEAD'].includes(request.method)) throw error(405,'method_not_allowed','Application resources are read-only.');
+        if (!['GET','HEAD'].includes(request.method)) throw error(405,'method_not_allowed',"desktop.webHost.errors.resourcesReadOnly");
         await serveStatic(request,response,url.pathname);
       }
-    })().catch(cause=>reject(response,cause instanceof URIError ? error(400,'invalid_path','Invalid resource path.') : cause));
+    })().catch(cause=>reject(response,cause instanceof URIError ? error(400,'invalid_path',"desktop.webHost.errors.invalidPath") : cause));
   });
   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
   const origin = `http://127.0.0.1:${server.address().port}`;

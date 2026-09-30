@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {portableFigure, portableBackground} from './clipboard-assets.mjs';
 import {remapVfxOwner} from './vfx.mjs';
 import {equivalentClipboardAsset as equivalent} from './clipboard-asset-plan.mjs';
@@ -18,7 +19,7 @@ function allocator(values, maximum = 0xffffffff) {
   const used = new Set(values); let next = 1;
   return () => {
     while (used.has(next)) next++;
-    if (next > maximum) throw new Error('The animation has no unused native identities.');
+    if (next > maximum) throw messageError(new Error(''), "errors.editorFrameClipboard.theAnimationHasNoUnusedNativeIdentities", {});
     used.add(next); return next++;
   };
 }
@@ -83,7 +84,7 @@ function capture(editor, selected, owned = false) {
  * after returning the capture. Borrowing its evaluated native frames avoids a
  * second complete clone of a large selected range. Never use on a live editor. */
 export function captureOwnedNativeClipboard(editor, selected) {
-  if (editor.animationChannels.length || editor._drag) throw new Error('Owned capture requires a committed native worker snapshot.');
+  if (editor.animationChannels.length || editor._drag) throw messageError(new Error(''), "errors.editorFrameClipboard.ownedCaptureRequiresACommittedNativeWorkerSnapshot", {});
   editor._frameClipboard = capture(editor, selected, true);
   return editor._frameClipboard.length;
 }
@@ -108,7 +109,7 @@ function layerPatch(editor, metadata, uidMap, sameDocument) {
     if (sameDocument && state.byId[id]) { ids.set(id, id); continue; }
     const target = `layer-${next++}`; ids.set(id, target); additions.push({id: target, value: clone(metadata.layers.byId[id])});
   }
-  if (state.order.length + additions.length > 10000) throw new Error('Pasting these frames would exceed the 10,000-layer limit.');
+  if (state.order.length + additions.length > 10000) throw messageError(new Error(''), "errors.editorFrameClipboard.pastingTheseFramesWouldExceedThe10000", {});
   for (const [oldUid, newUid] of uidMap) {
     // A native figure identity can occur in many existing frames. Reassigning
     // it here would also change those frames' visibility and layer ordering.
@@ -122,8 +123,8 @@ function layerPatch(editor, metadata, uidMap, sameDocument) {
 
 function plan(editor, index) {
   const clipboard = editor._frameClipboard, metadata = clipboard[META];
-  if (!metadata) throw new Error('Copy these keyframes again to include their figure and background assets.');
-  if (editor.report.keyframes.length + clipboard.length > 100000) throw new Error('Paste fewer frames to stay within the 100,000-keyframe limit.');
+  if (!metadata) throw messageError(new Error(''), "errors.editorFrameClipboard.copyTheseKeyframesAgainToIncludeTheirFigure", {});
+  if (editor.report.keyframes.length + clipboard.length > 100000) throw messageError(new Error(''), "errors.editorFrameClipboard.pasteFewerFramesToStayWithinThe100", {});
   const sameDocument = metadata.documentToken === editor._documentToken;
   const modernize = metadata.version < 5 && editor.report.version >= 5;
   const sourceFigures = modernize ? metadata.figures.map(figure => portableFigure(figure, true)) : metadata.figures;
@@ -135,12 +136,12 @@ function plan(editor, index) {
   figures.additions = figures.additions.map(figure => portableFigure(figure, false));
   backgrounds.additions = backgrounds.additions.map(portableBackground);
   if ((assetSummary?.figures.count??editor.report.figure_types.length) + figures.additions.length > 65535 || (assetSummary?.backgrounds.count??editor.report.backgrounds?.length??0) + backgrounds.additions.length > 65535)
-    throw new Error('The copied assets exceed the native figure/background table capacity.');
+    throw messageError(new Error(''), "errors.editorFrameClipboard.theCopiedAssetsExceedTheNativeFigureBackground", {});
   const summary = editor._clipboardDestinationSummary;
   const used = summary ? summary.uidCounts.map(([uid]) => uid) : []; let objects = summary?.objectCount ?? 0;
   if (!summary) for (const frame of editor.report.keyframes) { objects += frame.objects.length; for (const object of frame.objects) used.push(object.unique_id); }
   for (const frame of clipboard) objects += frame.objects.length;
-  if (objects > 2000000) throw new Error('Pasting these frames would exceed the two-million-object limit.');
+  if (objects > 2000000) throw messageError(new Error(''), "errors.editorFrameClipboard.pastingTheseFramesWouldExceedTheTwoMillion", {});
   if (!summary) for (const frame of Object.values(editor.report._styk.frameSources ?? {})) for (const object of frame.objects) used.push(object.unique_id);
   const nextUid = allocator(used, 0x7ffffffe), uidMap = new Map();
   for (const frame of clipboard) for (const object of frame.objects) if (!uidMap.has(object.unique_id)) uidMap.set(object.unique_id, sameDocument ? object.unique_id : nextUid());
@@ -154,7 +155,7 @@ function plan(editor, index) {
     }
     for (const object of frame.objects) if (object.join) {
       const target = frame.objects[object.join.target_object_slot];
-      if (!target) throw new Error('A copied figure has an unresolved join.');
+      if (!target) throw messageError(new Error(''), "errors.editorFrameClipboard.aCopiedFigureHasAnUnresolvedJoin", {});
       object.join.target_unique_id = target.unique_id;
       if (own(object.join, 'target_figure_type_id')) object.join.target_figure_type_id = target.figure_type_id;
     }
@@ -169,9 +170,9 @@ function plan(editor, index) {
     }
     return [frame];
   });
-  if (editor.report.keyframes.length + frames.length > 100000) throw new Error('Legacy hold conversion exceeds the 100,000-keyframe limit.');
+  if (editor.report.keyframes.length + frames.length > 100000) throw messageError(new Error(''), "errors.editorFrameClipboard.legacyHoldConversionExceedsThe100000Keyframe", {});
   if (frames.reduce((sum, frame) => sum + frame.objects.length, 0) + (summary?.objectCount ?? editor.report.keyframes.reduce((sum, frame) => sum + frame.objects.length, 0)) > 2000000)
-    throw new Error('Legacy hold conversion exceeds the two-million-object limit.');
+    throw messageError(new Error(''), "errors.editorFrameClipboard.legacyHoldConversionExceedsTheTwoMillionObject", {});
   const assets = {figureIndex: assetSummary?.figures.count??editor.report.figure_types.length, figures: figures.additions,
     backgroundIndex: assetSummary?.backgrounds.count??editor.report.backgrounds?.length??0, backgrounds: backgrounds.additions,
     layers: layerPatch(editor, metadata, uidMap, sameDocument)};
@@ -190,7 +191,7 @@ export const editorFrameClipboardMethods = {
   },
   pasteFrames(index = this.frameIndex + 1) {
     if (!this.hasFrameClipboard) return 0;
-    if (!Number.isInteger(index) || index < 0 || index > this.report.keyframes.length) throw new Error('Choose a valid paste position.');
+    if (!Number.isInteger(index) || index < 0 || index > this.report.keyframes.length) throw messageError(new Error(''), "errors.editorClipboardAsync.chooseAValidPastePosition", {});
     if (this.report.version < 5 && this._frameClipboard[META]?.version >= 5)
       return pasteWithLegacyUpgrade(this, index, editorFrameClipboardMethods.pasteFrames);
     const pending = plan(this, index);
@@ -198,7 +199,7 @@ export const editorFrameClipboardMethods = {
     const beforeSelection = this._selectionState(), frames = pending.frames;
     let nextFrameIdentity = this._nextFrameIdentity;
     for (const frame of frames) {
-      if (!Number.isSafeInteger(nextFrameIdentity)) throw new Error('Frame identity capacity exceeded.');
+      if (!Number.isSafeInteger(nextFrameIdentity)) throw messageError(new Error(''), "errors.clipboardLegacyUpgrade.frameIdentityCapacityExceeded", {});
       frame._styk = {...frame._styk, frameId: `frame-${nextFrameIdentity++}`};
     }
     const authored = planAuthoredClipboard(this, {...pending, frames, nextFrameIdentity});
@@ -258,7 +259,7 @@ export const editorFrameClipboardMethods = {
       keyframes: this._frameClipboard, _styk: {name: 'Copied keyframes', frameClipboardVersion: 1, layers}};
   },
   restoreFrameClipboard(document) {
-    if (document?._styk?.frameClipboardVersion !== 1) throw new Error('The saved frame clipboard has an unsupported format.');
+    if (document?._styk?.frameClipboardVersion !== 1) throw messageError(new Error(''), "errors.editorFrameClipboard.theSavedFrameClipboardHasAnUnsupportedFormat", {});
     validateScene(document); validateLayerState(ensureLayerState(document));
     const view = {report: document, _documentToken: null};
     this._frameClipboard = capture(view, document.keyframes.map((_, index) => index)); return this._frameClipboard.length;

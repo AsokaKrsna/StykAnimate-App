@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import { quantizeGIF, mapGIFPixels } from "./gif-quantize.mjs";
 import { normalizeGIFDither } from "./gif-options.mjs";
 /** Small image container codecs. All compression/quantization runs in a worker.
@@ -39,7 +40,7 @@ class BoundedOutput {
     for (const part of parts) {
       this.size += part.size ?? part.byteLength;
       if (this.size > this.maxBytes)
-        throw new Error("The image export exceeds the configured size limit.");
+        throw messageError(new Error(''), "errors.imageCodecs.theImageExportExceedsTheConfiguredSizeLimit", {});
       this.parts.push(part);
     }
   }
@@ -81,7 +82,7 @@ function delayFraction(fps) {
 
 function readPNG(data) {
   if (data.length < 33 || signature.some((n, i) => data[i] !== n))
-    throw new Error("The browser did not produce a PNG frame.");
+    throw messageError(new Error(''), "errors.imageCodecs.theBrowserDidNotProduceAPngFrame", {});
   const chunks = [],
     view = new DataView(data.buffer, data.byteOffset, data.byteLength);
   let offset = 8;
@@ -89,14 +90,14 @@ function readPNG(data) {
     const length = view.getUint32(offset),
       end = offset + length + 12;
     if (end > data.length)
-      throw new Error("The encoded PNG frame is truncated.");
+      throw messageError(new Error(''), "errors.imageCodecs.theEncodedPngFrameIsTruncated", {});
     const type = String.fromCharCode(...data.subarray(offset + 4, offset + 8));
     chunks.push({ type, data: data.subarray(offset + 8, offset + 8 + length) });
     offset = end;
     if (type === "IEND") break;
   }
   if (!chunks.some((c) => c.type === "IDAT"))
-    throw new Error("The PNG frame contains no pixels.");
+    throw messageError(new Error(''), "errors.imageCodecs.thePngFrameContainsNoPixels", {});
   return chunks;
 }
 
@@ -112,14 +113,14 @@ export class APNGEncoder extends BoundedOutput {
     const chunks = readPNG(data),
       header = chunks.find((c) => c.type === "IHDR")?.data;
     if (!header || header.length !== 13)
-      throw new Error("The PNG frame header is missing.");
+      throw messageError(new Error(''), "errors.imageCodecs.thePngFrameHeaderIsMissing", {});
     const view = new DataView(
       header.buffer,
       header.byteOffset,
       header.byteLength,
     );
     if (view.getUint32(0) !== this.width || view.getUint32(4) !== this.height)
-      throw new Error("PNG frame dimensions changed during export.");
+      throw messageError(new Error(''), "errors.imageCodecs.pngFrameDimensionsChangedDuringExport", {});
     if (this.frames === 0) {
       this.header = new Uint8Array(header);
       this.append(signature, pngChunk("IHDR", header));
@@ -132,7 +133,7 @@ export class APNGEncoder extends BoundedOutput {
       controlView.setUint32(4, this.loop === false ? 1 : 0);
       this.append(pngChunk("acTL", control));
     } else if (header.some((n, i) => n !== this.header[i]))
-      throw new Error("PNG pixel format changed during animation export.");
+      throw messageError(new Error(''), "errors.imageCodecs.pngPixelFormatChangedDuringAnimationExport", {});
     const control = new Uint8Array(26),
       controlView = new DataView(control.buffer);
     controlView.setUint32(0, this.sequence++);
@@ -158,7 +159,7 @@ export class APNGEncoder extends BoundedOutput {
   }
   finish() {
     if (this.frames !== this.totalFrames)
-      throw new Error("The APNG export is missing frames.");
+      throw messageError(new Error(''), "errors.imageCodecs.theApngExportIsMissingFrames", {});
     this.append(pngChunk("IEND", new Uint8Array()));
     return this.blob("image/apng");
   }
@@ -207,7 +208,7 @@ function lzw(pixels) {
   write(257);
   if (bitCount) out[position++] = accumulator & 255;
   if (position > out.length)
-    throw new Error("GIF compression exceeded its bounded output buffer.");
+    throw messageError(new Error(''), "errors.imageCodecs.gifCompressionExceededItsBoundedOutputBuffer", {});
   const parts = [new Uint8Array([8])];
   for (let i = 0; i < position; i += 255) {
     const size = Math.min(255, position - i);
@@ -243,7 +244,7 @@ export class GIFEncoder extends BoundedOutput {
   }
   add(rgba) {
     if (rgba.length !== this.width * this.height * 4)
-      throw new Error("GIF frame dimensions are invalid.");
+      throw messageError(new Error(''), "errors.imageCodecs.gifFrameDimensionsAreInvalid", {});
     const { pixels, palette } = this.globalPalette
       ? mapGIFPixels(rgba, this.width, this.globalPalette, {
           dither: this.dither,
@@ -278,7 +279,7 @@ export class GIFEncoder extends BoundedOutput {
   }
   finish() {
     if (this.frames !== this.totalFrames)
-      throw new Error("The GIF export is missing frames.");
+      throw messageError(new Error(''), "errors.imageCodecs.theGifExportIsMissingFrames", {});
     this.append(new Uint8Array([0x3b]));
     return this.blob("image/gif");
   }
@@ -298,7 +299,7 @@ export class SequenceZIP extends BoundedOutput {
       "svg-sequence": "svg",
     }[this.format];
     if (!this.extension)
-      throw new Error("Choose a supported numbered image sequence.");
+      throw messageError(new Error(''), "errors.imageCodecs.chooseASupportedNumberedImageSequence", {});
   }
   addFile(filename, content) {
     const name = encoder.encode(filename),
@@ -340,7 +341,7 @@ export class SequenceZIP extends BoundedOutput {
   }
   finish() {
     if (this.frames !== this.totalFrames)
-      throw new Error("The image sequence is missing frames.");
+      throw messageError(new Error(''), "errors.imageCodecs.theImageSequenceIsMissingFrames", {});
     this.addFile(
       "animation.json",
       encoder.encode(

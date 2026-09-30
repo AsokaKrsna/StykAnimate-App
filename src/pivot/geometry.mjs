@@ -1,3 +1,4 @@
+import {messageError} from '../localized-error.mjs';
 import {projection,projectSpatialFace,interpolateSpatialPose} from '../spatial-projection.mjs';
 import {createSurfaceEvaluation} from './surfaces.mjs';
 import {depthSurface,paintDepthSurfaces,releaseSurfaceRaster} from '../surface-raster.mjs';
@@ -40,8 +41,8 @@ export function invalidateEvaluationCaches(report) {
   authoredTimelines.delete(report);
   invalidatePoseCache(report);
 }
-import {interpolateVfx} from '../vfx.mjs';
-import {vfxStack,activeVfx} from '../vfx.mjs';
+import {interpolateVfx, vfxStack, activeVfx} from '../vfx.mjs';
+
 import {withVfx,segmentVfx,releaseVfxSurface,hasDrawableVfx} from '../vfx-canvas.mjs';
 import {objectBounds} from '../renderer-geometry.mjs';
 export const TAU = Math.PI * 2;
@@ -982,10 +983,10 @@ const yieldGeometryTask = globalThis.scheduler?.yield ? () => globalThis.schedul
  * sliceMs is a scheduling target; individual native primitives stay exact. */
 export async function buildGeometryAsync(report, frame, incremental = null,
   {sliceMs = 4, signal, checkCurrent, yieldControl = yieldGeometryTask, onProgress, onTiming} = {}) {
-  if (!Number.isFinite(sliceMs) || sliceMs < 0) throw new Error('Choose a nonnegative geometry preparation slice duration.');
+  if (!Number.isFinite(sliceMs) || sliceMs < 0) throw messageError(new Error(''), "errors.geometry.chooseANonnegativeGeometryPreparationSliceDuration", {});
   const check = () => {
     if (signal?.aborted || checkCurrent?.() === false)
-      throw new DOMException('Geometry preparation was cancelled or superseded.', 'AbortError');
+      throw messageError(new DOMException('', 'AbortError'), "errors.geometry.geometryPreparationWasCancelledOrSuperseded", {});
   };
   check();
   const iterator = buildGeometrySteps(report, frame, incremental), started = performance.now();
@@ -1095,12 +1096,12 @@ function isolated(ctx, alpha, paint, cache, bounds = null) {
   const temp = scratch.getContext("2d", {
     willReadFrequently: ctx.getContextAttributes?.().willReadFrequently === true,
   });
-  if (!temp || temp.isContextLost?.()) throw Object.assign(new Error('The temporary drawing canvas is unavailable.'), { telemetryCode: 'device_lost' });
+  if (!temp || temp.isContextLost?.()) throw Object.assign(messageError(new Error(''), "errors.geometry.theTemporaryDrawingCanvasIsUnavailable", {}), { telemetryCode: 'device_lost' });
   temp.setTransform(1, 0, 0, 1, 0, 0);
   temp.clearRect(x0, y0, layerWidth, layerHeight);
   temp.setTransform(ctx.getTransform());
   paint(temp);
-  if (temp.isContextLost?.()) throw Object.assign(new Error('The temporary drawing canvas was lost while rendering.'), { telemetryCode: 'device_lost' });
+  if (temp.isContextLost?.()) throw Object.assign(messageError(new Error(''), "errors.geometry.theTemporaryDrawingCanvasWasLostWhileRendering", {}), { telemetryCode: 'device_lost' });
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha *= alpha;

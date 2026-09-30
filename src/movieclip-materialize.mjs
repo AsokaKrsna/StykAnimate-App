@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Explicit flattening for editable objects and legacy exports. Runtime playback
  * never uses this path and never expands the stored scene. */
 import {isMovieclip,movieclipAsset} from './movieclips.mjs';
@@ -24,7 +25,7 @@ export function createMovieclipMaterializer(report,{allowCompositeOpacity=false}
       definitionSignatures??=new Map(figures.map(f=>[signature(f),f.figure_type_id]));
       const key=signature(figure),existing=definitionSignatures.get(key);
       if(existing!==undefined){map.set(object.figure_type_id,existing);return existing;}
-      if(nextType>65535)throw new Error('Flattening movieclips exceeds the figure limit.');
+      if(nextType>65535)throw messageError(new Error(''), "errors.movieclipMaterialize.flatteningMovieclipsExceedsTheFigureLimit", {});
       map.set(object.figure_type_id,nextType);definitionSignatures.set(key,nextType);figures.push({...figure,figure_type_id:nextType++});
     }
     return map.get(object.figure_type_id);
@@ -46,18 +47,18 @@ export function createMovieclipMaterializer(report,{allowCompositeOpacity=false}
       const point=p=>({x:transform.x+transform.a*p.x+transform.c*p.y,y:transform.y+transform.b*p.x+transform.d*p.y});
       if(isMovieclip(figure)){
         if(object._movieclipSample===null)continue;
-        if(object._stykVfx)throw new Error('This movieclip has container effects. Keep it as a movieclip to preserve the combined effect stack.');
+        if(object._stykVfx)throw messageError(new Error(''), "errors.movieclipMaterialize.thisMovieclipHasContainerEffectsKeepItAs", {});
         if(g.meshAttachment){
-          if(nextType>65535)throw new Error('Flattening movieclips exceeds the figure limit.');
+          if(nextType>65535)throw messageError(new Error(''), "errors.movieclipMaterialize.flatteningMovieclipsExceedsTheFigureLimit", {});
           const baked=materializeMeshGeometry(g,point,nextType++,identity(id),transform.opacity);
           anchors.set(slot,output.length);figures.push(baked.figure);output.push(baked.object);continue;
         }
         const asset=movieclipAsset(figure),local=localFrame(asset,g.drawingView?.frame??object._movieclipSample??0),angle=g.drawingTransform?.angle??object.angles?.[0]??0,
           scale=g.drawingTransform?.scale??object.scale??1,c=Math.cos(angle)*scale,d=Math.sin(angle)*scale,root=point(g.root),flip=g.drawingTransform?.flip??(object.image_text_flags?-1:1);
-        if(local._stykVfx)throw new Error('This movieclip has scene effects. Keep it as a movieclip to preserve their composition.');
+        if(local._stykVfx)throw messageError(new Error(''), "errors.movieclipMaterialize.thisMovieclipHasSceneEffectsKeepItAs", {});
         const a=transform.a*c+transform.c*d,b=transform.b*c+transform.d*d,
           cy=(-transform.a*d+transform.c*c)*flip,dy=(-transform.b*d+transform.d*c)*flip,opacity=transform.opacity*(1-(object.field28??0)/255);
-        if(!allowCompositeOpacity&&opacity<1&&local.objects.length>1)throw new Error('Pivot cannot preserve movieclip group opacity across multiple figures. Use .styk or a rendered export.');
+        if(!allowCompositeOpacity&&opacity<1&&local.objects.length>1)throw messageError(new Error(''), "errors.movieclipMaterialize.pivotCannotPreserveMovieclipGroupOpacityAcrossMultiple", {});
         anchors.set(slot,output.length);
         expand(asset.document,local,{a,b,c:cy,d:dy,x:root.x-a*asset.pivot.x-cy*asset.pivot.y,y:root.y-b*asset.pivot.x-dy*asset.pivot.y,
           angle:transform.angle+angle*transform.flip,flip:transform.flip*flip,scale:transform.scale*scale,opacity},id,output);continue;

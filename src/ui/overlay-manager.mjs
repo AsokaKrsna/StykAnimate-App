@@ -1,3 +1,4 @@
+import {messageError} from '../localized-error.mjs';
 /**
  * One owner for everything that opens above the editor: modal dialogs, menus,
  * popovers, sheets, the command palette, toasts and the tooltip.
@@ -140,7 +141,7 @@ export class OverlayManager extends EventTarget {
    */
   register(element, {kind = 'popover', modal = false, keyboardScope = false, invoker, returnFocus = true, beforeClose = null,
     onClose = null, closeOnEscape = true, signal} = {}) {
-    if (!OVERLAY_KINDS.includes(kind)) throw new TypeError(`Unknown overlay kind: ${kind}`);
+    if (!OVERLAY_KINDS.includes(kind)) throw messageError(new TypeError(''), "errors.overlayManager.unknownOverlayKind", {kind: kind});
     const controller = new AbortController();
     let resolve;
     const entry = {
@@ -243,7 +244,7 @@ export class OverlayManager extends EventTarget {
    * equal priorities keep their queue order. Returns false for a duplicate id.
    */
   enqueuePrompt({id, priority = 0, ready = () => true, open}) {
-    if (typeof open !== 'function') throw new TypeError('A prompt needs an open() function');
+    if (typeof open !== 'function') throw messageError(new TypeError(''), "errors.overlayManager.aPromptNeedsAnOpenFunction", {});
     if (this.#activePrompt?.id === id || this.#prompts.some(prompt => prompt.id === id)) return false;
     this.#prompts.push({id, priority, ready, open, order: this.#promptOrder++});
     this.#queuePump();

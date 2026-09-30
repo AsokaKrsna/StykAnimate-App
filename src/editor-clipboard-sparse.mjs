@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Native paste publication touches only inserted poses and appended assets.
  * History snapshots never alias the mutable report-owned copies. */
 import {validateSceneSteps} from './pivot/model.mjs';
@@ -9,8 +10,8 @@ import {MAX_ALLOCATED_UID} from './object-identity.mjs';
 
 const preparedStates=new WeakMap(),commandCopies=new WeakMap();
 const own=(value,key)=>Object.prototype.hasOwnProperty.call(value,key);
-const abort=()=>new DOMException('The animation changed while pasted frames were prepared.','AbortError');
-const invalid=message=>{throw new Error(`Invalid pasted frames: ${message}.`);};
+const abort=()=>messageError(new DOMException('', 'AbortError'), "errors.editorClipboardSparse.theAnimationChangedWhilePastedFramesWerePrepared", {});
+const invalid=message=>{throw messageError(new Error(''), "errors.editorClipboardSparse.invalidPastedFrames", {message: message});};
 const record=value=>value&&typeof value==='object'&&!Array.isArray(value);
 const integer=(value,min,max)=>Number.isSafeInteger(value)&&value>=min&&value<=max;
 const timingFields=()=>({elapsedMs:0,cpuMs:0,maxTaskMs:0,slices:0,yields:0});
@@ -122,7 +123,7 @@ async function preparePlan(editor,wire,options,owned,timings){
   const report=editor.report,revision=editor.revision,token=editor._documentToken,frameIndex=editor.frameIndex,tick=editor.tick,
     draft=editor.frameDraftRevision,nextIdentity=editor._nextFrameIdentity,nextUid=editor._nextUid;
   const check=()=>{
-    if(options.signal?.aborted)throw new DOMException('Frame paste cancelled.','AbortError');
+    if(options.signal?.aborted)throw messageError(new DOMException('', 'AbortError'), "errors.clipboardAssetPlan.framePasteCancelled", {});
     if(editor.report!==report||editor.revision!==revision||editor._documentToken!==token||editor.frameIndex!==frameIndex||editor.tick!==tick||
       editor.frameDraftRevision!==draft||editor._nextFrameIdentity!==nextIdentity||editor._nextUid!==nextUid||editor._drag||editor._animationEdit)throw abort();
     if(options.checkCurrent?.()===false)throw abort();

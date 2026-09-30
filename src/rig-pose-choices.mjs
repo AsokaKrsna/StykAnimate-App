@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Named, mutually exclusive poses for existing spatial length channels.
  * Selection is derived from those channels; there is no extra animation state. */
 export function validatePoseChoice(segment){
@@ -5,7 +6,7 @@ export function validatePoseChoice(segment){
  if(!c||typeof c!=='object'||Array.isArray(c)||Object.keys(c).some(k=>!['group','label','shown','hidden'].includes(k))||
   !['group','label'].every(k=>typeof c[k]==='string'&&c[k].trim()&&c[k].length<=80)||
   !['shown','hidden'].every(k=>Number.isFinite(c[k])&&c[k]>=0&&c[k]<=1e6)||c.shown===c.hidden||
-  !segment._stykRig?.spatial?.origin||segment.length<=0)throw new Error('A pose choice needs a spatial bone, names and distinct finite lengths.');
+  !segment._stykRig?.spatial?.origin||segment.length<=0)throw messageError(new Error(''), "errors.rigPoseChoices.aPoseChoiceNeedsASpatialBoneNames", {});
 }
 export function poseChoiceGroups(figure,object){
  if(!figure||!object)return[];

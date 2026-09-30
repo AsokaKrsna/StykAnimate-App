@@ -1,3 +1,9 @@
+import {presentError} from './error-presentation.mjs';
+import {replaceLocalized, descriptorAttributes, appendLocalized, localizedMarkup, messageHTML, messageAttributes, localizedText} from './localization-bindings.mjs';
+import {restoreMessageError, messageError} from './localized-error.mjs';
+
+import {t as interfaceText} from './localization.mjs';
+
 import {segmentPaint, hexColor, paintCSS} from './paint.mjs';
 import { readTextFigureOptions } from "./native-text-authoring.mjs";
 import { drawTextPreview } from "./text-preview.mjs";
@@ -12,11 +18,11 @@ const esc = (value) =>
       ],
   );
 const hex = (rgb) =>
-  "#" + rgb.map((n) => n.toString(16).padStart(2, "0")).join("");
+  "#" + rgb.map((n) => (n).toString(16).padStart(2, "0")).join("");
 const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
 const MAX_FONT_BYTES = 32 * 1024 * 1024;
 const defaults = {
-  text: "Make it move.",
+  text: interfaceText("textDialog.makeItMove"), textKey: "textDialog.makeItMove",
   fontSize: 64,
   fontSizeKnown: true,
   fontOrigin: "bundled",
@@ -71,7 +77,7 @@ export class TextDialog {
       const style = document.createElement("style");
       style.id = "text-authoring-style";
       style.textContent = `@layer legacy{${CSS}}`;
-      document.head.append(style);
+      appendLocalized(document.head, style);
     }
     this.sequence = 0;
     this.generation = 0;
@@ -107,21 +113,21 @@ export class TextDialog {
         ? "bundled"
         : "embedded";
     this.dialog.classList.add("text-authoring-dialog");
-    this.content.innerHTML = `<div class="dialog-head"><h2>${figure ? "Edit text" : "Create text"}</h2><button class="icon-button" data-text-close aria-label="Close text editor">${icon("close")}</button></div>
+    localizedMarkup(this.content, `<div class="dialog-head"><h2 ${messageAttributes((figure ? "textDialog.editText" : "textDialog.createText"), (figure ? {} : {}))}>${figure ? interfaceText("textDialog.editText") : interfaceText("textDialog.createText")}</h2><button class="icon-button" data-text-close aria-label="Close text editor" data-i18n-aria-label="textDialog.closeTextEditor">${icon("close")}</button></div>
       <div class="dialog-body"><div class="text-authoring-layout"><div class="text-authoring-fields">
-      <label>Text<textarea id="text-content" maxlength="16384" spellcheck="false">${esc(o.text)}</textarea></label>
-      <label>Font<select id="text-font" aria-label="Font">${figure ? `<option value="embedded">${esc(o.fontFamily)} · embedded outlines</option>` : ""}<option value="bundled">Noto Sans · bundled</option></select></label>
-      <div class="text-font-tools"><button class="button" id="text-font-file-button">${icon("folder")}Open font…</button><button class="button" id="text-local-fonts" ${this.fontService?.listFonts || typeof globalThis.queryLocalFonts === "function" ? "" : "hidden"}>Installed fonts…</button><input type="file" id="text-font-file" accept=".ttf,.otf,font/ttf,font/otf" hidden></div>
-      <div id="text-installed-picker" hidden><label>Find a font<input id="text-font-search" type="search" placeholder="Family or style"></label><label>Installed font<select id="text-installed-font" aria-label="Installed font"></select></label></div>
+      <label>${messageHTML("textDialog.text", {})}<textarea id="text-content" maxlength="16384" spellcheck="false"${descriptorAttributes(o, "text")}>${esc(o.text)}</textarea></label>
+      <label>${messageHTML("textDialog.font", {})}<select id="text-font" aria-label="Font" data-i18n-aria-label="textDialog.font">${figure ? `<option value="embedded" ${messageAttributes("textDialog.embeddedOutlines", {fontFamily: o.fontFamily})}>${esc(o.fontFamily)} · embedded outlines</option>` : ""}<option value="bundled" data-i18n="textDialog.notoSansBundled">Noto Sans · bundled</option></select></label>
+      <div class="text-font-tools"><button class="button" id="text-font-file-button">${icon("folder")}${messageHTML("textDialog.openFont", {})}</button><button class="button" id="text-local-fonts" ${this.fontService?.listFonts || typeof globalThis.queryLocalFonts === "function" ? "" : "hidden"} data-i18n="textDialog.installedFonts">Installed fonts…</button><input type="file" id="text-font-file" accept=".ttf,.otf,font/ttf,font/otf" hidden></div>
+      <div id="text-installed-picker" hidden><label>${messageHTML("textDialog.findAFont", {})}<input id="text-font-search" type="search" placeholder="Family or style" data-i18n-placeholder="textDialog.familyOrStyle"></label><label>${messageHTML("textDialog.installedFont", {})}<select id="text-installed-font" aria-label="Installed font" data-i18n-aria-label="textDialog.installedFont"></select></label></div>
       <p class="text-font" id="text-font-note"></p>
-      <div class="text-control-row"><label><span id="text-size-label">Size · px</span><input id="text-size" type="number" min="1" max="2048" step="any" value="${o.fontSize}"></label><label>Line height<input id="text-line-height" type="number" min="0.5" max="5" step="0.1" value="${o.lineHeight}"></label></div>
-      <div class="text-control-row"><label class="text-check"><input id="text-bold" type="checkbox" ${o.bold ? "checked" : ""}>Bold</label><label class="text-check"><input id="text-italic" type="checkbox" ${o.italic ? "checked" : ""}>Italic</label></div>
-      <label>Alignment<select id="text-alignment"><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label>
-      <div class="text-control-row"><label>Fill<input id="text-color" type="color" value="${hex(o.color)}"></label><label>Opacity · %<input id="text-opacity" type="number" min="0" max="100" step="any" value="${o.opacity * 100}"></label></div>
-      <div class="text-control-row" hidden><label class="text-check"><input id="text-gradient-enabled" type="checkbox" ${o.gradientColor ? "checked" : ""}>Gradient</label><label>End color<input id="text-gradient-color" type="color" value="${hex(o.gradientColor || [121, 98, 235])}"></label></div>
-      <div class="text-control-row"><label>Outline · px<input id="text-outline-width" type="number" min="0" max="128" step="any" value="${o.outlineWidth}"></label><label>Outline color<input id="text-outline-color" type="color" value="${hex(o.outlineColor)}"></label></div>
-      </div><div class="text-authoring-preview"><div class="text-preview-heading"><span>Live preview · Fit</span><span id="text-preview-state" aria-live="polite">Preparing…</span></div><div class="text-preview-surface"><canvas id="text-preview" aria-label="Portable vector text preview"></canvas></div><p class="text-preview-note" id="text-preview-note">Text is saved as vector outlines and stays portable across computers.</p></div></div></div>
-      <div class="text-authoring-footer"><p id="text-error" class="form-error" role="alert" hidden></p><div class="dialog-actions"><button class="button" data-text-close>Cancel</button><button class="button primary" id="create-text" disabled>${figure ? "Apply changes" : "Create text"}</button></div></div>`;
+      <div class="text-control-row"><label><span id="text-size-label" data-i18n="textDialog.sizePx">Size · px</span><input id="text-size" type="number" min="1" max="2048" step="any" value="${o.fontSize}"></label><label>${messageHTML("textDialog.lineHeight", {})}<input id="text-line-height" type="number" min="0.5" max="5" step="0.1" value="${o.lineHeight}"></label></div>
+      <div class="text-control-row"><label class="text-check"><input id="text-bold" type="checkbox" ${o.bold ? "checked" : ""}>${messageHTML("textDialog.bold", {})}</label><label class="text-check"><input id="text-italic" type="checkbox" ${o.italic ? "checked" : ""}>${messageHTML("textDialog.italic", {})}</label></div>
+      <label>${messageHTML("textDialog.alignment", {})}<select id="text-alignment"><option value="left" data-i18n="textDialog.left">Left</option><option value="center" data-i18n="textDialog.center">Center</option><option value="right" data-i18n="textDialog.right">Right</option></select></label>
+      <div class="text-control-row"><label>${messageHTML("textDialog.fill", {})}<input id="text-color" type="color" value="${hex(o.color)}"></label><label>${messageHTML("textDialog.opacity", {})}<input id="text-opacity" type="number" min="0" max="100" step="any" value="${o.opacity * 100}"></label></div>
+      <div class="text-control-row" hidden><label class="text-check"><input id="text-gradient-enabled" type="checkbox" ${o.gradientColor ? "checked" : ""}>${messageHTML("textDialog.gradient", {})}</label><label>${messageHTML("textDialog.endColor", {})}<input id="text-gradient-color" type="color" value="${hex(o.gradientColor || [121, 98, 235])}"></label></div>
+      <div class="text-control-row"><label>${messageHTML("textDialog.outlinePx", {})}<input id="text-outline-width" type="number" min="0" max="128" step="any" value="${o.outlineWidth}"></label><label>${messageHTML("textDialog.outlineColor", {})}<input id="text-outline-color" type="color" value="${hex(o.outlineColor)}"></label></div>
+      </div><div class="text-authoring-preview"><div class="text-preview-heading"><span data-i18n="textDialog.livePreviewFit">Live preview · Fit</span><span id="text-preview-state" aria-live="polite" data-i18n="textDialog.preparing">Preparing…</span></div><div class="text-preview-surface"><canvas id="text-preview" aria-label="Portable vector text preview" data-i18n-aria-label="textDialog.portableVectorTextPreview"></canvas></div><p class="text-preview-note" id="text-preview-note" data-i18n="textDialog.textIsSavedAsVectorOutlinesAndStays">Text is saved as vector outlines and stays portable across computers.</p></div></div></div>
+      <div class="text-authoring-footer"><p id="text-error" class="form-error" role="alert" hidden></p><div class="dialog-actions"><button class="button" data-text-close data-i18n="textDialog.cancel">Cancel</button><button class="button primary" id="create-text" disabled ${messageAttributes((figure ? "textDialog.applyChanges" : "textDialog.createText"), (figure ? {} : {}))}>${figure ? interfaceText("textDialog.applyChanges") : interfaceText("textDialog.createText")}</button></div></div>`);
     this.$ = (id) => this.content.querySelector("#" + id);
     this.$("text-color").paintPicker = () => ({anchor:this.$("text-color"),paint:this.paint,onChange:paint=>{
       this.paint=paint;this.$("text-color").value=hexColor(paint.stops[0].color);this.$("text-opacity").value=paint.stops[0].opacity*100;
@@ -141,13 +147,13 @@ export class TextDialog {
       this.pending.delete(data.id);
       if (data.error)
         request.reject(
-          Object.assign(new Error(data.error.message), data.error),
+          Object.assign(restoreMessageError(new Error(data.error.message), data.error), data.error),
         );
       else request.resolve(data.value);
     };
     this.worker.onerror = (event) => {
       const error = new Error(
-        event.message || "The text worker stopped. Reopen the text editor.",
+        event.message || interfaceText("textDialog.theTextWorkerStoppedReopenTheTextEditor"),
       );
       for (const request of this.pending.values()) request.reject(error);
       this.pending.clear();
@@ -199,7 +205,7 @@ export class TextDialog {
         try {
           this.beginFontChange();
           if (file.size > MAX_FONT_BYTES)
-            throw new Error("Choose a font smaller than 32 MB.");
+            throw messageError(new Error(''), "errors.textDialog.chooseAFontSmallerThan32Mb", {});
           await this.addFont(await file.arrayBuffer(), file.name);
         } catch (error) {
           this.showError(error);
@@ -269,9 +275,7 @@ export class TextDialog {
     const embedded = this.fontId === "embedded",
       face = this.fonts.get(this.fontId);
     const unknownSize = embedded && !this.initial.fontSizeKnown;
-    this.$("text-size-label").textContent = unknownSize
-      ? "Scale · %"
-      : "Size · px";
+    localizedText(this.$("text-size-label"), (unknownSize ? "textDialog.scale" : "textDialog.sizePx"), (unknownSize ? {} : {}));
     this.$("text-size").min = unknownSize ? ".01" : "1";
     this.$("text-size").max = unknownSize ? "4000" : "2048";
     if (resetSize)
@@ -281,11 +285,7 @@ export class TextDialog {
       if (embedded || face)
         this.$("text-" + key).checked = (face || this.initial)[key];
     }
-    this.$("text-font-note").textContent = embedded
-      ? `${this.initial.fontFamily}. Existing glyphs stay unchanged. ${unknownSize ? "Pivot stores outlines without the original font size. " : ""}Choose a font for new characters or exact new spacing.`
-      : face
-        ? `${face.family} · ${face.style}. This face’s outlines will be embedded.`
-        : "Noto Sans · 4 bundled styles. No font installation required.";
+    localizedText(this.$("text-font-note"), (embedded ? 'textDialog.fontfamilyExistingGlyphsStayUnchangedValue1ChooseAFont' : (face ? 'textDialog.familyStyleThisFaceSOutlinesWillBeEmbedded' : "textDialog.notoSans4BundledStylesNoFontInstallation")), (embedded ? {fontFamily: this.initial.fontFamily, value1: unknownSize ? interfaceText("textDialog.pivotStoresOutlinesWithoutTheOriginalFontSize") : ""} : (face ? {family: face.family, style: face.style} : {})));
   }
   options() {
     const value = (key) =>
@@ -327,7 +327,7 @@ export class TextDialog {
     this.generation++;
     this.result = null;
     this.$("create-text").disabled = true;
-    this.$("text-preview-state").textContent = "Updating…";
+    localizedText(this.$("text-preview-state"), "textDialog.updating", {});
     this.timer = setTimeout(() => this.compile(), delay);
   }
   async compile() {
@@ -366,11 +366,10 @@ export class TextDialog {
       this.result = figure;
       this.lastKey = key;
       this.$("text-error").hidden = true;
-      this.$("text-preview-state").textContent = "Ready";
-      this.$("text-preview-note").textContent = figure._styk.textAuthoring
-        .spacingEstimated
-        ? "New spacing is estimated from the embedded glyphs. Choose the original font for exact spacing."
-        : "Text is saved as vector outlines and stays portable across computers.";
+      localizedText(this.$("text-preview-state"), "textDialog.ready", {});
+      localizedText(this.$("text-preview-note"), (figure._styk.textAuthoring
+        .spacingEstimated ? "textDialog.newSpacingIsEstimatedFromTheEmbeddedGlyphs" : "textDialog.textIsSavedAsVectorOutlinesAndStays"), (figure._styk.textAuthoring
+        .spacingEstimated ? {} : {}));
       drawTextPreview(this.$("text-preview"), figure);
       this.$("create-text").disabled = this.applying;
       return figure;
@@ -378,7 +377,7 @@ export class TextDialog {
       if (generation === this.generation && !this.events.signal.aborted) {
         this.result = null;
         this.showError(error);
-        this.$("text-preview-state").textContent = "Check text";
+        localizedText(this.$("text-preview-state"), "textDialog.checkText", {});
       }
       return null;
     }
@@ -421,15 +420,13 @@ export class TextDialog {
       this.populateInstalledFonts();
       this.$("text-font-search").focus();
       if (!this.installed.length)
-        throw new Error(
-          "No accessible outline fonts were found. Open a TTF or OTF font file.",
-        );
+        throw messageError(new Error(''), "errors.textDialog.noAccessibleOutlineFontsWereFoundOpenA", {});
     } catch (error) {
       if (!signal.aborted)
         this.showError(
           new Error(
             error.name === "NotAllowedError"
-              ? "Font access was not granted. You can still open a TTF or OTF file."
+              ? interfaceText("textDialog.fontAccessWasNotGrantedYouCanStill")
               : error.message,
           ),
         );
@@ -438,7 +435,7 @@ export class TextDialog {
   populateInstalledFonts() {
     const query = this.$("text-font-search").value.toLowerCase(),
       select = this.$("text-installed-font");
-    select.replaceChildren(new Option("Choose a font…", ""));
+    replaceLocalized(select, new Option("Choose a font…", ""));
     for (const entry of this.installed)
       if (entry.label.toLowerCase().includes(query))
         select.add(new Option(entry.label, String(entry.index)));
@@ -458,7 +455,7 @@ export class TextDialog {
       data = data?.bytes ?? data;
       if (data instanceof Blob) {
         if (data.size > MAX_FONT_BYTES)
-          throw new Error("Choose a font smaller than 32 MB.");
+          throw messageError(new Error(''), "errors.textDialog.chooseAFontSmallerThan32Mb", {});
         data = await data.arrayBuffer();
       }
       if (ArrayBuffer.isView(data))
@@ -468,7 +465,7 @@ export class TextDialog {
         );
       if (Array.isArray(data)) data = Uint8Array.from(data).buffer;
       if (!(data instanceof ArrayBuffer))
-        throw new Error("The font service did not return font bytes.");
+        throw messageError(new Error(''), "errors.textDialog.theFontServiceDidNotReturnFontBytes", {});
       if (!signal.aborted) await this.addFont(data, entry.label);
     } catch (error) {
       if (!signal.aborted) this.showError(error);
@@ -476,17 +473,17 @@ export class TextDialog {
   }
   showError(error) {
     if (!this.events || this.events.signal.aborted) return;
-    this.$("text-error").textContent = error.message;
+    presentError(this.$("text-error"), error);
     this.$("text-error").hidden = false;
-    if (this.$("text-preview-state").textContent === "Reading font…")
-      this.$("text-preview-state").textContent = "Choose a font";
+    if (this.$("text-preview-state").getAttribute("data-i18n") === "textDialog.readingFont")
+      localizedText(this.$("text-preview-state"), "textDialog.chooseAFont", {});
   }
   beginFontChange() {
     clearTimeout(this.timer);
     this.generation++;
     this.result = null;
     this.$("create-text").disabled = true;
-    this.$("text-preview-state").textContent = "Reading font…";
+    localizedText(this.$("text-preview-state"), "textDialog.readingFont", {});
   }
   async apply() {
     if (this.applying) return;
@@ -496,7 +493,7 @@ export class TextDialog {
     if (!figure) return;
     this.applying = true;
     this.$("create-text").disabled = true;
-    this.$("create-text").textContent = "Applying…";
+    localizedText(this.$("create-text"), "textDialog.applying", {});
     try {
       await this.onApply(figure);
       this.applying = false;
@@ -505,9 +502,7 @@ export class TextDialog {
       this.applying = false;
       this.showError(error);
       this.$("create-text").disabled = false;
-      this.$("create-text").textContent = this.source
-        ? "Apply changes"
-        : "Create text";
+      localizedText(this.$("create-text"), (this.source ? "textDialog.applyChanges" : "textDialog.createText"), (this.source ? {} : {}));
     }
   }
   close() {
@@ -527,7 +522,7 @@ export class TextDialog {
     this.resize?.disconnect();
     this.worker?.terminate();
     for (const request of this.pending?.values() || [])
-      request.reject(new DOMException("Text editor closed.", "AbortError"));
+      request.reject(messageError(new DOMException('', "AbortError"), "errors.textDialog.textEditorClosed", {}));
     this.pending?.clear();
     this.dialog.classList.remove("text-authoring-dialog");
   }

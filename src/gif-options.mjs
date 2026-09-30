@@ -1,7 +1,8 @@
+import {messageError} from './localized-error.mjs';
 /** Native GIF defaults are content-based, separate from edge smoothing. */
 export function normalizeGIFDither(value = false) {
   if (typeof value !== "boolean")
-    throw new TypeError("GIF dithering must be enabled or disabled.");
+    throw messageError(new TypeError(''), "errors.gifOptions.gifDitheringMustBeEnabledOrDisabled", {});
   return value;
 }
 export function defaultGIFDither(report) {

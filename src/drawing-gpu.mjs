@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {TILE,TILE_BYTES,tileKey} from './drawing-tiles.mjs';
 import {hasDrawableVfx} from './vfx-canvas.mjs';
 import {compactTile} from './drawing-pixels.mjs';
@@ -657,7 +658,7 @@ export class DrawingGpu {
   }
   get bytes(){return this.pool.size+this.instances.size;}
   destroy(){
-    this.destroyed=true;for(const session of this.sessions)session.fail(new Error('The graphics device closed during the stroke.'));this.sessions.clear();
+    this.destroyed=true;for(const session of this.sessions)session.fail(messageError(new Error(''), "errors.drawingGpu.theGraphicsDeviceClosedDuringTheStroke", {}));this.sessions.clear();
     this.pool.destroy();this.instances.destroy();for(const buffer of this.jobBuffers)buffer.destroy();for(const buffer of this.reduceParams)buffer.destroy();this.textures?.destroy();this.textures=null;this.uploadedTextures=null;
     this.lru.clear();this.free=[];
   }
@@ -702,7 +703,7 @@ export class GpuStroke {
     gpu.sessions.add(this);
   }
   /** Queue one dabShape() result in cel pixel space. */
-  add(shape){if(this.closed)throw new Error('The stroke has already ended.');if(this.failed)throw this.failed;this.pending.push(shape);}
+  add(shape){if(this.closed)throw messageError(new Error(''), "errors.drawingBrush.theStrokeHasAlreadyEnded", {});if(this.failed)throw this.failed;this.pending.push(shape);}
   /** Whether planning would produce work: queued dabs or a moved tail. */
   get dirty(){return this.pending.length>0||Boolean(this.tail&&this.tail()!==this.tailShapes);}
   /** Convert queued dabs, and a moved provisional tail, into per-tile jobs
@@ -748,12 +749,12 @@ export class GpuStroke {
   }
   tile(tx,ty,key){
     let tile=this.tiles.get(key);if(tile)return tile;
-    if((this.tiles.size+1)*TILE_BYTES*5>this.workingBytes)throw new Error('The stroke exceeds the drawing working memory limit.');
+    if((this.tiles.size+1)*TILE_BYTES*5>this.workingBytes)throw messageError(new Error(''), "errors.drawingController.theStrokeExceedsTheDrawingWorkingMemoryLimit", {});
     const source=this.presenter.store?.get(tx,ty)??null,gpu=this.gpu;
     let before=null;
-    if(source){gpu.tileSlot(source,{force:true});before=gpu.tileRecord(source);if(!(before?.slot>=0))throw new Error('Drawing graphics memory is full. Finish the stroke or reduce the drawing size.');gpu.pin(before);}
+    if(source){gpu.tileSlot(source,{force:true});before=gpu.tileRecord(source);if(!(before?.slot>=0))throw messageError(new Error(''), "errors.drawingGpu.drawingGraphicsMemoryIsFullFinishTheStroke", {});gpu.pin(before);}
     const after={slot:-1,kind:'stroke'};gpu.pin(after);
-    if(!gpu.allocate(after)){if(before)gpu.unpin(before);throw new Error('Drawing graphics memory is full. Finish the stroke or reduce the drawing size.');}
+    if(!gpu.allocate(after)){if(before)gpu.unpin(before);throw messageError(new Error(''), "errors.drawingGpu.drawingGraphicsMemoryIsFullFinishTheStroke", {});}
     tile={tx,ty,before,after,source,coverage:this.usesCoverage?this.coverageCount++:-1,initialized:false};this.tiles.set(key,tile);
     if(this.usesCoverage)this.coverage.ensure(this.coverageCount*TILE_BYTES,{preserve:true});
     const state=this.state,levels=state.levelVersions;
@@ -816,7 +817,7 @@ export class GpuStroke {
       for(let i=0;i<count;i++){
         // Long read-backs yield in 8 ms slices so input and rendering keep running.
         if(performance.now()-slice>8){await yieldToInput();slice=performance.now();}
-        if(this.failed)throw this.failed;if(this.released)throw new DOMException('Stroke released.','AbortError');
+        if(this.failed)throw this.failed;if(this.released)throw messageError(new DOMException('', 'AbortError'), "errors.drawingGpu.strokeReleased", {});
         const tile=tiles[i],view=new Uint8ClampedArray(mapped,i*TILE_BYTES,TILE_BYTES),before=tile.source?.pixels??null;
         if(before&&sameBytes(before,view))continue;
         const after=view.slice(),afterSide=normalizeSide(compactTile(after)),beforeSide=normalizeSide(compactTile(before));

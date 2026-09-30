@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Prepare all authoritative validation and document indices before publication. */
 import {validateSceneSteps} from './pivot/model.mjs';
 import {nextUidAfter} from './object-identity.mjs';
@@ -53,8 +54,8 @@ export function* prepareEditorLoadSteps(document, {sliceMs=4, movieclipVisited}=
   yield* internPoseSequencesSteps(report);
   let nextFrameIdentity=yield* validateFrameIdentitySteps(report);
   if (empty) {
-    if (report._styk.simpleFrameDraft !== undefined) throw new Error('An empty native animation cannot contain a saved working frame.');
-    if (!Number.isSafeInteger(nextFrameIdentity)) throw new Error('Frame identity capacity exceeded.');
+    if (report._styk.simpleFrameDraft !== undefined) throw messageError(new Error(''), "errors.editorLoad.anEmptyNativeAnimationCannotContainASaved", {});
+    if (!Number.isSafeInteger(nextFrameIdentity)) throw messageError(new Error(''), "errors.clipboardLegacyUpgrade.frameIdentityCapacityExceeded", {});
     const id=`frame-${nextFrameIdentity++}`;report.keyframes[0]._styk={frameId:id};
     report._styk.simpleFrameDraft={version:1,mode:'add',index:0,frameId:id,empty:true};
   }
@@ -85,7 +86,7 @@ export function* prepareEditorLoadSteps(document, {sliceMs=4, movieclipVisited}=
     const frame=native ? report.keyframes[index] : sources[index-report.keyframes.length];
     for(const step of continuations(frame))nextUid=nextUidAfter(nextUid,step.uid);
     if (native && !frame._styk?.frameId) {
-      if (!Number.isSafeInteger(nextFrameIdentity)) throw new Error('Frame identity capacity exceeded.');
+      if (!Number.isSafeInteger(nextFrameIdentity)) throw messageError(new Error(''), "errors.clipboardLegacyUpgrade.frameIdentityCapacityExceeded", {});
       missingIds.push({frame,id:`frame-${nextFrameIdentity++}`});
     }
     for (const object of frame.objects) {
@@ -123,8 +124,8 @@ export function prepareEditorLoad(document) {
 }
 
 export async function prepareEditorLoadAsync(document,{sliceMs=4,signal,onProgress,yieldControl=yieldLoadTask,checkCurrent=()=>{}}={}) {
-  if (!Number.isFinite(sliceMs)||sliceMs<=0||sliceMs>16) throw new Error('Import time slices must be greater than zero and at most 16 milliseconds.');
-  const check=()=>{if(signal?.aborted)throw new DOMException('Import cancelled.','AbortError');checkCurrent();};
+  if (!Number.isFinite(sliceMs)||sliceMs<=0||sliceMs>16) throw messageError(new Error(''), "errors.editorLoad.importTimeSlicesMustBeGreaterThanZero", {});
+  const check=()=>{if(signal?.aborted)throw messageError(new DOMException('', 'AbortError'), "errors.editorLoad.importCancelled", {});checkCurrent();};
   check();
   const iterator=prepareEditorLoadSteps(document,{sliceMs}),timings={started:performance.now(),slices:0,maxSliceMs:0,workMs:0,phases:{}};
   try {

@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Versioned native-file representation. Live editor channels always contain
  * ordinary immutable key arrays; only the storage boundary uses references. */
 export function packPoseSequences(report, visited = new WeakMap()) {
@@ -31,10 +32,10 @@ export function* expandPoseSequencesSteps(report) {
     if (animation?.version !== 2) continue;
     if (!Array.isArray(animation.channels) || animation.channels.length > 100000 ||
         !Array.isArray(animation.poseSequences) || animation.poseSequences.length > 100000)
-      throw new Error('Invalid stored pose sequence table.');
+      throw messageError(new Error(''), "errors.poseSequenceStorage.invalidStoredPoseSequenceTable", {});
     let count = 0;
     for (const keys of animation.poseSequences) {
-      if (!Array.isArray(keys) || (count += keys.length) > 1000000) throw new Error('Invalid stored pose sequence capacity.');
+      if (!Array.isArray(keys) || (count += keys.length) > 1000000) throw messageError(new Error(''), "errors.poseSequenceStorage.invalidStoredPoseSequenceCapacity", {});
       yield {phase: 'pose sequences', keys: count};
     }
     const channels = [];
@@ -43,7 +44,7 @@ export function* expandPoseSequencesSteps(report) {
       const reference = channel.keys, index = reference?.sequence;
       if (!reference || Array.isArray(reference) || Object.keys(reference).length !== 1 ||
           !Number.isInteger(index) || index < 0 || index >= animation.poseSequences.length)
-        throw new Error('Invalid stored pose sequence reference.');
+        throw messageError(new Error(''), "errors.poseSequenceStorage.invalidStoredPoseSequenceReference", {});
       channels.push({...channel, keys: animation.poseSequences[index]});
       if ((channels.length & 255) === 0) yield {phase: 'pose sequences', channels: channels.length};
     }

@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Native builder Delete / Ctrl+Delete and segment / branch mirror commands. */
 import {buildGeometry} from './pivot/geometry.mjs';
 import {protectSurfaceReferences} from './pivot/surfaces.mjs';
@@ -10,7 +11,7 @@ function topology(segments) {
     else { const list = children.get(segment.parent_id) ?? []; list.push(index); children.set(segment.parent_id, list); }
   });
   for (let i = 0; i < order.length; i++) for (const child of children.get(segments[order[i]].segment_id) ?? []) order.push(child);
-  if (order.length !== segments.length) throw new Error('The figure contains an invalid joint hierarchy.');
+  if (order.length !== segments.length) throw messageError(new Error(''), "errors.editorBuilderTopology.theFigureContainsAnInvalidJointHierarchy", {});
   return {indices, children, order};
 }
 function points(segments, object, tree, root = {x: 0, y: 0}, scale = 1) {
@@ -27,7 +28,7 @@ function points(segments, object, tree, root = {x: 0, y: 0}, scale = 1) {
 }
 function fit(start, end, bend, fallbackAngle, scale = 1) {
   const distance = Math.hypot(end.x - start.x, end.y - start.y), factor = Math.abs(bend) < EPS ? 1 : 2 * Math.sin(bend / 2) / bend;
-  if (Math.abs(factor) < EPS && distance > EPS) throw new Error('Reduce the closed full-circle bend before removing its parent joint.');
+  if (Math.abs(factor) < EPS && distance > EPS) throw messageError(new Error(''), "errors.editorBuilderTopology.reduceTheClosedFullCircleBendBeforeRemoving", {});
   return {angle: distance < EPS ? fallbackAngle : Math.atan2(end.y - start.y, end.x - start.x) - bend / 2 - (factor * scale < 0 ? Math.PI : 0),
     length: distance < EPS ? 0 : distance / Math.abs(factor * scale)};
 }
@@ -93,10 +94,10 @@ export const editorBuilderTopologyMethods = {
     const figure = this.figure, index = this.selectedJoint, segment = figure?.segments[index];
     if (!segment) return false;
     if((figure.polyfills??[]).some(p=>p._stykSurface?.basis.includes(segment.segment_id)))
-      throw new Error('This joint controls face visibility. Change the fill reference joints before deleting it.');
+      throw messageError(new Error(''), "errors.editorBuilderTopology.thisJointControlsFaceVisibilityChangeTheFill", {});
     protectSurfaceReferences(figure, new Set([segment.segment_id]));
-    if (typeof preserveEndpoints !== 'boolean') throw new Error('Choose whether to preserve the other joints.');
-    if (figure.segments.length === 1) throw new Error('A figure needs at least one segment. Delete the figure to remove it completely.');
+    if (typeof preserveEndpoints !== 'boolean') throw messageError(new Error(''), "errors.editorBuilderTopology.chooseWhetherToPreserveTheOtherJoints", {});
+    if (figure.segments.length === 1) throw messageError(new Error(''), "errors.editorBuilderTopology.aFigureNeedsAtLeastOneSegmentDelete", {});
     const tree = topology(figure.segments), children = tree.children.get(segment.segment_id) ?? [];
     const defaults = preserveEndpoints && children.length ? points(figure.segments, null, tree) : null;
     return this._topologyEdit(preserveEndpoints ? 'Remove joint (Unsplit)' : 'Delete single segment', next => {
@@ -142,11 +143,11 @@ export const editorBuilderTopologyMethods = {
   unsplitSegment() {return this.deleteSingleSegment({preserveEndpoints: true});},
   /** Reflect around the selected segment's parent joint; Shift includes its branch. */
   mirrorSegment(axis = 'horizontal', {branch = false} = {}) {
-    if (!['horizontal', 'vertical'].includes(axis)) throw new Error('Choose a horizontal or vertical flip.');
+    if (!['horizontal', 'vertical'].includes(axis)) throw messageError(new Error(''), "errors.editorBuilderTopology.chooseAHorizontalOrVerticalFlip", {});
     const figure = this.figure, index = this.selectedJoint, segment = figure?.segments[index]; if (!segment) return false;
     const tree = topology(figure.segments), indices = [index];
     if (branch) for (let i = 0; i < indices.length; i++) for (const child of tree.children.get(figure.segments[indices[i]].segment_id) ?? []) indices.push(child);
-    if(indices.some(i=>figure.segments[i]._stykRig?.spatial))throw new Error('Flip the complete spatial figure in Animate to preserve its skin bindings.');
+    if(indices.some(i=>figure.segments[i]._stykRig?.spatial))throw messageError(new Error(''), "errors.editorBuilderTopology.flipTheCompleteSpatialFigureInAnimateTo", {});
     const reflect = angle => axis === 'horizontal' ? (angle < 0 ? -Math.PI - angle : Math.PI - angle) : -angle;
     return this._topologyEdit(`Flip ${branch ? 'branch' : 'segment'} ${axis}`, next => {
       const frames = [];
@@ -179,11 +180,11 @@ export const editorBuilderTopologyMethods = {
     const figure = this.figure, index = figure?.segments.findIndex(segment => segment.segment_id === segmentId) ?? -1;
     if (index < 0) return false;
     const segment = figure.segments[index], nextParent = parentId === undefined ? segment.parent_id : parentId;
-    if(segment._stykRig?.spatial&&nextParent!==segment.parent_id)throw new Error('A spatial joint must keep its bound parent. Pose it in Animate or update its spatial binding first.');
+    if(segment._stykRig?.spatial&&nextParent!==segment.parent_id)throw messageError(new Error(''), "errors.editorBuilderTopology.aSpatialJointMustKeepItsBoundParent", {});
     if (nextParent !== 0) {
-      if (!figure.segments.some(candidate => candidate.segment_id === nextParent)) throw new Error('Choose a valid parent joint.');
+      if (!figure.segments.some(candidate => candidate.segment_id === nextParent)) throw messageError(new Error(''), "errors.editorBuilderTopology.chooseAValidParentJoint", {});
       for (let ancestor = nextParent; ancestor; ancestor = figure.segments.find(candidate => candidate.segment_id === ancestor)?.parent_id ?? 0)
-        if (ancestor === segmentId) throw new Error('A joint cannot move inside its own branch.');
+        if (ancestor === segmentId) throw messageError(new Error(''), "errors.editorBuilderTopology.aJointCannotMoveInsideItsOwnBranch", {});
     }
     return this._topologyEdit('Move segment', next => {
       const [moved] = next.segments.splice(next.segments.findIndex(candidate => candidate.segment_id === segmentId), 1);

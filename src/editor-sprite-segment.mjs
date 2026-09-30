@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Attach a placed embedded sprite to an existing reusable Pivot rig. */
 import {portableAsset} from './clipboard-assets.mjs';
 import {normalizeBuilderOrder} from './editor-builder-style.mjs';
@@ -9,7 +10,7 @@ const mediaId = segment => segment.extra_u16 ?? segment.extra?.[0] ?? segment.im
 const imageSegment = segment => segment.primitive_code === 2 || segment.segment_type === 'image';
 const coordinate = value => {
   if (!Number.isInteger(value) || value < -2147483648 || value > 2147483647)
-    throw new Error('Sprite anchor coordinates must be signed 32-bit integers.');
+    throw messageError(new Error(''), "errors.editorSpriteSegment.spriteAnchorCoordinatesMustBeSigned32Bit", {});
   return value;
 };
 const point = value => ({x: coordinate(value?.x), y: coordinate(value?.y)});
@@ -30,12 +31,12 @@ function normalizeImageTable(figure) {
   for (let index = 0; index < assets.length; index++) {
     const id = assetId(assets[index], index);
     if (!Number.isInteger(id) || id < 0 || id >= MAX_ASSETS || remap.has(id))
-      throw new Error('The figure contains invalid or repeated sprite asset indexes.');
+      throw messageError(new Error(''), "errors.editorSpriteSegment.theFigureContainsInvalidOrRepeatedSpriteAsset", {});
     remap.set(id, index);
   }
   for (const segment of figure.segments) if (imageSegment(segment)) {
     const next = remap.get(mediaId(segment));
-    if (next === undefined) throw new Error('An existing sprite segment is missing its image asset.');
+    if (next === undefined) throw messageError(new Error(''), "errors.editorSpriteSegment.anExistingSpriteSegmentIsMissingItsImage", {});
     setMediaIndex(segment, next);
   }
   assets.forEach(setAssetIndex);
@@ -57,33 +58,33 @@ export const editorSpriteSegmentMethods = {
    * anchor_start / anchor_end placed in pixel coordinates before this call. */
   addSpriteSegment(spriteFigure, {parentId, angle} = {}) {
     const figure = this.figure;
-    if (!figure || !this.object) throw new Error('Select a figure before attaching a sprite.');
+    if (!figure || !this.object) throw messageError(new Error(''), "errors.editorSpriteSegment.selectAFigureBeforeAttachingASprite", {});
     if (spriteFigure?.segments?.length !== 1 || !imageSegment(spriteFigure.segments[0]) || spriteFigure.image_assets?.length !== 1)
-      throw new Error('Choose one imported image to attach as a sprite segment.');
+      throw messageError(new Error(''), "errors.editorSpriteSegment.chooseOneImportedImageToAttachAsA", {});
     if (drawingMetadata(spriteFigure)?.version === 2)
-      throw new Error('Drawing cels cannot be attached as sprite images.');
+      throw messageError(new Error(''), "errors.editorSpriteSegment.drawingCelsCannotBeAttachedAsSpriteImages", {});
     const sourceSegment = spriteFigure.segments[0], sourceAsset = spriteFigure.image_assets[0];
-    if (mediaId(sourceSegment) !== assetId(sourceAsset, 0)) throw new Error('The sprite segment does not reference its image asset.');
+    if (mediaId(sourceSegment) !== assetId(sourceAsset, 0)) throw messageError(new Error(''), "errors.editorSpriteSegment.theSpriteSegmentDoesNotReferenceItsImage", {});
     const asset = portableAsset(sourceAsset, {image: true});
     if (typeof asset.data_url !== 'string' || !/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(asset.data_url))
-      throw new Error('Sprite attachment requires an embedded PNG image.');
+      throw messageError(new Error(''), "errors.editorSpriteSegment.spriteAttachmentRequiresAnEmbeddedPngImage", {});
     asset.anchor_start = point(asset.anchor_start);
     asset.anchor_end = point(asset.anchor_end);
     const dx = asset.anchor_end.x - asset.anchor_start.x, dy = asset.anchor_end.y - asset.anchor_start.y;
     asset.anchor_length = Math.hypot(dx, dy); asset.anchor_angle_rad = Math.atan2(dy, dx);
-    if (!asset.anchor_length) throw new Error('Sprite origin and endpoint must be different points.');
+    if (!asset.anchor_length) throw messageError(new Error(''), "errors.editorSpriteSegment.spriteOriginAndEndpointMustBeDifferentPoints", {});
     // Retain legacy aliases consistently without introducing them on new media.
     if ('pivot' in asset) asset.pivot = {...asset.anchor_start};
     if ('endpoint' in asset) asset.endpoint = {...asset.anchor_end};
     angle ??= asset.anchor_angle_rad;
-    if (typeof angle !== 'number' || !Number.isFinite(angle)) throw new Error('Sprite angle must be finite.');
+    if (typeof angle !== 'number' || !Number.isFinite(angle)) throw messageError(new Error(''), "errors.editorSpriteSegment.spriteAngleMustBeFinite", {});
     const parent = parentId ?? figure.segments[this.selectedJoint]?.segment_id ?? 0;
     if (!Number.isInteger(parent) || parent !== 0 && !figure.segments.some(segment => segment.segment_id === parent))
-      throw new Error('Choose an existing parent handle for the sprite.');
+      throw messageError(new Error(''), "errors.editorSpriteSegment.chooseAnExistingParentHandleForTheSprite", {});
     const handleId = Math.max(0, ...figure.segments.map(segment => segment.segment_id)) + 1;
     if (figure.segments.length >= MAX_SEGMENTS || handleId > 65535)
-      throw new Error('A figure supports at most 30,000 segments with 16-bit joint IDs.');
-    if ((figure.image_assets?.length ?? 0) >= MAX_ASSETS) throw new Error('A figure supports at most 65,535 image assets.');
+      throw messageError(new Error(''), "errors.editorBuilder.aFigureSupportsAtMost30000Segments", {});
+    if ((figure.image_assets?.length ?? 0) >= MAX_ASSETS) throw messageError(new Error(''), "errors.editorSpriteSegment.aFigureSupportsAtMost65535Image", {});
     const segmentIndex = figure.segments.length, assetIndex = figure.image_assets?.length ?? 0;
     this._topologyEdit('Add sprite segment', next => {
       normalizeImageTable(next); setAssetIndex(asset, assetIndex); next.image_assets.push(asset);

@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {editorSpatialMethods,spatialBone,spatialSkin} from './editor-spatial.mjs';
 import {resolveInstanceFigure} from './animation-style.mjs';
 import {remapSurface,surfaceHandles,protectSurfaceReferences} from './pivot/surfaces.mjs';
@@ -69,7 +70,7 @@ const clone = value => structuredClone(value);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const rangeReportCopies = new WeakMap();
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-const finite = (value, label) => { if (!Number.isFinite(value)) throw new Error(`${label} must be finite.`); return value; };
+const finite = (value, label) => { if (!Number.isFinite(value)) throw messageError(new Error(''), "errors.editorCamera.mustBeFinite", {label: label}); return value; };
 function initialLoadState(report,{initialFrameIndex=0,initialTick}={},draftEnabled=false){
   let frameIndex=initialFrameIndex==='last'?report.keyframes.length-1:clamp(Math.trunc(finite(initialFrameIndex,'Initial frame')),0,report.keyframes.length-1);
   if(initialTick!==undefined)finite(initialTick,'Initial tick');
@@ -177,7 +178,7 @@ export class Editor extends EventTarget {
     if(this._retainGeometryRevision){retained.retainRevision(this.revision);this._retainGeometryRevision=false;}
     const settings={...options,checkCurrent};
     const geometry=incremental?await buildGeometryAsync(report,frame,incremental,settings):await retained.getAsync(report,frame,revision,settings);
-    if(!checkCurrent())throw new DOMException('Editable geometry was superseded.', 'AbortError');
+    if(!checkCurrent())throw messageError(new DOMException('', 'AbortError'), "errors.editor.editableGeometryWasSuperseded", {});
     this._geometry=geometry;this._incremental=null;
     if(retained.geometry!==geometry)retained.adopt(report,frame,revision,geometry);
     return geometry;
@@ -448,7 +449,7 @@ export class Editor extends EventTarget {
   _drawingHistoryReplay(command,direction,signal) {
     const resources=drawingResourcesFor(this.report),history=resources?.history,report=this.report,revision=this.revision;
     const source=direction==='before'?this._undo:this._redo,destination=direction==='before'?this._redo:this._undo;
-    const check=()=>{if(signal?.aborted||report!==this.report||revision!==this.revision||source.at(-1)!==command)throw new DOMException('History changed before undo/redo completed.','AbortError');};
+    const check=()=>{if(signal?.aborted||report!==this.report||revision!==this.revision||source.at(-1)!==command)throw messageError(new DOMException('', 'AbortError'), "errors.editor.historyChangedBeforeUndoRedoCompleted", {});};
     const replay=prepared=>{try{
       check();resources?.checkHistory(command,direction,prepared);this._applyCommand(command,direction,prepared);source.pop();destination.push(command);return true;
     }finally{prepared?.release();}};
@@ -470,18 +471,18 @@ export class Editor extends EventTarget {
   }
   async loadAsync(document, name, options = {}) {
     const report = document?.document ?? document?.report ?? document;
-    if (report === this.report) throw new Error('Asynchronous import requires a separate incoming document.');
+    if (report === this.report) throw messageError(new Error(''), "errors.editor.asynchronousImportRequiresASeparateIncomingDocument", {});
     const request = this._loadRequestId = (this._loadRequestId ?? 0) + 1;
-    if(name!==undefined&&name!==null&&typeof name!=='string')throw new Error('The document name must be text.');
-    if(options.prepareScene!==undefined&&typeof options.prepareScene!=='function')throw new Error('Provide an initial scene preparation function.');
+    if(name!==undefined&&name!==null&&typeof name!=='string')throw messageError(new Error(''), "errors.editor.theDocumentNameMustBeText", {});
+    if(options.prepareScene!==undefined&&typeof options.prepareScene!=='function')throw messageError(new Error(''), "errors.editor.provideAnInitialScenePreparationFunction", {});
     const token = this._documentToken, revision = this.revision, drag = this._drag, animationEdit = this._animationEdit,
       draftRevision=this.frameDraftRevision,draftEnabled=this._frameDraftEnabled;
     const checkCurrent = () => {
-      if(options.signal?.aborted)throw new DOMException('Import cancelled.','AbortError');
+      if(options.signal?.aborted)throw messageError(new DOMException('', 'AbortError'), "errors.editorLoad.importCancelled", {});
       if (request !== this._loadRequestId || token !== this._documentToken || revision !== this.revision ||
           drag !== this._drag || animationEdit !== this._animationEdit || this._drag?.changed || this._animationEdit?.changed ||
           draftRevision!==this.frameDraftRevision || draftEnabled!==this._frameDraftEnabled)
-        throw new DOMException('The document changed while importing.','AbortError');
+        throw messageError(new DOMException('', 'AbortError'), "errors.editor.theDocumentChangedWhileImporting", {});
     };
     const prepared = await prepareEditorLoadAsync(document,{...options,checkCurrent});
     checkCurrent();
@@ -493,14 +494,14 @@ export class Editor extends EventTarget {
       const scene=await options.prepareScene({report:prepared.report,frameIndex:initial.frameIndex,tick:initial.tick,frame,signal:options.signal,checkCurrent});
       checkCurrent();
       if(!scene||!(scene.geometry?.objects instanceof Map)||scene.frame!==undefined&&scene.frame!==frame)
-        throw new Error('Prepared geometry must belong to the exact initial frame.');
+        throw messageError(new Error(''), "errors.editor.preparedGeometryMustBelongToTheExactInitial", {});
       prepared.scene={...initial,frame,geometry:scene.geometry};prepared.timings.sceneMs=performance.now()-started;
     }
     return this._publishLoadedReport(prepared, name, options);
   }
   _publishLoadedReport(prepared, name, {initialFrameIndex=0, initialTick, preserveDrawingResources=false} = {}) {
     const {report} = prepared;
-    if (name !== undefined && name !== null && typeof name !== 'string') throw new Error('The document name must be text.');
+    if (name !== undefined && name !== null && typeof name !== 'string') throw messageError(new Error(''), "errors.editor.theDocumentNameMustBeText", {});
     const initial=prepared.scene??initialLoadState(report,{initialFrameIndex,initialTick},this._frameDraftEnabled),index=initial.frameIndex;
     const started = performance.now();
     if(!preserveDrawingResources){drawingResourcesFor(this.report)?.dispose();for(const scope of this._movieclipScopes??[])drawingResourcesFor(scope.parent.report)?.dispose();}
@@ -690,10 +691,10 @@ export class Editor extends EventTarget {
     catch (error) { this.cancelDrag(); throw error; }
     return true;
   }
-  _identity() { if (this._nextUid > 0x7ffffffe) throw new Error('Object identity capacity reached.'); return this._nextUid++; }
+  _identity() { if (this._nextUid > 0x7ffffffe) throw messageError(new Error(''), "errors.editorLayerSheet.objectIdentityCapacityReached", {}); return this._nextUid++; }
   addFigure(typeId = this.report.figure_types[0]?.figure_type_id) {
     const fig = this.report.figure_types.find(f => f.figure_type_id === typeId);
-    if (!fig) throw new Error('Choose a figure from the library.');
+    if (!fig) throw messageError(new Error(''), "errors.editor.chooseAFigureFromTheLibrary", {});
     if(isMovieclip(fig)&&!this._insertingMovieclip)return this._insertMovieclip(()=>this.addFigure(typeId));
     this.applyFigureRange({kind:'add',typeId},{atPlayhead:true,label:'Add figure'});
     return this.object;
@@ -847,7 +848,7 @@ export class Editor extends EventTarget {
     }, options);
   }
   scaleSelection(factor, options = {}) {
-    finite(factor, 'Scale'); if (factor < 0) throw new Error('Scale cannot be negative.');
+    finite(factor, 'Scale'); if (factor < 0) throw messageError(new Error(''), "errors.editor.scaleCannotBeNegative", {});
     return this._transformSelection('Scale figures', (object, pivot, root) => {
       if (root) { object.root_x = pivot.x + (object.root_x - pivot.x) * factor; object.root_y = pivot.y + (object.root_y - pivot.y) * factor; }
       object.scale *= factor;
@@ -855,14 +856,14 @@ export class Editor extends EventTarget {
   }
   /** Native numeric scale control: selected instances only; attachments follow. */
   scaleSelected(factor, {center} = {}) {
-    finite(factor, 'Scale'); if (factor < 0) throw new Error('Scale cannot be negative.');
+    finite(factor, 'Scale'); if (factor < 0) throw messageError(new Error(''), "errors.editor.scaleCannotBeNegative", {});
     return this._transformSelection('Scale selected figures', (object, pivot, root) => {
       if (root) { object.root_x = pivot.x + (object.root_x - pivot.x) * factor; object.root_y = pivot.y + (object.root_y - pivot.y) * factor; }
       object.scale *= factor;
     }, {center, selectedOnly: true});
   }
   mirrorSelection(axis = 'horizontal', options = {}) {
-    if (!['horizontal', 'vertical'].includes(axis)) throw new Error('Choose a horizontal or vertical flip.');
+    if (!['horizontal', 'vertical'].includes(axis)) throw messageError(new Error(''), "errors.editorBuilderTopology.chooseAHorizontalOrVerticalFlip", {});
     if (this.selectedJoint >= 0 && (this.selectedObjects.length === 1 || this.branchSelected))
       return this.applyFigureRange({kind: 'mirror', axis}, {...options, atPlayhead: true});
     return this._transformSelection('Flip figures', (object, pivot, root, figure) => {
@@ -877,7 +878,7 @@ export class Editor extends EventTarget {
   }
   moveSelectionLayer(direction) {
     if (!this.selectedObjects.length) return false;
-    if (!Number.isInteger(direction)) throw new Error('Layer direction must be a whole number.');
+    if (!Number.isInteger(direction)) throw messageError(new Error(''), "errors.editor.layerDirectionMustBeAWholeNumber", {});
     if (this.propertyChannels || this.animationChannels.length || this.selectionFrame.objects.some(object => object._stykZIndex !== undefined))
       return this.applyFigureRange({kind: 'order', direction}, {ticks: [this.tick]});
     return this.transaction('Reorder figures', frame => {
@@ -954,7 +955,7 @@ export class Editor extends EventTarget {
   duplicateFrame() { return this._frameSplice('Duplicate keyframe', this.frameIndex + 1, 0, [clone(this.frame)]); }
   _frameIndices(indices) {
     const result = [...new Set(indices ?? [this.frameIndex])].sort((a, b) => a - b);
-    if (result.some(i => !Number.isInteger(i) || i < 0 || i >= this.report.keyframes.length)) throw new Error('Select existing keyframes.');
+    if (result.some(i => !Number.isInteger(i) || i < 0 || i >= this.report.keyframes.length)) throw messageError(new Error(''), "errors.editor.selectExistingKeyframes", {});
     return result;
   }
   _rangesEdit(label, changes, {retainSelection = false, structural = true, timing = true, timingOnly = false, selectIndex, frameEasing = false, animationPlan} = {}) {
@@ -1010,13 +1011,13 @@ export class Editor extends EventTarget {
   updateObject(patch) {
     if (this.selectedObjects.length > 1 && Object.keys(patch).every(k => ['color_override_raw', 'field28', 'image_text_flags', 'name', '_styk'].includes(k))) return this.updateSelection(patch);
     for (const field of ['root_x', 'root_y', 'scale']) if (field in patch) finite(patch[field], field);
-    if (patch.scale < 0) throw new Error('Scale cannot be negative.');
-    if ('field28' in patch && (!Number.isInteger(patch.field28) || patch.field28 < 0 || patch.field28 > 255)) throw new Error('Opacity must be a byte.');
-    if ('unique_id' in patch || 'figure_type_id' in patch || 'object_slot' in patch || 'join' in patch) throw new Error('Use structural operations to change figure identity or joins.');
+    if (patch.scale < 0) throw messageError(new Error(''), "errors.editor.scaleCannotBeNegative", {});
+    if ('field28' in patch && (!Number.isInteger(patch.field28) || patch.field28 < 0 || patch.field28 > 255)) throw messageError(new Error(''), "errors.editor.opacityMustBeAByte", {});
+    if ('unique_id' in patch || 'figure_type_id' in patch || 'object_slot' in patch || 'join' in patch) throw messageError(new Error(''), "errors.editor.useStructuralOperationsToChangeFigureIdentityOr", {});
     return this._objectEdit('Edit figure', obj => { Object.assign(obj, clone(patch)); delete obj.runtime_segments; });
   }
   updateSelection(patch) {
-    if (Object.keys(patch).some(k => !['color_override_raw', 'field28', 'image_text_flags', 'name', '_styk'].includes(k))) throw new Error('Use group transform commands to change selection geometry.');
+    if (Object.keys(patch).some(k => !['color_override_raw', 'field28', 'image_text_flags', 'name', '_styk'].includes(k))) throw messageError(new Error(''), "errors.editor.useGroupTransformCommandsToChangeSelectionGeometry", {});
     return this._objectEdit('Edit selected figures', () => {
       for (const object of this.selectedObjects) { Object.assign(object, clone(patch)); delete object.runtime_segments; }
     });
@@ -1024,12 +1025,12 @@ export class Editor extends EventTarget {
   updateSegment(patch) {
     const index = this.selectedJoint, fig = this.figure;
     if (!fig || index < 0 || index >= fig.segments.length) return false;
-    if ('color_rgb' in patch && (!Array.isArray(patch.color_rgb) || patch.color_rgb.length !== 3 || patch.color_rgb.some(n => !Number.isInteger(n) || n < 0 || n > 255))) throw new Error('Color must contain three RGB bytes.');
-    if ('transparency' in patch && (!Number.isInteger(patch.transparency) || patch.transparency < 0 || patch.transparency > 255)) throw new Error('Transparency must be a byte.');
-    if ('primitive_code' in patch && ![0, 1, 2, 3, 4, 5, 6].includes(patch.primitive_code)) throw new Error('Unknown segment primitive.');
+    if ('color_rgb' in patch && (!Array.isArray(patch.color_rgb) || patch.color_rgb.length !== 3 || patch.color_rgb.some(n => !Number.isInteger(n) || n < 0 || n > 255))) throw messageError(new Error(''), "errors.editor.colorMustContainThreeRgbBytes", {});
+    if ('transparency' in patch && (!Number.isInteger(patch.transparency) || patch.transparency < 0 || patch.transparency > 255)) throw messageError(new Error(''), "errors.editor.transparencyMustBeAByte", {});
+    if ('primitive_code' in patch && ![0, 1, 2, 3, 4, 5, 6].includes(patch.primitive_code)) throw messageError(new Error(''), "errors.editor.unknownSegmentPrimitive", {});
     const pose = {}, definition = {...patch};
     for (const field of ['angle_rad', 'length', 'bend_rad']) if (field in patch) { pose[field] = finite(patch[field], field); delete definition[field]; }
-    if('length' in pose && (pose.length<0 || fig.segments[index]._stykRig?.connector && pose.length>1))throw new Error('Connector position must be 0–1; segment lengths must be nonnegative.');
+    if('length' in pose && (pose.length<0 || fig.segments[index]._stykRig?.connector && pose.length>1))throw messageError(new Error(''), "errors.editor.connectorPositionMustBe01SegmentLengths", {});
     if (Object.keys(pose).length) this._objectEdit('Edit joint', obj => {
       if ('angle_rad' in pose) this._rotateJoint(pose.angle_rad - obj.angles[index]);
       if ('length' in pose) { if (!obj.len_flag) obj.lengths = fig.segments.map(s => s.length); obj.len_flag = 1; obj.lengths[index] = pose.length; }
@@ -1042,8 +1043,8 @@ export class Editor extends EventTarget {
       delete obj.runtime_segments;
     }, {posed: true});
     if (!Object.keys(definition).length) return true;
-    for (const field of ['segment_id', 'parent_id']) if (field in definition) throw new Error('Use the figure builder to change joint hierarchy.');
-    if ('thickness' in definition && finite(definition.thickness, 'Thickness') < 0) throw new Error('Thickness cannot be negative.');
+    for (const field of ['segment_id', 'parent_id']) if (field in definition) throw messageError(new Error(''), "errors.editor.useTheFigureBuilderToChangeJointHierarchy", {});
+    if ('thickness' in definition && finite(definition.thickness, 'Thickness') < 0) throw messageError(new Error(''), "errors.editor.thicknessCannotBeNegative", {});
     const figureIndex = this.report.figure_types.indexOf(fig), before = clone(fig), selection = this._selectionState();
     Object.assign(fig.segments[index], clone(definition));
     // Keep raw definition flags in step with UI edits without scanning the project.
@@ -1107,7 +1108,7 @@ export class Editor extends EventTarget {
   poseJoint(x, y, {stretch = false, isolate = false, snap = true, snapTolerance = 6, alternate = false, depth = false, pixel = 0, anchor = null} = {}) {
     if(spatialSkin(this.figure?.segments[this.selectedJoint])||this.figure?.segments[this.selectedJoint]?._stykRig?.anglePath||this.figure?.segments[this.selectedJoint]?._stykRig?.weighted)return false;
     finite(x, 'Joint X'); finite(y, 'Joint Y');
-    finite(snapTolerance, 'Snap tolerance'); if (snapTolerance < 0) throw new Error('Snap tolerance cannot be negative.');
+    finite(snapTolerance, 'Snap tolerance'); if (snapTolerance < 0) throw messageError(new Error(''), "errors.editor.snapToleranceCannotBeNegative", {});
     if (!this.object || this.selectedJoint < 0) return false;
     if (this.figure?.segments[this.selectedJoint]?._stykRig?.connector) return this.slideConnector(x,y);
     if (this.object._stykIK?.[this.figure?.segments[this.selectedJoint]?.segment_id]?.enabled) {
@@ -1127,7 +1128,7 @@ export class Editor extends EventTarget {
       const along=Math.max(0,(x-shape.start.x)*Math.cos(axis)+(y-shape.start.y)*Math.sin(axis));
       const current=this.object.len_flag?this.object.lengths[this.selectedJoint]:seg.length;
       const chordLength=Math.hypot(shape.end.x-shape.start.x,shape.end.y-shape.start.y);
-      if(current<1e-8||chordLength<1e-8)throw new UserActionError('Expand the stretch driver before posing a fully compressed locked part.');
+      if(current<1e-8||chordLength<1e-8)throw messageError(new UserActionError(''), "errors.editor.expandTheStretchDriverBeforePosingAFully", {});
       return this._objectEdit('Stretch locked joint',obj=>{
         if(!obj.len_flag)obj.lengths=this.figure.segments.map(s=>s.length);
         obj.len_flag=1;obj.lengths[this.selectedJoint]=along*current/chordLength;
@@ -1143,7 +1144,7 @@ export class Editor extends EventTarget {
         if (!obj.len_flag) obj.lengths = this.figure.segments.map(s => s.length);
         obj.len_flag = 1; const bend = shape.bend;
         const chord = Math.abs(bend) < 1e-7 ? 1 : Math.abs(2 * Math.sin(bend / 2) / bend);
-        if (chord < 1e-8) throw new Error('Reduce the full-circle bend before stretching this segment.');
+        if (chord < 1e-8) throw messageError(new Error(''), "errors.editorMotionPath.reduceTheFullCircleBendBeforeStretchingThis", {});
         let length = Math.hypot(x - shape.start.x, y - shape.start.y) / (Math.abs(obj.scale) * chord);
         if (snap && defaults.lengthEnabled && Math.abs(length - defaults.length) * Math.abs(obj.scale) * chord <= snapTolerance) length = defaults.length;
         obj.lengths[this.selectedJoint] = length;
@@ -1153,7 +1154,7 @@ export class Editor extends EventTarget {
   /** Bend keeps the start tangent fixed; optional stretching reaches the cursor. */
   bendJoint(x, y, {stretch = false, isolate = false, snap = true, snapTolerance = 6, pixel = 1} = {}) {
     finite(x, 'Joint X'); finite(y, 'Joint Y'); finite(snapTolerance, 'Snap tolerance');
-    if (snapTolerance < 0) throw new Error('Snap tolerance cannot be negative.');
+    if (snapTolerance < 0) throw messageError(new Error(''), "errors.editor.snapToleranceCannotBeNegative", {});
     const segment = this.figure?.segments[this.selectedJoint];
     // Spatial bones have no curved bend; the secondary drag twists them instead.
     if (spatialBone(segment)) return this.twistSpatialJoint(x, y, {pixel});
@@ -1172,7 +1173,7 @@ export class Editor extends EventTarget {
         if (Math.hypot(shape.start.x + radius * Math.cos(direction) - x, shape.start.y + radius * Math.sin(direction) - y) <= snapTolerance) bend = defaults.bend;
       }
       if (stretch && scale > 1e-8) {
-        const factor = chord(bend); if (factor < 1e-8) throw new Error('Reduce the full-circle bend before stretching this segment.');
+        const factor = chord(bend); if (factor < 1e-8) throw messageError(new Error(''), "errors.editorMotionPath.reduceTheFullCircleBendBeforeStretchingThis", {});
         length = distance / (scale * factor);
         if (snap && defaults.lengthEnabled && Math.abs(length - defaults.length) * scale * factor <= snapTolerance) length = defaults.length;
         if (!object.len_flag) object.lengths = this.figure.segments.map(s => s.length);
@@ -1207,7 +1208,7 @@ export class Editor extends EventTarget {
     }, {posed: true});
   }
   mirrorFigure(axis = 'horizontal') {
-    if (!['horizontal', 'vertical'].includes(axis)) throw new Error('Choose a horizontal or vertical flip.');
+    if (!['horizontal', 'vertical'].includes(axis)) throw messageError(new Error(''), "errors.editorBuilderTopology.chooseAHorizontalOrVerticalFlip", {});
     if (this.selectedJoint >= 0 && (this.selectedObjects.length === 1 || this.branchSelected))
       return this.mirrorSelection(axis);
     if (this.selectedObjects.length > 1) return this.mirrorSelection(axis);
@@ -1259,10 +1260,10 @@ export class Editor extends EventTarget {
     if (!this.object) return false;
     const frame = this.selectionFrame, targetSlot = frame.objects.findIndex(o => o.unique_id === targetUid), slot = this.selectedSlot;
     const target = frame.objects[targetSlot], figure = this.report.figure_types.find(f => f.figure_type_id === target?.figure_type_id);
-    if (!target || targetSlot === slot || ![0, ...figure.segments.map(s => s.segment_id)].includes(handleId)) throw new Error('Choose another figure and a valid joint.');
+    if (!target || targetSlot === slot || ![0, ...figure.segments.map(s => s.segment_id)].includes(handleId)) throw messageError(new Error(''), "errors.editor.chooseAnotherFigureAndAValidJoint", {});
     for (let current = targetSlot; frame.objects[current]?.join;) {
       current = frame.objects[current].join.target_object_slot;
-      if (current === slot) throw new Error('Joining these figures would create a cycle.');
+      if (current === slot) throw messageError(new Error(''), "errors.editor.joiningTheseFiguresWouldCreateACycle", {});
     }
     return this.transaction('Join figures', () => {
       this.object.join = {target_object_slot: targetSlot, target_unique_id: targetUid, target_handle_id: handleId};
@@ -1350,7 +1351,7 @@ export class Editor extends EventTarget {
   }
   _topologyEdit(label, mutate, {appendOnly = false, segmentIndices, retainedGeometry, segmentMap, reversedGradients, preserveAnimationOrigins=false, originReRoot, originSplit, originSplits, originFreezeHandles} = {}) {
     if (!this.figure) return false;
-    if(isMovieclip(this.figure))throw new Error('Open the movieclip to edit its figures.');
+    if(isMovieclip(this.figure))throw messageError(new Error(''), "errors.editor.openTheMovieclipToEditItsFigures", {});
     if (this._drag) this.commitDrag();
     const figure = this.figure, index = this.report.figure_types.indexOf(figure), typeId = figure.figure_type_id;
     appendOnly = appendOnly && !figure._styk?.animationOrigin;
@@ -1395,8 +1396,8 @@ export class Editor extends EventTarget {
   /** Replace a reusable definition while retaining every instance's pose and identity. */
   replaceFigureDefinition(figureTypeId, definition, {label = 'Edit figure definition'} = {}) {
     const index = this.report.figure_types.findIndex(f => f.figure_type_id === figureTypeId);
-    if (index < 0) throw new Error('The figure definition does not exist.');
-    if (!definition || !Array.isArray(definition.segments) || !definition.segments.length) throw new Error('A figure needs at least one segment.');
+    if (index < 0) throw messageError(new Error(''), "errors.editor.theFigureDefinitionDoesNotExist", {});
+    if (!definition || !Array.isArray(definition.segments) || !definition.segments.length) throw messageError(new Error(''), "errors.editor.aFigureNeedsAtLeastOneSegment", {});
     if (this._drag) this.commitDrag();
     const oldFigure = this.report.figure_types[index], replacement = {...clone(definition), figure_type_id: figureTypeId};
     replacement.segment_count = replacement.segments.length;
@@ -1457,9 +1458,9 @@ export class Editor extends EventTarget {
   }
   /** Re-root a rig without moving its visible joints; external attachments detach. */
   setOrigin(handleId = this.figure?.segments[this.selectedJoint]?.segment_id) {
-    if(this.figure?.segments.some(s=>s._stykRig))throw new Error('Set the figure origin before configuring rig relationships. Existing rig anchors must retain their identities.');
+    if(this.figure?.segments.some(s=>s._stykRig))throw messageError(new Error(''), "errors.editor.setTheFigureOriginBeforeConfiguringRigRelationships", {});
     const figure = this.figure; if (!figure || handleId === 0) return false;
-    if (!Number.isInteger(handleId) || !figure.segments.some(s => s.segment_id === handleId)) throw new Error('Select a valid joint for the new origin.');
+    if (!Number.isInteger(handleId) || !figure.segments.some(s => s.segment_id === handleId)) throw messageError(new Error(''), "errors.editor.selectAValidJointForTheNewOrigin", {});
     const adjacency = new Map();
     const add = (node, other, index) => { const list = adjacency.get(node) ?? []; list.push({other, index}); adjacency.set(node, list); };
     figure.segments.forEach((segment, index) => { add(segment.parent_id, segment.segment_id, index); add(segment.segment_id, segment.parent_id, index); });
@@ -1471,7 +1472,7 @@ export class Editor extends EventTarget {
       orientation.set(edge.index, {parent: remap(queue[q]), id: remap(edge.other), reverse: figure.segments[edge.index].parent_id !== queue[q]});
     }
     for (const [index, edge] of orientation) if (edge.reverse && ['image', 'text'].includes(figure.segments[index].segment_type))
-      throw new Error('Choose an origin whose path contains ordinary lines or circles; media anchors cannot be reversed.');
+      throw messageError(new Error(''), "errors.editor.chooseAnOriginWhosePathContainsOrdinaryLines", {});
     const previousOrigin = figure._styk?.animationOrigin;
     const referenceIndex = previousOrigin?.support ? null : previousOrigin ? figure.segments.findIndex(segment => segment.segment_id === previousOrigin.rotationHandleId) : 0;
     const animationOrigin = previousOrigin?.support ? previousOrigin : {handleId: remap(previousOrigin?.handleId ?? 0),
@@ -1517,12 +1518,12 @@ export class Editor extends EventTarget {
   /** Append a connected pen stroke as one topology command. */
   addSegments(specs) {
     if (!Array.isArray(specs) || !specs.length) return [];
-    if ((this.figure?.segments.length ?? 0) + specs.length > 30000) throw new Error('Figure segment capacity reached.');
+    if ((this.figure?.segments.length ?? 0) + specs.length > 30000) throw messageError(new Error(''), "errors.editorRigConstraints.figureSegmentCapacityReached", {});
     const prepared = specs.map(({parentId, type = 'line', length = 50, angle = 0, thickness, start}) => {
       finite(length, 'Segment length'); finite(angle, 'Segment angle'); if (thickness !== undefined) finite(thickness, 'Segment thickness');
-      if (length < 0 || thickness < 0) throw new Error('Segment length and thickness cannot be negative.');
+      if (length < 0 || thickness < 0) throw messageError(new Error(''), "errors.editor.segmentLengthAndThicknessCannotBeNegative", {});
       const code = typeof type === 'number' ? type : {line:0,circle:1,circleFill:3,circleClear:4,squareLine:6}[type];
-      if (![0,1,3,4,6].includes(code)) throw new Error('Choose a line or circle segment.');
+      if (![0,1,3,4,6].includes(code)) throw messageError(new Error(''), "errors.editor.chooseALineOrCircleSegment", {});
       return {parentId,type,length,angle,thickness,start,code};
     });
     const {parentId,type,length,angle,thickness,start,code} = prepared[0];
@@ -1530,13 +1531,13 @@ export class Editor extends EventTarget {
       let result; this.transaction('Draw figure', () => { result = this.addSegments(specs); }, {structural: true}); return result;
     }
     finite(length, 'Segment length'); finite(angle, 'Segment angle'); if (thickness !== undefined) finite(thickness, 'Segment thickness');
-    if (length < 0 || thickness < 0) throw new Error('Segment length and thickness cannot be negative.');
+    if (length < 0 || thickness < 0) throw messageError(new Error(''), "errors.editor.segmentLengthAndThicknessCannotBeNegative", {});
     const parent = parentId ?? this.figure?.segments[this.selectedJoint]?.segment_id ?? 0;
-    if (parent !== 0 && !this.figure?.segments.some(s => s.segment_id === parent)) throw new Error('The segment parent does not exist.');
+    if (parent !== 0 && !this.figure?.segments.some(s => s.segment_id === parent)) throw messageError(new Error(''), "errors.editor.theSegmentParentDoesNotExist", {});
     const handles = new Set([0, ...(this.figure?.segments ?? []).map(s => s.segment_id)]);
-    for (const item of prepared) if (item.parentId != null && !handles.has(item.parentId)) throw new Error('The segment parent does not exist.');
+    for (const item of prepared) if (item.parentId != null && !handles.has(item.parentId)) throw messageError(new Error(''), "errors.editor.theSegmentParentDoesNotExist", {});
     let nextId = Math.max(0, ...handles) + 1;
-    if (nextId + specs.length - 1 > 65535) throw new Error('Figure joint capacity reached.');
+    if (nextId + specs.length - 1 > 65535) throw messageError(new Error(''), "errors.editorBuilderBranch.figureJointCapacityReached", {});
     const make = (item, id, parent, color, z) => ({segment_id:id,parent_id:parent,length:item.length,angle_rad:item.angle,thickness:item.thickness ?? 8,bend_rad:0,primitive_code:item.code,aux_code:0,flags:item.code,segment_type:[1,3,4].includes(item.code)?'circle':'line',segment_kind:['line','circle','image','circleFill','circleClear','text','squareLine'][item.code],color_rgb:clone(color),transparency:0,visible:(item.thickness ?? 8)>0||item.code>0,z_order:z});
     if (!this.figure) {
       const x = finite(start?.x ?? this.report.canvas_width / 2, 'Figure X');
@@ -1587,14 +1588,14 @@ export class Editor extends EventTarget {
     const figure = this.figure;
     const ids = new Set(handleIds ?? [figure.segments[this.selectedJoint].segment_id]);
     const valid = new Set(figure.segments.map(segment => segment.segment_id));
-    if (!ids.size || [...ids].some(id => !valid.has(id))) throw new Error('Select existing segments to delete.');
+    if (!ids.size || [...ids].some(id => !valid.has(id))) throw messageError(new Error(''), "errors.editor.selectExistingSegmentsToDelete", {});
     if (branch) {
       const children = new Map();
       for (const segment of figure.segments) {const list = children.get(segment.parent_id) ?? [];list.push(segment.segment_id);children.set(segment.parent_id,list);}
       const queue = [...ids];
       for (let i=0;i<queue.length;i++) for (const child of children.get(queue[i]) ?? []) if (!ids.has(child)) {ids.add(child);queue.push(child);}
     }
-    if (ids.size === figure.segments.length) throw new Error('A figure needs at least one segment. Delete the figure to remove it completely.');
+    if (ids.size === figure.segments.length) throw messageError(new Error(''), "errors.editorBuilderTopology.aFigureNeedsAtLeastOneSegmentDelete", {});
     return this._topologyEdit(branch ? 'Delete segment branches' : 'Delete selected segments', fig => {
       const keep = fig.segments.map((s, i) => ids.has(s.segment_id) ? -1 : i).filter(i => i >= 0);
       // Resolve every detached child before changing its parent's handle table.
@@ -1623,7 +1624,7 @@ export class Editor extends EventTarget {
     });
   }
   setFPS(value) {
-    if (!Number.isInteger(value) || value < 1 || value > 1000) throw new Error('FPS must be an integer between 1 and 1,000.');
+    if (!Number.isInteger(value) || value < 1 || value > 1000) throw messageError(new Error(''), "errors.editor.fpsMustBeAnIntegerBetween1And", {});
     return this._fields('Change frame rate', {fps: value, ...(this.report.version < 5 ? {frame_delay_ms: Math.round(1000 / value)} : {})}, {timing: true});
   }
   _fields(label, patch, {timing = false} = {}) {
@@ -1635,25 +1636,25 @@ export class Editor extends EventTarget {
   }
   setFrameDuration(ticks) {
     if(this.report._styk?.layerSheet)return this.sheetSetDuration(ticks);
-    if (!Number.isInteger(ticks) || ticks < 0 || ticks > 65535) throw new Error('Keyframe duration must be 0–65,535 frames.');
+    if (!Number.isInteger(ticks) || ticks < 0 || ticks > 65535) throw messageError(new Error(''), "errors.editorRanges.keyframeDurationMustBe065535Frames", {});
     return Boolean(this.setFramesDuration([this.frameIndex], ticks));
   }
   setCanvasSize(width, height) {
-    if (![width, height].every(n => Number.isInteger(n) && n >= 1 && n <= 100000)) throw new Error('Canvas dimensions must be 1–100,000 pixels.');
+    if (![width, height].every(n => Number.isInteger(n) && n >= 1 && n <= 100000)) throw messageError(new Error(''), "errors.editor.canvasDimensionsMustBe1100000Pixels", {});
     return this._fields('Resize canvas', {canvas_width: width, canvas_height: height});
   }
   updateProject(patch) {
-    for (const key of Object.keys(patch)) if (!['canvas_width', 'canvas_height', 'fps'].includes(key)) throw new Error(`Project setting ${key} is not editable here.`);
+    for (const key of Object.keys(patch)) if (!['canvas_width', 'canvas_height', 'fps'].includes(key)) throw messageError(new Error(''), "errors.editor.projectSettingIsNotEditableHere", {key: key});
     const width = patch.canvas_width ?? this.report.canvas_width, height = patch.canvas_height ?? this.report.canvas_height;
-    if (![width, height].every(n => Number.isInteger(n) && n >= 1 && n <= 100000)) throw new Error('Canvas dimensions must be 1–100,000 pixels.');
-    if ('fps' in patch && (!Number.isInteger(patch.fps) || patch.fps < 1 || patch.fps > 1000)) throw new Error('FPS must be an integer between 1 and 1,000.');
+    if (![width, height].every(n => Number.isInteger(n) && n >= 1 && n <= 100000)) throw messageError(new Error(''), "errors.editor.canvasDimensionsMustBe1100000Pixels", {});
+    if ('fps' in patch && (!Number.isInteger(patch.fps) || patch.fps < 1 || patch.fps > 1000)) throw messageError(new Error(''), "errors.editor.fpsMustBeAnIntegerBetween1And", {});
     const fields = {...patch};
     if ('fps' in fields && this.report.version < 5) fields.frame_delay_ms = Math.round(1000 / fields.fps);
     return this._fields('Project settings', fields, {timing: 'fps' in fields});
   }
   setBackgroundColor(color) {
     if(this.report._styk?.layerSheet&&!this._authoredPoseEdit)return this._sheetPropertyEntries([{target:{kind:'scene'},property:'color',tick:this.tick,value:color}],'Background color');
-    if (!Number.isInteger(color) || color < 0 || color > 0xffffffff) throw new Error('Background color must be an ARGB value.');
+    if (!Number.isInteger(color) || color < 0 || color > 0xffffffff) throw messageError(new Error(''), "errors.editor.backgroundColorMustBeAnArgbValue", {});
     if (this._drag) this.commitDrag();
     const before = {fields: {backgrounds: clone(this.report.backgrounds ?? [])}, frame: clone(this.frame)}, beforeSelection = this._selectionState();
     // Reuse an identical swatch. Changing a frame's background never recolors
@@ -1674,7 +1675,7 @@ export class Editor extends EventTarget {
   importBackground(background) {
     if(this.report._styk?.layerSheet&&!this._authoredPoseEdit){let result;this.transaction('Import background',()=>{result=this.importBackground(background);});return result;}
     const source = background?.background ?? background;
-    if (!source || ![0, 1, 2, 3, 4].includes(source.kind)) throw new Error('Expected a decoded image, color, or gradient background.');
+    if (!source || ![0, 1, 2, 3, 4].includes(source.kind)) throw messageError(new Error(''), "errors.editor.expectedADecodedImageColorOrGradientBackground", {});
     if (this._drag && !this._authoredPoseEdit?.transaction) this.commitDrag();
     const imported = clone(source);
     imported.background_id = Math.max(0, ...(this.report.backgrounds ?? []).map(bg => bg.background_id)) + 1;
@@ -1690,12 +1691,12 @@ export class Editor extends EventTarget {
     this._invalidate(); this._emit('edit', {label: 'Import background'}); return imported;
   }
   importFigure(document, {position} = {}) {
-    if (position && (!Number.isFinite(position.x) || !Number.isFinite(position.y))) throw new Error('Choose a valid canvas position.');
+    if (position && (!Number.isFinite(position.x) || !Number.isFinite(position.y))) throw messageError(new Error(''), "errors.editorRangeCommands.chooseAValidCanvasPosition", {});
     const incoming=document?.document??document?.report??document;
     if(!this._insertingMovieclip&&incoming?.figure_types?.some(isMovieclip))return this._insertMovieclip(()=>this.importFigure(document, {position}));
     const source = document?.document ?? document?.report ?? document;
     const figures = source.figure_types ?? (source.segments ? [source] : []);
-    if (!figures.length) throw new Error('The imported file contains no figure definitions.');
+    if (!figures.length) throw messageError(new Error(''), "errors.editor.theImportedFileContainsNoFigureDefinitions", {});
     if(figures.some(isMovieclip))prepareEditorLoad(source);
     const sourceFrame = source.keyframes?.[0], sources = sourceFrame?.objects?.length ? sourceFrame.objects : [createObject(figures[0], 1, 0, 0)];
     const bySlot = new Map(sources.map((object, index) => [object.object_slot ?? index, object.unique_id]));

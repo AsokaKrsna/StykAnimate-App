@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {validateVfxClips} from './vfx-clips.mjs';
 import {validateCameraMotion} from './camera-motion.mjs';
 import {validateCameraParallaxOffset} from './layer-parallax.mjs';
@@ -7,39 +8,39 @@ import {animationRotation, animationOriginOffset, correctAnimationOrigins} from 
 import {rotateOriginSupport} from './animation-origin-support.mjs';
 import {normalizePaint} from './paint.mjs';
 import {isVfxProperty,validateVfxValue,vfxParameter,applyVfxParameter} from './vfx.mjs';
-import {supportsAnimationProperty} from './animation-properties.mjs';
+import {supportsAnimationProperty, ANIMATION_PROPERTIES, isDiscreteAnimationProperty, isColorAnimationProperty, validateFigureZIndex, validateDrawableZIndex} from './animation-properties.mjs';
 import {interpolateVfxColor} from './vfx-paint.mjs';
 import {sampleNativePropertyCurve, shortestPropertyAngle} from './native-property-curve.mjs';
 import {validateKeyEasing, easedProgress, easingMode, autoValue} from './keyframe-easing.mjs';
-import {ANIMATION_PROPERTIES, isDiscreteAnimationProperty, isColorAnimationProperty, validateFigureZIndex, validateDrawableZIndex} from './animation-properties.mjs';
+
 const properties = Object.fromEntries(Object.entries(ANIMATION_PROPERTIES).map(([kind, values]) => [kind, new Set(values)]));
 export function normalizeAnimationTarget(target) {
-  if (!target || !properties[target.kind]) throw new Error('Choose a figure, segment, layer, camera, or scene animation target.');
-  if (target.figureTypeId !== undefined && !['segment','polygon'].includes(target.kind)) throw new Error('Only segment and polygon animation can be scoped to a figure definition.');
+  if (!target || !properties[target.kind]) throw messageError(new Error(''), "errors.animationChannels.chooseAFigureSegmentLayerCameraOrScene", {});
+  if (target.figureTypeId !== undefined && !['segment','polygon'].includes(target.kind)) throw messageError(new Error(''), "errors.animationChannels.onlySegmentAndPolygonAnimationCanBeScoped", {});
   if (target.kind === 'polygon') {
     if (!Number.isInteger(target.uid) || target.uid < 0 || !Number.isInteger(target.polygonId) || target.polygonId < 1 || target.polygonId > 65535 || !Number.isSafeInteger(target.figureTypeId) || target.figureTypeId < 1)
-      throw new Error('Polygon animation requires a figure UID, polygon identity, and figure definition identity.');
+      throw messageError(new Error(''), "errors.animationChannels.polygonAnimationRequiresAFigureUidPolygonIdentity", {});
     return {kind:'polygon', uid:target.uid, polygonId:target.polygonId, figureTypeId:target.figureTypeId};
   }
   if (target.kind === 'figure' || target.kind === 'segment') {
-    if (!Number.isInteger(target.uid) || target.uid < 0) throw new Error('Figure animation requires a native figure identity.');
+    if (!Number.isInteger(target.uid) || target.uid < 0) throw messageError(new Error(''), "errors.animationChannels.figureAnimationRequiresANativeFigureIdentity", {});
     if (target.kind === 'segment') {
-      if (!Number.isInteger(target.handleId) || target.handleId < 1 || target.handleId > 65535) throw new Error('Segment animation requires a native segment handle identity.');
-      if (target.figureTypeId !== undefined && (!Number.isSafeInteger(target.figureTypeId) || target.figureTypeId < 1)) throw new Error('Segment animation scope requires a positive native figure definition identity.');
+      if (!Number.isInteger(target.handleId) || target.handleId < 1 || target.handleId > 65535) throw messageError(new Error(''), "errors.animationChannels.segmentAnimationRequiresANativeSegmentHandleIdentity", {});
+      if (target.figureTypeId !== undefined && (!Number.isSafeInteger(target.figureTypeId) || target.figureTypeId < 1)) throw messageError(new Error(''), "errors.animationChannels.segmentAnimationScopeRequiresAPositiveNativeFigure", {});
       return {kind: 'segment', uid: target.uid, handleId: target.handleId,
         ...(target.figureTypeId === undefined ? {} : {figureTypeId: target.figureTypeId})};
     }
     return {kind: 'figure', uid: target.uid};
   }
   if (target.kind === 'layer') {
-    if (typeof target.id !== 'string' || !target.id || target.id.length > 256) throw new Error('Layer animation requires a layer identity.');
+    if (typeof target.id !== 'string' || !target.id || target.id.length > 256) throw messageError(new Error(''), "errors.animationChannels.layerAnimationRequiresALayerIdentity", {});
     return {kind: 'layer', id: target.id};
   }
   return {kind: target.kind};
 }
 export function animationChannelId(target, property) {
   target = normalizeAnimationTarget(target);
-  if (!supportsAnimationProperty(target,property)) throw new Error(`Property ${property} cannot animate on ${target.kind}.`);
+  if (!supportsAnimationProperty(target,property)) throw messageError(new Error(''), "errors.animationChannels.propertyCannotAnimateOn", {property: property, kind: target.kind});
   const identity = target.kind === 'polygon' ? `${target.uid}/${target.polygonId}@${target.figureTypeId}` : target.kind === 'segment' ? `${target.uid}/${target.handleId}${target.figureTypeId === undefined ? '' : `@${target.figureTypeId}`}` : target.uid ?? target.id ?? '';
   return `${target.kind}:${encodeURIComponent(identity)}:${property}`;
 }
@@ -49,18 +50,18 @@ export function validateAnimationValue(target, property, value) {
   if (property === 'paint') return normalizePaint(value);
   if (property === 'pose') {
     if (value === null) return {frameId: null};
-    if (!value || !(value.frameId === null || typeof value.frameId === 'string' && value.frameId.length > 0)) throw new Error('A pose key must reference a native frame identity or a blank pose.');
+    if (!value || !(value.frameId === null || typeof value.frameId === 'string' && value.frameId.length > 0)) throw messageError(new Error(''), "errors.animationChannels.aPoseKeyMustReferenceANativeFrame", {});
     return {frameId: value.frameId};
   }
   if (target.kind === 'scene' && property === 'color' && value === null) return null;
-  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error('Animation values must be finite numbers.');
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw messageError(new Error(''), "errors.animationChannels.animationValuesMustBeFiniteNumbers", {});
   if (property === 'zIndex') return target.kind === 'figure' ? validateFigureZIndex(value) : validateDrawableZIndex(value);
-  if (property === 'scale' && (value < (target.kind === 'camera' ? 0.000001 : 0) || value > 1e6)) throw new Error('Animation scale is outside the supported range.');
-  if (['opacity', 'outlineOpacity', 'gradientOpacity'].includes(property) && (value < 0 || value > 1)) throw new Error('Animation opacity must be between zero and one.');
-  if (property === 'backgroundId' && (!Number.isInteger(value) || value < 0 || value > 0xffffffff)) throw new Error('Choose a valid background identity.');
-  if (isColorAnimationProperty(property) && (!Number.isInteger(value) || value < 0 || value > 0xffffffff)) throw new Error('Color must be a 32-bit color.');
-  if (isColorAnimationProperty(property) && (target.kind === 'segment' || target.kind === 'polygon' || property === 'outlineColor') && value > 0xffffff) throw new Error('Style colors use RGB; opacity has its own channel.');
-  if (['outlineWidth', 'thickness'].includes(property) && (value < 0 || value > 1e6)) throw new Error('Width must be between zero and 1,000,000.');
+  if (property === 'scale' && (value < (target.kind === 'camera' ? 0.000001 : 0) || value > 1e6)) throw messageError(new Error(''), "errors.animationChannels.animationScaleIsOutsideTheSupportedRange", {});
+  if (['opacity', 'outlineOpacity', 'gradientOpacity'].includes(property) && (value < 0 || value > 1)) throw messageError(new Error(''), "errors.animationChannels.animationOpacityMustBeBetweenZeroAndOne", {});
+  if (property === 'backgroundId' && (!Number.isInteger(value) || value < 0 || value > 0xffffffff)) throw messageError(new Error(''), "errors.animationChannels.chooseAValidBackgroundIdentity", {});
+  if (isColorAnimationProperty(property) && (!Number.isInteger(value) || value < 0 || value > 0xffffffff)) throw messageError(new Error(''), "errors.animationChannels.colorMustBeA32BitColor", {});
+  if (isColorAnimationProperty(property) && (target.kind === 'segment' || target.kind === 'polygon' || property === 'outlineColor') && value > 0xffffff) throw messageError(new Error(''), "errors.animationChannels.styleColorsUseRgbOpacityHasItsOwn", {});
+  if (['outlineWidth', 'thickness'].includes(property) && (value < 0 || value > 1e6)) throw messageError(new Error(''), "errors.animationChannels.widthMustBeBetweenZeroAnd1000", {});
   return value;
 }
 const EMPTY_CHANNELS = Object.freeze([]), channelIndices = new WeakMap();
@@ -91,18 +92,18 @@ export function* validateAnimationDocumentSteps(report) {
     if (++scanned % 256 === 0) yield {phase: 'animation', frames: scanned};
   }
   const animation = report?._styk?.animation; if (animation == null) return report;
-  if (animation.version !== 1 || !Array.isArray(animation.channels) || animation.channels.length > 100000) throw new Error('Invalid authored animation channel table.');
-  if (animation.nextKeyId !== undefined && (!Number.isSafeInteger(animation.nextKeyId) || animation.nextKeyId < 1)) throw new Error('Invalid animation key identity counter.');
+  if (animation.version !== 1 || !Array.isArray(animation.channels) || animation.channels.length > 100000) throw messageError(new Error(''), "errors.animationChannels.invalidAuthoredAnimationChannelTable", {});
+  if (animation.nextKeyId !== undefined && (!Number.isSafeInteger(animation.nextKeyId) || animation.nextKeyId < 1)) throw messageError(new Error(''), "errors.animationChannels.invalidAnimationKeyIdentityCounter", {});
   const channels = new Set(), validatedPoses = new WeakSet(); let keyCount = 0, sourceIds, figureTypeIds, visited = 0;
   for (const channel of animation.channels) {
-    if (channel.id !== animationChannelId(channel.target, channel.property) || channels.has(channel.id) || !Array.isArray(channel.keys)) throw new Error('Animation channels must have unique stable identities.');
+    if (channel.id !== animationChannelId(channel.target, channel.property) || channels.has(channel.id) || !Array.isArray(channel.keys)) throw messageError(new Error(''), "errors.animationChannels.animationChannelsMustHaveUniqueStableIdentities", {});
     if (channel.nativeProperties !== undefined && (channel.nativeProperties !== true || channel.property !== 'pose' || !['figure','layer'].includes(channel.target.kind)))
-      throw new Error('Native property inheritance is only valid on figure and layer pose channels.');
+      throw messageError(new Error(''), "errors.animationChannels.nativePropertyInheritanceIsOnlyValidOnFigure", {});
     if(channel.maskedRanges!==undefined && (channel.property!=='pose' || channel.target.kind!=='figure' || !Array.isArray(channel.maskedRanges) || channel.maskedRanges.length>100000 || channel.maskedRanges.some((range,i)=>
       !Array.isArray(range)||range.length!==2||!Number.isInteger(range[0])||range[0]<0||!Number.isInteger(range[1])||range[1]<=range[0]||range[1]>10000001||i>0&&range[0]<=channel.maskedRanges[i-1][1])))
-      throw new Error('Invalid pose visibility ranges.');
-    if(channel.useBasePose!==undefined && (channel.useBasePose!==true||channel.property!=='pose'||channel.target.kind!=='figure'))throw new Error('Invalid native pose passthrough.');
-    if(channel.orderAnchor!==undefined && (channel.property!=='pose'||channel.target.kind!=='figure'||!Number.isInteger(channel.orderAnchor)||channel.orderAnchor<0||channel.orderAnchor>0xffffffff||channel.orderAnchor===channel.target.uid))throw new Error('Invalid pose stacking anchor.');
+      throw messageError(new Error(''), "errors.animationChannels.invalidPoseVisibilityRanges", {});
+    if(channel.useBasePose!==undefined && (channel.useBasePose!==true||channel.property!=='pose'||channel.target.kind!=='figure'))throw messageError(new Error(''), "errors.animationChannels.invalidNativePosePassthrough", {});
+    if(channel.orderAnchor!==undefined && (channel.property!=='pose'||channel.target.kind!=='figure'||!Number.isInteger(channel.orderAnchor)||channel.orderAnchor<0||channel.orderAnchor>0xffffffff||channel.orderAnchor===channel.target.uid))throw messageError(new Error(''), "errors.animationChannels.invalidPoseStackingAnchor", {});
     if (channel.target.figureTypeId !== undefined) {
       if (!figureTypeIds) {
         figureTypeIds = new Set();
@@ -111,27 +112,27 @@ export function* validateAnimationDocumentSteps(report) {
           if (++visited % 256 === 0) yield {phase:'animation',channels:channels.size,keys:keyCount};
         }
       }
-      if (!figureTypeIds.has(channel.target.figureTypeId)) throw new Error(`Animation segment scope references missing figure definition ${channel.target.figureTypeId}.`);
+      if (!figureTypeIds.has(channel.target.figureTypeId)) throw messageError(new Error(''), "errors.animationChannels.animationSegmentScopeReferencesMissingFigureDefinition", {figureTypeId: channel.target.figureTypeId});
     }
-    if(channel.movieclipCurve!==undefined&&(channel.movieclipCurve!==true||!['figure','segment','polygon'].includes(channel.target.kind)))throw new Error('Invalid movieclip curve context.');
-    if(channel.clipEnd!==undefined&&(channel.property!=='pose'||channel.target.kind!=='figure'||!Number.isInteger(channel.clipEnd)||channel.clipEnd<0||channel.clipEnd>10000001))throw new Error('Invalid movieclip end.');
-    if(channel.movieclipPart!==undefined&&(channel.property!=='pose'||channel.target.kind!=='figure'||!Number.isInteger(channel.movieclipPart?.instance)||channel.movieclipPart.instance<0||channel.movieclipPart.instance>0xffffffff||typeof channel.movieclipPart.path!=='string'||channel.movieclipPart.path.length>1024))throw new Error('Invalid expanded movieclip identity.');
-    if(channel.keys[0]?.tick<0&&!channel.movieclipCurve)throw new Error('Only movieclip curves can retain keys before the scene.');
+    if(channel.movieclipCurve!==undefined&&(channel.movieclipCurve!==true||!['figure','segment','polygon'].includes(channel.target.kind)))throw messageError(new Error(''), "errors.animationChannels.invalidMovieclipCurveContext", {});
+    if(channel.clipEnd!==undefined&&(channel.property!=='pose'||channel.target.kind!=='figure'||!Number.isInteger(channel.clipEnd)||channel.clipEnd<0||channel.clipEnd>10000001))throw messageError(new Error(''), "errors.animationChannels.invalidMovieclipEnd", {});
+    if(channel.movieclipPart!==undefined&&(channel.property!=='pose'||channel.target.kind!=='figure'||!Number.isInteger(channel.movieclipPart?.instance)||channel.movieclipPart.instance<0||channel.movieclipPart.instance>0xffffffff||typeof channel.movieclipPart.path!=='string'||channel.movieclipPart.path.length>1024))throw messageError(new Error(''), "errors.animationChannels.invalidExpandedMovieclipIdentity", {});
+    if(channel.keys[0]?.tick<0&&!channel.movieclipCurve)throw messageError(new Error(''), "errors.animationChannels.onlyMovieclipCurvesCanRetainKeysBeforeThe", {});
     channels.add(channel.id); const ids = new Set(), occupied = new Set(); let previous = channel.movieclipCurve?-10000000:-1;
     if (channel.property === 'pose' && validatedPoses.has(channel.keys)) {
       if (++visited % 256 === 0) yield {phase:'animation',channels:channels.size,keys:keyCount};
       continue;
     }
     for (const key of channel.keys) {
-      if (++keyCount > 1000000) throw new Error('Authored animation exceeds the one-million-key limit.');
-      if (typeof key.id !== 'string' || !key.id || ids.has(key.id)) throw new Error('Animation keys must have unique stable identities.');
-      if (!Number.isInteger(key.tick) || key.tick < (channel.movieclipCurve?-10000000:0) || key.tick > 10000000 || key.tick < previous) throw new Error('Animation keys must be sorted at valid whole-frame times.');
-      if (key.hidden && channel.property !== 'pose') throw new Error('Only native pose keys can be hidden.');
-      if (key.passthrough !== undefined && (typeof key.passthrough !== 'boolean' || channel.property === 'pose')) throw new Error('Only scalar keys support a boolean passthrough interval.');
-      if (key.nativeCurve !== undefined && (key.nativeCurve !== 'pchip' || !['x','y','scale','rotation'].includes(channel.property))) throw new Error('Invalid native property curve.');
-      if (key.nativeRotation !== undefined && (key.nativeRotation !== true || channel.property !== 'rotation')) throw new Error('Invalid native rotation curve.');
-      if (key.nativeValueMode !== undefined && (channel.target.kind !== 'figure' || !['color','opacity'].includes(key.nativeValueMode) || key.nativeValueMode !== channel.property)) throw new Error('Invalid native property sampling mode.');
-      if (!key.hidden && occupied.has(key.tick)) throw new Error('Multiple property keys occupy the same frame.');
+      if (++keyCount > 1000000) throw messageError(new Error(''), "errors.animationChannels.authoredAnimationExceedsTheOneMillionKeyLimit", {});
+      if (typeof key.id !== 'string' || !key.id || ids.has(key.id)) throw messageError(new Error(''), "errors.animationChannels.animationKeysMustHaveUniqueStableIdentities", {});
+      if (!Number.isInteger(key.tick) || key.tick < (channel.movieclipCurve?-10000000:0) || key.tick > 10000000 || key.tick < previous) throw messageError(new Error(''), "errors.animationChannels.animationKeysMustBeSortedAtValidWhole", {});
+      if (key.hidden && channel.property !== 'pose') throw messageError(new Error(''), "errors.animationChannels.onlyNativePoseKeysCanBeHidden", {});
+      if (key.passthrough !== undefined && (typeof key.passthrough !== 'boolean' || channel.property === 'pose')) throw messageError(new Error(''), "errors.animationChannels.onlyScalarKeysSupportABooleanPassthroughInterval", {});
+      if (key.nativeCurve !== undefined && (key.nativeCurve !== 'pchip' || !['x','y','scale','rotation'].includes(channel.property))) throw messageError(new Error(''), "errors.animationChannels.invalidNativePropertyCurve", {});
+      if (key.nativeRotation !== undefined && (key.nativeRotation !== true || channel.property !== 'rotation')) throw messageError(new Error(''), "errors.animationChannels.invalidNativeRotationCurve", {});
+      if (key.nativeValueMode !== undefined && (channel.target.kind !== 'figure' || !['color','opacity'].includes(key.nativeValueMode) || key.nativeValueMode !== channel.property)) throw messageError(new Error(''), "errors.animationChannels.invalidNativePropertySamplingMode", {});
+      if (!key.hidden && occupied.has(key.tick)) throw messageError(new Error(''), "errors.animationChannels.multiplePropertyKeysOccupyTheSameFrame", {});
       if (!key.hidden) occupied.add(key.tick); ids.add(key.id); previous = key.tick;
       // Older documents may label background holds as linear. Preserve their
       // read compatibility; newly introduced depth tracks require explicit holds.
@@ -150,7 +151,7 @@ export function* validateAnimationDocumentSteps(report) {
             if (++visited % 256 === 0) yield {phase:'animation',channels:channels.size,keys:keyCount};
           }
         }
-        if (!sourceIds.has(key.value.frameId)) throw new Error(`Animation pose references missing source frame ${key.value.frameId}.`);
+        if (!sourceIds.has(key.value.frameId)) throw messageError(new Error(''), "errors.animationChannels.animationPoseReferencesMissingSourceFrame", {frameId: key.value.frameId});
       }
       if (++visited % 256 === 0) yield {phase:'animation',channels:channels.size,keys:keyCount};
     }
@@ -234,7 +235,7 @@ export function animationPropertyValue(report, frame, target, property, {resolve
     if(target.kind==='segment'&&(target.figureTypeId!==undefined&&target.figureTypeId!==owner.figure_type_id||!report.figure_types.find(f=>f.figure_type_id===owner.figure_type_id)?.segments?.some(s=>s.segment_id===target.handleId)))return undefined;
     return vfxParameter(owner,target,property);
   }
-  if (property === 'pose') throw new Error('Pose keys reference source frames, not scalar property values.');
+  if (property === 'pose') throw messageError(new Error(''), "errors.animationChannels.poseKeysReferenceSourceFramesNotScalarProperty", {});
   if (target.kind === 'camera') return frame.camera?.[property === 'rotation' ? 'angle_rad' : property] ?? (property === 'scale' ? 1 : 0);
   if (target.kind === 'scene') {
     if (property === 'backgroundId') return frame.background_id ?? 0;
@@ -331,12 +332,12 @@ export function composeAnimationChannels(report, frame, tick, {resolveGeometry} 
   for (let slot = 0; slot < count; slot++) {
     const parent = frame.objects[slot].join?.target_object_slot;
     if (parent === undefined) { ordered.push(slot); roots[slot] = slot; continue; }
-    if (!Number.isInteger(parent) || parent < 0 || parent >= count) throw new Error('An animated figure has an invalid attachment.');
+    if (!Number.isInteger(parent) || parent < 0 || parent >= count) throw messageError(new Error(''), "errors.animationChannels.anAnimatedFigureHasAnInvalidAttachment", {});
     parents[slot] = parent; const list = children.get(parent);
     if (list) list.push(slot); else children.set(parent, [slot]);
   }
   for (let i = 0; i < ordered.length; i++) for (const child of children.get(ordered[i]) ?? []) { roots[child] = roots[ordered[i]]; ordered.push(child); }
-  if (ordered.length !== count) throw new Error('Animation channels cannot compose cyclic figure attachments.');
+  if (ordered.length !== count) throw messageError(new Error(''), "errors.animationChannels.animationChannelsCannotComposeCyclicFigureAttachments", {});
   const rotationDeltas = new Float64Array(count); let types;
   for (const slot of ordered) {
     const values = figureValues.get(slot) ?? {}, object = frame.objects[slot];

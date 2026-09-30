@@ -1,3 +1,5 @@
+import {errorMessageData, messageError} from './localized-error.mjs';
+
 import {TILE,TILE_BYTES,tileKey,TileStore,tileTransparent} from './drawing-tiles.mjs';
 import {floodTiles as floodMaskTiles,fillMaskTiles,filterTiles,tileChanges} from './drawing-pixels.mjs';
 import {floodTiles} from './drawing-fill.mjs';
@@ -25,7 +27,7 @@ export async function drawingWorkerOperation(data){
   try {
     if(kind==='decode-legacy'){
       const crop=data.crop??{x:0,y:0},image=await decodeDrawingPNG(data.url),tiles=[];
-      if(![crop.x,crop.y].every(Number.isInteger))throw new Error('Invalid drawing crop.');
+      if(![crop.x,crop.y].every(Number.isInteger))throw messageError(new Error(''), "errors.drawingWorkerOperations.invalidDrawingCrop", {});
       for(const [tx,ty] of TileStore.tilesInRect(crop.x,crop.y,image.width,image.height)){
         const pixels=new Uint8ClampedArray(TILE_BYTES),ox=tx*TILE-crop.x,oy=ty*TILE-crop.y;
         for(let py=Math.max(0,-oy);py<Math.min(TILE,image.height-oy);py++)
@@ -66,19 +68,19 @@ export async function drawingWorkerOperation(data){
       self.postMessage({id,tiles},tiles.flatMap(t=>[t.before?.buffer,t.after?.buffer].filter(Boolean)));return;
     }
     if(kind==='flood-mask'){
-      if(!validRect(data.bounds))throw new Error('Invalid selection bounds.');
+      if(!validRect(data.bounds))throw messageError(new Error(''), "errors.drawingWorkerOperations.invalidSelectionBounds", {});
       const mask=floodMaskTiles(storeOf(data),{...data.options,bounds:data.bounds,select:true,source:data.source?new Uint8ClampedArray(data.source):undefined});
       self.postMessage({id,mask},mask?[mask.mask.buffer]:[]);return;
     }
     if(kind==='filter'){
-      if(!validRect(data.bounds))throw new Error('Invalid filter bounds.');
+      if(!validRect(data.bounds))throw messageError(new Error(''), "errors.drawingPixels.invalidFilterBounds", {});
       const store=storeOf(data),before=beforeOf(store,data.bounds);
       filterTiles(store,{...data.options,bounds:data.bounds});
       // Filtering transparent regions writes empty tiles: they equal absent ones.
       store.prune();changesReply(id,store,before);return;
     }
     if(kind==='fill-mask'){
-      const m=data.mask;if(!m||!validRect(m)||!(m.mask instanceof Uint8Array)||m.mask.length!==m.width*m.height)throw new Error('Invalid selection mask.');
+      const m=data.mask;if(!m||!validRect(m)||!(m.mask instanceof Uint8Array)||m.mask.length!==m.width*m.height)throw messageError(new Error(''), "errors.drawingLasso.invalidSelectionMask", {});
       const store=storeOf(data),before=beforeOf(store,m);
       fillMaskTiles(store,{mask:m,color:data.color});
       changesReply(id,store,before);return;
@@ -103,7 +105,7 @@ export async function drawingWorkerOperation(data){
     }
     if(kind==='resample'){
       const ratio=data.ratio;
-      if(!Number.isFinite(ratio)||ratio<=0)throw new Error('Invalid drawing resample.');
+      if(!Number.isFinite(ratio)||ratio<=0)throw messageError(new Error(''), "errors.drawingWorkerOperations.invalidDrawingResample", {});
       const out=transformTiles(storeOf(data),[ratio,0,0,ratio,0,0],{filter:data.filter,maxBytes:data.maxBytes});
       const bounds=out.bounds,tiles=[...out].map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer,alphaBounds:t.alphaBounds}));
       self.postMessage({id,tiles,bounds},tiles.map(t=>t.pixels));return;
@@ -126,6 +128,6 @@ export async function drawingWorkerOperation(data){
       const ratio=Math.min(64/bounds.width,32/bounds.height),w=Math.max(1,Math.round(bounds.width*ratio)),h=Math.max(1,Math.round(bounds.height*ratio)),out=new OffscreenCanvas(w,h),ctx=out.getContext('2d');ctx.drawImage(source,0,0,w,h);
       const rgba=ctx.getImageData(0,0,w,h).data;self.postMessage({id,width:w,height:h,pixels:rgba.buffer},[rgba.buffer]);return;
     }
-    throw new Error('Unknown drawing worker operation.');
-  } catch(error){self.postMessage({id,error:error.message});}
+    throw messageError(new Error(''), "errors.drawingWorkerOperations.unknownDrawingWorkerOperation", {});
+  } catch(error){self.postMessage({id,error:error.message, ...errorMessageData(error)});}
 }

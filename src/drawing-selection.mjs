@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {TILE,TILE_BYTES,TileStore,tileKey} from './drawing-tiles.mjs';
 import {tileChanges,tileAlignedRect} from './drawing-pixels.mjs';
 import {transformTiles,transformBounds,transformTileCoverage,inverseMatrix,TRANSFORM_BYTES} from './drawing-transform.mjs';
@@ -16,12 +17,12 @@ const canvas=(w,h)=>typeof OffscreenCanvas==='function'?new OffscreenCanvas(w,h)
 export function transformSelectedPixels(store,{source,matrix,remove=false,filter='smooth',maxBytes=TRANSFORM_BYTES}){
   inverseMatrix(matrix);
   const before=new Map();let bytes=store.bytes+source.bytes;
-  if(!Number.isFinite(maxBytes)||bytes>maxBytes)throw new Error('The selection exceeds the drawing working memory limit.');
+  if(!Number.isFinite(maxBytes)||bytes>maxBytes)throw messageError(new Error(''), "errors.drawingLasso.theSelectionExceedsTheDrawingWorkingMemoryLimit", {});
   for(const selected of source){
     const tile=store.get(selected.tx,selected.ty);if(!tile)continue;let pixels=null;
     for(let i=3;i<TILE_BYTES;i+=4)if(selected.pixels[i]&&tile.pixels[i]){
       if(!pixels){
-        if(bytes+TILE_BYTES*2>maxBytes)throw new Error('The selection exceeds the drawing working memory limit.');
+        if(bytes+TILE_BYTES*2>maxBytes)throw messageError(new Error(''), "errors.drawingLasso.theSelectionExceedsTheDrawingWorkingMemoryLimit", {});
         bytes+=TILE_BYTES*2;before.set(tileKey(tile.tx,tile.ty),tile.pixels.slice());pixels=store.writable(tile.tx,tile.ty).pixels;
       }
       pixels[i]=0;

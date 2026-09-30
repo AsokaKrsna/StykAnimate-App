@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Lossless worker snapshots. Packets contain complete tokens and own their bytes. */
 export const CLIPBOARD_WIRE_CHUNK_BYTES = 256 * 1024;
 const MAGIC = Uint8Array.of(83, 84, 89, 75, 67, 66, 87, 49); // STYKCBW1
@@ -5,13 +6,13 @@ const T = {NULL:0, UNDEFINED:1, FALSE:2, TRUE:3, NUMBER:4, STRING:5, ARRAY:6, OB
   END:8, KEY_DEF:9, KEY:10, KEY_LITERAL:11, NUMBERS:12, HOLES:13, LATIN:14, UTF16:15, FINISH:16, NULL_OBJECT:17};
 const MAX_DEPTH = 256, MAX_KEYS = 16384, MAX_KEY_BYTES = 1024 * 1024, RUN = 2048;
 const own = (v, k) => Object.prototype.hasOwnProperty.call(v, k);
-const abort = () => new DOMException('Clipboard transfer cancelled or superseded.', 'AbortError');
+const abort = () => messageError(new DOMException('', 'AbortError'), "errors.clipboardWire.clipboardTransferCancelledOrSuperseded", {});
 const yieldTask = () => globalThis.scheduler?.yield ? globalThis.scheduler.yield() : new Promise(resolve => {
   const channel = new MessageChannel(); channel.port1.onmessage = () => {channel.port1.close(); channel.port2.close(); resolve();}; channel.port2.postMessage(null);
 });
 const checkOptions = (options, defaultMs) => {
   const timeBudgetMs = options.timeBudgetMs ?? defaultMs;
-  if (!Number.isFinite(timeBudgetMs) || timeBudgetMs < 0 || timeBudgetMs > 16) throw new RangeError('Clipboard time slices must be between zero and 16 ms.');
+  if (!Number.isFinite(timeBudgetMs) || timeBudgetMs < 0 || timeBudgetMs > 16) throw messageError(new RangeError(''), "errors.clipboardWire.clipboardTimeSlicesMustBeBetweenZeroAnd", {});
   return timeBudgetMs;
 };
 const checkCurrent = options => {if (options.signal?.aborted || options.checkCurrent?.() === false) throw abort();};
@@ -33,13 +34,13 @@ export async function* clipboardWireChunks(value, options = {}) {
   const maxBytes = options.maxBytes ?? CLIPBOARD_WIRE_CHUNK_BYTES, timeBudgetMs = checkOptions(options, 2);
   const maxResidentBytes = options.maxResidentBytes ?? 4 * 1024 * 1024 * 1024;
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 32768 || maxBytes > CLIPBOARD_WIRE_CHUNK_BYTES)
-    throw new RangeError('Clipboard packets must be between 32 and 256 KiB.');
-  if (!Number.isSafeInteger(maxResidentBytes) || maxResidentBytes < 1) throw new RangeError('Clipboard resident budget must be a positive safe integer.');
+    throw messageError(new RangeError(''), "errors.clipboardWire.clipboardPacketsMustBeBetween32And256", {});
+  if (!Number.isSafeInteger(maxResidentBytes) || maxResidentBytes < 1) throw messageError(new RangeError(''), "errors.clipboardWire.clipboardResidentBudgetMustBeAPositiveSafe", {});
   const stats = {encodedBytes:0, residentBytes:0, logicalBytes:0, maxSliceMs:0, workMs:0, chunks:0, completed:false};
   const frames = [], active = new WeakSet(), keys = new Map();
   let depth = 0, hasValue = true, incomingKey = null, text = null, textOffset = 0, keyBytes = 0, header = false, done = false;
   const reserve = bytes => {
-    if (stats.residentBytes + bytes > maxResidentBytes) throw new Error('Clipboard resident data budget exceeded.');
+    if (stats.residentBytes + bytes > maxResidentBytes) throw messageError(new Error(''), "errors.clipboardWire.clipboardResidentDataBudgetExceeded", {});
     stats.residentBytes += bytes; stats.logicalBytes = stats.residentBytes;
   };
   try {
@@ -73,11 +74,11 @@ export async function* clipboardWireChunks(value, options = {}) {
             reserve(16 + value.length * 2); packet[used++] = T.STRING; view.setUint32(used, value.length, true); used += 4;
             if (value.length) {text = value; textOffset = 0;} hasValue = false;
           } else {
-            if (type !== 'object') throw new TypeError('Clipboard snapshots support only data records, arrays and primitive values.');
+            if (type !== 'object') throw messageError(new TypeError(''), "errors.clipboardWire.clipboardSnapshotsSupportOnlyDataRecordsArraysAnd", {});
             const array = Array.isArray(value), prototype = Object.getPrototypeOf(value);
-            if (!array && prototype !== Object.prototype && prototype !== null) throw new TypeError('Clipboard snapshots require plain data records.');
-            if (depth >= MAX_DEPTH) throw new Error('Clipboard value nesting exceeds 256 levels.');
-            if (active.has(value)) throw new Error('Clipboard snapshots cannot contain cyclic data.');
+            if (!array && prototype !== Object.prototype && prototype !== null) throw messageError(new TypeError(''), "errors.clipboardWire.clipboardSnapshotsRequirePlainDataRecords", {});
+            if (depth >= MAX_DEPTH) throw messageError(new Error(''), "errors.clipboardWire.clipboardValueNestingExceeds256Levels", {});
+            if (active.has(value)) throw messageError(new Error(''), "errors.clipboardWire.clipboardSnapshotsCannotContainCyclicData", {});
             if (used + (array ? 5 : 1) > maxBytes) break;
             reserve(array ? 32 + value.length * 8 : 64); active.add(value);
             packet[used++] = array ? T.ARRAY : prototype === null ? T.NULL_OBJECT : T.OBJECT;
@@ -168,10 +169,10 @@ export function createClipboardWireDecoder(options = {}) {
   const maxBytes = options.maxBytes ?? 512 * 1024 * 1024, maxResidentBytes = options.maxResidentBytes ?? maxBytes * 8;
   const timeBudgetMs = checkOptions(options, 4), yieldControl = options.yieldControl ?? yieldTask;
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 8 || !Number.isSafeInteger(maxResidentBytes) || maxResidentBytes < 1)
-    throw new RangeError('Clipboard byte and resident budgets must be positive safe integers.');
+    throw messageError(new RangeError(''), "errors.clipboardWire.clipboardByteAndResidentBudgetsMustBePositive", {});
   const stats = {encodedBytes:0, residentBytes:0, logicalBytes:0, maxSliceMs:0, workMs:0, chunks:0, slices:0, completed:false};
   const stack = [], keys = []; let root, hasRoot = false, started = false, finished = false, disposed = false, pushing = false, string = null, keyMode = null, keyBytes = 0;
-  const bad = message => new Error(`Invalid clipboard wire: ${message}.`);
+  const bad = message => messageError(new Error(''), "errors.clipboardWire.invalidClipboardWire", {message: message});
   const check = () => {if (disposed) throw abort(); checkCurrent(options);};
   const reserve = bytes => {
     if (!Number.isSafeInteger(bytes) || bytes < 0 || stats.residentBytes + bytes > maxResidentBytes) throw bad('resident data budget exceeded');

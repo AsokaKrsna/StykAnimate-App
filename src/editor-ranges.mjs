@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {keyEasing, autoKeyRange, easingMode} from './keyframe-easing.mjs';
 import {evaluatedFrame} from './pivot/geometry.mjs';
 import {applyFrameTiming,captureTimingGeometry,restoreTimingGeometry} from './frame-timing-history.mjs';
@@ -6,7 +7,7 @@ const clone = value => structuredClone(value);
 const BAKE_LIMITS = Object.freeze({frames: 20_000, objects: 1_000_000, segments: 10_000_000});
 const duration = ticks => {
   if (!Number.isInteger(ticks) || ticks < 0 || ticks > 65535)
-    throw new Error('Keyframe duration must be 0–65,535 frames.');
+    throw messageError(new Error(''), "errors.editorRanges.keyframeDurationMustBe065535Frames", {});
 };
 
 /** Frame-range commands share the editor's bounded, atomic range history. */
@@ -50,7 +51,7 @@ export const editorRangeMethods = {
     const selected = this._frameIndices(indices);
     if (!selected.length) return 0;
     if (this.report.keyframes.length + selected.length > 100_000)
-      throw new Error('Duplicate fewer keyframes to stay within the 100,000-keyframe document limit.');
+      throw messageError(new Error(''), "errors.editorRanges.duplicateFewerKeyframesToStayWithinThe100", {});
     if (this._drag) this.commitDrag();
     const copies = selected.map(index => clone(this.report.keyframes[index]));
     this._frameSplice('Duplicate keyframes', selected.at(-1) + 1, 0, copies);
@@ -59,9 +60,9 @@ export const editorRangeMethods = {
 
   insertBlankFrame(index = this.frameIndex + 1) {
     if (!Number.isInteger(index) || index < 0 || index > this.report.keyframes.length)
-      throw new Error('Choose a valid blank keyframe position.');
+      throw messageError(new Error(''), "errors.editorRanges.chooseAValidBlankKeyframePosition", {});
     if (this.report.keyframes.length >= 100_000)
-      throw new Error('Remove a keyframe before inserting beyond the 100,000-keyframe document limit.');
+      throw messageError(new Error(''), "errors.editorRanges.removeAKeyframeBeforeInsertingBeyondThe100", {});
     if (this._drag) this.commitDrag();
     const frame = clone(this.frame);
     Object.assign(frame, {duration_raw: 1, objects: [], object_draw_order: [], object_draw_order_unique_ids: []});
@@ -93,7 +94,7 @@ export const editorRangeMethods = {
       objects += count * frame.objects.length;
       segments += count * frame.objects.reduce((sum, object) => sum + (segmentCounts.get(object.figure_type_id) ?? 0), 0);
       if (resultingFrames > BAKE_LIMITS.frames || objects > BAKE_LIMITS.objects || segments > BAKE_LIMITS.segments)
-        throw new Error('Bake fewer keyframes or reduce their durations: baking is limited to 20,000 resulting keyframes, 1,000,000 generated figures, and 10,000,000 generated segments per command.');
+        throw messageError(new Error(''), "errors.editorRanges.bakeFewerKeyframesOrReduceTheirDurationsBaking", {});
       planned.push({index, count});
     }
     if (!planned.length) return 0;
@@ -106,7 +107,7 @@ export const editorRangeMethods = {
         while (end + 1 < entries.length && entries[end + 1].count > 1) end++;
         for (let key = start; key <= end; key++) {
           if (!included.has(key))
-            throw new Error('Select the entire connected tween run, or bake all keyframes, to preserve automatic easing.');
+            throw messageError(new Error(''), "errors.editorRanges.selectTheEntireConnectedTweenRunOrBake", {});
           checked.add(key);
         }
       }

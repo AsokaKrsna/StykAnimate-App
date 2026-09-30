@@ -1,3 +1,5 @@
+import {errorMessageData, messageError} from './localized-error.mjs';
+
 import { GIFPaletteBuilder } from "./gif-quantize.mjs";
 import { APNGEncoder, GIFEncoder, SequenceZIP } from "./image-codecs.mjs";
 import {exportContext, checkExportContext} from './export-canvas.mjs';
@@ -27,7 +29,7 @@ self.addEventListener("message", async (event) => {
       if (config.format !== "svg-sequence") {
         canvas = new OffscreenCanvas(config.width, config.height);
         context = exportContext(canvas);
-        if (!context) throw new Error("A canvas image encoder is unavailable.");
+        if (!context) throw messageError(new Error(''), "errors.imageExportWorker.aCanvasImageEncoderIsUnavailable", {});
       }
       const Encoder =
         config.format === "gif"
@@ -40,25 +42,23 @@ self.addEventListener("message", async (event) => {
       respond(message.id);
     } else if (message.operation === "encode") {
       if (!paletteBuilder || paletteBuilder.frames !== config.totalFrames)
-        throw new Error("The GIF palette analysis is incomplete.");
+        throw messageError(new Error(''), "errors.imageExportWorker.theGifPaletteAnalysisIsIncomplete", {});
       output = new GIFEncoder({ ...config, palette: paletteBuilder.finish() });
       paletteBuilder = null;
       respond(message.id);
     } else if (message.operation === "frame") {
       if (!output && !paletteBuilder)
-        throw new Error("The image export was not initialized.");
+        throw messageError(new Error(''), "errors.imageExportWorker.theImageExportWasNotInitialized", {});
       if (config.format === "svg-sequence") {
         const svg =
           message.svg instanceof Blob
             ? message.svg
             : new Blob([message.svg], { type: "image/svg+xml" });
         if (!svg.size || svg.size > config.maxBytes)
-          throw new Error(
-            "The SVG frame is empty or exceeds the configured size limit.",
-          );
+          throw messageError(new Error(''), "errors.imageExportWorker.theSvgFrameIsEmptyOrExceedsThe", {});
         const prefix = await svg.slice(0, 1024).text();
         if (!/<svg(?:\s|>)/i.test(prefix))
-          throw new Error("The vector frame does not contain an SVG document.");
+          throw messageError(new Error(''), "errors.imageExportWorker.theVectorFrameDoesNotContainAnSvg", {});
         output.add(new Uint8Array(await svg.arrayBuffer()));
         respond(message.id);
         return;
@@ -67,7 +67,7 @@ self.addEventListener("message", async (event) => {
       try {
         checkExportContext(context);
         if (bitmap.width !== config.width || bitmap.height !== config.height)
-          throw new Error("The rendered image frame has the wrong dimensions.");
+          throw messageError(new Error(''), "errors.imageExportWorker.theRenderedImageFrameHasTheWrongDimensions", {});
         context.clearRect(0, 0, config.width, config.height);
         if (config.format === "jpeg-sequence") {
           context.fillStyle = "#fff";
@@ -104,14 +104,12 @@ self.addEventListener("message", async (event) => {
         });
         checkExportContext(context);
         if (encoded.type !== type)
-          throw new Error(
-            `The browser does not support ${type} image encoding.`,
-          );
+          throw messageError(new Error(''), "errors.imageExportWorker.theBrowserDoesNotSupportImageEncoding", {type: type});
         output.add(new Uint8Array(await encoded.arrayBuffer()));
       }
       respond(message.id);
     } else if (message.operation === "finish") {
-      if (!output) throw new Error("The image export was not initialized.");
+      if (!output) throw messageError(new Error(''), "errors.imageExportWorker.theImageExportWasNotInitialized", {});
       if (config.stream) {
         output.finish();
         if (canvas) canvas.width = canvas.height = 1;
@@ -123,7 +121,7 @@ self.addEventListener("message", async (event) => {
       output = null;
       if (canvas) canvas.width = canvas.height = 1;
       self.postMessage({ id: message.id, ok: true, blob });
-    } else throw new Error("Unknown image export operation.");
+    } else throw messageError(new Error(''), "errors.imageExportWorker.unknownImageExportOperation", {});
   } catch (error) {
     message.bitmap?.close();
     if (canvas) canvas.width = canvas.height = 1;
@@ -131,7 +129,7 @@ self.addEventListener("message", async (event) => {
     self.postMessage({
       id: message.id,
       ok: false,
-      error: error?.message || String(error),
+      error: error?.message || String(error), ...errorMessageData(error),
     });
   } finally {
     busy = false;

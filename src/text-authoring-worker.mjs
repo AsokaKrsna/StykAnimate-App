@@ -1,3 +1,5 @@
+import {errorMessageData, messageError} from './localized-error.mjs';
+
 /** Font parsing and portable outline layout never run on the interaction thread. */
 import {
   createTextFigure,
@@ -37,15 +39,13 @@ self.onmessage = async ({ data }) => {
         !(data.buffer instanceof ArrayBuffer) ||
         data.buffer.byteLength > MAX_FONT_BYTES
       )
-        throw new Error("Choose a TTF or OTF font smaller than 32 MB.");
+        throw messageError(new Error(''), "errors.textAuthoringWorker.chooseATtfOrOtfFontSmallerThan", {});
       // Reject, rather than evict, a face which an open dialog could still reference.
       if (
         fonts.size >= 8 ||
         retainedBytes + data.buffer.byteLength > MAX_RETAINED_FONT_BYTES
       )
-        throw new Error(
-          "This session has enough fonts loaded. Close and reopen the text editor to choose more.",
-        );
+        throw messageError(new Error(''), "errors.textAuthoringWorker.thisSessionHasEnoughFontsLoadedCloseAnd", {});
       const face = parseTextFont(data.buffer, { name: data.name }),
         fontId = `font-${nextFont++}`;
       fonts.set(fontId, face);
@@ -55,12 +55,12 @@ self.onmessage = async ({ data }) => {
       const options = data.options,
         mode = data.fontId || "bundled";
       if (mode === "embedded") {
-        if (!source) throw new Error("There is no embedded text to edit.");
+        if (!source) throw messageError(new Error(''), "errors.textAuthoringWorker.thereIsNoEmbeddedTextToEdit", {});
         value = compileEmbeddedTextFigure(options, source);
       } else {
         const face = fonts.get(mode);
         if (mode !== "bundled" && !face)
-          throw new Error("Choose a font again.");
+          throw messageError(new Error(''), "errors.textAuthoringWorker.chooseAFontAgain", {});
         const compiled = face
           ? compileTextFigure(
               {
@@ -80,13 +80,13 @@ self.onmessage = async ({ data }) => {
         value._styk.textAuthoring.fontOrigin =
           mode === "bundled" ? "bundled" : "custom";
       }
-    } else throw new Error("Unknown text authoring request.");
+    } else throw messageError(new Error(''), "errors.textAuthoringWorker.unknownTextAuthoringRequest", {});
     self.postMessage({ id, value });
   } catch (error) {
     self.postMessage({
       id,
       error: {
-        message: error.message,
+        message: error.message, ...errorMessageData(error),
         name: error.name,
         missing: error.missing,
       },

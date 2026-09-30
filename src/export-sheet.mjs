@@ -1,3 +1,6 @@
+import {interfaceLocalization, t as interfaceText} from './localization.mjs';
+import {replaceLocalized, localizedAttribute, localizedText, appendLocalized, localizedMarkup} from './localization-bindings.mjs';
+
 /**
  * The export dialog (experience.md §5.14, architecture.md §3.15): a kit
  * dialog (src/ui/ui-dialog.mjs, `lg`, variant `export`) with a preview pane
@@ -44,17 +47,17 @@ import {EXPORT_PRESETS, applyExportPreset, exportPresetHeld, exportPresetFit, ex
 export const EXPORT_DIALOG_ID = 'export-dialog';
 /** Quality: today's three presets (export-video-quality.mjs), smallest first; `hint` is the line under the row. */
 const QUALITY = Object.freeze([
-  {value: 'small', label: 'Draft', tip: 'Smaller file', hint: 'The smallest file, for quick previews and drafts.'},
-  {value: 'recommended', label: 'Great', tip: 'Recommended', hint: 'Sharp, with a sensible file size. Right for most uses.'},
-  {value: 'high', label: 'Max', tip: 'Higher quality', hint: 'The most detail, with a larger file. For uploads and final copies.'},
+  {value: 'small', label: interfaceText("exportSheet.draft"), labelKey: "exportSheet.draft", tip: interfaceText("exportSheet.smallerFile"), tipKey: "exportSheet.smallerFile", hint: interfaceText("exportSheet.theSmallestFileForQuickPreviewsAndDrafts"), hintKey: "exportSheet.theSmallestFileForQuickPreviewsAndDrafts"},
+  {value: 'recommended', label: interfaceText("exportSheet.great"), labelKey: "exportSheet.great", tip: interfaceText("exportSheet.recommended"), tipKey: "exportSheet.recommended", hint: interfaceText("exportSheet.sharpWithASensibleFileSizeRightFor"), hintKey: "exportSheet.sharpWithASensibleFileSizeRightFor"},
+  {value: 'high', label: interfaceText("exportSheet.max"), labelKey: "exportSheet.max", tip: interfaceText("exportSheet.higherQuality"), tipKey: "exportSheet.higherQuality", hint: interfaceText("exportSheet.theMostDetailWithALargerFileFor"), hintKey: "exportSheet.theMostDetailWithALargerFileFor"},
 ]);
 const STRIP_CELLS = 8;
-const PROGRESS_TITLE = 'Exporting animation';
+const progressTitle = () => interfaceText("exportSheet.exportingAnimation");
 
 const element = (tag, props = {}, ...children) => {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
-    if (value === undefined || value === null) continue;
+    if (value === undefined || value === null || key.endsWith('Key') || key.endsWith('Params')) continue;
     if (key === 'className') node.className = value;
     else if (key === 'text') node.textContent = value;
     else if (key === 'htmlFor') node.htmlFor = value;
@@ -62,20 +65,26 @@ const element = (tag, props = {}, ...children) => {
     else if (typeof value === 'boolean') node[key] = value;
     else node.setAttribute(key, value);
   }
-  node.append(...children.filter(child => child !== null && child !== undefined && child !== false));
+  if (props.textKey) localizedText(node, props.textKey, props.textParams);
+  for (const attribute of ['title', 'aria-label', 'placeholder', 'data-tooltip']) {
+    const property = attribute === 'aria-label' ? 'ariaLabel' : attribute === 'data-tooltip' ? 'tooltip' : attribute;
+    const key = props[`${property}Key`] ?? props[`${attribute}Key`];
+    if (key) localizedAttribute(node, attribute, key, props[`${property}Params`] ?? props[`${attribute}Params`]);
+  }
+  appendLocalized(node, ...children.filter(child => child !== null && child !== undefined && child !== false));
   return node;
 };
 const glyph = (icon, name) => {
   const template = document.createElement('template');
-  template.innerHTML = icon?.(name) ?? '';
+  localizedMarkup(template, icon?.(name) ?? '');
   return template.content.firstElementChild;
 };
 /** A form row: the label column and its control. */
-const row = (label, control, {id, htmlFor} = {}) => element('div', {className: 'ui-dialog-row', id},
-  element(htmlFor ? 'label' : 'span', {className: 'ui-row-label', text: label, htmlFor}), control);
-const select = (id, label, icon, options = []) => {
-  const node = element('select', {id, 'aria-label': label});
-  for (const option of options) node.append(element('option', {value: option.value, text: option.label, title: option.title}));
+const row = (label, control, {id, htmlFor, labelKey, labelParams} = {}) => element('div', {className: 'ui-dialog-row', id},
+  element(htmlFor ? 'label' : 'span', {className: 'ui-row-label', text: label, textKey: labelKey, textParams: labelParams, htmlFor}), control);
+const select = (id, label, icon, options = [], labelKey, labelParams) => {
+  const node = element('select', {id, 'aria-label': label, 'aria-labelKey': labelKey, 'aria-labelParams': labelParams});
+  for (const option of options) appendLocalized(node, element('option', {value: option.value, text: option.label, textKey: option.labelKey, textParams: option.labelParams, title: option.title, titleKey: option.titleKey}));
   return {node, wrap: element('span', {className: 'ui-select'}, node, glyph(icon, 'chevron-down'))};
 };
 const switchRow = (id, label, text) => {
@@ -103,9 +112,9 @@ function stopQuestion({overlays, icon, t}) {
     async ask(running) {
       if (!running()) return true;
       if (prompt) return false;
-      prompt = createDialog({size: 'sm', id: 'export-stop', title: 'Stop exporting?', description: 'The file will not be saved.', overlays, icon, t,
-        actions: [{label: 'Keep exporting', cancel: true, variant: 'ghost', id: 'keep-exporting', autofocus: true},
-          {label: 'Stop exporting', value: true, variant: 'danger', id: 'stop-export'}]});
+      prompt = createDialog({size: 'sm', id: 'export-stop', title: interfaceText("exportSheet.stopExporting"), titleKey: "exportSheet.stopExporting", description: interfaceText("exportSheet.theFileWillNotBeSaved"), descriptionKey: "exportSheet.theFileWillNotBeSaved", overlays, icon, t,
+        actions: [{label: interfaceText("exportSheet.keepExporting"), labelKey: "exportSheet.keepExporting", cancel: true, variant: 'ghost', id: 'keep-exporting', autofocus: true},
+          {label: interfaceText("exportSheet.stopExporting2"), labelKey: "exportSheet.stopExporting2", value: true, variant: 'danger', id: 'stop-export'}]});
       const answer = await prompt.showModal();
       prompt = null;
       return answer === true && running();
@@ -145,7 +154,7 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
   // ---- The preview pane: the stage, the trim strip and its caption.
   const stageCanvas = element('canvas', {'aria-hidden': 'true'});
   fitCanvas(stageCanvas, board, 512, 288);
-  const stage = element('div', {className: 'ui-export-stage', role: 'img', 'aria-label': 'Preview'}, stageCanvas);
+  const stage = element('div', {className: 'ui-export-stage', role: 'img', 'aria-label': interfaceText("exportSheet.preview"), 'aria-labelKey': "exportSheet.preview", 'aria-labelParams': {}}, stageCanvas);
   const cells = [];
   const cellCount = totalFrames > 1 ? Math.min(STRIP_CELLS, totalFrames) : 0;
   for (let index = 0; index < cellCount; index++) {
@@ -154,20 +163,20 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
     const tick = cellCount === 1 ? 0 : Math.round(index * (totalFrames - 1) / (cellCount - 1));
     cells.push({tick, cell: element('i', {}, canvas), canvas});
   }
-  const handle = edge => element('button', {type: 'button', className: 'ui-range-handle', role: 'slider', dataset: {edge, tooltip: 'Drag to trim'},
-    'aria-label': edge === 'start' ? 'First exported frame' : 'Last exported frame', 'aria-controls': edge === 'start' ? FIELD.from : FIELD.to,
+  const handle = edge => element('button', {type: 'button', className: 'ui-range-handle', role: 'slider', dataset: {edge, tooltip: 'Drag to trim'}, tooltipKey:'exportSheet.trimTip',
+    'aria-label': edge === 'start' ? interfaceText("exportSheet.firstExportedFrame") : interfaceText("exportSheet.lastExportedFrame"), 'aria-labelKey': (edge === 'start' ? "exportSheet.firstExportedFrame" : "exportSheet.lastExportedFrame"), 'aria-labelParams': (edge === 'start' ? {} : {}), 'aria-controls': edge === 'start' ? FIELD.from : FIELD.to,
     'aria-valuemin': '1', 'aria-valuemax': String(Math.max(1, totalFrames))});
   const startHandle = handle('start'), endHandle = handle('end');
-  const strip = element('div', {className: 'ui-range-strip', role: 'group', 'aria-label': 'Frames to export'}, ...cells.map(entry => entry.cell), startHandle, endHandle);
+  const strip = element('div', {className: 'ui-range-strip', role: 'group', 'aria-label': interfaceText("exportSheet.framesToExport"), 'aria-labelKey': "exportSheet.framesToExport", 'aria-labelParams': {}}, ...cells.map(entry => entry.cell), startHandle, endHandle);
   const playButton = element('button', {type: 'button', className: 'ui-icon-button', id: 'export-play', dataset: {variant: 'soft', size: 'sm', shape: 'round'},
-    'aria-label': 'Play preview', 'aria-pressed': 'false'}, glyph(icon, 'play'));
+    'aria-label': interfaceText("exportSheet.playPreview"), 'aria-labelKey': "exportSheet.playPreview", 'aria-labelParams': {}, 'aria-pressed': 'false'}, glyph(icon, 'play'));
   const frameField = (id, label, text) => {
     const input = element('input', {className: 'ui-field-input', id, type: 'text', inputmode: 'numeric', autocomplete: 'off', 'aria-label': label});
     return {input, wrap: element('span', {className: 'ui-field export-frame-field', dataset: {size: 'sm'}}, element('label', {className: 'ui-field-label', htmlFor: id, text}), input)};
   };
-  const fromField = frameField(FIELD.from, 'First frame', 'From'), toField = frameField(FIELD.to, 'Last frame', 'To');
-  const allFrames = element('button', {type: 'button', className: 'ui-button', id: ELEMENT.allFrames, dataset: {variant: 'ghost', size: 'sm', tooltip: 'Use the entire animation'}, text: 'All'});
-  const captionLabel = element('span', {className: 'export-caption-label', text: 'Frames'});
+  const fromField = frameField(FIELD.from, interfaceText("exportSheet.firstFrame"), interfaceText("exportSheet.from")), toField = frameField(FIELD.to, interfaceText("exportSheet.lastFrame"), interfaceText("exportSheet.to"));
+  const allFrames = element('button', {type: 'button', className: 'ui-button', id: ELEMENT.allFrames, tooltipKey: 'exportSheet.entireAnimationTip', dataset: {variant: 'ghost', size: 'sm', tooltip: 'Use the entire animation'}, text: interfaceText("exportSheet.all"), textKey: "exportSheet.all"});
+  const captionLabel = element('span', {className: 'export-caption-label', text: interfaceText("exportSheet.frames"), textKey: "exportSheet.frames"});
   const range = element('span', {className: 'export-caption-range'}, fromField.wrap, toField.wrap, allFrames);
   const caption = element('div', {className: 'ui-export-caption'}, playButton, captionLabel, range);
   const note = element('p', {className: 'export-note export-preview-note'});
@@ -177,75 +186,75 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
   // chosen until a setting it chose is changed. The note under it says what the export will be, or why it will show with bars.
   const presetList = element('div', {className: 'export-presets', role: 'radiogroup', 'aria-labelledby': 'export-presets-label', id: 'export-presets'},
     ...EXPORT_PRESETS.map(entry => element('button', {type: 'button', className: 'export-preset', role: 'radio', 'aria-checked': 'false',
-      dataset: {preset: entry.id}, 'aria-label': `${entry.label}: ${entry.detail}`},
-    glyph(icon, entry.icon), element('span', {className: 'export-preset-label', text: entry.label}), element('span', {className: 'export-preset-detail', text: entry.detail}))));
+      dataset: {preset: entry.id}, 'aria-label': `${entry.label}: ${entry.detail}`, ariaLabelKey: 'exportPresets.accessibleLabel', ariaLabelParams: {label: {messageKey: entry.labelKey}, detail: {messageKey: entry.detailKey}}},
+    glyph(icon, entry.icon), element('span', {className: 'export-preset-label', text: entry.label, textKey: entry.labelKey}), element('span', {className: 'export-preset-detail', text: entry.detail, textKey: entry.detailKey}))));
   const presetNote = element('p', {className: 'export-preset-note', id: 'export-preset-note', role: 'status', 'aria-live': 'polite', hidden: true});
   const presets = element('section', {className: 'export-preset-section', 'aria-labelledby': 'export-presets-label'},
-    element('h3', {className: 'export-section-label', id: 'export-presets-label', text: 'Quick presets'}), presetList, presetNote);
+    element('h3', {className: 'export-section-label', id: 'export-presets-label', text: interfaceText("exportSheet.quickPresets"), textKey: "exportSheet.quickPresets"}), presetList, presetNote);
 
   // ---- The form rows.
-  const name = element('input', {className: 'ui-field-input', id: 'export-name', type: 'text', autocomplete: 'off', spellcheck: false, maxLength: 200, 'aria-label': 'File name'});
+  const name = element('input', {className: 'ui-field-input', id: 'export-name', type: 'text', autocomplete: 'off', spellcheck: false, maxLength: 200, 'aria-label': interfaceText("exportSheet.fileName"), 'aria-labelKey': "exportSheet.fileName", 'aria-labelParams': {}});
   const extension = element('span', {className: 'ui-field-unit export-extension'});
-  const nameRow = row('Name', element('span', {className: 'ui-field'}, name, extension), {htmlFor: 'export-name'});
-  const categories = element('div', {className: 'ui-segmented', role: 'radiogroup', 'aria-label': 'Format', id: 'export-format', dataset: {fill: ''}},
+  const nameRow = row(interfaceText("exportSheet.name"), element('span', {className: 'ui-field'}, name, extension), {htmlFor: 'export-name', labelKey: "exportSheet.name", labelParams: {}});
+  const categories = element('div', {className: 'ui-segmented', role: 'radiogroup', 'aria-label': interfaceText("exportSheet.format"), 'aria-labelKey': "exportSheet.format", 'aria-labelParams': {}, id: 'export-format', dataset: {fill: ''}},
     ...EXPORT_CATEGORIES.map(category => element('button', {type: 'button', className: 'ui-segmented-item', role: 'radio', 'aria-checked': 'false',
-      dataset: {category: category.id, tooltip: category.label}, text: category.short})));
-  const formatRow = row('Format', categories);
-  const type = select(ELEMENT.format, 'Export format', icon);
-  const typeRow = row('Type', type.wrap, {htmlFor: ELEMENT.format});
-  const projectList = element('div', {className: 'export-types', role: 'radiogroup', 'aria-label': 'Project type', id: 'export-project-type'});
-  const projectRow = row('Type', projectList);
+      dataset: {category: category.id, tooltip: category.label}, tooltipKey: category.labelKey, text: category.short, textKey: category.shortKey})));
+  const formatRow = row(interfaceText("exportSheet.format"), categories, {labelKey: "exportSheet.format", labelParams: {}});
+  const type = select(ELEMENT.format, interfaceText("exportSheet.exportFormat"), icon, undefined, "exportSheet.exportFormat", {});
+  const typeRow = row(interfaceText("exportSheet.type"), type.wrap, {htmlFor: ELEMENT.format, labelKey: "exportSheet.type", labelParams: {}});
+  const projectList = element('div', {className: 'export-types', role: 'radiogroup', 'aria-label': interfaceText("exportSheet.projectType"), 'aria-labelKey': "exportSheet.projectType", 'aria-labelParams': {}, id: 'export-project-type'});
+  const projectRow = row(interfaceText("exportSheet.type"), projectList, {labelKey: "exportSheet.type", labelParams: {}});
   projectRow.classList.add('export-row-list');
   const sizeChoices = sizePresetChoices(board);
-  const size = select(FIELD.sizePreset, 'Size', icon, sizeChoices.map(choice => ({value: choice.id, label: choice.label, title: choice.reason || undefined})));
+  const size = select(FIELD.sizePreset, interfaceText("exportSheet.size"), icon, sizeChoices.map(choice => ({value: choice.id, label: choice.label, title: choice.reason || undefined})), "exportSheet.size", {});
   sizeChoices.forEach((choice, index) => { size.node.options[index].disabled = choice.disabled; });
-  const sizeRow = row('Size', size.wrap, {htmlFor: FIELD.sizePreset});
+  const sizeRow = row(interfaceText("exportSheet.size"), size.wrap, {htmlFor: FIELD.sizePreset, labelKey: "exportSheet.size", labelParams: {}});
   const pixelField = (id, label, text) => {
     const input = element('input', {className: 'ui-field-input', id, type: 'text', inputmode: 'numeric', autocomplete: 'off', 'aria-label': label});
     return {input, wrap: element('span', {className: 'ui-field'}, element('label', {className: 'ui-field-label', htmlFor: id, text}), input)};
   };
-  const widthField = pixelField(FIELD.width, 'Export width (px)', 'Width'), heightField = pixelField(FIELD.height, 'Export height (px)', 'Height');
-  const lock = element('input', {type: 'checkbox', id: FIELD.lockRatio, className: 'export-lock-input', 'aria-label': 'Lock ratio'});
-  const lockToggle = element('label', {className: 'ui-icon-button export-lock', dataset: {size: 'sm', tooltip: 'Lock ratio: width and height change together'}}, glyph(icon, 'link'), lock);
+  const widthField = pixelField(FIELD.width, interfaceText("exportSheet.exportWidthPx"), interfaceText("exportSheet.width")), heightField = pixelField(FIELD.height, interfaceText("exportSheet.exportHeightPx"), interfaceText("exportSheet.height"));
+  const lock = element('input', {type: 'checkbox', id: FIELD.lockRatio, className: 'export-lock-input', 'aria-label': interfaceText("exportSheet.lockRatio"), 'aria-labelKey': "exportSheet.lockRatio", 'aria-labelParams': {}});
+  const lockToggle = element('label', {className: 'ui-icon-button export-lock', dataset: {size: 'sm', tooltip: 'Lock ratio: width and height change together'}, tooltipKey: 'exportSheet.lockRatioTip'}, glyph(icon, 'link'), lock);
   const customRow = row('', element('span', {className: 'export-size-custom'}, widthField.wrap, lockToggle, heightField.wrap));
-  const quality = element('div', {className: 'ui-segmented', role: 'radiogroup', 'aria-label': 'Quality', id: FIELD.videoQuality, dataset: {fill: ''}},
+  const quality = element('div', {className: 'ui-segmented', role: 'radiogroup', 'aria-label': interfaceText("exportSheet.quality"), 'aria-labelKey': "exportSheet.quality", 'aria-labelParams': {}, id: FIELD.videoQuality, dataset: {fill: ''}},
     ...QUALITY.map(option => element('button', {type: 'button', className: 'ui-segmented-item', role: 'radio', 'aria-checked': 'false',
-      dataset: {value: option.value, tooltip: option.tip}, text: option.label})));
-  const qualityRow = row('Quality', quality);
+      dataset: {value: option.value, tooltip: option.tip}, tooltipKey: option.tipKey, text: option.label, textKey: option.labelKey})));
+  const qualityRow = row(interfaceText("exportSheet.quality"), quality, {labelKey: "exportSheet.quality", labelParams: {}});
   // What the chosen type and quality are for, under their rows (a person who does not know the formats chooses by these).
   const typeHint = element('p', {className: 'export-hint', id: 'export-type-hint'});
   const qualityHint = element('p', {className: 'export-hint', id: 'export-quality-hint'});
   type.node.setAttribute('aria-describedby', typeHint.id);
   projectList.setAttribute('aria-describedby', typeHint.id);
   quality.setAttribute('aria-describedby', qualityHint.id);
-  const jpeg = element('input', {className: 'ui-field-input', id: FIELD.jpegQuality, type: 'text', inputmode: 'numeric', autocomplete: 'off', 'aria-label': 'JPEG quality (%)'});
-  const jpegRow = row('Quality', element('span', {className: 'ui-field'}, jpeg, element('span', {className: 'ui-field-unit', text: '%'})), {htmlFor: FIELD.jpegQuality});
-  const dither = switchRow(FIELD.dither, 'Dither (GIF)', 'Dither');
-  dither.wrap.dataset.tooltip = 'Smoother gradients and photographs, a larger file';
-  const colourRow = row('Colours', dither.wrap);
+  const jpeg = element('input', {className: 'ui-field-input', id: FIELD.jpegQuality, type: 'text', inputmode: 'numeric', autocomplete: 'off', 'aria-label': interfaceText("exportSheet.jpegQuality"), 'aria-labelKey': "exportSheet.jpegQuality", 'aria-labelParams': {}});
+  const jpegRow = row(interfaceText("exportSheet.quality"), element('span', {className: 'ui-field'}, jpeg, element('span', {className: 'ui-field-unit', text: '%'})), {htmlFor: FIELD.jpegQuality, labelKey: "exportSheet.quality", labelParams: {}});
+  const dither = switchRow(FIELD.dither, interfaceText("exportSheet.ditherGif"), interfaceText("exportSheet.dither"));
+  localizedAttribute(dither.wrap, 'data-tooltip', "exportSheet.smootherGradientsAndPhotographsALargerFile", {});
+  const colourRow = row(interfaceText("exportSheet.colours"), dither.wrap, {labelKey: "exportSheet.colours", labelParams: {}});
   const soundNames = context.soundNames ?? [];
-  const sound = switchRow(FIELD.audio, 'Include sound', soundNames.length === 1 ? soundNames[0] : soundNames.length ? `${soundNames.length} sounds` : 'Include sound');
-  const soundRow = row('Sound', sound.wrap);
-  const smoothing = select(FIELD.smoothing, 'Edges', icon, EXPORT_SMOOTHING.map(option => ({value: option.value, label: option.label, title: option.description})));
-  const transparent = switchRow('export-transparent', 'Transparent background', 'Transparent');
+  const sound = switchRow(FIELD.audio, interfaceText("exportSheet.includeSound"), soundNames.length === 1 ? soundNames[0] : soundNames.length ? `${soundNames.length} sounds` : interfaceText("exportSheet.includeSound"));
+  const soundRow = row(interfaceText("exportSheet.sound"), sound.wrap, {labelKey: "exportSheet.sound", labelParams: {}});
+  const smoothing = select(FIELD.smoothing, interfaceText("exportSheet.edges"), icon, EXPORT_SMOOTHING.map(option => ({value: option.value, label: option.label, title: option.description})), "exportSheet.edges", {});
+  const transparent = switchRow('export-transparent', interfaceText("exportSheet.transparentBackground"), interfaceText("exportSheet.transparent"));
   transparent.input.disabled = true;
   const transparentReason = element('p', {className: 'export-reason', id: 'export-transparent-reason'});
   transparent.input.setAttribute('aria-describedby', transparentReason.id);
-  const pictureRow = row('Picture', element('span', {className: 'export-inline'}, smoothing.wrap, transparent.wrap));
-  pictureRow.append(transparentReason);
+  const pictureRow = row(interfaceText("exportSheet.picture"), element('span', {className: 'export-inline'}, smoothing.wrap, transparent.wrap), {labelKey: "exportSheet.picture", labelParams: {}});
+  appendLocalized(pictureRow, transparentReason);
 
-  const mp4Codec = select(FIELD.mp4Codec, 'MP4 codec', icon), aviCodec = select(FIELD.aviCodec, 'AVI codec', icon);
-  const bitrateMode = select(FIELD.bitrateMode, 'Bitrate', icon, [{value: 'auto', label: 'Automatic (recommended)'}, {value: 'manual', label: 'Set manually'}]);
-  const bitrate = element('input', {className: 'ui-field-input', id: FIELD.bitrateMbps, type: 'text', inputmode: 'decimal', autocomplete: 'off', 'aria-label': 'Target bitrate (Mbit/s)'});
-  const mp4Row = row('Codec', mp4Codec.wrap, {htmlFor: FIELD.mp4Codec}), aviRow = row('Codec', aviCodec.wrap, {htmlFor: FIELD.aviCodec});
-  const bitrateModeRow = row('Bitrate', bitrateMode.wrap, {htmlFor: FIELD.bitrateMode});
-  const bitrateRow = row('Target', element('span', {className: 'ui-field'}, bitrate, element('span', {className: 'ui-field-unit', text: 'Mbit/s'})), {htmlFor: FIELD.bitrateMbps});
+  const mp4Codec = select(FIELD.mp4Codec, interfaceText("exportSheet.mp4Codec"), icon, undefined, "exportSheet.mp4Codec", {}), aviCodec = select(FIELD.aviCodec, interfaceText("exportSheet.aviCodec"), icon, undefined, "exportSheet.aviCodec", {});
+  const bitrateMode = select(FIELD.bitrateMode, interfaceText("exportSheet.bitrate"), icon, [{value: 'auto', label: interfaceText("exportSheet.automaticRecommended"), labelKey: "exportSheet.automaticRecommended"}, {value: 'manual', label: interfaceText("exportSheet.setManually"), labelKey: "exportSheet.setManually"}], "exportSheet.bitrate", {});
+  const bitrate = element('input', {className: 'ui-field-input', id: FIELD.bitrateMbps, type: 'text', inputmode: 'decimal', autocomplete: 'off', 'aria-label': interfaceText("exportSheet.targetBitrateMbitS"), 'aria-labelKey': "exportSheet.targetBitrateMbitS", 'aria-labelParams': {}});
+  const mp4Row = row(interfaceText("exportSheet.codec"), mp4Codec.wrap, {htmlFor: FIELD.mp4Codec, labelKey: "exportSheet.codec", labelParams: {}}), aviRow = row(interfaceText("exportSheet.codec"), aviCodec.wrap, {htmlFor: FIELD.aviCodec, labelKey: "exportSheet.codec", labelParams: {}});
+  const bitrateModeRow = row(interfaceText("exportSheet.bitrate"), bitrateMode.wrap, {htmlFor: FIELD.bitrateMode, labelKey: "exportSheet.bitrate", labelParams: {}});
+  const bitrateRow = row(interfaceText("exportSheet.target"), element('span', {className: 'ui-field'}, bitrate, element('span', {className: 'ui-field-unit', text: interfaceText("exportSheet.mbitS"), textKey: "exportSheet.mbitS"})), {htmlFor: FIELD.bitrateMbps, labelKey: "exportSheet.target", labelParams: {}});
   const vfwHost = element('div', {className: 'export-vfw'});
   const encodingBody = element('div', {className: 'ui-section-body', id: 'export-encoding', hidden: true}, mp4Row, aviRow, bitrateModeRow, bitrateRow, vfwHost);
   const encodingSummary = element('span', {className: 'export-encoding-summary'});
   const chevron = glyph(icon, 'chevron-right'); chevron?.classList.add('ui-section-chev');
   const encodingToggle = element('button', {type: 'button', className: 'ui-section-toggle', id: 'export-encoding-toggle', 'aria-expanded': 'false', 'aria-controls': encodingBody.id},
-    element('span', {className: 'ui-section-title', text: 'Encoding'}), encodingSummary, chevron);
+    element('span', {className: 'ui-section-title', text: interfaceText("exportSheet.encoding"), textKey: "exportSheet.encoding"}), encodingSummary, chevron);
   const encoding = element('section', {className: 'ui-section export-encoding', dataset: {section: 'export-encoding', collapsible: ''}},
     element('div', {className: 'ui-section-head'}, encodingToggle), encodingBody);
 
@@ -253,8 +262,8 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
   const summarySize = element('span', {id: ELEMENT.summarySize}), summaryTime = element('span', {id: ELEMENT.summaryTime});
 
   const stop = stopQuestion({overlays, icon, t});
-  const dialog = createDialog({size: 'lg', variant: 'export', id: EXPORT_DIALOG_ID, title: 'Export', overlays, icon, t, closeLabel: 'Close export',
-    actions: [{label: kitText(t, 'common.cancel'), cancel: true, variant: 'ghost'}, {label: 'Export', id: ELEMENT.submit, variant: 'primary', value: 'export'}],
+  const dialog = createDialog({size: 'lg', variant: 'export', id: EXPORT_DIALOG_ID, title: interfaceText("exportSheet.export"), titleKey: "exportSheet.export", overlays, icon, t, closeLabel: interfaceText("exportSheet.closeExport"), closeLabelKey: "exportSheet.closeExport",
+    actions: [{label: kitText(t, 'common.cancel'), labelKey: 'common.cancel', labelParams: {}, cancel: true, variant: 'ghost'}, {label: interfaceText("exportSheet.export"), labelKey: "exportSheet.export", id: ELEMENT.submit, variant: 'primary', value: 'export'}],
     beforeClose: () => stop.ask(() => Boolean(exporting) && !closed),
     onSubmit: () => { void start(); return false; }});
   const {element: root, form, body} = dialog;
@@ -264,14 +273,14 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
   form.prepend(previewPane);
   body.classList.add('export-body');
   body.prepend(presets, nameRow, formatRow, typeRow, projectRow, typeHint, sizeRow, customRow, qualityRow, qualityHint, jpegRow, colourRow, soundRow, pictureRow, encoding);
-  meta.append(summarySize, element('span', {className: 'export-summary-sep', text: ' · ', 'aria-hidden': 'true'}), summaryTime);
+  appendLocalized(meta, summarySize, element('span', {className: 'export-summary-sep', text: ' · ', 'aria-hidden': 'true'}), summaryTime);
   foot.prepend(validation);
   name.autofocus = true;
 
   // ---- The request and what it is exported with. The Windows AVI controls check their codecs for the request's size.
   vfw = createVfw?.({container: vfwHost, dialog: root, getDimensions: () => (request ? {width: request.width, height: request.height} : {width: canvasWidth, height: canvasHeight}),
     onChange: () => { if (request) refreshStates(); }}) ?? null;
-  const vfwState = () => (vfw ? {listed: vfw.listed, ready: vfw.ready, reason: vfw.reason} : null);
+  const vfwState = () => (vfw ? {listed: vfw.listed, ready: vfw.ready, reason: vfw.reason, reasonKey:vfw.reasonKey, reasonParams:vfw.reasonParams} : null);
   const baseStates = codecs => exportFormatStates({capabilities, capabilityError, totalFrames, hasObject, movieclip, vfw: vfwState(), codecs});
   states = baseStates({});
   request = initialExportRequest({preferences: remembered, states, context: board});
@@ -315,7 +324,7 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
   function fillCodecs() {
     for (const [key, control] of [['mp4', mp4Codec.node], ['avi', aviCodec.node]]) {
       const choices = exportCodecChoices(capabilities?.formats?.find(format => format.id === key));
-      control.replaceChildren(...choices.options.map(option => element('option', {value: option.id, text: option.label, disabled: option.disabled})));
+      replaceLocalized(control, ...choices.options.map(option => element('option', {value: option.id, text: option.label, disabled: option.disabled})));
       control.disabled = choices.disabled;
     }
   }
@@ -330,7 +339,7 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
   const setChecked = (items, checked) => { for (const item of items) item.setAttribute('aria-checked', String(checked(item))); };
   const fieldInputs = {name, width: widthField.input, height: heightField.input, from: fromField.input, to: toField.input, jpegQuality: jpeg, bitrateMbps: bitrate};
 
-  function render(source = null) {
+  function render(source = null, copyOnly = false) {
     if (closed || exporting) return;
     const info = exportFormatInfo(request.format), visible = exportFieldVisibility(request, {audioClips});
     const editable = info.category === 'editable', single = Boolean(info.single), rangeShown = visible.range && totalFrames > 0;
@@ -349,7 +358,8 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
     quality.dataset.value = request.videoQuality;
     const typeText = exportTypeHint(request.format, {movieclip});
     typeHint.textContent = typeText; show(typeHint, Boolean(typeText));
-    qualityHint.textContent = QUALITY.find(option => option.value === request.videoQuality)?.hint ?? '';
+    const qualityDescription = QUALITY.find(option => option.value === request.videoQuality);
+    if (qualityDescription) localizedText(qualityHint, qualityDescription.hintKey); else qualityHint.textContent = '';
     show(qualityHint, visible.videoQuality);
     renderPresets();
     show(jpegRow, visible.jpegQuality); setValue(jpeg, request.jpegQuality, source);
@@ -364,7 +374,7 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
     renderEncoding(visible, source);
     // The preview pane: the range, its caption and the notes.
     show(range, rangeShown); show(playButton, !single && totalFrames > 1);
-    captionLabel.textContent = single ? `Current frame · ${currentFrame}` : editable ? `Whole animation · ${totalFrames} ${totalFrames === 1 ? 'frame' : 'frames'}` : 'Frames';
+    localizedText(captionLabel, single ? 'exportSheet.currentFrame' : editable ? 'exportSheet.wholeAnimation' : 'exportSheet.frames', {frame: currentFrame, count: totalFrames});
     setValue(fromField.input, request.from, source); setValue(toField.input, request.to, source);
     show(allFrames, rangeShown && (request.from !== 1 || request.to !== totalFrames));
     placeHandles();
@@ -390,7 +400,7 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
     show(meta, Boolean(pixels || time));
     submit.textContent = exportPrimaryLabel(request, {movieclip});
     submit.disabled = !validity.canExport;
-    scheduleStage();
+    if (!copyOnly) scheduleStage();
     updateFade();
   }
   function renderPresets() {
@@ -421,15 +431,15 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
         option.title === choice.reason && option.dataset.provider === provider(choice);
     });
     // Each option names its encoder (data-provider: FFmpeg or WebCodecs) once the capability check has run.
-    if (!same) type.node.replaceChildren(...choices.map(choice => element('option', {value: exportFormatInfo(choice.id).action, text: choice.type,
+    if (!same) replaceLocalized(type.node, ...choices.map(choice => element('option', {value: exportFormatInfo(choice.id).action, text: choice.type,
       disabled: choice.disabled, title: choice.reason, dataset: {provider: provider(choice)}})));
     if (type.node.value !== action) type.node.value = action;
   }
   function renderProjectTypes() {
     const choices = formatChoices('editable', states);
     if (projectList.children.length !== choices.length) {
-      projectList.replaceChildren(...choices.map(choice => element('button', {type: 'button', className: 'export-type', role: 'radio', dataset: {format: choice.id}},
-        element('span', {text: exportFormatInfo(choice.id).label === 'StykAnimate movieclip' ? 'Movieclip' : exportFormatInfo(choice.id).label}),
+      replaceLocalized(projectList, ...choices.map(choice => element('button', {type: 'button', className: 'export-type', role: 'radio', dataset: {format: choice.id}},
+        element('span', {text: choice.id === 'stykmov' ? interfaceText("exportSheet.movieclip") : exportFormatInfo(choice.id).label, textKey: choice.id === 'stykmov' ? "exportSheet.movieclip" : exportFormatInfo(choice.id).labelKey}),
         element('span', {className: 'export-type-extension', text: `.${choice.extension}`}))));
       projectRoving.refresh();
     }
@@ -553,8 +563,8 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
     if (Boolean(playing) === on) return;
     playing = on ? {} : null;
     playButton.setAttribute('aria-pressed', String(on));
-    playButton.setAttribute('aria-label', on ? 'Pause preview' : 'Play preview');
-    playButton.replaceChildren(glyph(icon, on ? 'pause' : 'play'));
+    localizedAttribute(playButton, 'aria-label', (on ? "exportSheet.pausePreview" : "exportSheet.playPreview"), (on ? {} : {}));
+    replaceLocalized(playButton, glyph(icon, on ? 'pause' : 'play'));
     if (playing) void play(playing); else scheduleStage();
   }
   function stopPreview() {
@@ -656,7 +666,7 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
      * markup goes in `content`) and keeps the dialog open until the export
      * ends. `onClose(callback)` runs once when the dialog closes.
      */
-    showProgress(title = PROGRESS_TITLE) {
+    showProgress(title = progressTitle()) {
       stopPreview();
       exporting = element('div', {className: 'export-progress-host'});
       titleNode.textContent = title;
@@ -669,6 +679,12 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
     close() { dialog.close(null); },
   };
 
+  const stopLanguage = interfaceLocalization.subscribe(() => {
+    if (closed || exporting) return;
+    states = baseStates(request.codecs);
+    render(document.activeElement, true);
+  });
+  root.addEventListener('close', stopLanguage, {once:true});
   lastType.set(request.category, request.format);
   fillCodecs();
   render();
@@ -684,11 +700,11 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
  * command): the same view in its own dialog. Returns the progress host of
  * showProgress().
  */
-export function openExportProgress({title = PROGRESS_TITLE, overlays = null, icon = null, t = null} = {}) {
+export function openExportProgress({title = progressTitle(), overlays = null, icon = null, t = null} = {}) {
   const content = element('div', {className: 'export-progress-host'});
   let onClosed = null, done = false;
   const stop = stopQuestion({overlays, icon, t});
-  const dialog = createDialog({size: 'md', variant: 'export-progress', id: EXPORT_DIALOG_ID, title, body: content, overlays, icon, t, closeLabel: 'Close export',
+  const dialog = createDialog({size: 'md', variant: 'export-progress', id: EXPORT_DIALOG_ID, title, body: content, overlays, icon, t, closeLabel: interfaceText("exportSheet.closeExport"), closeLabelKey: "exportSheet.closeExport",
     beforeClose: () => stop.ask(() => !done)});
   dialog.result.then(() => { done = true; stop.dismiss(); const callback = onClosed; onClosed = null; callback?.(); });
   dialog.element.querySelector('.ui-dialog-foot').hidden = true;

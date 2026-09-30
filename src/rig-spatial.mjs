@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Spatial articulation in the native rig dependency graph. Rotation still uses
  * ordinary angle channels; depth is derived, never a separate animated scene. */
 import {projectSpatial} from './spatial-projection.mjs';
@@ -15,24 +16,24 @@ export function sameSpatial(a,b){
 }
 export function validateSpatial(s,reference,dependencies,segments,ids){
   const vector=v=>Array.isArray(v)&&v.length===3&&[0,1,2].every(i=>Number.isFinite(v[i])&&Math.abs(v[i])<=1e6);
-  if(!s||typeof s!=='object'||Array.isArray(s))throw new Error('Invalid spatial joint.');
-  const ref=(id,label,bone=false)=>{reference(id,label,true);dependencies.add(id);if(id&&bone&&!spatialBone(segments[ids.get(id)]))throw new Error(`${label} must be an articulated spatial joint.`);};
+  if(!s||typeof s!=='object'||Array.isArray(s))throw messageError(new Error(''), "errors.rigSpatial.invalidSpatialJoint", {});
+  const ref=(id,label,bone=false)=>{reference(id,label,true);dependencies.add(id);if(id&&bone&&!spatialBone(segments[ids.get(id)]))throw messageError(new Error(''), "errors.rigSpatial.mustBeAnArticulatedSpatialJoint", {label: label});};
   if(s.bindings){
-    if(Object.keys(s).some(k=>!['point','bindings','viewPoints'].includes(k))||!vector(s.point)||!Array.isArray(s.bindings)||!s.bindings.length||s.bindings.length>4)throw new Error('A skin point needs a position and 1–4 joint bindings.');
-    if(s.viewPoints!==undefined&&(!Array.isArray(s.viewPoints)||![4,8].includes(s.viewPoints.length)||Array.from({length:s.viewPoints.length},(_,i)=>i).some(i=>!vector(s.viewPoints[i]))||s.bindings.length!==1))throw new Error('View-corrected skin needs four cardinal or eight evenly spaced view positions and one joint binding.');
+    if(Object.keys(s).some(k=>!['point','bindings','viewPoints'].includes(k))||!vector(s.point)||!Array.isArray(s.bindings)||!s.bindings.length||s.bindings.length>4)throw messageError(new Error(''), "errors.rigSpatial.aSkinPointNeedsAPositionAnd1", {});
+    if(s.viewPoints!==undefined&&(!Array.isArray(s.viewPoints)||![4,8].includes(s.viewPoints.length)||Array.from({length:s.viewPoints.length},(_,i)=>i).some(i=>!vector(s.viewPoints[i]))||s.bindings.length!==1))throw messageError(new Error(''), "errors.rigSpatial.viewCorrectedSkinNeedsFourCardinalOrEight", {});
     const seen=new Set();let sum=0;
-    for(const b of s.bindings){if(!b||Object.keys(b).some(k=>!['joint','weight'].includes(k))||!Number.isFinite(b.weight)||b.weight<=0||b.weight>1||seen.has(b.joint))throw new Error('Skin weights must use distinct joints and positive weights.');ref(b.joint,'Skin binding',true);if(!b.joint)throw new Error('Bind skin to an articulated joint.');seen.add(b.joint);sum+=b.weight;}
-    if(Math.abs(sum-1)>1e-6)throw new Error('Skin weights must add up to one.');
+    for(const b of s.bindings){if(!b||Object.keys(b).some(k=>!['joint','weight'].includes(k))||!Number.isFinite(b.weight)||b.weight<=0||b.weight>1||seen.has(b.joint))throw messageError(new Error(''), "errors.rigSpatial.skinWeightsMustUseDistinctJointsAndPositive", {});ref(b.joint,'Skin binding',true);if(!b.joint)throw messageError(new Error(''), "errors.rigSpatial.bindSkinToAnArticulatedJoint", {});seen.add(b.joint);sum+=b.weight;}
+    if(Math.abs(sum-1)>1e-6)throw messageError(new Error(''), "errors.rigSpatial.skinWeightsMustAddUpToOne", {});
   }else{
-    if(Object.keys(s).some(k=>!['parent','turn','pitch','origin','tip','motion'].includes(k))||!vector(s.origin)||!vector(s.tip))throw new Error('An articulated joint needs a rest origin and tip.');
+    if(Object.keys(s).some(k=>!['parent','turn','pitch','origin','tip','motion'].includes(k))||!vector(s.origin)||!vector(s.tip))throw messageError(new Error(''), "errors.rigSpatial.anArticulatedJointNeedsARestOriginAnd", {});
     if(s.motion!==undefined){
       const m=s.motion,limit=m?.type==='hinge'?2*Math.PI:1e6;
       if(!m||typeof m!=='object'||Array.isArray(m)||Object.keys(m).some(k=>!['type','min','max'].includes(k))||!['slide','hinge'].includes(m.type)||![m.min,m.max].every(v=>Number.isFinite(v)&&Math.abs(v)<=limit)||m.min>m.max)
-        throw new Error('A mechanical joint needs a slide or hinge type and a finite range from min to max.');
-      if(m.type==='slide'&&Math.hypot(...s.tip.map((n,i)=>n-s.origin[i]))<=EPS)throw new Error('A sliding joint slides from its origin toward its tip. Give it a tip.');
+        throw messageError(new Error(''), "errors.rigSpatial.aMechanicalJointNeedsASlideOrHinge", {});
+      if(m.type==='slide'&&Math.hypot(...s.tip.map((n,i)=>n-s.origin[i]))<=EPS)throw messageError(new Error(''), "errors.rigSpatial.aSlidingJointSlidesFromItsOriginToward", {});
     }
     ref(s.parent,'Spatial parent',true);ref(s.turn,'Turn control');ref(s.pitch,'Tilt control');
-    if(!s.turn||!s.pitch||s.turn===s.pitch)throw new Error('Choose separate turn and tilt controls.');
+    if(!s.turn||!s.pitch||s.turn===s.pitch)throw messageError(new Error(''), "errors.rigSpatial.chooseSeparateTurnAndTiltControls", {});
   }
 }
 export function remapSpatial(s,map){return s.bindings?{point:[...s.point],bindings:s.bindings.map(b=>({...b,joint:map.get(b.joint)??b.joint})),...(s.viewPoints?{viewPoints:s.viewPoints.map(p=>[...p])}:{})}:{...s,origin:[...s.origin],tip:[...s.tip],...(s.motion?{motion:{...s.motion}}:{}),...Object.fromEntries(['parent','turn','pitch'].map(k=>[k,map.get(s[k])??s[k]]))};}

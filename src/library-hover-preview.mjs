@@ -1,3 +1,4 @@
+import {localizedAttribute, appendLocalized, localizedText} from './localization-bindings.mjs';
 import {readLibraryFile} from './library-files.mjs';
 
 /** One disposable worker and one frame in flight; no decoded-document cache. */
@@ -16,7 +17,7 @@ export class LibraryHoverPreview {
       if (!active()) return;
       const worker = new Worker(new URL('./library-preview-worker.mjs', import.meta.url), {type: 'module', name: 'Library hover preview'});
       session.worker = worker;
-      const fail = () => { if (active()) { this.stop(); session.card.title = 'Animation preview unavailable. Double-click to insert this asset.'; } };
+      const fail = () => { if (active()) { this.stop(); localizedAttribute(session.card, "title", "libraryHoverPreview.animationPreviewUnavailableDoubleClickToInsertThis", {}); } };
       worker.onerror = event => { event.preventDefault(); fail(); };
       worker.onmessageerror = fail;
       session.timeout = setTimeout(fail, 60000);
@@ -28,9 +29,9 @@ export class LibraryHoverPreview {
         if (!session.canvas) {
           session.canvas = document.createElement('canvas'); session.canvas.className = 'library-animation';
           session.canvas.width = session.canvas.height = 320; session.canvas.setAttribute('aria-hidden', 'true');
-          session.card.querySelector('.library-thumbnail').append(session.canvas);
+          appendLocalized(session.card.querySelector('.library-thumbnail'), session.canvas);
           session.card.classList.add('library-preview-playing');
-          session.card.querySelector('.library-preview-hint').textContent = 'Playing';
+          localizedText(session.card.querySelector('.library-preview-hint'), "libraryHoverPreview.playing", {});
           session.started = performance.now();
         }
         const context = session.canvas.getContext('2d');
@@ -47,7 +48,7 @@ export class LibraryHoverPreview {
       };
       worker.postMessage({operation: 'animation', file, baseURL: location.href});
     } catch (error) {
-      if (active()) { this.stop(); if (error.name !== 'AbortError') session.card.title = 'Animation preview unavailable. Double-click to insert this asset.'; }
+      if (active()) { this.stop(); if (error.name !== 'AbortError') localizedAttribute(session.card, "title", "libraryHoverPreview.animationPreviewUnavailableDoubleClickToInsertThis", {}); }
     }
   }
   stop() {
@@ -55,7 +56,7 @@ export class LibraryHoverPreview {
     if (!session) return;
     clearTimeout(session.delay); clearTimeout(session.timeout); session.controller.abort(); session.worker?.terminate();
     session.canvas?.remove(); session.card.classList.remove('library-preview-playing');
-    const hint = session.card.querySelector('.library-preview-hint'); if (hint) hint.textContent = 'Hover to play';
+    const hint = session.card.querySelector('.library-preview-hint'); if (hint) localizedText(hint, "libraryHoverPreview.hoverToPlay", {});
     if (session.card.dataset.matte) session.card.style.setProperty('--library-matte', session.card.dataset.matte);
   }
 }

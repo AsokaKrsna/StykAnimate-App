@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {spatialCamera,spatialShape,validateSpatialPose,spatialPerspectiveAvailable} from './spatial-projection.mjs';
 import {spatialBone} from './rig-spatial.mjs';
 
@@ -7,7 +8,7 @@ export const editorSpatialShapeMethods={
  setSpatialCamera(patch){
   const object=this.object,figure=this.figure;if(!object||!figure?.segments.some(spatialBone))return false;
   const camera={...spatialCamera(object),...patch},state={...object._stykSpatial,camera};
-  if(camera.strength&&!spatialPerspectiveAvailable(this.selectionFrame.objects,object,this.report.figure_types))throw new Error('Perspective requires a single spatial figure. Separate joined figures before enabling it.');
+  if(camera.strength&&!spatialPerspectiveAvailable(this.selectionFrame.objects,object,this.report.figure_types))throw messageError(new Error(''), "errors.editorSpatialShape.perspectiveRequiresASingleSpatialFigureSeparateJoined", {});
   validateSpatialPose({...object,_stykSpatial:state},figure);
   if(Object.entries(camera).every(([k,v])=>v===spatialCamera(object)[k]))return false;
   return this._objectEdit('Adjust perspective',o=>{o._stykSpatial=state;delete o.runtime_segments;});
@@ -18,8 +19,8 @@ export const editorSpatialShapeMethods={
  },
  setSpatialProportions(patch){
   const before=this.getSpatialProportions();if(!before)return false;
-  if(!before.canResizeLength&&(patch.size!==undefined||patch.length!==undefined))throw new Error("Use figure Scale to resize a zero-length root control.");
-  for(const[k,v]of Object.entries(patch))if(!['size','length','width','taper'].includes(k)||!Number.isFinite(v)||v<(k==='taper'?-.9:.1)||v>(k==='taper'?3:5))throw new Error('Choose proportions within the control range.');
+  if(!before.canResizeLength&&(patch.size!==undefined||patch.length!==undefined))throw messageError(new Error(''), "errors.editorSpatialShape.useFigureScaleToResizeAZeroLength", {});
+  for(const[k,v]of Object.entries(patch))if(!['size','length','width','taper'].includes(k)||!Number.isFinite(v)||v<(k==='taper'?-.9:.1)||v>(k==='taper'?3:5))throw messageError(new Error(''), "errors.editorSpatialShape.chooseProportionsWithinTheControlRange", {});
   const f=this.figure,index=this.selectedJoint,id=f.segments[index].segment_id;
   // Size carries all descendant bones (e.g. foot + toes) as one part. Length,
   // width and taper remain local adjustments; bindings blend their boundaries.

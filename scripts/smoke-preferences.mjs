@@ -25,7 +25,7 @@ try {
   assert.deepEqual([migrated.sizes.right, migrated.sizes.bottom, migrated.right], [310, 240, 310]);
   const saved = await page.evaluate(async () => {
     window.styk.workspace.saveLayout('Smoke layout');
-    window.styk.workspace.float('right');
+    window.styk.workspace.float('vfx');
     window.styk.workspace.setTimelineSpan('stage');
     await window.styk.workspace.flushPreferences();
     window.styk.settingsUI.commit({locale:'it',theme:'dark'});
@@ -47,6 +47,8 @@ try {
   assert.deepEqual(saved.snapshot.saved.map(item => item.name), ['Smoke layout']);
   assert.equal(saved.invalidRejected, true);
   assert.equal(saved.oversizedRejected, true);
+  const nativeSave = await first.evaluate(({Menu}) => Menu.getApplicationMenu().items.flatMap(item => item.submenu?.items ?? []).some(item => item.label === 'Salva'));
+  assert.equal(nativeSave, true, 'the native menu updates from the same saved locale');
   assert.equal(saved.editorSettings.locale,'it');
   assert.equal(saved.editorSettings.theme,'dark');
   const closed = first.waitForEvent('close');
@@ -64,6 +66,7 @@ try {
   assert.equal(restored.span, 'stage');
   assert.equal(await restoredPage.locator('html').getAttribute('data-theme'),'dark');
   assert.equal(restored.editorSettings.theme,'dark');
+  assert.equal(await second.evaluate(({Menu}) => Menu.getApplicationMenu().items.flatMap(item => item.submenu?.items ?? []).some(item => item.label === 'Salva')), true, 'the native menu restores its language before the renderer');
   assert.equal(restored.locale,'it');assert.equal(restored.documentLocale,'it');assert.deepEqual(restored.editorSettings,saved.editorSettings);
   await restoredPage.evaluate(async () => {
     for (const item of window.styk.workspace.layouts) window.styk.workspace.deleteLayout(item.id);

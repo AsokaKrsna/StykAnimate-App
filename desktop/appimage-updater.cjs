@@ -1,4 +1,6 @@
 'use strict';
+const { messageError } = require('./localization.cjs');
+
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -6,7 +8,7 @@ const { AppImageUpdater } = require('electron-updater');
 
 function writableAppImage(file) {
   const destination = fs.realpathSync(file);
-  if (!fs.statSync(destination).isFile()) throw new Error('The AppImage is not a file.');
+  if (!fs.statSync(destination).isFile()) throw messageError(new Error(''), 'desktop.appimageUpdater.errors.theAppImageIsNotAFile', {});
   fs.accessSync(destination, fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK);
   fs.accessSync(path.dirname(destination), fs.constants.W_OK | fs.constants.X_OK);
   return destination;
@@ -27,7 +29,7 @@ class LinuxAppImageUpdater extends AppImageUpdater {
 
   async stageInstall() {
     await this.discardStagedInstall();
-    if (!this.installerPath || !this.downloadedUpdateHelper?.downloadedFileInfo) throw new Error('No verified AppImage update is available.');
+    if (!this.installerPath || !this.downloadedUpdateHelper?.downloadedFileInfo) throw messageError(new Error(''), 'desktop.appimageUpdater.errors.noVerifiedAppImageUpdateIsAvailable', {});
     const destination = writableAppImage(this.appImage);
     const original = fs.statSync(destination);
     const directory = await fs.promises.mkdtemp(path.join(path.dirname(destination), '.stykanimate-update-'));
@@ -42,12 +44,12 @@ class LinuxAppImageUpdater extends AppImageUpdater {
 
   doInstall() {
     const staged = this.stagedInstall;
-    if (!staged) throw new Error('The AppImage update has not been staged.');
+    if (!staged) throw messageError(new Error(''), 'desktop.appimageUpdater.errors.theAppImageUpdateHasNotBeenStaged', {});
     const destination = writableAppImage(this.appImage);
     const current = fs.statSync(destination);
     if (destination !== staged.destination || current.dev !== staged.original.dev || current.ino !== staged.original.ino ||
         current.size !== staged.original.size || current.mtimeMs !== staged.original.mtimeMs) {
-      throw new Error('The running AppImage changed. Restart it before updating.');
+      throw messageError(new Error(''), 'desktop.appimageUpdater.errors.theRunningAppImageChangedRestartItBeforeUpdating', {});
     }
     fs.renameSync(staged.file, destination);
     // Electron's relaunch helper fails under this AppImage runtime. Launch from

@@ -1,3 +1,5 @@
+import {t as interfaceText} from '../localization.mjs';
+import {appendLocalized} from '../localization-bindings.mjs';
 /**
  * Keyboard paths through the shell (WCAG 2.5.7: every drag has one).
  *
@@ -13,7 +15,7 @@
  *   reaches the editor.
  */
 const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-const PLACES = Object.freeze({left: 'Dock left', right: 'Dock right', float: 'Float here'});
+const PLACES = Object.freeze({left: interfaceText("dockKeyboard.dockLeft"), right: interfaceText("dockKeyboard.dockRight"), float: interfaceText("dockKeyboard.floatHere")});
 /** A region's main collection, where focus lands before its first control. */
 export const COLLECTIONS = '[role="tree"][aria-label], [role="grid"][aria-label], [role="listbox"][aria-label]';
 
@@ -70,7 +72,7 @@ export function createDockKeyboard({document: doc = globalThis.document, window:
   zone.hidden = true;
   const zoneLabel = doc.createElement('span');
   zoneLabel.className = 'ui-drop-label';
-  zone.append(zoneLabel);
+  appendLocalized(zone, zoneLabel);
 
   const panelOf = element => {
     const panel = element?.closest?.('[data-panel]');
@@ -82,7 +84,7 @@ export function createDockKeyboard({document: doc = globalThis.document, window:
   function preview({announce: speak = true} = {}) {
     const target = move.targets[move.index];
     const workspace = doc.querySelector('.workspace');
-    if (zone.parentElement !== workspace) workspace.append(zone);
+    if (zone.parentElement !== workspace) appendLocalized(workspace, zone);
     zone.dataset.target = target;
     zone.hidden = false;
     zoneLabel.textContent = PLACES[target];
@@ -96,7 +98,7 @@ export function createDockKeyboard({document: doc = globalThis.document, window:
     zone.hidden = true;
     win.removeEventListener('keydown', onKey, true);
     win.removeEventListener('pointerdown', onPointer, true);
-    if (!commit) { announce('Move cancelled'); restore?.focus?.({preventScroll: true}); return; }
+    if (!commit) { announce(interfaceText("dockKeyboard.moveCancelled")); restore?.focus?.({preventScroll: true}); return; }
     const target = targets[index];
     if (target === 'float') host.workspace.float(id);
     else host.workspace.dock(id, target);
@@ -115,7 +117,7 @@ export function createDockKeyboard({document: doc = globalThis.document, window:
       return;
     } else {
       // Any other key belongs to the move: it never reaches the editor's shortcuts (H would pick the Hand tool).
-      if (!['Shift', 'Control', 'Alt', 'Meta'].includes(event.key)) { event.preventDefault(); event.stopPropagation(); }
+      if (!['Shift', "Control", 'Alt', "Meta"].includes(event.key)) { event.preventDefault(); event.stopPropagation(); }
       return;
     }
     event.preventDefault();
@@ -127,9 +129,9 @@ export function createDockKeyboard({document: doc = globalThis.document, window:
   /** Starts moving the panel that holds focus (or `id`); false when there is none that can move. */
   function startMove(id = panelOf(doc.activeElement)) {
     if (move) finish(false);
-    if (!id) { announce('Focus a panel to move it'); return false; }
+    if (!id) { announce(interfaceText("dockKeyboard.focusAPanelToMoveIt")); return false; }
     const targets = ['left', 'right', 'float'].filter(target => host.canPlace(id, target));
-    if (targets.length < 2) { announce('This panel stays where it is'); return false; }
+    if (targets.length < 2) { announce(interfaceText("dockKeyboard.thisPanelStaysWhereItIs")); return false; }
     const presentation = host.presentation(id);
     const current = presentation === 'float' ? 'float' : host.solution?.panels[id]?.side;
     const start = Math.max(0, targets.indexOf(current));

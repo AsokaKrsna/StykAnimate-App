@@ -1,8 +1,9 @@
+import {messageError} from './localized-error.mjs';
 import {TILE,TILE_BYTES,MIN_TILE,MAX_TILE,TileStore,tileKey,tileTransparent} from './drawing-tiles.mjs';
 import {TRANSFORM_BYTES} from './drawing-transform.mjs';
 
 export function lassoBounds(points){
-  if(!Array.isArray(points)||points.length>8192||points.some(p=>!p||![p.x,p.y].every(n=>Number.isFinite(n)&&n>=MIN_TILE*TILE&&n<=(MAX_TILE+1)*TILE)))throw new Error('Invalid lasso coordinates.');
+  if(!Array.isArray(points)||points.length>8192||points.some(p=>!p||![p.x,p.y].every(n=>Number.isFinite(n)&&n>=MIN_TILE*TILE&&n<=(MAX_TILE+1)*TILE)))throw messageError(new Error(''), "errors.drawingLasso.invalidLassoCoordinates", {});
   if(points.length<3)return null;
   const x=Math.floor(Math.min(...points.map(p=>p.x))),y=Math.floor(Math.min(...points.map(p=>p.y)));
   const width=Math.ceil(Math.max(...points.map(p=>p.x)))-x,height=Math.ceil(Math.max(...points.map(p=>p.y)))-y;
@@ -26,8 +27,8 @@ export function lassoContains(points,x,y){
 export function captureSelection(store,points,{maxBytes=TRANSFORM_BYTES}={}){
   const bounds=lassoBounds(points),tiles=[];
   if(!bounds)return {bounds,tiles};
-  if(!Number.isFinite(maxBytes)||maxBytes<0)throw new Error('Invalid selection memory budget.');
-  const limit=()=>{throw new Error('The selection exceeds the drawing working memory limit.');};
+  if(!Number.isFinite(maxBytes)||maxBytes<0)throw messageError(new Error(''), "errors.drawingLasso.invalidSelectionMemoryBudget", {});
+  const limit=()=>{throw messageError(new Error(''), "errors.drawingLasso.theSelectionExceedsTheDrawingWorkingMemoryLimit", {});};
   // Edge objects, row indices, crossings and the one reusable coverage tile.
   const overhead=points.length*128+store.size*96+TILE*TILE;
   let bytes=store.bytes+overhead;if(bytes>maxBytes)limit();
@@ -88,11 +89,11 @@ export function selectionStores(base,tiles){
 
 export function captureMaskSelection(store,mask,{maxBytes=TRANSFORM_BYTES}={}){
   if(mask.points)return captureSelection(store,mask.points,{maxBytes});
-  if(!(mask.mask instanceof Uint8Array)||mask.mask.length!==mask.width*mask.height)throw new Error('Invalid selection mask.');
+  if(!(mask.mask instanceof Uint8Array)||mask.mask.length!==mask.width*mask.height)throw messageError(new Error(''), "errors.drawingLasso.invalidSelectionMask", {});
   const tiles=[];let bytes=store.bytes+mask.mask.byteLength;
   for(const t of store){let selected=0,remaining=0;const at=(p)=>{const x=t.tx*TILE+p%TILE-mask.x,y=t.ty*TILE+Math.floor(p/TILE)-mask.y;return x>=0&&y>=0&&x<mask.width&&y<mask.height&&mask.mask[y*mask.width+x];};
     for(let p=0;p<TILE*TILE;p++)if(t.pixels[p*4+3]){if(at(p))selected++;else remaining++;}
-    if(!selected)continue;if(bytes+(remaining?TILE_BYTES*2:0)>maxBytes)throw new Error('The selection exceeds the drawing working memory limit.');bytes+=remaining?TILE_BYTES*2:0;
+    if(!selected)continue;if(bytes+(remaining?TILE_BYTES*2:0)>maxBytes)throw messageError(new Error(''), "errors.drawingLasso.theSelectionExceedsTheDrawingWorkingMemoryLimit", {});bytes+=remaining?TILE_BYTES*2:0;
     const pixels=remaining?t.pixels.slice():t.pixels,rest=remaining?t.pixels.slice():null;if(rest)for(let p=0;p<TILE*TILE;p++){if(at(p))rest[p*4+3]=0;else pixels[p*4+3]=0;}
     const captured={pixels},r=rest?{pixels:rest}:null;tileTransparent(captured);if(r)tileTransparent(r);tiles.push({tx:t.tx,ty:t.ty,pixels,alphaBounds:captured.alphaBounds,full:!remaining,remaining:rest,remainingBounds:r?.alphaBounds??null});
   }

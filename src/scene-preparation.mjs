@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {sceneBackgroundColor} from './pivot/background.mjs';
 import {PreviewImages} from './preview-images.mjs';
 
@@ -31,7 +32,7 @@ export function createSceneImages({url, signal, checkCurrent = () => {}, imageFa
   if (!imageFactory && typeof Worker !== 'undefined') {
     const images = new PreviewImages(), assets = new Map();
     let disposed = false;
-    const check = () => {if (disposed || signal?.aborted) throw new DOMException('Scene preparation cancelled.', 'AbortError'); checkCurrent();};
+    const check = () => {if (disposed || signal?.aborted) throw messageError(new DOMException('', 'AbortError'), "errors.renderer.scenePreparationCancelled", {}); checkCurrent();};
     const abort = () => images.clear();
     signal?.addEventListener('abort', abort, {once: true});
     return {images, check, resources: {url, image: address => images.get(address)},
@@ -48,7 +49,7 @@ export function createSceneImages({url, signal, checkCurrent = () => {}, imageFa
   imageFactory ||= () => new Image();
   const images = new Map(), pending = new Map(), cancelWaits = new Set(); let disposed = false;
   const check = () => {
-    if (disposed || signal?.aborted) throw new DOMException('Scene preparation cancelled.', 'AbortError');
+    if (disposed || signal?.aborted) throw messageError(new DOMException('', 'AbortError'), "errors.renderer.scenePreparationCancelled", {});
     checkCurrent();
   };
   // A model revision guard can change without an AbortSignal. Keep a stalled
@@ -60,7 +61,7 @@ export function createSceneImages({url, signal, checkCurrent = () => {}, imageFa
       settled = true; clearTimeout(timer); cancelWaits.delete(cancel);
       signal?.removeEventListener('abort', cancel); callback(value);
     };
-    const cancel = () => finish(reject, new DOMException('Scene preparation cancelled.', 'AbortError'));
+    const cancel = () => finish(reject, messageError(new DOMException('', 'AbortError'), "errors.renderer.scenePreparationCancelled", {}));
     const poll = () => {
       try {check(); timer = setTimeout(poll, 50);}
       catch (error) {finish(reject, error);}
@@ -71,14 +72,14 @@ export function createSceneImages({url, signal, checkCurrent = () => {}, imageFa
   });
   const loadOne = asset => {
     check(); const address = url(asset);
-    if (!address) return Promise.reject(new Error('An initial-frame image has no readable asset.'));
+    if (!address) return Promise.reject(messageError(new Error(''), "errors.scenePreparation.anInitialFrameImageHasNoReadableAsset", {}));
     if (pending.has(address)) return pending.get(address);
     const image = imageFactory(); image.decoding = 'async'; images.set(address, image);
     const promise = (async () => {
       image.src = address;
       await waitForDecode(image.complete ? Promise.resolve() : image.decode());
       check();
-      if (!image.naturalWidth || !image.naturalHeight) throw new Error('An initial-frame image could not be decoded.');
+      if (!image.naturalWidth || !image.naturalHeight) throw messageError(new Error(''), "errors.scenePreparation.anInitialFrameImageCouldNotBeDecoded", {});
     })();
     pending.set(address, promise); return promise;
   };
@@ -106,8 +107,8 @@ export const yieldSceneTask = globalThis.scheduler?.yield ? () => scheduler.yiel
 });
 
 export async function consumeSceneSteps(iterator, {sliceMs = 4, signal, checkCurrent = () => {}, yieldControl = yieldSceneTask, onProgress} = {}) {
-  if (!Number.isFinite(sliceMs) || sliceMs <= 0 || sliceMs > 16) throw new RangeError('Scene preparation slices must be greater than zero and at most 16 ms.');
-  const check = () => {if (signal?.aborted) throw new DOMException('Scene preparation cancelled.', 'AbortError'); checkCurrent();};
+  if (!Number.isFinite(sliceMs) || sliceMs <= 0 || sliceMs > 16) throw messageError(new RangeError(''), "errors.scenePreparation.scenePreparationSlicesMustBeGreaterThanZero", {});
+  const check = () => {if (signal?.aborted) throw messageError(new DOMException('', 'AbortError'), "errors.renderer.scenePreparationCancelled", {}); checkCurrent();};
   const timings = {slices: 0, workMs: 0, maxSliceMs: 0};
   try {
     for (;;) {

@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {editorSpatialShapeMethods} from './editor-spatial-shape.mjs';
 import {unprojectSpatial,unprojectJoint,projectSpatial,projection} from './spatial-projection.mjs';
 import {geometryPlans} from './pivot/geometry-pose.mjs';
@@ -15,7 +16,7 @@ export const editorSpatialMethods={
  ...editorSpatialShapeMethods,
  setPoseChoice(name,id){
   const group=poseChoiceGroups(this.figure,this.object).find(g=>g.name===name);if(!group)return false;
-  if(id!==0&&!group.choices.some(c=>c.id===id))throw new Error('Choose an available rig pose.');
+  if(id!==0&&!group.choices.some(c=>c.id===id))throw messageError(new Error(''), "errors.editorSpatial.chooseAnAvailableRigPose", {});
   if(group.value===id)return false;
   return this._objectEdit('Change '+name,o=>{
    const lengths=o.len_flag?o.lengths.slice():this.figure.segments.map(s=>s.length);
@@ -37,7 +38,7 @@ export const editorSpatialMethods={
  },
  setSpatialIKPole(x,y,depth){
   const pole=this.getSpatialIKPole();if(!pole)return false;
-  if(![x,y,depth??pole.point[2]].every(Number.isFinite))throw new Error('Choose a finite IK pole position.');
+  if(![x,y,depth??pole.point[2]].every(Number.isFinite))throw messageError(new Error(''), "errors.editorSpatial.chooseAFiniteIkPolePosition", {});
   const g=this.geometry.objects.get(this.selectedSlot),p=unprojectSpatial({x,y},depth??pole.point[2],this.object,g.root);
   const v=[p.x-pole.center[0],p.y-pole.center[1],(depth??pole.point[2])-pole.center[2]],n=Math.hypot(...v);if(n<1e-6)return false;
   return this.setSpatialIKTarget({pole:v.map(x=>x/n),swivel:0});
@@ -46,8 +47,8 @@ export const editorSpatialMethods={
   const f=this.figure,id=f?.segments[this.selectedJoint]?.segment_id,c=this.object?._stykIK?.[id];
   if(!c?.enabled||!c.spatialTarget||c.bendDirection!==0)return false;
   for(const[k,v]of Object.entries(patch)){
-   if(k==='pole'){if(!Array.isArray(v)||v.length!==3||!v.every(Number.isFinite)||Math.abs(Math.hypot(...v)-1)>1e-5)throw new Error('Choose a unit IK pole direction.');}
-   else if(!['depth','swivel'].includes(k)||!Number.isFinite(v)||Math.abs(v)>1e6)throw new Error('Choose a finite spatial IK adjustment.');
+   if(k==='pole'){if(!Array.isArray(v)||v.length!==3||!v.every(Number.isFinite)||Math.abs(Math.hypot(...v)-1)>1e-5)throw messageError(new Error(''), "errors.editorSpatial.chooseAUnitIkPoleDirection", {});}
+   else if(!['depth','swivel'].includes(k)||!Number.isFinite(v)||Math.abs(v)>1e6)throw messageError(new Error(''), "errors.editorSpatial.chooseAFiniteSpatialIkAdjustment", {});
   }
   const g=this.geometry.objects.get(this.selectedSlot);
   return this._objectEdit(patch.pole?'Move IK pole':'Adjust spatial IK target',o=>{
@@ -86,7 +87,7 @@ export const editorSpatialMethods={
  },
  setSpatialPose(patch,{wholeFigure=false}={}){
   const before=this.getSpatialPose();if(!before)return false;
-  for(const[k,v]of Object.entries(patch))if(!['bend','turn','pitch'].includes(k)||!Number.isFinite(v)||Math.abs(v)>1e6)throw new Error('Choose a finite joint rotation.');
+  for(const[k,v]of Object.entries(patch))if(!['bend','turn','pitch'].includes(k)||!Number.isFinite(v)||Math.abs(v)>1e6)throw messageError(new Error(''), "errors.editorSpatial.chooseAFiniteJointRotation", {});
   // A hinge accepts only its own rotation; a slide does not rotate.
   const motion=this.getSpatialMotion();if(motion)return motion.type==='hinge'&&patch.bend!==undefined?this.setSpatialMotion(patch.bend):false;
   if(Object.entries(patch).every(([k,v])=>Math.abs(v-before[k])<1e-12))return false;
@@ -94,7 +95,7 @@ export const editorSpatialMethods={
   const frame=this.geometry.objects.get(this.selectedSlot).segments[this.selectedJoint].spatialFrame;
   const parent=quatMultiply(frame.q,inverseQuaternion(spatialQuaternion(before.bend,before.turn,before.pitch))),next={...before,...patch};
   const world=spatialWorldQuaternion(quatMultiply(parent,spatialQuaternion(next.bend,next.turn,next.pitch)),f,this.object),handle=f.segments[this.selectedJoint].segment_id;
-  if(wholeFigure&&r.parent)throw new Error('Select the root articulation to rotate the whole figure.');
+  if(wholeFigure&&r.parent)throw messageError(new Error(''), "errors.editorSpatial.selectTheRootArticulationToRotateTheWhole", {});
   const controllers=wholeFigure?this.object._stykIK:null;
   const delta=wholeFigure?quatMultiply(world,inverseQuaternion(spatialWorldQuaternion(frame.q,f,this.object))):null;
   const root=this.geometry.objects.get(this.selectedSlot).root;
@@ -268,7 +269,7 @@ export const editorSpatialMethods={
  /** Set a mechanical joint's travel, clamped to its range; `fraction` maps 0–1 onto it. */
  setSpatialMotion(value,{fraction=false}={}){
   const m=this.getSpatialMotion();if(!m)return false;
-  if(!Number.isFinite(value))throw new Error('Choose a finite position.');
+  if(!Number.isFinite(value))throw messageError(new Error(''), "errors.editorSpatial.chooseAFinitePosition", {});
   const target=Math.min(m.max,Math.max(m.min,fraction?m.min+value*(m.max-m.min):value)),i=this.selectedJoint,s=this.figure.segments[i],r=s._stykRig.spatial;
   const current=m.type==='slide'?(this.object.len_flag?this.object.lengths[i]:s.length):this.getSpatialPose().bend;
   const next=m.type==='slide'?Math.hypot(...r.tip.map((n,k)=>n-r.origin[k]))+target:target;

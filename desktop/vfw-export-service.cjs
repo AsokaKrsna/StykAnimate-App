@@ -1,4 +1,6 @@
 'use strict';
+const { messageError } = require('./localization.cjs');
+
 
 /** Windows-installed VFW codecs execute in a fixed, isolated native helper. */
 const fs = require('node:fs/promises');
@@ -9,22 +11,22 @@ const {randomUUID} = require('node:crypto');
 
 const CHUNK = 256 * 1024, MAX_FRAME = 64 * 1024 * 1024, MAX_OUTPUT = 256 * 1024 * 1024, MAX_STATE = 1024 * 1024;
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); promise.catch(() => {}); return {promise, resolve, reject}; };
-function integer(value, min, max, label) { if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${label} must be an integer from ${min} to ${max}.`); return value; }
+function integer(value, min, max, label) { if (!Number.isInteger(value) || value < min || value > max) throw messageError(new Error(''), 'desktop.vfwExportService.errors.labelMustBeAnIntegerFromMinToMax', {label: label, min: min, max: max}); return value; }
 function dimensions(options = {}) {
   const width = integer(options.width ?? 640, 1, 16384, 'Video width'), height = integer(options.height ?? 480, 1, 16384, 'Video height');
   // Mirrors EXPORT_MAX_PIXELS in src/export-sampling.mjs.
-  if (width * height > 67108864) throw new Error('Video exceeds the 67-million-pixel limit.');
+  if (width * height > 67108864) throw messageError(new Error(''), 'desktop.vfwExportService.errors.videoExceedsThe67MillionPixelLimit', {});
   const stride = Math.ceil(width * 3 / 4) * 4, frameBytes = stride * height;
-  if (frameBytes > MAX_FRAME) throw new Error('A video frame exceeds the 64 MiB limit.');
+  if (frameBytes > MAX_FRAME) throw messageError(new Error(''), 'desktop.vfwExportService.errors.aVideoFrameExceedsThe64MiBLimit', {});
   return {width, height, stride, frameBytes};
 }
 function codecIdentity(id) {
   const match = /^vfw:(x86|x64):([0-9a-f]{8})$/i.exec(id ?? '');
-  if (!match) throw new Error('Choose an installed Windows VFW codec.');
+  if (!match) throw messageError(new Error(''), 'desktop.vfwExportService.errors.chooseAnInstalledWindowsVFWCodec', {});
   return {arch: match[1].toLowerCase(), handler: parseInt(match[2], 16)};
 }
 function rationalFPS(fps) {
-  if (typeof fps !== 'number' || !Number.isFinite(fps) || fps < 1 || fps > 1000) throw new Error('Video frame rate must be from 1 to 1000.');
+  if (typeof fps !== 'number' || !Number.isFinite(fps) || fps < 1 || fps > 1000) throw messageError(new Error(''), 'desktop.vfwExportService.errors.videoFrameRateMustBeFrom1To1000', {});
   let numerator = Math.round(fps * 1000000), denominator = 1000000, a = numerator, b = denominator;
   while (b) { const remainder = a % b; a = b; b = remainder; }
   numerator /= a; denominator /= a; return {numerator, denominator};
@@ -37,9 +39,9 @@ class VfwExportService {
     this.jobs = new Map(); this.configurations = new Map(); this.cache = new Map(); this.commands = new Set(); this.disposed = false;
   }
   _helper(arch) {
-    if (this.disposed) throw new Error('Windows codec service is closed.');
-    if (this.platform !== 'win32') throw new Error('Installed Video for Windows codecs are available only in the Windows desktop app.');
-    const helper = this.helperPaths[arch]; if (!helper || !path.isAbsolute(helper)) throw new Error(`The ${arch} Windows codec helper is not bundled.`);
+    if (this.disposed) throw messageError(new Error(''), 'desktop.vfwExportService.errors.windowsCodecServiceIsClosed', {});
+    if (this.platform !== 'win32') throw messageError(new Error(''), 'desktop.vfwExportService.errors.installedVideoForWindowsCodecsAreAvailableOnlyInTheWindowsDesktopApp', {});
+    const helper = this.helperPaths[arch]; if (!helper || !path.isAbsolute(helper)) throw messageError(new Error(''), 'desktop.vfwExportService.errors.theArchWindowsCodecHelperIsNotBundled', {arch: arch});
     return helper;
   }
   async _command(arch, args, {interactive = false} = {}) {
@@ -47,15 +49,15 @@ class VfwExportService {
     return new Promise((resolve, reject) => {
       const child = spawn(helper, args.map(String), {windowsHide: !interactive, stdio: ['ignore', 'pipe', 'pipe']}); this.commands.add(child);
       let stdout = '', stderr = '', settled = false;
-      const timer = setTimeout(() => fail(new Error(interactive ? 'The codec configuration dialog timed out.' : 'The installed codec query timed out.')), interactive ? 15 * 60 * 1000 : 15000);
+      const timer = setTimeout(() => fail(messageError(new Error(''), interactive ? 'desktop.vfwExportService.errors.configurationTimeout' : 'desktop.vfwExportService.errors.queryTimeout')), interactive ? 15 * 60 * 1000 : 15000);
       const fail = error => { if (settled) return; settled = true; clearTimeout(timer); this.commands.delete(child); child.kill(); reject(error); };
       child.on('error', fail);
-      child.stdout.on('data', bytes => { stdout += bytes.toString('utf8'); if (stdout.length > 2 * 1024 * 1024) fail(new Error('Windows codec response exceeds the supported limit.')); });
+      child.stdout.on('data', bytes => { stdout += bytes.toString('utf8'); if (stdout.length > 2 * 1024 * 1024) fail(messageError(new Error(''), 'desktop.vfwExportService.errors.windowsCodecResponseExceedsTheSupportedLimit', {})); });
       child.stderr.on('data', bytes => { stderr = (stderr + bytes.toString('utf8')).slice(-16000); });
       child.on('close', code => {
         if (settled) return; settled = true; clearTimeout(timer); this.commands.delete(child);
-        if (code !== 0) return reject(new Error(clean(stderr) || `Windows codec helper exited with code ${code}.`));
-        try { const value = JSON.parse(stdout.trim()); if (value.type === 'error') throw new Error(value.message); resolve(value); } catch (error) { reject(new Error(`Invalid Windows codec response: ${error.message}`)); }
+        if (code !== 0) return reject((clean(stderr) ? new Error(clean(stderr)) : messageError(new Error(''), 'desktop.vfwExportService.errors.helperExited', {code})));
+        try { const value = JSON.parse(stdout.trim()); if (value.type === 'error') throw new Error(value.message); resolve(value); } catch (error) { reject(messageError(new Error(''), 'desktop.vfwExportService.errors.invalidWindowsCodecResponseMessage', {message: error.message})); }
       });
     });
   }
@@ -88,39 +90,39 @@ class VfwExportService {
   }
   async _codec(options) {
     const identity = codecIdentity(options.codecId), caps = await this.capabilities(options), codec = caps.codecs.find(codec => codec.id === options.codecId.toLowerCase());
-    if (!codec?.supported) throw new Error(codec?.reason || caps.reason || 'This installed Windows codec is unavailable.');
+    if (!codec?.supported) throw (codec?.reason || caps.reason ? new Error(codec?.reason || caps.reason) : messageError(new Error(''), 'desktop.vfwExportService.errors.codecUnavailable'));
     return {...identity, codec};
   }
   async configure(options = {}, ownerHwnd = '0') {
     const size = dimensions(options), {arch, handler, codec} = await this._codec(options);
-    if (!codec.configure) throw new Error('This Windows codec has no configuration dialog.');
-    if (!/^\d{1,20}$/.test(String(ownerHwnd))) throw new Error('Invalid codec dialog owner.');
+    if (!codec.configure) throw messageError(new Error(''), 'desktop.vfwExportService.errors.thisWindowsCodecHasNoConfigurationDialog', {});
+    if (!/^\d{1,20}$/.test(String(ownerHwnd))) throw messageError(new Error(''), 'desktop.vfwExportService.errors.invalidCodecDialogOwner', {});
     await fs.mkdir(this.tempRoot, {recursive: true}); const directory = await fs.mkdtemp(path.join(this.tempRoot, 'settings-')), stateFile = path.join(directory, 'codec.state');
     try {
       if (options.configurationId) { const previous = this._configuration(options.configurationId, options.codecId); await fs.copyFile(previous.path, stateFile); }
       await this._command(arch, ['--configure', handler, size.width, size.height, ownerHwnd, stateFile], {interactive: true});
-      const stat = await fs.stat(stateFile); if (stat.size > MAX_STATE) throw new Error('Codec settings exceed the 1 MiB limit.');
+      const stat = await fs.stat(stateFile); if (stat.size > MAX_STATE) throw messageError(new Error(''), 'desktop.vfwExportService.errors.codecSettingsExceedThe1MiBLimit', {});
       const configurationId = randomUUID(); this.configurations.set(configurationId, {codecId: options.codecId, path: stateFile, directory});
       while (this.configurations.size > 16) { const first = this.configurations.keys().next().value, old = this.configurations.get(first); this.configurations.delete(first); await fs.rm(old.directory, {recursive: true, force: true}); }
       return {configurationId, stateBytes: stat.size, codecId: options.codecId};
     } catch (error) { await fs.rm(directory, {recursive: true, force: true}); throw error; }
   }
   _configuration(id, codecId) {
-    const configuration = this.configurations.get(id); if (!configuration || configuration.codecId !== codecId) throw new Error('The selected codec settings have expired or belong to another codec.');
+    const configuration = this.configurations.get(id); if (!configuration || configuration.codecId !== codecId) throw messageError(new Error(''), 'desktop.vfwExportService.errors.theSelectedCodecSettingsHaveExpiredOrBelongToAnotherCodec', {});
     return configuration;
   }
-  _job(token) { const job = this.jobs.get(token); if (!job) throw new Error('This Windows video export is no longer active.'); if (job.error) throw job.error; return job; }
+  _job(token) { const job = this.jobs.get(token); if (!job) throw messageError(new Error(''), 'desktop.vfwExportService.errors.thisWindowsVideoExportIsNoLongerActive', {}); if (job.error) throw job.error; return job; }
   _fail(job, error) {
     if (job.error) return; job.error = error; job.ready.reject(error); job.completion.reject(error); job.frame?.ack.reject(error); job.child?.kill();
   }
   async begin(options = {}) {
-    if (this.starting || this.jobs.size) throw new Error('Finish or cancel the current Windows video export first.');
+    if (this.starting || this.jobs.size) throw messageError(new Error(''), 'desktop.vfwExportService.errors.finishOrCancelTheCurrentWindowsVideoExportFirst', {});
     this.starting = true;
     try { return await this._begin(options); } finally { this.starting = false; }
   }
   async _begin(options) {
     const size = dimensions(options), {numerator, denominator} = rationalFPS(options.fps), totalFrames = integer(options.totalFrames, 1, 1000000, 'Video frame count');
-    const quality = options.quality ?? .9; if (typeof quality !== 'number' || !Number.isFinite(quality) || quality < 0 || quality > 1) throw new Error('Video quality must be from zero to one.');
+    const quality = options.quality ?? .9; if (typeof quality !== 'number' || !Number.isFinite(quality) || quality < 0 || quality > 1) throw messageError(new Error(''), 'desktop.vfwExportService.errors.videoQualityMustBeFromZeroToOne', {});
     const keyframeEvery = integer(options.keyframeEvery ?? 0, 0, 1000000, 'Keyframe interval'), bitrate = integer(options.bitrate ?? 0, 0, 200000000, 'Video bitrate');
     const {arch, handler, codec} = await this._codec(options), settings = options.configurationId ? this._configuration(options.configurationId, options.codecId).path : null;
     await fs.mkdir(this.tempRoot, {recursive: true}); const directory = await fs.mkdtemp(path.join(this.tempRoot, 'export-')), outputPath = path.join(directory, 'animation.avi'), token = randomUUID();
@@ -131,55 +133,55 @@ class VfwExportService {
       let pending = '', stderr = ''; child.on('error', error => this._fail(job, error)); child.stdin.on('error', error => this._fail(job, error));
       child.stderr.on('data', bytes => { stderr = (stderr + bytes.toString('utf8')).slice(-16000); });
       child.stdout.on('data', bytes => {
-        pending += bytes.toString('utf8'); if (pending.length > 128 * 1024) return this._fail(job, new Error('Windows codec protocol response is too large.'));
+        pending += bytes.toString('utf8'); if (pending.length > 128 * 1024) return this._fail(job, messageError(new Error(''), 'desktop.vfwExportService.errors.windowsCodecProtocolResponseIsTooLarge', {}));
         let newline;
         while ((newline = pending.indexOf('\n')) >= 0) {
           const line = pending.slice(0, newline).trim(); pending = pending.slice(newline + 1); if (!line) continue;
           try {
             const message = JSON.parse(line), type = message.type ?? message.event;
-            if (type === 'ready') { if (message.stride !== size.stride || message.frameBytes !== size.frameBytes) throw new Error('Windows codec input dimensions do not match.'); job.ready.resolve(); }
-            else if (type === 'frame') { if (!job.frame || message.index !== job.frame.index) throw new Error('Windows codec acknowledged an unexpected frame.'); if (message.bytesWritten > MAX_OUTPUT) throw new Error('Video output exceeds the 256 MiB limit.'); job.frame.ack.resolve(message); }
+            if (type === 'ready') { if (message.stride !== size.stride || message.frameBytes !== size.frameBytes) throw messageError(new Error(''), 'desktop.vfwExportService.errors.windowsCodecInputDimensionsDoNotMatch', {}); job.ready.resolve(); }
+            else if (type === 'frame') { if (!job.frame || message.index !== job.frame.index) throw messageError(new Error(''), 'desktop.vfwExportService.errors.windowsCodecAcknowledgedAnUnexpectedFrame', {}); if (message.bytesWritten > MAX_OUTPUT) throw messageError(new Error(''), 'desktop.vfwExportService.errors.videoOutputExceedsThe256MiBLimit', {}); job.frame.ack.resolve(message); }
             else if (type === 'complete') job.complete = message;
-            else throw new Error(message.message || 'Windows codec returned an unknown response.');
+            else throw (message.message ? new Error(message.message) : messageError(new Error(''), 'desktop.vfwExportService.errors.unknownResponse'));
           } catch (error) { this._fail(job, error); }
         }
       });
       child.on('close', code => {
         if (job.error) return;
-        if (code !== 0 || !job.complete || job.complete.frames !== totalFrames) return this._fail(job, new Error(clean(stderr) || `Windows codec export stopped before completion (code ${code}).`));
+        if (code !== 0 || !job.complete || job.complete.frames !== totalFrames) return this._fail(job, (clean(stderr) ? new Error(clean(stderr)) : messageError(new Error(''), 'desktop.vfwExportService.errors.stoppedEarly', {code})));
         job.completion.resolve(job.complete);
       });
-      job.timer = setTimeout(() => this._fail(job, new Error('Windows codec export timed out.')), 30 * 60 * 1000);
-      await Promise.race([job.ready.promise, new Promise((_, reject) => { job.readyTimer = setTimeout(() => reject(new Error('Windows codec did not initialize within 15 seconds.')), 15000); })]); clearTimeout(job.readyTimer);
+      job.timer = setTimeout(() => this._fail(job, messageError(new Error(''), 'desktop.vfwExportService.errors.windowsCodecExportTimedOut', {})), 30 * 60 * 1000);
+      await Promise.race([job.ready.promise, new Promise((_, reject) => { job.readyTimer = setTimeout(() => reject(messageError(new Error(''), 'desktop.vfwExportService.errors.windowsCodecDidNotInitializeWithin15Seconds', {})), 15000); })]); clearTimeout(job.readyTimer);
       return {token, ...size, maxChunkBytes: CHUNK, mimeType: 'video/x-msvideo', extension: 'avi'};
     } catch (error) { await this.cancel(token); throw error; }
   }
   beginFrame(token, {index, size} = {}) {
-    const job = this._job(token); if (job.frame || index !== job.written || index >= job.totalFrames || size !== job.frameBytes) throw new Error('Windows video frames must be sequential and match the exact RGB24 size.');
+    const job = this._job(token); if (job.frame || index !== job.written || index >= job.totalFrames || size !== job.frameBytes) throw messageError(new Error(''), 'desktop.vfwExportService.errors.windowsVideoFramesMustBeSequentialAndMatchTheExactRGB24Size', {});
     job.frame = {index, remaining: size, ack: deferred()}; return {index, remaining: size};
   }
   async writeFrameChunk(token, bytes) {
     const job = this._job(token), frame = job.frame;
-    if (!frame || !(bytes instanceof ArrayBuffer || ArrayBuffer.isView(bytes)) || bytes.byteLength < 1 || bytes.byteLength > CHUNK || bytes.byteLength > frame.remaining) throw new Error('Invalid Windows video frame chunk.');
+    if (!frame || !(bytes instanceof ArrayBuffer || ArrayBuffer.isView(bytes)) || bytes.byteLength < 1 || bytes.byteLength > CHUNK || bytes.byteLength > frame.remaining) throw messageError(new Error(''), 'desktop.vfwExportService.errors.invalidWindowsVideoFrameChunk', {});
     const data = bytes instanceof ArrayBuffer ? Buffer.from(bytes) : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength); frame.remaining -= data.length;
     await new Promise((resolve, reject) => job.child.stdin.write(data, error => error ? reject(error) : resolve())); this._job(token);
     return {remaining: frame.remaining};
   }
   async endFrame(token) {
-    const job = this._job(token), frame = job.frame; if (!frame || frame.remaining !== 0) throw new Error('The Windows video frame is incomplete.');
+    const job = this._job(token), frame = job.frame; if (!frame || frame.remaining !== 0) throw messageError(new Error(''), 'desktop.vfwExportService.errors.theWindowsVideoFrameIsIncomplete', {});
     const result = await frame.ack.promise; this._job(token); job.frame = null; job.written++;
     if (job.written === job.totalFrames) job.child.stdin.end();
     return {index: frame.index, completed: job.written, bytesWritten: result.bytesWritten};
   }
   async finish(token) {
-    const job = this._job(token); if (job.frame || job.written !== job.totalFrames) throw new Error('Complete every Windows video frame before finishing.');
+    const job = this._job(token); if (job.frame || job.written !== job.totalFrames) throw messageError(new Error(''), 'desktop.vfwExportService.errors.completeEveryWindowsVideoFrameBeforeFinishing', {});
     await job.completion.promise; const stat = await fs.stat(job.outputPath);
-    if (stat.size < 256 || stat.size > MAX_OUTPUT) throw new Error('The Windows codec produced an empty or oversized AVI file.');
+    if (stat.size < 256 || stat.size > MAX_OUTPUT) throw messageError(new Error(''), 'desktop.vfwExportService.errors.theWindowsCodecProducedAnEmptyOrOversizedAVIFile', {});
     job.size = stat.size; job.file ??= await fs.open(job.outputPath, 'r'); clearTimeout(job.timer);
     return {token, size: stat.size, frames: job.written, width: job.width, height: job.height, codecId: job.codecId, mimeType: 'video/x-msvideo', extension: 'avi'};
   }
   async read(token) {
-    const job = this._job(token); if (!job.file) throw new Error('Finish the Windows video before reading it.');
+    const job = this._job(token); if (!job.file) throw messageError(new Error(''), 'desktop.vfwExportService.errors.finishTheWindowsVideoBeforeReadingIt', {});
     const data = Buffer.alloc(Math.min(CHUNK, job.size - job.read)), result = await job.file.read(data, 0, data.length, job.read); job.read += result.bytesRead;
     return {bytes: new Uint8Array(data.buffer, data.byteOffset, result.bytesRead), done: job.read >= job.size, read: job.read, total: job.size};
   }
@@ -187,8 +189,8 @@ class VfwExportService {
    * bytes through the renderer. */
   async save(token, destination) {
     const job = this._job(token);
-    if (!job.file || !job.size) throw new Error('Finish the Windows video before saving it.');
-    if (typeof destination !== 'string' || !path.isAbsolute(destination)) throw new Error('A native-approved destination is required.');
+    if (!job.file || !job.size) throw messageError(new Error(''), 'desktop.vfwExportService.errors.finishTheWindowsVideoBeforeSavingIt', {});
+    if (typeof destination !== 'string' || !path.isAbsolute(destination)) throw messageError(new Error(''), 'desktop.fileStreams.errors.aNativeApprovedDestinationIsRequired', {});
     await job.file.close(); job.file = null;
     const size = job.size;
     // On failure reopen the temp output so chunked readback remains possible.
@@ -209,7 +211,7 @@ class VfwExportService {
   }
   async cancel(token) {
     const job = this.jobs.get(token); if (!job) return {cancelled: false}; this.jobs.delete(token);
-    clearTimeout(job.timer); clearTimeout(job.readyTimer); this._fail(job, new Error('Windows video export cancelled.'));
+    clearTimeout(job.timer); clearTimeout(job.readyTimer); this._fail(job, messageError(new Error(''), 'desktop.vfwExportService.errors.windowsVideoExportCancelled', {}));
     await job.file?.close();
     if (job.child && job.child.exitCode === null) await new Promise(resolve => { job.child.once('exit', resolve); setTimeout(resolve, 2000).unref(); });
     await fs.rm(job.directory, {recursive: true, force: true}); return {cancelled: true};

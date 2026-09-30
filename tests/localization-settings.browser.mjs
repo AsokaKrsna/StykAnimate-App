@@ -79,9 +79,10 @@ try {
   check('Explicit translated subtrees follow later language changes', await page.locator('#explicit button').textContent() === 'Annulla');
   await page.evaluate(() => {
     const menu = document.querySelector('#menu');
+    window.bindingBaseline = localeApp.elements.size;
     for (let i=0;i<100;i++) { menu.innerHTML = '<button data-action="save"><span>Save</span></button>'; localeApp.applyMenu(menu); }
   });
-  check('Repeated menu replacements retain a bounded set of connected label bindings', await page.evaluate(() => localeApp.elements.size < 15 && [...localeApp.elements].every(element => element.isConnected)));
+  check('Repeated menu replacements retain a bounded set of connected label bindings', await page.evaluate(() => localeApp.elements.size <= bindingBaseline && [...localeApp.elements].every(element => element.isConnected)));
 
   await setup();
   check('A fresh page restores Italian through the existing settings persistence', await page.evaluate(() => localeSettings.value.locale === 'it' && localeApp.localization.locale === 'it' && document.documentElement.lang === 'it' && document.querySelector('[data-action=save]').textContent === 'Salva'));

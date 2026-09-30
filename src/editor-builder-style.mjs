@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Figure-internal order and polygon opacity. History stores small native fields,
  * never embedded assets or animation poses. Valid native ordering is a combined
  * sequence; tied authored records retain the renderer's deterministic ordering. */
@@ -10,7 +11,7 @@ const orderFigure = editor => animatedOrder(editor) ? resolveInstanceFigure(edit
 const clone = value => value === undefined ? undefined : structuredClone(value);
 const orderValue = value => {
   if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isFinite(Math.fround(value)))
-    throw new Error('Draw order must be a finite native number.');
+    throw messageError(new Error(''), "errors.animationProperties.drawOrderMustBeAFiniteNativeNumber", {});
   return value;
 };
 export function builderDrawables(figure) {
@@ -29,7 +30,7 @@ export function normalizeBuilderOrder(figure) {
 function resolveTarget(figure, target, selectedJoint) {
   const kind = target?.kind ?? 'segment', index = target?.index ?? selectedJoint;
   const item = (kind === 'segment' ? figure.segments : kind === 'polygon' ? figure.polyfills : null)?.[index];
-  if (!Number.isInteger(index) || !item) throw new Error('Select an existing segment or polygon.');
+  if (!Number.isInteger(index) || !item) throw messageError(new Error(''), "errors.editorBuilderStyle.selectAnExistingSegmentOrPolygon", {});
   return {kind,index,item,z:orderValue(item.z_order ?? (kind==='segment'?index+1:0))};
 }
 /** Shift selects descendant segments and polygons whose every connection belongs
@@ -59,7 +60,7 @@ export function reorderBuilderDrawables(entries,selected,{direction,delta}={}){
     return direction==='front'?[...other,...own]:[...own,...other];
   }
   delta=direction==='up'?1:direction==='down'?-1:delta;
-  if(!Number.isInteger(delta))throw new Error('Choose a whole draw-order position.');
+  if(!Number.isInteger(delta))throw messageError(new Error(''), "errors.editorBuilderStyle.chooseAWholeDrawOrderPosition", {});
   if(!delta)return original;
   const moving=[],other=[];
   original.forEach((entry,index)=>{if(keys.has(entryKey(entry)))moving.push({entry,index});else other.push(entry);});
@@ -103,7 +104,7 @@ export function beginBuilderOrderAnimation(editor,binding) {
 }
 export function previewBuilderOrderAnimation(editor,binding,value) {
   orderValue(value);
-  if(!Number.isInteger(value)||value<1||value>binding.entries.length)throw new Error(`Draw order must be a whole position from 1 to ${binding.entries.length}.`);
+  if(!Number.isInteger(value)||value<1||value>binding.entries.length)throw messageError(new Error(''), "errors.editorBuilderStyle.drawOrderMustBeAWholePositionFrom", {length: binding.entries.length});
   const next=reorderBuilderDrawables(binding.entries,binding.targets,{delta:value-binding.value});
   previewBuilderOrderSequence(editor,binding.entries,next);
 }
@@ -115,11 +116,11 @@ function previewBuilderOrderSequence(editor,original,next) {
 export function previewBuilderStyleProperty(figure,binding,value) {
   orderValue(value);
   if(binding.property==='opacity'){
-    if(value<0||value>100)throw new Error('Polygon opacity must be from 0 to 100%.');
+    if(value<0||value>100)throw messageError(new Error(''), "errors.editorBuilderStyle.polygonOpacityMustBeFrom0To100", {});
     const polygon=figure.polyfills[binding.target.index];
     polygon.alpha_raw=Math.round((1-value/100)*255);polygon.color_alpha=1-polygon.alpha_raw/255;
   }else{
-    if(!Number.isInteger(value)||value<1||value>binding.entries.length)throw new Error(`Draw order must be a whole position from 1 to ${binding.entries.length}.`);
+    if(!Number.isInteger(value)||value<1||value>binding.entries.length)throw messageError(new Error(''), "errors.editorBuilderStyle.drawOrderMustBeAWholePositionFrom", {length: binding.entries.length});
     const delta=value-binding.value;
     // Each preview starts at the captured sequence, never a cumulative drag.
     apply(figure,binding.initial);
@@ -142,7 +143,7 @@ function command(editor,label,paths,mutate){
 }
 export const editorBuilderStyleMethods={
   moveBuilderOrder(target,direction,{branch=false}={}){
-    if(!['front','back','up','down'].includes(direction))throw new Error('Choose a valid draw-order direction.');
+    if(!['front','back','up','down'].includes(direction))throw messageError(new Error(''), "errors.editorBuilderStyle.chooseAValidDrawOrderDirection", {});
     const figure=orderFigure(this),entries=builderDrawables(figure),selected=builderStyleTargets(figure,target,{branch,selectedJoint:this.selectedJoint});
     const next=reorderBuilderDrawables(entries,selected,{direction});
     if(animatedOrder(this)) {
@@ -168,9 +169,9 @@ export const editorBuilderStyleMethods={
     return command(this,binding.label,binding.paths,()=>previewBuilderStyleProperty(this.figure,binding,value));
   },
   setPolygonOpacity(index,opacity){
-    if(typeof opacity!=='number'||!Number.isFinite(opacity)||opacity<0||opacity>1)throw new Error('Polygon opacity must be from 0 to 1.');
+    if(typeof opacity!=='number'||!Number.isFinite(opacity)||opacity<0||opacity>1)throw messageError(new Error(''), "errors.editorBuilderStyle.polygonOpacityMustBeFrom0To1", {});
     if (this.propertyChannels) return this.updatePolygon(index,{opacity});
-    const binding=builderStyleProperty(this,`polygon_${index}_opacity`);if(!binding)throw new Error('Select an existing polygon.');
+    const binding=builderStyleProperty(this,`polygon_${index}_opacity`);if(!binding)throw messageError(new Error(''), "errors.editorBuilderStyle.selectAnExistingPolygon", {});
     return command(this,binding.label,binding.paths,()=>previewBuilderStyleProperty(this.figure,binding,opacity*100));
   },
 };

@@ -1,3 +1,6 @@
+import {messageAttributes, tupleMessages, messageTuple} from './localization-bindings.mjs';
+
+import {t as interfaceText} from './localization.mjs';
 import {LINEAR_PRESSURE} from './drawing-brush.mjs';
 
 /** The tablet pressure curve editor: a cubic Bézier from (0,0) to (1,1) with
@@ -5,13 +8,13 @@ import {LINEAR_PRESSURE} from './drawing-brush.mjs';
  * a global pen setting (drawing-brush.mjs pressureMap applies it to every
  * brush). Like the drawing sliders, one delegated installation drives every
  * editor in `root` and updates it in place while dragging. */
-export const PRESSURE_PRESETS=[['soft','Soft',[.1,.5,.4,.95]],['linear','Linear',[...LINEAR_PRESSURE]],['firm','Firm',[.6,.05,.9,.5]]];
+export const PRESSURE_PRESETS=[messageTuple(['soft',interfaceText("drawingPressureCurve.soft"),[.1,.5,.4,.95]], {1: {key: "drawingPressureCurve.soft", params: {}}}),messageTuple(['linear',interfaceText("drawingPressureCurve.linear"),[...LINEAR_PRESSURE]], {1: {key: "drawingPressureCurve.linear", params: {}}}),messageTuple(['firm',interfaceText("drawingPressureCurve.firm"),[.6,.05,.9,.5]], {1: {key: "drawingPressureCurve.firm", params: {}}})];
 const S=100,round=n=>Math.round(n*1000)/1000;
 const point=(x,y)=>[+(x*S).toFixed(1),+((1-y)*S).toFixed(1)];
 const same=(a,b)=>a.every((n,i)=>Math.abs(n-b[i])<.005);
 const geometry=([x1,y1,x2,y2])=>{const a=point(x1,y1),b=point(x2,y2);return {a,b,path:`M0 ${S}C${a.join(' ')} ${b.join(' ')} ${S} 0`};};
 export function pressureCurveMarkup(curve){
-  const {a,b,path}=geometry(curve),presets=PRESSURE_PRESETS.map(([id,label,value])=>`<button type="button" data-pressure-preset="${id}" aria-pressed="${same(curve,value)}">${label}</button>`).join('');
+  const {a,b,path}=geometry(curve),presets=PRESSURE_PRESETS.map((_tuple) => {const [id,label,value] = _tuple; const _messages = tupleMessages(_tuple); return `<button type="button" data-pressure-preset="${id}" aria-pressed="${same(curve,value)}"${_messages[1] ? ' ' + messageAttributes(_messages[1].key, _messages[1].params) : ''}>${label}</button>`;}).join('');
   const handle=(i,[cx,cy],label)=>`<circle class="draw-pressure-handle" data-pressure-handle="${i}" cx="${cx}" cy="${cy}" r="5" tabindex="0" role="slider" aria-label="${label}" aria-valuetext="${Math.round(curve[i*2]*100)}% pressure → ${Math.round(curve[i*2+1]*100)}%"></circle>`;
   return `<div class="draw-pressure" data-pressure-curve>
     <svg class="draw-pressure-graph" viewBox="-8 -8 116 116" aria-label="Pen pressure curve: pen pressure across, stroke response up">
@@ -20,7 +23,7 @@ export function pressureCurveMarkup(curve){
       <path class="draw-pressure-diagonal" d="M0 ${S}L${S} 0"></path>
       <path class="draw-pressure-arms" d="M0 ${S}L${a.join(' ')}M${S} 0L${b.join(' ')}"></path>
       <path class="draw-pressure-line" d="${path}"></path>
-      ${handle(0,a,'Light pressure handle')}${handle(1,b,'Heavy pressure handle')}
+      ${handle(0,a,interfaceText("drawingPressureCurve.lightPressureHandle"))}${handle(1,b,interfaceText("drawingPressureCurve.heavyPressureHandle"))}
     </svg>
     <div class="ds-segmented draw-pressure-presets" role="group" aria-label="Pressure presets">${presets}</div>
   </div>`;

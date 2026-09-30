@@ -1,7 +1,8 @@
+import {messageError} from './localized-error.mjs';
 export const TILE=64;
 export const TILE_BYTES=TILE*TILE*4;
 export const MIN_TILE=-0x80000000,MAX_TILE=0x7fffffff;
-export function assertTileCoordinates(tx,ty){if(!Number.isInteger(tx)||!Number.isInteger(ty)||tx<MIN_TILE||ty<MIN_TILE||tx>MAX_TILE||ty>MAX_TILE)throw new Error('Drawing coordinates exceed the file format range.');}
+export function assertTileCoordinates(tx,ty){if(!Number.isInteger(tx)||!Number.isInteger(ty)||tx<MIN_TILE||ty<MIN_TILE||tx>MAX_TILE||ty>MAX_TILE)throw messageError(new Error(''), "errors.drawingTiles.drawingCoordinatesExceedTheFileFormatRange", {});}
 export const tileKey=(tx,ty)=>`${tx},${ty}`;
 export const parseTileKey=key=>key.split(',').map(Number);
 let tileVersion=0;
@@ -28,7 +29,7 @@ export function tileTransparent(tile){if(tile.alphaBounds===undefined)tile.alpha
 // assembly also insert already-owned tiles directly, preserving PNG caches.
 class TileMap extends Map {
   set(key,tile){
-    if(tile?.pixels?.byteLength!==TILE_BYTES)throw new Error('Tile pixels must be one full tile.');
+    if(tile?.pixels?.byteLength!==TILE_BYTES)throw messageError(new Error(''), "errors.drawingTiles.tilePixelsMustBeOneFullTile", {});
     const old=super.get(key);super.set(key,tile);
     if(old?.pixels!==tile.pixels)this.onPixels?.(old?.pixels,tile.pixels);
     this.onKey?.(key);
@@ -97,14 +98,14 @@ export class TileStore {
     if(pixels==null){this.delete(tx,ty);return;}
     let full;
     if(pixels.byteLength===4){full=new Uint8ClampedArray(TILE_BYTES);const word=new Uint32Array(Uint8Array.from(pixels).buffer)[0];new Uint32Array(full.buffer).fill(word);}
-    else{full=new Uint8ClampedArray(pixels);if(full.byteLength!==TILE_BYTES)throw new Error('Tile pixels must be 4 uniform bytes or one full tile.');}
+    else{full=new Uint8ClampedArray(pixels);if(full.byteLength!==TILE_BYTES)throw messageError(new Error(''), "errors.drawingTiles.tilePixelsMustBe4UniformBytesOr", {});}
     this.adopt(tx,ty,full);
   }
   /** Take ownership of a full tile. Callers must stop mutating the buffer;
    * subsequent writes use writable() so forks remain copy-on-write. */
   adopt(tx,ty,pixels,alphaBounds){
     assertTileCoordinates(tx,ty);
-    if(!(pixels instanceof Uint8ClampedArray)||pixels.byteLength!==TILE_BYTES)throw new Error('Owned tile pixels must be one full tile.');
+    if(!(pixels instanceof Uint8ClampedArray)||pixels.byteLength!==TILE_BYTES)throw messageError(new Error(''), "errors.drawingTiles.ownedTilePixelsMustBeOneFullTile", {});
     const key=tileKey(tx,ty),old=this.tiles.get(key),tile={tx,ty,pixels,alphaBounds,frozen:false,version:++tileVersion};this.tiles.set(key,tile);this._placed(old,tile);this.revision=(this.revision??0)+1;
   }
   delete(tx,ty){const key=tileKey(tx,ty),old=this.tiles.get(key);if(this.tiles.delete(key)){this._placed(old,null);this.revision=(this.revision??0)+1;}}

@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {releaseGeometryResources} from './pivot/geometry.mjs';
 
 /** One reusable Canvas2D context for serial object rasterization. Captured
@@ -5,7 +6,7 @@ import {releaseGeometryResources} from './pivot/geometry.mjs';
 export class RasterSurfacePool {
   constructor({contextOptions} = {}) { this.contextOptions = contextOptions; this.surface = null; this.context = null; this.busy = false; }
   acquire(width, height) {
-    if (this.busy) throw new Error('A raster scratch surface cannot be used concurrently.');
+    if (this.busy) throw messageError(new Error(''), "errors.rasterSurfaces.aRasterScratchSurfaceCannotBeUsedConcurrently", {});
     if (!this.surface) {
       this.surface = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : document.createElement('canvas');
       this.surface.width = width; this.surface.height = height;

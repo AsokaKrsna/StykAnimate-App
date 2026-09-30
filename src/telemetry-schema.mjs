@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 // The same allowlist runs at the renderer, privileged desktop boundary, and Worker.
 // No document content, filenames, paths, raw exception messages, or user text belongs here.
 import { emptyPerformance, validatePerformance, trimPerformance,provenance } from './telemetry-performance-schema.mjs';
@@ -82,7 +83,7 @@ export const ENV_ENUMS = Object.freeze({
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const number = (value, max = 1e9) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= max;
 const date = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value;
-const fail = () => { throw new TypeError('Invalid telemetry snapshot'); };
+const fail = () => { throw messageError(new TypeError(''), "errors.telemetrySchema.invalidTelemetrySnapshot", {}); };
 export function emptyHistogram() { return { count: 0, sum: 0, max: 0, buckets: HISTOGRAM_BOUNDS.map(() => 0) }; }
 export function observe(histogram, value) {
   if (!number(value, 3600000)) return;

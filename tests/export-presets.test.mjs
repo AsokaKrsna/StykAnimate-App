@@ -1,3 +1,4 @@
+import {interfaceLocalization} from '../src/localization.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EXPORT_PRESETS, applyExportPreset, artboardShape, exportPresetFit, exportPresetHeld} from '../src/export-presets.mjs';
@@ -89,7 +90,10 @@ test('the fit note says what the export will be, or why it plays with bars and w
   assert.equal(artboardShape(landscape), 'landscape');
   assert.equal(artboardShape(portrait), 'portrait');
   assert.equal(artboardShape({canvasWidth: 1000, canvasHeight: 1050}), 'square');
-  assert.deepEqual(exportPresetFit('tiktok', portrait, choose('tiktok', portrait)), {fits: true, message: 'Ready for TikTok: 1080 × 1920.'});
+  const ready = exportPresetFit('tiktok', portrait, choose('tiktok', portrait));
+  assert.equal(ready.fits, true);
+  assert.equal(ready.message, 'Ready for TikTok: 1080 × 1920.');
+  assert.equal(ready.messageKey, 'exportPresets.readySize');
   const wrong = exportPresetFit('tiktok', landscape, choose('tiktok'));
   assert.equal(wrong.fits, false);
   assert.match(wrong.message, /vertical \(9:16\).*landscape.*bars.*Canvas size/);
@@ -113,4 +117,19 @@ test('every type says what it is for; a movieclip figure is described as a movie
   for (const format of EXPORT_FORMATS) assert.ok(exportTypeHint(format.id).endsWith('.'), `${format.id} has a sentence`);
   assert.equal(exportTypeHint('stkz', {movieclip: true}), exportTypeHint('stykmov'));
   assert.equal(exportTypeHint('nope'), '');
+});
+
+test('language changes preserve preset decisions, identifiers and format extensions', () => {
+  const before = applyExportPreset('youtube', {board: landscape, states: statesFor(null)});
+  const identifiers = EXPORT_FORMATS.map(({id,action,extension}) => ({id,action,extension}));
+  interfaceLocalization.setPseudo('long');
+  try {
+    const states = statesFor(null);
+    assert.ok(states.get('mp4').reason.includes('［'));
+    assert.deepEqual(applyExportPreset('youtube', {board: landscape, states}), before);
+    assert.deepEqual(EXPORT_FORMATS.map(({id,action,extension}) => ({id,action,extension})), identifiers);
+    assert.equal(EXPORT_FORMATS.find(x=>x.id==='piv').short, 'PIV');
+    assert.ok(EXPORT_PRESETS.find(x=>x.id==='gif').label.includes('［'));
+    assert.ok(exportPresetFit('tiktok', landscape, choose('tiktok')).message.includes('［'));
+  } finally { interfaceLocalization.setPseudo(null); }
 });

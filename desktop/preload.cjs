@@ -1,9 +1,26 @@
 'use strict';
+// BEGIN generated localization diagnostics
+const diagnosticEnglish = {
+  "desktop.preload.errors.aCallbackIsRequired": "A callback is required.",
+  "desktop.preload.errors.uiScaleMustBe75200InStepsOf5": "UI scale must be 75–200 in steps of 5."
+};
+function diagnosticError(error, source, messageKey, messageParams = {}) {
+  if (typeof source !== 'string') throw new TypeError(`Unknown error message: ${messageKey}`);
+  messageParams = Object.fromEntries(Object.entries(messageParams).map(([name, value]) => [name, typeof value === 'number' && Number.isFinite(value) ? value : String(value)]));
+  const message = source.replace(/\{([A-Za-z]\w*)\}/g, (token, name) => Object.hasOwn(messageParams, name) ? String(messageParams[name]) : token);
+  Object.defineProperty(error, 'message', {value: message, configurable: true, writable: true});
+  error.messageKey = messageKey;
+  error.messageParams = messageParams;
+  return error;
+}
+const messageError = (error, key, params) => diagnosticError(error, diagnosticEnglish[key], key, params);
+// END generated localization diagnostics
+
 
 const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 function subscribe(channel, callback) {
-  if (typeof callback !== 'function') throw new TypeError('A callback is required.');
+  if (typeof callback !== 'function') throw messageError(new TypeError(''), 'desktop.preload.errors.aCallbackIsRequired', {});
   const listener = (_event, value) => callback(value);
   ipcRenderer.on(channel, listener);
   return () => ipcRenderer.removeListener(channel, listener);
@@ -28,7 +45,7 @@ contextBridge.exposeInMainWorld('stykDesktop', Object.freeze({
   // Page zoom keeps CSS layout, pointer coordinates and devicePixelRatio aligned.
   setUIScale: percent => {
     if (!Number.isFinite(percent) || percent < 75 || percent > 200 || percent % 5 !== 0)
-      throw new RangeError('UI scale must be 75–200 in steps of 5.');
+      throw messageError(new RangeError(''), 'desktop.preload.errors.uiScaleMustBe75200InStepsOf5', {});
     webFrame.setZoomFactor(percent / 100);
   },
   newWindow: () => ipcRenderer.invoke('styk:new-window'),

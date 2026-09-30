@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {normalizePaint} from './paint.mjs';
 /** Portable Pivot text: every visible character is stored as embedded vector paths. */
 import { parse } from "../vendor/text/opentype.mjs";
@@ -31,18 +32,15 @@ export function parseTextFont(bytes, { name = "Font file" } = {}) {
           )
         : null;
   if (!data || !data.byteLength || data.byteLength > MAX_FONT_BYTES)
-    throw new Error("Choose a TTF or OTF font smaller than 32 MB.");
+    throw messageError(new Error(''), "errors.textAuthoringWorker.chooseATtfOrOtfFontSmallerThan", {});
   let font;
   try {
     font = applyWindowsSymbolMapping(parse(data), data);
   } catch (error) {
-    throw new Error(
-      `Could not read ${name}. Choose a TrueType (.ttf) or OpenType (.otf) outline font.`,
-      { cause: error },
-    );
+    throw messageError(new Error('', { cause: error }), "errors.textAuthoring.couldNotReadChooseATruetypeTtfOr", {name: name});
   }
   if (!font.unitsPerEm || typeof font.charToGlyph !== "function")
-    throw new Error("The font has no usable outlines.");
+    throw messageError(new Error(''), "errors.textAuthoring.theFontHasNoUsableOutlines", {});
   const flags = font.tables?.os2?.fsSelection ?? 0;
   return {
     font,
@@ -68,9 +66,7 @@ export async function loadTextFont({ bold = false, italic = false } = {}) {
     )
       .then((response) => {
         if (!response.ok)
-          throw new Error(
-            `Could not load the bundled ${TEXT_FONT_FAMILY} font (${response.status}).`,
-          );
+          throw messageError(new Error(''), "errors.textAuthoring.couldNotLoadTheBundledFont", {TEXT_FONT_FAMILY: TEXT_FONT_FAMILY, status: response.status});
         return response.arrayBuffer();
       })
       .then((buffer) => parse(buffer));
@@ -87,7 +83,7 @@ const number = (value, label, min, max) => {
     value < min ||
     value > max
   )
-    throw new Error(`${label} must be between ${min} and ${max}.`);
+    throw messageError(new Error(''), "errors.cameraMotion.mustBeBetweenAnd", {label: label, min: min, max: max});
   return value;
 };
 const rgb = (value, label) => {
@@ -96,7 +92,7 @@ const rgb = (value, label) => {
     value.length !== 3 ||
     value.some((n) => !Number.isInteger(n) || n < 0 || n > 255)
   )
-    throw new Error(`${label} must contain three RGB bytes.`);
+    throw messageError(new Error(''), "errors.textAuthoring.mustContainThreeRgbBytes", {label: label});
   return [...value];
 };
 const label = (value) =>
@@ -129,21 +125,19 @@ export function textOptionsWithDefaults(
     fontFamily,
   } = options || {};
   if (typeof text !== "string" || !text.trim())
-    throw new Error("Enter visible text.");
+    throw messageError(new Error(''), "errors.textAuthoring.enterVisibleText", {});
   if (text.length > MAX_TEXT_LENGTH)
-    throw new Error(
-      `Text must contain at most ${MAX_TEXT_LENGTH.toLocaleString()} characters.`,
-    );
+    throw messageError(new Error(''), "errors.textAuthoring.textMustContainAtMostCharacters", {value: MAX_TEXT_LENGTH.toLocaleString()});
   if (!["left", "center", "right"].includes(alignment))
-    throw new Error("Text alignment must be left, center, or right.");
+    throw messageError(new Error(''), "errors.textAuthoring.textAlignmentMustBeLeftCenterOrRight", {});
   if (typeof bold !== "boolean" || typeof italic !== "boolean")
-    throw new Error("Bold and italic must be true or false.");
+    throw messageError(new Error(''), "errors.textAuthoring.boldAndItalicMustBeTrueOrFalse", {});
   if (
     !Number.isInteger(figureTypeId) ||
     figureTypeId < 1 ||
     figureTypeId > 65535
   )
-    throw new Error("Figure ID must be between 1 and 65535.");
+    throw messageError(new Error(''), "errors.textAuthoring.figureIdMustBeBetween1And65535", {});
   // Canonical composition avoids treating common accented letters as positioned marks.
   const lineNormalized = text.replace(/\r\n?/g, "\n");
   const normalized = normalizeText
@@ -151,15 +145,11 @@ export function textOptionsWithDefaults(
     : lineNormalized;
   const unique = new Set(normalized.split(""));
   if (unique.size > 255)
-    throw new Error(
-      "Pivot text supports at most 255 distinct UTF-16 characters in one figure.",
-    );
+    throw messageError(new Error(''), "errors.textAuthoring.pivotTextSupportsAtMost255DistinctUtf", {});
   if (/[\ud800-\udfff]/.test(normalized))
-    throw new Error(
-      "This text contains characters outside the supported Unicode BMP range.",
-    );
+    throw messageError(new Error(''), "errors.textAuthoring.thisTextContainsCharactersOutsideTheSupportedUnicode", {});
   if (/[\x00-\x08\x0b-\x1f\x7f]/.test(normalized))
-    throw new Error("Text contains unsupported control characters.");
+    throw messageError(new Error(''), "errors.textAuthoring.textContainsUnsupportedControlCharacters", {});
   return {
     text: normalized,
     ...(options.paint ? {paint:normalizePaint(options.paint)} : {}),
@@ -224,7 +214,7 @@ function pathCommands(path) {
         y = startY;
         break;
       default:
-        throw new Error(`Unsupported font outline command ${command.type}.`);
+        throw messageError(new Error(''), "errors.textAuthoring.unsupportedFontOutlineCommand", {type: command.type});
     }
     if (command.type !== "Z") {
       x = command.x;
@@ -306,7 +296,7 @@ export function textBounds(glyphs, placements) {
     bottom = Math.max(bottom, f32(bounds.bottom + p.y));
   }
   if (!Number.isFinite(left) || right <= left || bottom <= top)
-    throw new Error("Text has no visible glyph outlines.");
+    throw messageError(new Error(''), "errors.textAuthoring.textHasNoVisibleGlyphOutlines", {});
   return {
     left,
     top,
@@ -321,7 +311,7 @@ export function textBounds(glyphs, placements) {
 export function compileTextFigure(options, font) {
   const o = textOptionsWithDefaults(options);
   if (!font || typeof font.charToGlyph !== "function" || !font.unitsPerEm)
-    throw new Error("A parsed outline font is required.");
+    throw messageError(new Error(''), "errors.textAuthoring.aParsedOutlineFontIsRequired", {});
   const family = o.fontFamily || textFontFamily(font);
   const scale = o.fontSize / font.unitsPerEm;
   const glyphs = [],
@@ -333,9 +323,7 @@ export function compileTextFigure(options, font) {
     const invisible = char === "\n" || char === "\t";
     const source = invisible ? null : font.charToGlyph(char);
     if (source && source.index === 0)
-      throw new Error(
-        `${family} does not contain ${char} (U+${unit.toString(16).toUpperCase().padStart(4, "0")}).`,
-      );
+      throw messageError(new Error(''), "errors.textAuthoring.doesNotContainU", {family: family, char: char, value: unit.toString(16).toUpperCase().padStart(4, "0")});
     const commands = source
       ? pathCommands(source.getPath(0, 0, o.fontSize))
       : [];

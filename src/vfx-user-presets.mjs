@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /**
  * The person's own effect presets: a saved effect clip (one effect or a group)
  * with its settings, timing, fades and keys, kept outside any project so it can
@@ -21,8 +22,8 @@ const keyCount=keys=>Object.values(keys).reduce((n,list)=>n+list.length,0);
 
 /** A preset of `clip` named `name`: its effects and everything that times or animates them, but not its target. */
 export function presetFromClip(clip,name,{id=crypto.randomUUID(),created=Date.now()}={}){
- const title=presetName(name);if(!title)throw new Error('Name the preset.');
- if(keyCount(clip.keys)>USER_PRESET_KEY_LIMIT)throw new Error(`This effect has more than ${USER_PRESET_KEY_LIMIT} keys, too many to save as a preset.`);
+ const title=presetName(name);if(!title)throw messageError(new Error(''), "errors.vfxUserPresets.nameThePreset", {});
+ if(keyCount(clip.keys)>USER_PRESET_KEY_LIMIT)throw messageError(new Error(''), "errors.vfxUserPresets.thisEffectHasMoreThanKeysTooMany", {USER_PRESET_KEY_LIMIT: USER_PRESET_KEY_LIMIT});
  const preset={id,name:title,created,effects:structuredClone(clip.effects),strength:clip.strength,fadeIn:clip.fadeIn,fadeOut:clip.fadeOut,duration:clip.duration,offset:clip.duration===null?0:clip.offset,keys:structuredClone(clip.keys)};
  return validPreset(preset);
 }
@@ -41,8 +42,8 @@ export function clipFromPreset(preset,target,{start=0,includeAttached=false,make
 
 /** `preset` when it makes a valid clip, else an error. */
 function validPreset(preset){
- if(!preset||typeof preset!=='object'||!ID.test(preset.id??'')||typeof preset.name!=='string'||!presetName(preset.name)||presetName(preset.name)!==preset.name||!Number.isFinite(preset.created))throw new Error('Invalid effect preset.');
- if(!Array.isArray(preset.effects)||!preset.effects.length||preset.effects.length>VFX_LIMIT||!preset.keys||typeof preset.keys!=='object'||keyCount(preset.keys)>USER_PRESET_KEY_LIMIT)throw new Error('Invalid effect preset.');
+ if(!preset||typeof preset!=='object'||!ID.test(preset.id??'')||typeof preset.name!=='string'||!presetName(preset.name)||presetName(preset.name)!==preset.name||!Number.isFinite(preset.created))throw messageError(new Error(''), "errors.vfxUserPresets.invalidEffectPreset", {});
+ if(!Array.isArray(preset.effects)||!preset.effects.length||preset.effects.length>VFX_LIMIT||!preset.keys||typeof preset.keys!=='object'||keyCount(preset.keys)>USER_PRESET_KEY_LIMIT)throw messageError(new Error(''), "errors.vfxUserPresets.invalidEffectPreset", {});
  validateVfxClips({version:1,clips:[clipFromPreset(preset,{kind:'scene'},{makeId:(n=>()=>`p${n++}`)(0)})]});
  return preset;
 }
@@ -70,13 +71,13 @@ export class VfxPresetStore{
  /** Saves `clip` as `name`; a preset of that name is replaced in place. Resolves once written. */
  async save(clip,name){
   await this.load();const existing=this.named(name);
-  if(!existing&&this.presets.length>=USER_PRESET_LIMIT)throw new Error(`You can keep up to ${USER_PRESET_LIMIT} presets. Delete one first.`);
+  if(!existing&&this.presets.length>=USER_PRESET_LIMIT)throw messageError(new Error(''), "errors.vfxUserPresets.youCanKeepUpToPresetsDeleteOne", {USER_PRESET_LIMIT: USER_PRESET_LIMIT});
   const preset=presetFromClip(clip,name,existing?{id:existing.id}:{});
   return this.commit(existing?this.presets.map(p=>p===existing?preset:p):[preset,...this.presets],preset);
  }
  async rename(id,name){
-  await this.load();const preset=this.find(id),title=presetName(name);if(!preset||!title)throw new Error('Name the preset.');
-  const other=this.named(title);if(other&&other.id!==id)throw new Error(`A preset named “${other.name}” already exists.`);
+  await this.load();const preset=this.find(id),title=presetName(name);if(!preset||!title)throw messageError(new Error(''), "errors.vfxUserPresets.nameThePreset", {});
+  const other=this.named(title);if(other&&other.id!==id)throw messageError(new Error(''), "errors.vfxUserPresets.aPresetNamedAlreadyExists", {name: other.name});
   return this.commit(this.presets.map(p=>p.id===id?{...p,name:title}:p),{...preset,name:title});
  }
  async remove(id){await this.load();return this.commit(this.presets.filter(p=>p.id!==id),null);}

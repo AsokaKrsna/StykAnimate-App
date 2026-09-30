@@ -1,3 +1,7 @@
+import {replaceLocalized, translatedElement, localizedAttribute, messageAttributes, localizedText, localizedMarkup, appendLocalized} from './localization-bindings.mjs';
+
+import {t as interfaceText, messageText as sayTimeline} from './localization.mjs';
+
 /**
  * The timeline header (architecture.md §3.14, experience.md §5.6): one header
  * for Simple and Advanced in three clusters, laid out in the static slots of
@@ -45,7 +49,6 @@ import {createPopover} from './ui/ui-popover.mjs';
 import {setAttr, setHidden, setProp, setText, setVar} from './ui/dom-write.mjs';
 import {setSharedSize} from './shell/layout-schema.mjs';
 import {bandBottom} from './shell/topbar.mjs';
-import {messageText as sayTimeline} from './localization.mjs';
 
 /**
  * What folds, in order (experience.md §1.8, revision 4.3): the zoom slider (Ctrl + wheel and Fit still zoom), Edit
@@ -85,7 +88,7 @@ export function createTimelineHeader(ctx, host) {
     const button = element('button', parent, 'ui-icon-button');
     button.type = 'button';
     if (size) button.dataset.size = size;
-    button.innerHTML = icon(name);
+    localizedMarkup(button, icon(name));
     button.setAttribute('aria-label', label);
     return button;
   };
@@ -104,7 +107,7 @@ export function createTimelineHeader(ctx, host) {
   rulerTools.classList.add('tl-ruler-tools');
   end.prepend(rulerTools);
   rulerTools.setAttribute('role', 'group');
-  rulerTools.setAttribute('aria-label', say('timeline.zoomTools'));
+  localizedAttribute(rulerTools, 'aria-label', "timeline.zoomTools", {});
 
   // ---- Start: the mode switch, Add frame, Next copy and Edit together ----
   const modes = $('timeline-workflow');
@@ -120,30 +123,30 @@ export function createTimelineHeader(ctx, host) {
   addFrame.type = 'button';
   addFrame.dataset.variant = 'ghost';
   addFrame.dataset.hotkeyCommand = 'add-frame';
-  addFrame.innerHTML = `${icon('plus')}<span class="ui-label">${say('timeline.addFrame')}</span>`;
-  addFrame.setAttribute('aria-label', say('timeline.addFrameName'));
-  addFrame.dataset.hotkeyTitle = say('timeline.addFrame');
+  localizedMarkup(addFrame, `${icon('plus')}<span class="ui-label" ${messageAttributes("timeline.addFrame", {})}>${say("timeline.addFrame")}</span>`);
+  localizedAttribute(addFrame, 'aria-label', "timeline.addFrameName", {});
+  localizedAttribute(addFrame, 'data-hotkey-title', "timeline.addFrame", {});
   addFrame.addEventListener('click', () => run(() => host.timeline?.addFrameFromHeader?.()));
   const addWord = addFrame.lastChild;
 
   const cel = element('div', frameTools, 'ui-split tl-cel');
   cel.setAttribute('role', 'group');
-  cel.setAttribute('aria-label', say('timeline.drawingFrames'));
+  localizedAttribute(cel, 'aria-label', "timeline.drawingFrames", {});
   cel.hidden = true;
   const celMain = element('button', cel, 'ui-button tl-cel-main');
   celMain.type = 'button';
   celMain.dataset.variant = 'ghost';
-  celMain.innerHTML = `${icon('duplicate')}<span class="ui-label">${say('timeline.nextCopy')}</span>`;
-  celMain.setAttribute('aria-label', say('timeline.nextCopyName'));
-  celMain.dataset.tooltip = say('timeline.nextCopyTip');
+  localizedMarkup(celMain, `${icon('duplicate')}<span class="ui-label" ${messageAttributes("timeline.nextCopy", {})}>${say("timeline.nextCopy")}</span>`);
+  localizedAttribute(celMain, 'aria-label', "timeline.nextCopyName", {});
+  localizedAttribute(celMain, 'data-tooltip', "timeline.nextCopyTip", {});
   celMain.addEventListener('click', () => run(() => host.timeline?.nextDrawing?.(false)));
   const celMore = element('button', cel, 'ui-split-more');
   celMore.type = 'button';
-  celMore.innerHTML = icon('chevron-down');
-  celMore.setAttribute('aria-label', say('timeline.nextCopyMore'));
+  localizedMarkup(celMore, icon('chevron-down'));
+  localizedAttribute(celMore, 'aria-label', "timeline.nextCopyMore", {});
   celMore.setAttribute('aria-haspopup', 'menu');
   celMore.setAttribute('aria-expanded', 'false');
-  celMore.addEventListener('click', () => toggleMenu(celMore, () => celItems(), say('timeline.drawingFrames')));
+  celMore.addEventListener('click', () => toggleMenu(celMore, () => celItems(), say("timeline.drawingFrames")));
 
   // Edit together (#range-edit) joins the start cluster; timeline-host.mjs keeps writing its state.
   const range = $('range-edit');
@@ -151,10 +154,10 @@ export function createTimelineHeader(ctx, host) {
   range.classList.add('tl-together');
   if (styled) range.classList.remove('button', 'subtle', 'small');
   kit(range, ['ui-button'], {variant: 'ghost'});
-  range.setAttribute('aria-label', say('timeline.editTogether'));
+  localizedAttribute(range, 'aria-label', "timeline.editTogether", {});
   const rangeLabel = range.querySelector('.range-edit-label');
   rangeLabel.classList.add('ui-label');
-  rangeLabel.textContent = say('timeline.editTogether');
+  localizedText(rangeLabel, "timeline.editTogether", {});
 
   // ---- Transport: First frame, the steps, Play, Loop, the readout and the frame rate ----
   const controls = transport.querySelector('.playback-controls');
@@ -163,7 +166,7 @@ export function createTimelineHeader(ctx, host) {
   const names = {'first-frame': 'timeline.firstFrame', 'previous-frame': null, 'next-frame': null};
   for (const [action, key] of Object.entries(names)) {
     const button = controls.querySelector(`[data-action="${action}"]`);
-    if (key && button && !button.hasAttribute('aria-label')) button.setAttribute('aria-label', say(key));
+    if (key && button && !button.hasAttribute('aria-label')) localizedAttribute(button, 'aria-label', key, {});
   }
   controls.querySelector('[data-action="first-frame"]')?.classList.add('tl-first');
   const play = $('play-button');
@@ -172,22 +175,22 @@ export function createTimelineHeader(ctx, host) {
   const loop = $('loop-button');
   loop.classList.add('tl-loop');
   kit(loop, [], {quiet: ''});
-  if (!loop.hasAttribute('aria-label')) loop.setAttribute('aria-label', say('timeline.loop'));
+  if (!loop.hasAttribute('aria-label')) localizedAttribute(loop, 'aria-label', "timeline.loop", {});
   // The readout is a button that opens Go to frame; its text stays #time-display's.
   const time = $('time-display');
   const readout = element('button', null, 'tl-readout');
   readout.type = 'button';
   readout.setAttribute('aria-haspopup', 'dialog');
   readout.setAttribute('aria-expanded', 'false');
-  readout.setAttribute('aria-description', say('timeline.goToFrame'));
+  localizedAttribute(readout, 'aria-description', 'timeline.goToFrame');
   time.before(readout);
-  readout.append(time);
+  appendLocalized(readout, time);
   // The tooltip names the frame; it is written when it is about to show, never while the readout ticks.
   const readoutTip = () => {
     const timeline = host.timeline, simple = Boolean(timeline?.strip);
     const frame = simple ? (timeline.selectedIndex ?? 0) + 1 : Math.floor(ctx.editor.tick) + 1;
     const total = simple ? timeline.frameCount : ctx.editor.totalTicks;
-    setAttr(readout, 'data-tooltip', say('timeline.readoutTip', {frame, total}));
+    localizedAttribute(readout, 'data-tooltip', "timeline.readoutTip", {frame, total});
   };
   readout.addEventListener('pointerenter', readoutTip);
   readout.addEventListener('focus', readoutTip);
@@ -201,14 +204,14 @@ export function createTimelineHeader(ctx, host) {
   autoKey.type = 'button';
   autoKey.dataset.action = 'toggle-auto-key';
   autoKey.setAttribute('aria-pressed', 'false');
-  autoKey.dataset.tooltip = say('timeline.autoKeyTip');
-  autoKey.innerHTML = `<span class="tl-autokey-dot" aria-hidden="true"></span><span class="ui-label">${say('timeline.autoKey')}</span>`;
+  localizedAttribute(autoKey, 'data-tooltip', "timeline.autoKeyTip", {});
+  localizedMarkup(autoKey, `<span class="tl-autokey-dot" aria-hidden="true"></span><span class="ui-label" ${messageAttributes("timeline.autoKey", {})}>${say("timeline.autoKey")}</span>`);
   kit(autoKey, ['ui-button'], {size: 'sm', variant: 'ghost'});
   onion.before(autoKey);
   onion.classList.add('tl-onion');
   kit(onion, ['ui-split']);
   onion.setAttribute('role', 'group');
-  onion.setAttribute('aria-label', say('timeline.onion'));
+  localizedAttribute(onion, 'aria-label', "timeline.onion", {});
   const onionButton = $('onion-button');
   kit(onionButton, ['ui-icon-button'], {quiet: ''});
   kit($('onion-settings-button'), ['ui-split-more']);
@@ -216,12 +219,12 @@ export function createTimelineHeader(ctx, host) {
   audio.classList.add('tl-audio');
   kit(audio, ['ui-icon-button'], {quiet: ''});
   const sheetButton = toolbar.querySelector(':scope > .shell-timeline-sheet');
-  if (sheetButton) { kit(sheetButton, ['ui-icon-button']); end.append(sheetButton); }
-  const menuButton = iconButton(end, 'more', say('timeline.menu'));
+  if (sheetButton) { kit(sheetButton, ['ui-icon-button']); appendLocalized(end, sheetButton); }
+  const menuButton = translatedElement(iconButton(end, 'more', say("timeline.menu")), "timeline.menu", {}, 'aria-label');
   menuButton.id = 'timeline-menu-button';
   menuButton.setAttribute('aria-haspopup', 'menu');
   menuButton.setAttribute('aria-expanded', 'false');
-  menuButton.addEventListener('click', () => toggleMenu(menuButton, () => timelineMenuItems(), say('timeline.menu')));
+  menuButton.addEventListener('click', () => toggleMenu(menuButton, () => timelineMenuItems(), say("timeline.menu")));
 
   // ---- The ruler's tools: zoom, Fit timeline, Tall timeline ----
   const zoomTools = rulerTools.querySelector('.timeline-actions');
@@ -229,20 +232,20 @@ export function createTimelineHeader(ctx, host) {
   zoomTools.classList.add('tl-zoom');
   // The zoom glyph (index.html's [data-icon="zoom"], hydrated into an <svg> in its <span>).
   const zoomGlyph = zoomTools.querySelector(':scope > span');
-  if (zoomGlyph) { zoomGlyph.innerHTML = icon('zoom-out'); zoomGlyph.classList.add('tl-zoom-glyph'); zoomGlyph.setAttribute('aria-hidden', 'true'); }
+  if (zoomGlyph) { localizedMarkup(zoomGlyph, icon('zoom-out')); zoomGlyph.classList.add('tl-zoom-glyph'); zoomGlyph.setAttribute('aria-hidden', 'true'); }
   const zoom = $('timeline-zoom');
   zoom.classList.add('sheet-zoom');
   kit(zoom, ['ui-slider'], {quiet: ''});
-  const fit = iconButton(rulerTools, 'fit', say('timeline.fit'), {size: 'sm'});
+  const fit = translatedElement(iconButton(rulerTools, 'fit', say("timeline.fit"), {size: 'sm'}), "timeline.fit", {}, 'aria-label');
   fit.classList.add('tl-fit');
   fit.addEventListener('click', () => run(() => host.timeline?.fitAll?.()));
   const tall = $('expand-timeline');
   tall.classList.add('tl-tall');
   kit(tall, ['ui-icon-button'], {size: 'sm', quiet: ''});
   tall.removeAttribute('title');
-  tall.dataset.tooltip = say('timeline.tall');
-  tall.innerHTML = icon('panel-bottom');
-  rulerTools.append(tall);
+  localizedAttribute(tall, 'data-tooltip', "timeline.tall", {});
+  localizedMarkup(tall, icon('panel-bottom'));
+  appendLocalized(rulerTools, tall);
 
   // ---- Menus ----
   const menuOptions = () => ({
@@ -268,50 +271,50 @@ export function createTimelineHeader(ctx, host) {
       for (const item of modes.querySelectorAll('[data-timeline-mode]'))
         items.push({label: item.textContent.trim(), icon: item.dataset.timelineMode === 'simple' ? 'frame' : 'timeline', radio: true, group: 'timeline-mode',
           checked: item.dataset.timelineMode === current, run: () => item.click()});
-      items.push(null, {label: say('timeline.onionSettings'), icon: 'onion', run: () => $('onion-settings-button').click()}, null);
+      items.push(null, {label: say("timeline.onionSettings"), labelKey: "timeline.onionSettings", labelParams: {}, icon: 'onion', run: () => $('onion-settings-button').click()}, null);
     }
     // The touch timeline's action bar needs the header's room: Auto key is a row here (features/touch.css).
     if (root.input === 'touch' && !simple) {
-      items.push({label: say('timeline.autoKey'), icon: 'circle', checked: autoKey.getAttribute('aria-pressed') === 'true', run: action('toggle-auto-key')}, null);
+      items.push({label: say("timeline.autoKey"), labelKey: "timeline.autoKey", labelParams: {}, icon: 'circle', checked: autoKey.getAttribute('aria-pressed') === 'true', run: action('toggle-auto-key')}, null);
     }
     const phone = root.input === 'touch' && root.form === 'phone';
     if (sheetButton && !sheetButton.hidden)
-      items.push({label: say('timeline.sheet'), icon: 'timeline', run: action('timeline-sheet')}, null);
+      items.push({label: say("timeline.sheet"), labelKey: "timeline.sheet", labelParams: {}, icon: 'timeline', run: action('timeline-sheet')}, null);
     if (!cel.hidden && (toolbar.dataset.fold ?? '').split(' ').includes('celmenu'))
-      items.push({label: say('timeline.nextCopyName'), icon: 'duplicate', disabled: celMain.disabled, run: () => run(() => host.timeline?.nextDrawing?.(false))},
+      items.push({label: say("timeline.nextCopyName"), labelKey: "timeline.nextCopyName", labelParams: {}, icon: 'duplicate', disabled: celMain.disabled, run: () => run(() => host.timeline?.nextDrawing?.(false))},
         ...celItems().map(item => item && {...item, disabled: celMain.disabled}), null);
     if (tier !== 'minimal' && root.touchLayout === 'tablet-portrait')
-      items.push({label: say('timeline.firstFrame'), icon: 'first', shortcut: shortcut('first-frame'), run: action('first-frame')}, null);
+      items.push({label: say("timeline.firstFrame"), labelKey: "timeline.firstFrame", labelParams: {}, icon: 'first', shortcut: shortcut('first-frame'), run: action('first-frame')}, null);
     // At the minimal width, and on a phone's touch timeline, the header's rarer buttons are rows here.
     if (tier === 'minimal' || phone) {
       const mode = document.querySelector('.workspace')?.dataset.mode;
       items.push(
         {label: fit.getAttribute('aria-label'), icon: 'fit', run: () => run(() => host.timeline?.fitAll?.())},
-        {label: say('timeline.firstFrame'), icon: 'first', shortcut: shortcut('first-frame'), run: action('first-frame')},
-        {label: say('timeline.loop'), icon: 'loop', checked: Boolean(ctx.state.loop), run: action('toggle-loop')},
-        {label: say('timeline.audio'), icon: 'music', checked: audio.getAttribute('aria-pressed') === 'true', run: action('toggle-audio')},
-        {label: say('timeline.editTogether'), icon: 'frame', checked: range.getAttribute('aria-pressed') === 'true',
-          disabled: range.disabled, reason: say('timeline.editTogetherReason'), hidden: mode !== 'animate' || oneFrame,
+        {label: say("timeline.firstFrame"), labelKey: "timeline.firstFrame", labelParams: {}, icon: 'first', shortcut: shortcut('first-frame'), run: action('first-frame')},
+        {label: say("timeline.loop"), labelKey: "timeline.loop", labelParams: {}, icon: 'loop', checked: Boolean(ctx.state.loop), run: action('toggle-loop')},
+        {label: say("timeline.audio"), labelKey: "timeline.audio", labelParams: {}, icon: 'music', checked: audio.getAttribute('aria-pressed') === 'true', run: action('toggle-audio')},
+        {label: say("timeline.editTogether"), labelKey: "timeline.editTogether", labelParams: {}, icon: 'frame', checked: range.getAttribute('aria-pressed') === 'true',
+          disabled: range.disabled, reason: say("timeline.editTogetherReason"), reasonKey: "timeline.editTogetherReason", reasonParams: {}, hidden: mode !== 'animate' || oneFrame,
           run: action('toggle-range-edit')},
         null);
     }
     items.push(
-      {label: say('timeline.lastFrame'), icon: 'last', shortcut: shortcut('last-frame'), run: action('last-frame')},
-      {label: say('timeline.previousKey'), icon: 'chevron-left', shortcut: shortcut('previous-keyframe'), run: action('previous-keyframe')},
-      {label: say('timeline.nextKey'), icon: 'chevron-right', shortcut: shortcut('next-keyframe'), run: action('next-keyframe')},
+      {label: say("timeline.lastFrame"), labelKey: "timeline.lastFrame", labelParams: {}, icon: 'last', shortcut: shortcut('last-frame'), run: action('last-frame')},
+      {label: say("timeline.previousKey"), labelKey: "timeline.previousKey", labelParams: {}, icon: 'chevron-left', shortcut: shortcut('previous-keyframe'), run: action('previous-keyframe')},
+      {label: say("timeline.nextKey"), labelKey: "timeline.nextKey", labelParams: {}, icon: 'chevron-right', shortcut: shortcut('next-keyframe'), run: action('next-keyframe')},
       null,
-      {label: say('timeline.defaultHeight'), icon: 'reset', disabled: !shell, run: () => run(defaultHeight)},
+      {label: say("timeline.defaultHeight"), labelKey: "timeline.defaultHeight", labelParams: {}, icon: 'reset', disabled: !shell, run: () => run(defaultHeight)},
     );
     return items;
   }
   function celItems() {
     const timeline = host.timeline;
     return [
-      {label: say('timeline.nextBlank'), icon: 'frame', run: () => run(() => timeline?.nextDrawing?.(true))},
+      {label: say("timeline.nextBlank"), labelKey: "timeline.nextBlank", labelParams: {}, icon: 'frame', run: () => run(() => timeline?.nextDrawing?.(true))},
       null,
-      {label: say('timeline.blankDrawingHere'), icon: 'frame', shortcut: shortcut('insert-blank-key'), run: () => run(() => timeline?.drawingKeyHere?.(true))},
-      {label: say('timeline.copyDrawingHere'), icon: 'duplicate', shortcut: shortcut('insert-copied-key'), run: () => run(() => timeline?.drawingKeyHere?.(false))},
-      {label: say('timeline.extend'), icon: 'stretch-horizontal', shortcut: shortcut('extend-keyframe'), run: () => run(() => timeline?.extendKeyframe?.())},
+      {label: say("timeline.blankDrawingHere"), labelKey: "timeline.blankDrawingHere", labelParams: {}, icon: 'frame', shortcut: shortcut('insert-blank-key'), run: () => run(() => timeline?.drawingKeyHere?.(true))},
+      {label: say("timeline.copyDrawingHere"), labelKey: "timeline.copyDrawingHere", labelParams: {}, icon: 'duplicate', shortcut: shortcut('insert-copied-key'), run: () => run(() => timeline?.drawingKeyHere?.(false))},
+      {label: say("timeline.extend"), labelKey: "timeline.extend", labelParams: {}, icon: 'stretch-horizontal', shortcut: shortcut('extend-keyframe'), run: () => run(() => timeline?.extendKeyframe?.())},
     ];
   }
   let shell = null;
@@ -334,12 +337,12 @@ export function createTimelineHeader(ctx, host) {
     if (!goTo) {
       const form = element('form', null, 'tl-goto');
       const field = element('label', form, 'ui-field tl-goto-field');
-      element('span', field, 'ui-field-label', say('timeline.goToFrameField'));
+      translatedElement(element('span', field, 'ui-field-label', say("timeline.goToFrameField")), "timeline.goToFrameField", {});
       goField = element('input', field, 'ui-field-input');
       Object.assign(goField, {type: 'number', min: '1', step: '1', required: true});
-      goField.setAttribute('aria-label', say('timeline.goToFrame'));
+      localizedAttribute(goField, 'aria-label', "timeline.goToFrame", {});
       goMeta = element('span', form, 'tl-goto-meta');
-      const submit = element('button', form, 'ui-button', say('timeline.goToFrameGo'));
+      const submit = translatedElement(element('button', form, 'ui-button', say("timeline.goToFrameGo")), "timeline.goToFrameGo", {});
       submit.type = 'submit';
       submit.dataset.size = 'sm';
       form.addEventListener('submit', event => {
@@ -349,12 +352,12 @@ export function createTimelineHeader(ctx, host) {
         goTo.hide('submit');
         run(() => host.goToFrame(number));
       });
-      goTo = createPopover({...menuOptions(), anchor: readout, placement: 'top-start', title: say('timeline.goToFrame'), body: form,
+      goTo = createPopover({...menuOptions(), anchor: readout, placement: 'top-start', title: say("timeline.goToFrame"), titleKey: "timeline.goToFrame", titleParams: {}, body: form,
         keyboardScope: true, className: 'tl-goto-popover'});
     }
     goField.max = String(total);
     goField.value = String(current);
-    setText(goMeta, say('timeline.goToFrameOf', {total, seconds: (ctx.editor.totalTicks / fps).toFixed(2)}));
+    localizedText(goMeta, 'timeline.goToFrameOf', {total, seconds: (ctx.editor.totalTicks / fps).toFixed(2)});
     goTo.show();
     goField.select();
   }
@@ -412,7 +415,7 @@ export function createTimelineHeader(ctx, host) {
     /** The mounted timeline's action bar (the touch interface's), or null to take it away. */
     setActions(node) {
       actions = node ?? null;
-      actionsSlot.replaceChildren(...(actions ? [actions] : []));
+      replaceLocalized(actionsSlot, ...(actions ? [actions] : []));
       actionsSlot.hidden = !actions;
       toolbar.toggleAttribute('data-actions', Boolean(actions));
       requestFold();
@@ -428,18 +431,18 @@ export function createTimelineHeader(ctx, host) {
       setProp(zoom, 'max', String(range.max));
       this.setZoom(simple ? timeline.cardWidth : timeline.pxPerTick);
       setAttr(rulerTools, 'data-mode', simple ? 'simple' : 'advanced');
-      setAttr(fit, 'aria-label', say(simple ? 'timeline.fitFilmstrip' : 'timeline.fit'));
-      setAttr(fit, 'data-tooltip', simple ? say('timeline.fitFilmstrip') : say('timeline.fitTip'));
+      localizedAttribute(fit, 'aria-label', simple ? 'timeline.fitFilmstrip' : 'timeline.fit');
+      localizedAttribute(fit, 'data-tooltip', (simple ? "timeline.fitFilmstrip" : "timeline.fitTip"), (simple ? {} : {}));
       if (simple) this.setNextCopy({shown: false});
       setSimple(simple);
       requestFold();
     },
     /** Add frame's state from the component: Blank frame on a drawing layer (Advanced), disabled on locked layers. */
     setAddFrame({blank = false, disabled = false} = {}) {
-      const word = say(blank ? 'timeline.blankFrame' : 'timeline.addFrame');
-      if (setText(addWord, word)) requestFold();
-      setAttr(addFrame, 'aria-label', blank ? word : say('timeline.addFrameName'));
-      setAttr(addFrame, 'data-hotkey-title', word);
+      const key = blank ? 'timeline.blankFrame' : 'timeline.addFrame';
+      if (localizedText(addWord, key)) requestFold();
+      localizedAttribute(addFrame, 'aria-label', blank ? key : 'timeline.addFrameName');
+      localizedAttribute(addFrame, 'data-hotkey-title', key);
       setProp(addFrame, 'disabled', Boolean(disabled));
     },
     /** Next copy shows on a drawing layer in Advanced, as today's Next copied drawing. */

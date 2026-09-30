@@ -1,3 +1,5 @@
+import {errorMessageData, messageError} from './localized-error.mjs';
+
 import { applyDocumentChunk } from "./document-transport.mjs";
 import {applyPlaybackPatch} from './playback-patch.mjs';
 import { PlaybackResources } from "./playback-resources.mjs";
@@ -42,7 +44,7 @@ let rendering = false,
   activeRequest = null;
 const cancelled = new Set();
 const abortError = () =>
-  new DOMException("Thumbnail superseded.", "AbortError");
+  messageError(new DOMException('', "AbortError"), "errors.thumbnailRenderer.thumbnailSuperseded", {});
 const respond = (id, value = {}, transfer = []) =>
   self.postMessage({ id, ok: true, ...value }, transfer);
 
@@ -78,7 +80,7 @@ async function receive(message) {
           preview: true,
         });
       } else {
-        if (!report) throw new Error("Thumbnail document is unavailable.");
+        if (!report) throw messageError(new Error(''), "errors.thumbnailWorker.thumbnailDocumentIsUnavailable", {});
         applyPlaybackPatch(report, incoming.value);
         invalidateEvaluationCaches(report);
       }
@@ -89,14 +91,14 @@ async function receive(message) {
       respond(id);
       return;
     }
-    if (operation !== "render") throw new Error("Unknown thumbnail operation.");
+    if (operation !== "render") throw messageError(new Error(''), "errors.thumbnailWorker.unknownThumbnailOperation", {});
     if (rendering)
-      throw new Error("Thumbnail worker already has a pending frame.");
+      throw messageError(new Error(''), "errors.thumbnailWorker.thumbnailWorkerAlreadyHasAPendingFrame", {});
     if (message.revision !== revision || !report) throw abortError();
-    if (message.storedFrames !== undefined && typeof message.storedFrames !== 'boolean') throw new Error('Invalid stored-frame preview mode.');
-    if(message.tick!==undefined&&(!Number.isInteger(message.tick)||message.tick<0||message.tick>10000000))throw new Error('Invalid thumbnail time.');
+    if (message.storedFrames !== undefined && typeof message.storedFrames !== 'boolean') throw messageError(new Error(''), "errors.thumbnailWorker.invalidStoredFramePreviewMode", {});
+    if(message.tick!==undefined&&(!Number.isInteger(message.tick)||message.tick<0||message.tick>10000000))throw messageError(new Error(''), "errors.thumbnailWorker.invalidThumbnailTime", {});
     if (!Number.isInteger(message.index) || !report.keyframes[message.index])
-      throw new RangeError("Thumbnail frame is unavailable.");
+      throw messageError(new RangeError(''), "errors.thumbnailWorker.thumbnailFrameIsUnavailable", {});
     if (
       !Number.isInteger(message.width) ||
       !Number.isInteger(message.height) ||
@@ -105,7 +107,7 @@ async function receive(message) {
       message.width > 512 ||
       message.height > 512
     )
-      throw new RangeError("Thumbnail dimensions exceed 512 pixels.");
+      throw messageError(new RangeError(''), "errors.thumbnailWorker.thumbnailDimensionsExceed512Pixels", {});
     rendering = true;
     activeRequest = id;
     try {
@@ -121,7 +123,7 @@ async function receive(message) {
       if (preview && (!['adjacent', 'settings', 'none'].includes(preview.onionMode) ||
           !Number.isInteger(preview.onionCount) || preview.onionCount < 0 || preview.onionCount > 9 ||
           !Number.isFinite(preview.onionOpacity) || preview.onionOpacity < 0 || preview.onionOpacity > 1))
-        throw new Error('Invalid inbetween preview options.');
+        throw messageError(new Error(''), "errors.thumbnailWorker.invalidInbetweenPreviewOptions", {});
       const frame = preview ? sampleInbetweenPreview(frameReport, preview.ratio, message.index).frame : evaluatedFrame(
         frameReport,
         message.index,
@@ -233,7 +235,7 @@ async function receive(message) {
     self.postMessage({
       id,
       ok: false,
-      error: error?.message || String(error),
+      error: error?.message || String(error), ...errorMessageData(error),
       name: error?.name,
     });
   }

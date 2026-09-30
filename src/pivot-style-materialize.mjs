@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Native Pivot stores segment/outline appearance on reusable figure types. */
 import {resolveInstanceFigure, nativeSegmentOpacity, styleColor, polygonIdentity} from './animation-style.mjs';
 import {evaluatedFrame, timeline} from './pivot/geometry.mjs';
@@ -33,7 +34,7 @@ export function createNativeStyleTable(report) {
     if (!signature.length) return figure.figure_type_id;
     const key = `${figure.figure_type_id}|${signature.join('|')}`;
     if (variants.has(key)) return variants.get(key);
-    if (report.figure_types.length >= 65534) throw new Error('Animated figure styles exceed the native Pivot figure table capacity.');
+    if (report.figure_types.length >= 65534) throw messageError(new Error(''), "errors.pivotStyleMaterialize.animatedFigureStylesExceedTheNativePivotFigure", {});
     const resolved = resolveInstanceFigure(figure, object), id = nextId++;
     if (!copied) {report.figure_types = [...report.figure_types]; copied = true;}
     report.figure_types.push({...resolved, figure_type_id: id, name: `${figure.name || 'Figure'} · Style ${variants.size + 1}`});

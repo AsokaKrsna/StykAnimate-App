@@ -1,3 +1,4 @@
+import {localizedMarkup, clearTranslation} from '../localization-bindings.mjs';
 /**
  * Compare-before-write DOM helpers (architecture.md §3.2). Chrome that is
  * updated often writes through these, so writing what an element already
@@ -16,6 +17,7 @@
  * millisecond-scale style recalculation per frame. */
 export function setText(element, text) {
   if (!element) return false;
+  clearTranslation(element);
   const value = String(text ?? '');
   if (element.textContent === value) return false;
   const node = element.firstChild;
@@ -27,6 +29,7 @@ export function setText(element, text) {
 /** Sets an attribute when it differs; null, undefined and false remove it, true sets it empty. */
 export function setAttr(element, name, value) {
   if (!element) return false;
+  clearTranslation(element, name);
   if (value === null || value === undefined || value === false) {
     if (!element.hasAttribute(name)) return false;
     element.removeAttribute(name);
@@ -80,7 +83,7 @@ export function setMarkup(element, html) {
   if (!element) return false;
   const value = String(html ?? '');
   if (markup.get(element) === value) return false;
-  element.innerHTML = value;
+  localizedMarkup(element, value);
   markup.set(element, value);
   return true;
 }

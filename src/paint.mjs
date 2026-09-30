@@ -1,17 +1,18 @@
+import {messageError} from './localized-error.mjs';
 export const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
-export const hexColor = rgb => '#' + rgb.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+export const hexColor = rgb => '#' + rgb.map(v => (Math.round(v)).toString(16).padStart(2, '0')).join('');
 export function parseColor(value) {
   let h = String(value).replace(/^#/, '');
   if (/^[\da-f]{3,4}$/i.test(h)) h = [...h].map(c => c + c).join('');
-  if (!/^[\da-f]{6}([\da-f]{2})?$/i.test(h)) throw new Error('Use a valid HEX color, optionally including alpha.');
+  if (!/^[\da-f]{6}([\da-f]{2})?$/i.test(h)) throw messageError(new Error(''), "errors.paint.useAValidHexColorOptionallyIncludingAlpha", {});
   return {color: [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)), opacity: h.length === 8 ? parseInt(h.slice(6), 16) / 255 : 1};
 }
 export function normalizePaint(paint) {
-  if (!paint || !['solid', 'linear', 'radial', 'angular', 'diamond'].includes(paint.type)) throw new Error('Invalid paint type.');
-  const finite = (v, min, max) => { if (!Number.isFinite(v) || v < min || v > max) throw new Error('Invalid paint value.'); return v; };
-  if (!Array.isArray(paint.stops) || paint.stops.length < (paint.type === 'solid' ? 1 : 2) || paint.stops.length > 32) throw new Error('Use between 2 and 32 gradient stops.');
+  if (!paint || !['solid', 'linear', 'radial', 'angular', 'diamond'].includes(paint.type)) throw messageError(new Error(''), "errors.paint.invalidPaintType", {});
+  const finite = (v, min, max) => { if (!Number.isFinite(v) || v < min || v > max) throw messageError(new Error(''), "errors.paint.invalidPaintValue", {}); return v; };
+  if (!Array.isArray(paint.stops) || paint.stops.length < (paint.type === 'solid' ? 1 : 2) || paint.stops.length > 32) throw messageError(new Error(''), "errors.paint.useBetween2And32GradientStops", {});
   const stops = paint.stops.map(s => {
-    if (!Array.isArray(s.color) || s.color.length !== 3) throw new Error('Invalid RGB color.');
+    if (!Array.isArray(s.color) || s.color.length !== 3) throw messageError(new Error(''), "errors.paint.invalidRgbColor", {});
     return {offset: finite(s.offset, 0, 1), color: s.color.map(v => Math.round(finite(v, 0, 255))), opacity: finite(s.opacity, 0, 1)};
   }).sort((a, b) => a.offset - b.offset);
   return {type: paint.type, angle: finite(paint.angle ?? 0, -36000, 36000), stops};

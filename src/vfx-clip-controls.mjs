@@ -1,3 +1,4 @@
+import {t as interfaceText} from './localization.mjs';
 import {setVfxVisibleChannels} from './vfx-key-channels.mjs';
 import {vfxDescriptor} from './vfx.mjs';
 import {showTimelineMenu} from './timeline-menu.mjs';
@@ -20,7 +21,7 @@ export function clipNumber(host,clip,field,label,value,min,max,locked){
 export function clipStrength(host,clip,locked){
  const key=`clip-${clip.id}-strength`,value=+(clip.strength*100).toFixed(2);
  host.bindings.set(key,{clip:clip.id,clipField:'strength',factor:100,offset:0});
- return `<div class="vfx-row vfx-parameter" data-property-row="${key}"><span class="vfx-label" data-property-scrub="${key}">Strength</span><label class="ui-field vfx-number" data-size="sm"><input class="ui-field-input" type="number" data-clip-field="strength" data-property="${key}" data-property-scrub="${key}" data-property-value="${value}" data-property-step="1" data-property-precision="2" aria-label="Strength" value="${value}" min="0" max="100" step="1" ${locked?'disabled':''}><span class="ui-field-suffix" data-glue aria-hidden="true">%</span></label><input class="ui-slider vfx-slider" type="range" data-property="${key}" data-property-value="${value}" data-property-step="1" data-property-precision="2" value="${value}" min="0" max="100" step="1" style="--_p:${value}%" aria-label="Strength slider" ${locked?'disabled':''}></div>`;
+ return `<div class="vfx-row vfx-parameter" data-property-row="${key}"><span class="vfx-label" data-property-scrub="${key}" data-i18n="vfxClipControls.strength">Strength</span><label class="ui-field vfx-number" data-size="sm"><input class="ui-field-input" type="number" data-clip-field="strength" data-property="${key}" data-property-scrub="${key}" data-property-value="${value}" data-property-step="1" data-property-precision="2" aria-label="Strength" value="${value}" min="0" max="100" step="1" ${locked?'disabled':''}><span class="ui-field-suffix" data-glue aria-hidden="true">%</span></label><input class="ui-slider vfx-slider" type="range" data-property="${key}" data-property-value="${value}" data-property-step="1" data-property-precision="2" value="${value}" min="0" max="100" step="1" style="--_p:${value}%" aria-label="Strength slider" ${locked?'disabled':''}></div>`;
 }
 
 export function editGroupEffect(host,clip,id,operation){
@@ -35,9 +36,9 @@ export function openGroupMenu(host,clip,id,anchor){
  if(!menu){menu=host.groupMenu={editor:host.editor,_run:fn=>host.run(fn)};host.abort.signal.addEventListener('abort',()=>{menu.menuEvents?.abort();menu.menu?.remove();},{once:true});}
  menu.scroll=anchor;const index=clip.effects.findIndex(e=>e.id===id),action=operation=>()=>editGroupEffect(host,clip,id,operation);
  showTimelineMenu(menu,{currentTarget:anchor},[
-  [{label:'Enabled',symbol:'eye',checked:host.editor.sampleVfxClip(clip.id).find(e=>e.id===id).enabled,action:action('effect-enable')}],
-  [index>0&&{label:'Move up',symbol:'chevron-up',action:action('effect-up')},index<clip.effects.length-1&&{label:'Move down',symbol:'chevron-down',action:action('effect-down')}],
-  [{label:'Remove',symbol:'trash',danger:true,action:action('effect-delete')}],
+  [{label:interfaceText("vfxClipControls.enabled"), labelKey: "vfxClipControls.enabled", labelParams: {},symbol:'eye',checked:host.editor.sampleVfxClip(clip.id).find(e=>e.id===id).enabled,action:action('effect-enable')}],
+  [index>0&&{label:interfaceText("vfxClipControls.moveUp"), labelKey: "vfxClipControls.moveUp", labelParams: {},symbol:'chevron-up',action:action('effect-up')},index<clip.effects.length-1&&{label:interfaceText("vfxClipControls.moveDown"), labelKey: "vfxClipControls.moveDown", labelParams: {},symbol:'chevron-down',action:action('effect-down')}],
+  [{label:interfaceText("vfxClipControls.remove"), labelKey: "vfxClipControls.remove", labelParams: {},symbol:'trash',danger:true,action:action('effect-delete')}],
  ]);
 }
 
@@ -63,7 +64,7 @@ export function groupDrop(host,event){
  host.beforeEdit();host.editor.reorderVfxGroupEffect(clip.id,drag.id,index);host.sync();host.onChange();return true;
 }
 export function groupKeydown(host,event){
- const grip=event.target.closest('[data-vfx-group-drag]');if(!grip||!event.altKey||!['ArrowUp','ArrowDown'].includes(event.key))return false;
+ const grip=event.target.closest('[data-vfx-group-drag]');if(!grip||!event.altKey||!["ArrowUp","ArrowDown"].includes(event.key))return false;
  event.preventDefault();event.stopPropagation();if(grip.disabled)return true;
  const row=groupRow(grip),clip=host.editor.getVfxClips().find(c=>c.id===row.closest('[data-clip-id]').dataset.clipId),index=clip.effects.findIndex(e=>e.id===row.dataset.groupEffect)+(event.key==='ArrowUp'?-1:1);
  if(index>=0&&index<clip.effects.length){host.commit();host.beforeEdit();host.editor.reorderVfxGroupEffect(clip.id,row.dataset.groupEffect,index);host.sync();host.root.querySelector(`[data-group-effect="${row.dataset.groupEffect}"] [data-vfx-group-drag]`)?.focus();host.onChange();}return true;

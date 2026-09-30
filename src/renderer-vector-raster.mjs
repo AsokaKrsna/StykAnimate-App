@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {SHAPE_BYTES, SHAPE_FLOATS, requiresCompatibilityTexture} from './renderer-geometry.mjs';
 
 /** Subpixel strokes retain native Canvas coverage. Repeated translucent hairlines
@@ -60,7 +61,7 @@ export function encodeVectorRaster(renderer, encoder, {data, width, height, pixe
   if (!(data instanceof Float32Array) || data.length % SHAPE_FLOATS ||
     data.byteLength > device.limits.maxStorageBufferBindingSize || !Number.isInteger(width) || !Number.isInteger(height) ||
     width < 1 || height < 1 || width > device.limits.maxTextureDimension2D || height > device.limits.maxTextureDimension2D ||
-    !Number.isFinite(pixelScale) || pixelScale <= 0) throw new TypeError('Invalid isolated vector artwork.');
+    !Number.isFinite(pixelScale) || pixelScale <= 0) throw messageError(new TypeError(''), "errors.rendererVectorRaster.invalidIsolatedVectorArtwork", {});
   const targetWidth = target?.width ?? width, targetHeight = target?.height ?? height;
   const viewportWidth = viewport?.[0] ?? targetWidth, viewportHeight = viewport?.[1] ?? targetHeight;
   const shapeBytes = Math.max(SHAPE_BYTES, data.byteLength);

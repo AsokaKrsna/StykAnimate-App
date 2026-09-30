@@ -1,8 +1,9 @@
+import {messageError} from './localized-error.mjs';
 /** Read one rendered pixel using the canvas backing size, including preview scaling. */
 export function sampleCanvasRegion(canvas, clientX, clientY, radius=0) {
   const rect=canvas.getBoundingClientRect();
   if(!rect.width || !rect.height || clientX<rect.left || clientY<rect.top || clientX>=rect.right || clientY>=rect.bottom)
-    throw new Error('Choose a color inside the canvas.');
+    throw messageError(new Error(''), "errors.canvasColorSample.chooseAColorInsideTheCanvas", {});
   const size=radius*2+1;
   const pixel=document.createElement('canvas');pixel.width=pixel.height=size;
   const ctx=pixel.getContext('2d',{willReadFrequently:true});

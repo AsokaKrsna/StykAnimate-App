@@ -1,10 +1,116 @@
-# Interface localization and coverage
+# Interface localization
 
-Updated 2026-09-30. English is the default. Settings → Interface → Language is
-implemented and persists through the existing application preference service.
-The root editor shares one locale service with Settings and translates explicit
-chrome/menu bindings without replacing controls or changing document state.
-This is partial interface translation, not a fully translated application.
+English is the default. Settings → Interface → Language persists through the
+existing editor preference service. The browser, touch interface and Electron
+menus use the same catalog and fallback rules. Existing translations are preserved;
+new English extraction does not claim complete translations of any language.
+
+## Ownership and lookup
+
+`src/localization.mjs` owns `Localization`, the shared `interfaceLocalization`,
+`t(key, params)`, and the component-kit adapter `messageText(optionalTranslator,
+key, params)`. `src/locales/en.mjs` composes English common and feature namespaces;
+`src/locales/en-features/` separates feature copy and diagnostics. Keys describe
+semantic intent and remain stable when English wording changes. Duplicate English
+ownership fails validation. No UI imports a particular language or matches English
+captions to infer behavior.
+
+Each `src/locales/packs/<ID>.json` independently owns locale metadata and translated
+messages. `scripts/build-locales.mjs` generates the registry, source context and
+sandboxed preload diagnostics. The shared support asset generator includes its
+localization import dependencies for standalone support builds. No dependency, new preference store, translation
+observer, remote service or runtime language installer is required. The original
+INI importer remains provenance. See [TRANSLATING.md](TRANSLATING.md) for the pack
+workflow and integration ownership.
+
+Lookup selects the requested key and, for plurals, the locale's CLDR category.
+Absent messages or categories use English and English plural rules; unknown keys
+remain visible as keys. Deliberate English fallback is reported in validation and
+explained in Settings. Exact BCP-47 IDs and explicit aliases take precedence.
+Generic language packs can serve regions, script packs serve only that script,
+and regional packs require deliberate aliases. `zh-Hant`, `pt-PT` and `nn` do not
+silently become Simplified Chinese, Brazilian Portuguese or Bokmål.
+
+Messages are plain text with named `{placeholders}`. Plurals contain `other` and
+the language's categories. Parameters can be scalars, bounded nested
+`{messageKey, messageParams}` references, or `{format: 'number'|'date', value,
+options}` display descriptors. Use full sentences rather than translated fragment
+concatenation. `Intl` formats displayed numbers and dates, with a bounded cache;
+input parsing, document units and encoder values retain their existing contracts.
+
+## Connected interface and errors
+
+`src/localization-bindings.mjs` attaches explicit text and attribute bindings at
+the owning feature. It supports captions, tooltips, accessibility descriptions,
+placeholders and per-binding parameters. Factories carry presentation metadata;
+tuple metadata lives outside arrays so saved IDs and command values remain intact.
+Owners explicitly connect mounted subtrees. Locale changes update connected nodes
+in place, preserving icons, hotkeys, focus, drafts, selection and scroll. Detached
+bindings are pruned. Dynamic parameters use weak storage and compare before writing
+so playback does not gain per-frame localization attribute changes.
+
+Coverage includes application chrome, workspace and docking controls, Settings,
+commands and menus, both timelines, inspector, drawing and rig controls, camera,
+VFX and built-in preset and effect-channel captions, libraries, touch controls, dialogs, recovery,
+exports, updates, support, notifications and owned validation/diagnostic messages.
+User names, filenames, command/history identifiers, shortcuts, extensions, HTTP
+headers, codec IDs, authored figure names and animation text remain data.
+
+`src/localized-error.mjs` adds a stable message key and scalar parameters to the
+original error without changing its class, name, code or English diagnostic.
+Import notices use their stable codes and structured recovery records; stored
+warning strings remain unchanged. Support status codes and option values also
+remain separate from their captions.
+Workers forward this metadata through their existing reply shapes; presentation
+uses `src/error-presentation.mjs`. Raw OS, driver and external-service details stay
+as reported. Electron's `desktop/localization.cjs` uses the same DOM-free service
+and English catalog, restores the saved locale before creating menus, and updates
+native menus through the existing settings IPC. App-owned native titles, filters,
+buttons and errors are localized; operating-system dialog chrome follows the OS.
+The sandboxed preload bundles the same pure diagnostic constructor and its tiny
+English subset; context isolation and IPC APIs are unchanged.
+
+## Direction and layout
+
+The locale sets root `lang` and `dir`. Logical interface alignment, wrapping,
+menu placement and horizontal menu keys support RTL and expanded captions.
+Canvas/world coordinates, timeline chronological order, filmstrips, graphs,
+numeric inputs, units and shortcut badges remain LTR. This changes interface
+presentation only; it does not redesign authored text inside animations.
+
+The font stack includes Arabic, Hebrew and CJK fallbacks. Browser checks exercise
+Arabic, Hebrew, Chinese, Cyrillic and accented Latin glyphs on this Linux system;
+font availability still needs shipping-platform review. Development-only
+`setPseudo('long')` and `setPseudo('rtl')` expand messages without adding production
+translations or persisting a pseudo language.
+
+## Validation and verification
+
+- `npm run locales:validate -- --locale fr` validates one pack without generating
+  shared files; `--strict` requires complete messages and plural categories.
+- `npm run locales:build` regenerates shared outputs; `npm run locales:check`, also
+  part of `npm run check`, rejects stale generation, unknown static bindings,
+  duplicate JSON keys, malformed messages, invalid metadata/aliases, placeholder
+  mismatches and invalid plural categories. Missing translations and valid missing
+  plural forms are reported and intentionally allowed without `--strict`.
+- `npm test` covers catalog/fallback/variants/formatting, message ownership,
+  transport/error identity, command tuples, sandboxed preload and existing editor
+  behavior. Static scanning validates literal bindings; computed keys also need
+  focused owner tests and rendered inspection.
+- `npm run test:localization:browser` checks Settings, actual app switching through
+  every supplied language, menu/dialog retention, exact document/history state,
+  narrow layouts, long labels, RTL directions, notifications and font samples.
+  Export, touch and app-dialog browser suites exercise their own workflows.
+- Desktop preference smoke verifies Italian menus before and after process restart;
+  boot smoke verifies the bridge, context isolation and codec startup. The complete
+  private-sample desktop smoke requires the local sample files documented by it.
+
+The pre-existing playback-quiet browser check also fails on the unchanged baseline:
+onion markers write their attributes/styles during playback. Localization's earlier
+parameter writes were removed; comparison showed only the baseline marker writers
+remaining. Catalog coverage is a completeness report, not a translation-quality
+score. Native-speaker review and Windows/macOS packaged rendering remain necessary
+before claiming a fully translated release.
 
 ## Native baseline and supplied languages
 
@@ -36,104 +142,3 @@ vocabulary rather than treating its filename as Slovak. Chinese captions use the
 simplified script. Traditional Chinese, Nynorsk and European Portuguese do not
 silently select a different supplied script/variant. Latin American regional
 Spanish maps to es-419; native es and es-419 remain distinct preferences.
-
-## Translation packs and shared contract
-
-Current editable language packs live independently in `src/locales/packs/*.json`.
-`npm run locales:build` composes their metadata and messages into the generated
-registry. The original native import remains provenance, not the pack-editing
-workflow. `src/locales/en.mjs` composes English feature namespaces; component kits
-now delegate to the same lookup and fallback contract. No UI imports individual
-languages. See [the translator guide](TRANSLATING.md) for ownership and review.
-
-`npm run locales:check` (also part of `npm run check`) rejects unknown keys, malformed
-plain text and placeholder differences. It reports missing translations and plural
-forms while allowing intentional English fallback; `--strict` requires completion.
-English fallback uses English plural rules with numbers formatted for the selected
-locale. Region/script aliases are pack metadata, with exact IDs taking precedence.
-
-## Previous coverage baseline
-
-- `src/localization.mjs`: validated locale IDs, English default, plain-text lookup,
-  cached Intl numbers/dates/plurals and synchronous language-change subscriptions.
-  `normalizeLocale` falls back for invalid preferences; explicit `setLocale`
-  rejects unsupported choices. No OS-locale inference changes the initial language.
-- `src/locales/en.mjs` and `it.mjs`: 153 English and 152 Italian app-specific
-  common-control keys. Missing localized keys fall back to English, then the key.
-  Existing deliberate Italian captions take precedence over old native captions.
-- `scripts/build-native-locales.mjs`: deterministic generation from the supplied
-  490,811 INI bytes into a 49,660-character catalog module. It verifies the exact
-  inventory and maps caption keys explicitly, never by English-string matching.
-  The other 25 catalogs contain 36–65 mapped app captions each. Original English
-  values are omitted so the app's current English fallback remains authoritative.
-- `src/locales/pivot-language.mjs`: data-only bounded INI parser, 512 KiB input,
-  2,048 keys and 4,096 characters per value. BOM decoding is authoritative;
-  legacy Windows code pages are explicit. Invalid control text, oversized input
-  and prototype keys cannot become captions. Parsed values are never executed.
-- `src/localization-bindings.mjs`: stable semantic DOM bindings, explicit new
-  subtree/menu application, and current playback-action labels. Locale changes
-  update retained connected elements. There is no MutationObserver, timer,
-  whole-document rescan after mutations, per-frame translation or geometry work.
-- `src/settings.mjs`: shared service, validated persistent locale preference,
-  27 native-name options, partial-coverage note, translated Interface controls,
-  and focus/tab/scroll/draft preservation during a language redraw.
-
-The supplied Portuguese-BR CancelBitCap incorrectly contains a long confirmation
-question. It is explicitly excluded so Cancel uses English. Chinese Builder
-Open/Save mean figure materials; project captions use MFOpen/MFSave instead.
-These source exceptions are recorded and tested. Native translation quality is
-inherited only where reviewed semantic keys match; key counts are not a quality
-or complete-app translation percentage.
-
-All returned values are plain text. Consumers use textContent or existing HTML
-escaping. Placeholder substitution accepts own scalar properties only; it does
-not evaluate expressions or mutate numeric editor parsing/model units. Intl
-formatter caches have a 16-entry bound and clear on an actual locale change.
-
-Arabic/Hebrew carry RTL language metadata and Unicode captions. The application
-sets document lang but does not mirror the shell, canvas coordinates, animation
-time, hotkeys or user-authored text. Complete RTL layout remains separate
-acceptance work. Language files are build inputs today: a user-installed custom
-INI loader is not wired to the app, despite the parser being reusable for one.
-
-## Verified behavior
-
-- `node --test tests/localization.test.mjs tests/native-locales.test.mjs`: **16
-  passing checks**, including all 27 IDs, regional/script normalization, real
-  source bytes/hashes, Unicode/ANSI decoding, bounded parser, safe fallback,
-  source exceptions, placeholders, plurals, formatter cache and subscriptions.
-- [Settings/browser report](../artifacts/localization-settings/report.json): **18
-  passing checks** after the 27-choice extension. Actual controls, focused
-  selector, persisted preference reload, same icons/input, bounded menu bindings,
-  playback action, narrow-window fit and no localization observer use.
-- [Actual root-app report](../artifacts/localization-app/report.json): **12 passing
-  checks** on its English/Italian UI snapshot. A visible numeric edit remains
-  byte-for-byte unchanged by language selection; undo count, revision, dirty state,
-  selection and tick are stable. Undo/Redo, menus/hotkeys, same Save/SVG nodes,
-  current preview action and browser reload are verified.
-
-- [Actual 27-language root report](../artifacts/localization-native-app/report.json):
-  **37 passing checks** activate every supplied choice, retain focus and exact
-  document/history/control identity, verify Arabic/Hebrew/Chinese captions and
-  Arabic reload persistence, and preserve LTR canvas/time semantics. Arabic and
-  compact Chinese screenshots were visually inspected; controls remain reachable.
-
-Browser preference reload is proved; locale-specific native two-process restart
-and the final rebuilt package are not yet verified.
-
-## Remaining text ownership and acceptance
-
-| Owner/module | Remaining text and preservation requirement |
-| --- | --- |
-| Root app and index | Remaining toolbar/status/toasts, errors, recovery/export/dirty-close/shortcut dialogs; keep action IDs, hotkeys and user filenames stable. |
-| Panels | Layer/property labels and dynamic actions; preserve scrubs, focus and user-created names. Canvas/Animation/Shortcuts settings sections remain largely English. |
-| Timeline | Simple/Advanced controls, context menus and counters; never rebuild all rows, change scroll/ranges or reverse time for a locale event. |
-| Inspector/camera/dialog owners | Semantic property and action keys, validation/messages; preserve modal drafts, worker requests, selection and undo grouping. |
-| Model/history | Prefer stable presentation message codes and parameters. Do not rename serialized history or match commands by translated text. |
-| Desktop | App-owned dialog/error text can use validated locale/message codes. OS file-picker text follows OS behavior. An optional custom language installer would need a bounded persistent user-data contract; it is not an inferred native requirement. |
-
-The [module source inventory](../artifacts/localization-source-inventory.json)
-is a navigation aid, not exhaustive coverage. Finish remaining actual captions,
-validate terminology with native speakers, and inspect narrow/floating/high-DPI
-layouts before claiming any full app translation. English fallback is deliberate
-and visible in Settings. Native desktop locale restart remains unverified. Full RTL layout and a custom locale installer are optional modern extensions unless direct native baseline evidence establishes those capabilities; neither is an inferred completion blocker.

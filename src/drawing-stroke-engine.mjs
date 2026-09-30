@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {DrawingStroke} from './drawing-pixels.mjs';
 import {TileStore,TILE,tileKey} from './drawing-tiles.mjs';
 
@@ -14,13 +15,13 @@ export class StrokeEngine {
   begin(id,settings){
     this.strokes.delete(id);
     const store=new TileStore(),seeded=new Set();
-    const requireTile=(tx,ty)=>{if(!seeded.has(tileKey(tx,ty)))throw new Error('A brush dab reached drawing pixels that were not loaded for this stroke.');};
+    const requireTile=(tx,ty)=>{if(!seeded.has(tileKey(tx,ty)))throw messageError(new Error(''), "errors.drawingStrokeEngine.aBrushDabReachedDrawingPixelsThatWere", {});};
     this.strokes.set(id,{store,seeded,brush:new DrawingStroke(store,settings,{requireTile,mask:settings?.mask}),seq:0});
   }
   dabs(id,seq,dabs,tiles,tail){
     const s=this.strokes.get(id);if(!s||seq<=s.seq)return null;
     s.seq=seq;
-    if(s.store.bytes+(tiles?.length??0)*TILE*TILE*4>s.brush.workingBytes/2)throw new Error('The stroke exceeds the drawing working memory limit.');
+    if(s.store.bytes+(tiles?.length??0)*TILE*TILE*4>s.brush.workingBytes/2)throw messageError(new Error(''), "errors.drawingController.theStrokeExceedsTheDrawingWorkingMemoryLimit", {});
     for(const t of tiles??[]){const key=tileKey(t.tx,t.ty);if(s.seeded.has(key))continue;s.seeded.add(key);if(t.pixels)s.store.set(t.tx,t.ty,new Uint8ClampedArray(t.pixels));}
     s.brush.paint(dabs??[],tail??undefined);
     const changed=[];let dirty=null;

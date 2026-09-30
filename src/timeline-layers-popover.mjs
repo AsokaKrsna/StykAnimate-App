@@ -1,3 +1,7 @@
+import {replaceLocalized, messageAttributes, localizedAttribute, localizedMarkup} from './localization-bindings.mjs';
+
+import {t as interfaceText, messageText as sayTimeline} from './localization.mjs';
+
 /**
  * The Simple timeline's Layers popover (experience.md §5.6, reference/42): the
  * frame bar's "Layer ● Bubble ▾" (#layers-button) opens it. It lists the
@@ -13,7 +17,6 @@
 import {createPopover} from './ui/ui-popover.mjs';
 import {icon} from './icons.mjs';
 import {LAYER_COLORS} from './layers.mjs';
-import {messageText as sayTimeline} from './localization.mjs';
 
 const element = (tag, parent, className, text) => {
   const node = document.createElement(tag);
@@ -32,23 +35,23 @@ export function createLayersPopover({anchor, editor, run, overlays = null, t = n
   const events = new AbortController();
   const list = element('div', null, 'tl-layers-list');
   list.setAttribute('role', 'list');
-  list.setAttribute('aria-label', say('layers.list'));
+  localizedAttribute(list, 'aria-label', "layers.list", {});
   const foot = element('div', null, 'tl-layers-foot');
-  const footButton = (glyph, label, action) => {
+  const footButton = (glyph, label, action, _messages = {}) => {
     const button = element('button', foot, 'ui-button');
     button.type = 'button';
     button.dataset.size = 'sm';
     button.dataset.variant = 'ghost';
-    button.innerHTML = `${glyph ? icon(glyph) : ''}<span class="ui-label">${label}</span>`;
+    localizedMarkup(button, `${glyph ? icon(glyph) : ''}<span class="ui-label" ${_messages.label ? messageAttributes(_messages.label.key, _messages.label.params) : ''}>${label}</span>`);
     button.addEventListener('click', () => run(action), {signal: events.signal});
     return button;
   };
-  footButton('plus', say('layers.newLayer'), () => editor.selectSheetLayer(editor.createLayer().id, {contents: false}));
-  footButton('brush', say('layers.drawingLayer'), () => editor.selectSheetLayer(editor.createDrawingLayer().id, {contents: false}));
+  footButton('plus', say("layers.newLayer"), () => editor.selectSheetLayer(editor.createLayer().id, {contents: false}), {label: {key: "layers.newLayer", params: {}}});
+  footButton('brush', say("layers.drawingLayer"), () => editor.selectSheetLayer(editor.createDrawingLayer().id, {contents: false}), {label: {key: "layers.drawingLayer", params: {}}});
 
   let changes = null;
   const popover = createPopover({
-    anchor, placement: 'top-start', title: say('layers.title'), closeLabel: say('layers.close'), body: list, foot,
+    anchor, placement: 'top-start', title: say("layers.title"), titleKey: "layers.title", titleParams: {}, closeLabel: say("layers.close"), closeLabelKey: "layers.close", closeLabelParams: {}, body: list, foot,
     overlays, t, topInset, className: 'tl-layers-popover', icon: name => icon(name),
     onOpen() {
       changes = new AbortController();
@@ -65,7 +68,7 @@ export function createLayersPopover({anchor, editor, run, overlays = null, t = n
     button.type = 'button';
     button.dataset.size = 'sm';
     button.dataset.on = String(on);
-    button.innerHTML = icon(glyph);
+    localizedMarkup(button, icon(glyph));
     button.setAttribute('aria-label', label);
     button.dataset.tooltip = label;
     button.addEventListener('click', event => { event.stopPropagation(); run(action); });
@@ -85,7 +88,7 @@ export function createLayersPopover({anchor, editor, run, overlays = null, t = n
       const pick = element('button', row, 'tl-layers-pick');
       pick.type = 'button';
       pick.setAttribute('aria-pressed', String(layer.id === active));
-      pick.setAttribute('aria-description', say('layers.choose', {name: layer.name}));
+      pick.setAttribute('aria-description', say("layers.choose", {name: layer.name}));
       const dot = element('span', pick, 'ui-dot');
       dot.setAttribute('aria-hidden', 'true');
       dot.style.setProperty('--dot', LAYER_COLORS[layer.color] ?? 'var(--sheet-layer)');
@@ -100,7 +103,7 @@ export function createLayersPopover({anchor, editor, run, overlays = null, t = n
         () => editor.setLayerLocked(layer.id, !layer.locked));
       return row;
     });
-    list.replaceChildren(...rows);
+    replaceLocalized(list, ...rows);
     // A row rebuilt under the keyboard keeps the focus on the same control.
     if (refocus) {
       const row = list.querySelector(`[data-layer-id="${CSS.escape(refocus.id ?? '')}"]`);

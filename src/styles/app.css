@@ -44,6 +44,7 @@
 @import url("./layout/topbar.css");
 @import url("./layout/rail.css");
 @import url("./layout/stage.css");
+@import url("./layout/localization.css");
 @import url("./layout/touch.css");     /* the touch interface's layouts (docs/TOUCH.md) */
 @import url("./components/island.css");
 @import url("./components/tabs.css");

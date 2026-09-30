@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Figure-level indexed skinned meshes. Vertices, triangles and colours are
  * immutable definition data bound to the figure's own spatial bones. They never
  * become joints, fills or per-frame pose channels: a pose evaluates them into
@@ -14,60 +15,60 @@ export const spatialMeshOf=figure=>figure?._styk?.spatialMesh;
 
 export function validateSpatialMesh(figure){
   const m=spatialMeshOf(figure);if(m===undefined)return;
-  const fail=message=>{throw new Error(message);};
-  if(!m||typeof m!=='object'||Array.isArray(m)||Object.keys(m).some(k=>!KEYS.has(k)))fail('Invalid 3D mesh.');
+  const fail=(key,params)=>{throw messageError(new Error(''),key,params);};
+  if(!m||typeof m!=='object'||Array.isArray(m)||Object.keys(m).some(k=>!KEYS.has(k)))fail("errors.spatialMesh.invalid3dMesh", {});
   const {positions,bones,weights,indices,colors,materials,basis}=m;
-  if(!Array.isArray(positions)||positions.length<9||positions.length%3)fail('A 3D mesh needs XYZ positions for at least three vertices.');
+  if(!Array.isArray(positions)||positions.length<9||positions.length%3)fail("errors.spatialMesh.a3dMeshNeedsXyzPositionsForAt", {});
   const count=positions.length/3;
-  if(count>MESH_LIMITS.vertices)fail(`A 3D mesh can have up to ${MESH_LIMITS.vertices} vertices.`);
-  for(const v of positions)if(typeof v!=='number'||!Number.isFinite(v)||Math.abs(v)>1e6)fail('3D mesh positions must be finite.');
-  if(!Array.isArray(bones)||bones.length!==count*4||!Array.isArray(weights)||weights.length!==count*4)fail('Each 3D mesh vertex needs four bone and weight slots.');
+  if(count>MESH_LIMITS.vertices)fail("errors.spatialMesh.a3dMeshCanHaveUpToVertices", {vertices: MESH_LIMITS.vertices});
+  for(const v of positions)if(typeof v!=='number'||!Number.isFinite(v)||Math.abs(v)>1e6)fail("errors.spatialMesh.failure3dMeshPositionsMustBeFinite", {});
+  if(!Array.isArray(bones)||bones.length!==count*4||!Array.isArray(weights)||weights.length!==count*4)fail("errors.spatialMesh.each3dMeshVertexNeedsFourBoneAnd", {});
   const ids=new Map(figure.segments.map((s,i)=>[s.segment_id,i])),checked=new Set();
   for(let v=0;v<count;v++){
     let sum=0;
     for(let k=0;k<4;k++){
       const bone=bones[v*4+k],weight=weights[v*4+k];
-      if(!Number.isInteger(bone)||bone<0||bone>65535||typeof weight!=='number'||!Number.isFinite(weight)||weight<0||weight>1)fail('3D mesh bindings need bone IDs and weights from 0 to 1.');
-      if((bone===0)!==(weight===0)||(k===0&&bone===0))fail('Bind every 3D mesh vertex to at least one bone with a positive weight.');
+      if(!Number.isInteger(bone)||bone<0||bone>65535||typeof weight!=='number'||!Number.isFinite(weight)||weight<0||weight>1)fail("errors.spatialMesh.failure3dMeshBindingsNeedBoneIdsAndWeights", {});
+      if((bone===0)!==(weight===0)||(k===0&&bone===0))fail("errors.spatialMesh.bindEvery3dMeshVertexToAtLeast", {});
       if(!bone)continue;
-      for(let j=0;j<k;j++)if(bones[v*4+j]===bone)fail('A 3D mesh vertex cannot bind one bone twice.');
-      if(!checked.has(bone)){if(!spatialBone(figure.segments[ids.get(bone)]))fail('3D mesh vertices must bind articulated spatial joints.');checked.add(bone);}
+      for(let j=0;j<k;j++)if(bones[v*4+j]===bone)fail("errors.spatialMesh.a3dMeshVertexCannotBindOneBone", {});
+      if(!checked.has(bone)){if(!spatialBone(figure.segments[ids.get(bone)]))fail("errors.spatialMesh.failure3dMeshVerticesMustBindArticulatedSpatialJoints", {});checked.add(bone);}
       sum+=weight;
     }
-    if(Math.abs(sum-1)>1e-6)fail('3D mesh vertex weights must add up to one.');
+    if(Math.abs(sum-1)>1e-6)fail("errors.spatialMesh.failure3dMeshVertexWeightsMustAddUpTo", {});
   }
-  if(!Array.isArray(indices)||!indices.length||indices.length%3)fail('A 3D mesh needs triangle indices.');
+  if(!Array.isArray(indices)||!indices.length||indices.length%3)fail("errors.spatialMesh.a3dMeshNeedsTriangleIndices", {});
   const triangles=indices.length/3;
-  if(triangles>MESH_LIMITS.triangles)fail(`A 3D mesh can have up to ${MESH_LIMITS.triangles} triangles.`);
+  if(triangles>MESH_LIMITS.triangles)fail("errors.spatialMesh.a3dMeshCanHaveUpToTriangles", {triangles: MESH_LIMITS.triangles});
   for(let i=0;i<indices.length;i+=3){
     const a=indices[i],b=indices[i+1],c=indices[i+2];
-    for(const n of [a,b,c])if(!Number.isInteger(n)||n<0||n>=count)fail('3D mesh triangles must reference existing vertices.');
-    if(a===b||b===c||a===c)fail('3D mesh triangles need three different vertices.');
+    for(const n of [a,b,c])if(!Number.isInteger(n)||n<0||n>=count)fail("errors.spatialMesh.failure3dMeshTrianglesMustReferenceExistingVertices", {});
+    if(a===b||b===c||a===c)fail("errors.spatialMesh.failure3dMeshTrianglesNeedThreeDifferentVertices", {});
   }
   if(!Array.isArray(colors)||!colors.length||colors.length>MESH_LIMITS.colors||colors.some(c=>!Array.isArray(c)||c.length!==3||c.some(v=>!Number.isInteger(v)||v<0||v>255)))
-    fail(`A 3D mesh needs 1–${MESH_LIMITS.colors} RGB colours.`);
-  if(!Array.isArray(materials)||materials.length!==triangles||materials.some(i=>!Number.isInteger(i)||i<0||i>=colors.length))fail('Each 3D mesh triangle needs a colour.');
+    fail("errors.spatialMesh.a3dMeshNeeds1RgbColours", {colors: MESH_LIMITS.colors});
+  if(!Array.isArray(materials)||materials.length!==triangles||materials.some(i=>!Number.isInteger(i)||i<0||i>=colors.length))fail("errors.spatialMesh.each3dMeshTriangleNeedsAColour", {});
   if(!Array.isArray(basis)||basis.length!==3||basis.some(id=>!Number.isInteger(id)||(id!==0&&!ids.has(id)))||basis[1]===0||basis[2]===0||basis[1]===basis[2])
-    fail('A 3D mesh needs its origin, X and Y reference joints.');
-  if(m.z!==undefined&&(typeof m.z!=='number'||!Number.isFinite(m.z)||Math.abs(m.z)>1e6))fail('3D mesh depth order must be finite.');
+    fail("errors.spatialMesh.a3dMeshNeedsItsOriginXAnd", {});
+  if(m.z!==undefined&&(typeof m.z!=='number'||!Number.isFinite(m.z)||Math.abs(m.z)>1e6))fail("errors.spatialMesh.failure3dMeshDepthOrderMustBeFinite", {});
   if(m.views!==undefined||m.viewVertices!==undefined||m.viewPoints!==undefined){
     const {views,viewVertices,viewPoints}=m;
     if(![4,8].includes(views)||!Array.isArray(viewVertices)||!viewVertices.length||!Array.isArray(viewPoints)||viewPoints.length!==viewVertices.length*views*3)
-      fail('View-corrected mesh vertices need four or eight view positions each.');
+      fail("errors.spatialMesh.viewCorrectedMeshVerticesNeedFourOrEight", {});
     let previous=-1;
     for(const v of viewVertices){
-      if(!Number.isInteger(v)||v<=previous||v>=count)fail('View-corrected vertices must be listed once, in order.');
-      if(weights[v*4]!==1)fail('View-corrected mesh vertices must follow one bone.');
+      if(!Number.isInteger(v)||v<=previous||v>=count)fail("errors.spatialMesh.viewCorrectedVerticesMustBeListedOnceIn", {});
+      if(weights[v*4]!==1)fail("errors.spatialMesh.viewCorrectedMeshVerticesMustFollowOneBone", {});
       previous=v;
     }
-    for(const n of viewPoints)if(typeof n!=='number'||!Number.isFinite(n)||Math.abs(n)>1e6)fail('3D mesh view positions must be finite.');
+    for(const n of viewPoints)if(typeof n!=='number'||!Number.isFinite(n)||Math.abs(n)>1e6)fail("errors.spatialMesh.failure3dMeshViewPositionsMustBeFinite", {});
   }
   if(m.groups!==undefined){
-    if(!Array.isArray(m.groups)||m.groups.length>MESH_LIMITS.groups)fail('Invalid 3D mesh parts.');
+    if(!Array.isArray(m.groups)||m.groups.length>MESH_LIMITS.groups)fail("errors.spatialMesh.invalid3dMeshParts", {});
     let end=0;
     for(const g of m.groups){
       if(!g||typeof g!=='object'||Object.keys(g).some(k=>!['name','start','count'].includes(k))||typeof g.name!=='string'||g.name.length>256||
-        !Number.isInteger(g.start)||!Number.isInteger(g.count)||g.count<1||g.start<end||g.start+g.count>triangles)fail('3D mesh parts need names and ordered triangle ranges.');
+        !Number.isInteger(g.start)||!Number.isInteger(g.count)||g.count<1||g.start<end||g.start+g.count>triangles)fail("errors.spatialMesh.failure3dMeshPartsNeedNamesAndOrderedTriangle", {});
       end=g.start+g.count;
     }
   }
@@ -93,7 +94,7 @@ export function spatialMeshPlan(figure,ids){
   const slots=new Int32Array(vertices*4).fill(-1),weights=new Float64Array(vertices*4),counts=new Uint8Array(vertices);
   for(let v=0;v<vertices;v++)for(let k=0;k<4;k++){
     const bone=mesh.bones[v*4+k];if(!bone)continue;
-    const index=ids.get(bone);if(index===undefined)throw new Error('A 3D mesh references a missing bone.');
+    const index=ids.get(bone);if(index===undefined)throw messageError(new Error(''), "errors.spatialMesh.a3dMeshReferencesAMissingBone", {});
     let ordinal=ordinals.get(index);if(ordinal===undefined){ordinal=bones.length;ordinals.set(index,ordinal);bones.push(index);}
     slots[v*4+counts[v]]=ordinal;weights[v*4+counts[v]]=mesh.weights[v*4+k];counts[v]++;
   }
@@ -182,7 +183,7 @@ export function* evaluateSpatialMeshSteps(plan,frames,context,previous){
   const o=joints.get(plan.basis[0]),bx=joints.get(plan.basis[1]),by=joints.get(plan.basis[2]),B=plan.bones.length;
   const key=new Float64Array(B*FRAME_VALUES+18),F=new Float64Array(B*STRIDE),W=plan.views?new Float64Array(B*6):null;
   for(let i=0;i<B;i++){
-    const f=frames[plan.bones[i]];if(!f)throw new Error('A 3D mesh bone was not evaluated.');
+    const f=frames[plan.bones[i]];if(!f)throw messageError(new Error(''), "errors.spatialMesh.a3dMeshBoneWasNotEvaluated", {});
     frameValues(f,key,i*FRAME_VALUES);boneValues(f,F,i*STRIDE);
     if(W){const view=spatialViewInterpolation(f),interval=plan.views===8?view.eight:view.four;W.set([interval.index,interval.next,interval.blend,view.cos,view.sin,view.strength],i*6);}
   }

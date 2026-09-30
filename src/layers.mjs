@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {validateParallax} from './layer-parallax.mjs';
 /** Persistent user layers. Native object slots and join references never change. */
 export const FIXED_LAYER_IDS = Object.freeze(['scene', 'camera']);
@@ -17,35 +18,35 @@ export function validateLayerState(state) {
 export function* validateLayerStateSteps(state) {
   if (!record(state) || state.version !== 1 || !Array.isArray(state.order) || !state.order.length || state.order.length > 10000 ||
     !record(state.byId) || !record(state.assignments) || !Number.isSafeInteger(state.nextId) || state.nextId < 1)
-    throw new Error('Invalid StykAnimate layer metadata.');
+    throw messageError(new Error(''), "errors.layers.invalidStykanimateLayerMetadata", {});
   const ids = new Set(); let largest = 0, work = 0;
   for (const id of state.order) {
-    if (!isUserLayerId(id) || ids.has(id) || !owns(state.byId, id)) throw new Error('Layer IDs and order must be unique.');
+    if (!isUserLayerId(id) || ids.has(id) || !owns(state.byId, id)) throw messageError(new Error(''), "errors.layers.layerIdsAndOrderMustBeUnique", {});
     ids.add(id); largest = Math.max(largest, Number(id.slice(6)));
     const layer = state.byId[id];
     if (!record(layer) || typeof layer.name !== 'string' || !layer.name.trim() || layer.name.length > 160 ||
-      typeof layer.visible !== 'boolean' || typeof layer.locked !== 'boolean') throw new Error('Invalid layer properties.');
+      typeof layer.visible !== 'boolean' || typeof layer.locked !== 'boolean') throw messageError(new Error(''), "errors.layers.invalidLayerProperties", {});
     validateParallax(layer.parallax);
-    if (layer.drawing !== undefined && (!record(layer.drawing) || layer.drawing.version !== 1)) throw new Error('Invalid drawing layer metadata.');
-    if (layer.color !== undefined && !Object.hasOwn(LAYER_COLORS, layer.color)) throw new Error('Invalid layer color.');
+    if (layer.drawing !== undefined && (!record(layer.drawing) || layer.drawing.version !== 1)) throw messageError(new Error(''), "errors.layers.invalidDrawingLayerMetadata", {});
+    if (layer.color !== undefined && !Object.hasOwn(LAYER_COLORS, layer.color)) throw messageError(new Error(''), "errors.layers.invalidLayerColor", {});
     if (++work % 256 === 0) yield {phase:'layers', checked:work};
   }
   if (Object.keys(state.byId).length !== ids.size || state.nextId <= largest || !ids.has(state.defaultLayerId) ||
-    (state.activeId !== undefined && !ids.has(state.activeId) && !FIXED_LAYER_IDS.includes(state.activeId))) throw new Error('Layer metadata references a missing layer.');
+    (state.activeId !== undefined && !ids.has(state.activeId) && !FIXED_LAYER_IDS.includes(state.activeId))) throw messageError(new Error(''), "errors.layers.layerMetadataReferencesAMissingLayer", {});
   for (const uid in state.assignments) if (owns(state.assignments,uid)) {
-    if (!/^(0|[1-9]\d*)$/.test(uid) || Number(uid) > 0xffffffff || !ids.has(state.assignments[uid])) throw new Error('Invalid figure-to-layer assignment.');
+    if (!/^(0|[1-9]\d*)$/.test(uid) || Number(uid) > 0xffffffff || !ids.has(state.assignments[uid])) throw messageError(new Error(''), "errors.layers.invalidFigureToLayerAssignment", {});
     if (++work % 256 === 0) yield {phase:'layers', checked:work};
   }
   if (state.fixed !== undefined) {
-    if (!record(state.fixed) || Object.keys(state.fixed).some(id => !FIXED_LAYER_IDS.includes(id))) throw new Error('Invalid permanent tracks.');
+    if (!record(state.fixed) || Object.keys(state.fixed).some(id => !FIXED_LAYER_IDS.includes(id))) throw messageError(new Error(''), "errors.layers.invalidPermanentTracks", {});
     for (const id of FIXED_LAYER_IDS) if (state.fixed[id] &&
-      (typeof state.fixed[id].visible !== 'boolean' || typeof state.fixed[id].locked !== 'boolean')) throw new Error('Invalid permanent track properties.');
+      (typeof state.fixed[id].visible !== 'boolean' || typeof state.fixed[id].locked !== 'boolean')) throw messageError(new Error(''), "errors.layers.invalidPermanentTrackProperties", {});
   }
   return state;
 }
 export function ensureLayerState(report) {
   if (!report._styk) report._styk = {};
-  if (!record(report._styk)) throw new Error('Invalid StykAnimate metadata.');
+  if (!record(report._styk)) throw messageError(new Error(''), "errors.layers.invalidStykanimateMetadata", {});
   const state = report._styk.layers ??= createLayerState();
   if (record(state) && (state.fixed === undefined || record(state.fixed))) {
     state.fixed ??= {};
@@ -68,9 +69,9 @@ export function applyLayerOrder(report, frame) {
   const layerOrder = state?.order ?? ['layer-1'];
   const order = frame.object_draw_order ?? frame.objects.map((_, slot) => slot), groups = new Map(layerOrder.map(id => [id, []]));
   for (const slot of order) {
-    const object = frame.objects[slot]; if (!object) throw new Error('Invalid native figure order.');
+    const object = frame.objects[slot]; if (!object) throw messageError(new Error(''), "errors.layers.invalidNativeFigureOrder", {});
     const id = layerIdForUid(report, object.unique_id), group = groups.get(id);
-    if (!group) throw new Error('Figure references a missing user layer.');
+    if (!group) throw messageError(new Error(''), "errors.layers.figureReferencesAMissingUserLayer", {});
     group.push(slot);
   }
   const next = [];

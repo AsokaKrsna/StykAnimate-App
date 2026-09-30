@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Colour palettes shared by every colour picker and Draw's colour rail.
  *
  * Three sources:
@@ -45,8 +46,8 @@ export const projectColors = report => cleanList(report?._styk?.palette?.colors,
 
 /** Validates the colours a palette command stores. */
 export function validateProjectColors(colors) {
-  if (!Array.isArray(colors) || colors.length > PROJECT_PALETTE_LIMIT) throw new Error(`A project palette holds up to ${PROJECT_PALETTE_LIMIT} colors.`);
-  if (colors.some(color => paletteHex(color) !== color) || new Set(colors).size !== colors.length) throw new Error('Palette colors must be unique #rrggbb values.');
+  if (!Array.isArray(colors) || colors.length > PROJECT_PALETTE_LIMIT) throw messageError(new Error(''), "errors.colorPalette.aProjectPaletteHoldsUpToColors", {PROJECT_PALETTE_LIMIT: PROJECT_PALETTE_LIMIT});
+  if (colors.some(color => paletteHex(color) !== color) || new Set(colors).size !== colors.length) throw messageError(new Error(''), "errors.colorPalette.paletteColorsMustBeUniqueRrggbbValues", {});
   return colors;
 }
 
@@ -82,7 +83,7 @@ export function rememberColor(value) {
 export const personalPalettes = () => load().palettes;
 /** The personal palette the Mine view shows, or null when there is none. */
 export const currentPersonalPalette = () => { const state = load(); return state.palettes.find(palette => palette.id === state.mine) ?? null; };
-const personal = id => { const palette = load().palettes.find(entry => entry.id === id); if (!palette) throw new Error('That palette no longer exists.'); return palette; };
+const personal = id => { const palette = load().palettes.find(entry => entry.id === id); if (!palette) throw messageError(new Error(''), "errors.colorPalette.thatPaletteNoLongerExists", {}); return palette; };
 /** A name for a new palette: "My palette", "My palette 2", … */
 export function suggestPaletteName(base = 'My palette') {
   const names = new Set(load().palettes.map(palette => palette.name.toLowerCase()));
@@ -91,15 +92,15 @@ export function suggestPaletteName(base = 'My palette') {
 /** Creates a personal palette, shows it and returns its id. */
 export function createPersonalPalette(name, colors = []) {
   const state = load(), clean = cleanName(name);
-  if (!clean) throw new Error('Name the palette.');
-  if (state.palettes.length >= PERSONAL_PALETTES_LIMIT) throw new Error(`You can keep up to ${PERSONAL_PALETTES_LIMIT} palettes. Delete one to make another.`);
+  if (!clean) throw messageError(new Error(''), "errors.colorPalette.nameThePalette", {});
+  if (state.palettes.length >= PERSONAL_PALETTES_LIMIT) throw messageError(new Error(''), "errors.colorPalette.youCanKeepUpToPalettesDeleteOne", {PERSONAL_PALETTES_LIMIT: PERSONAL_PALETTES_LIMIT});
   const id = `palette-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
   state.palettes = [...state.palettes, {id, name: clean, colors: cleanList(colors, PERSONAL_PALETTE_LIMIT)}];
   state.view = 'mine'; state.mine = id; save();
   return id;
 }
 export function renamePersonalPalette(id, name) {
-  const clean = cleanName(name); if (!clean) throw new Error('Name the palette.');
+  const clean = cleanName(name); if (!clean) throw messageError(new Error(''), "errors.colorPalette.nameThePalette", {});
   const palette = personal(id); if (palette.name === clean) return false;
   load().palettes = store.palettes.map(entry => entry === palette ? {...entry, name: clean} : entry); save(); return true;
 }
@@ -116,9 +117,9 @@ function setPersonalColors(id, colors) {
 }
 export function addPersonalColor(id, value) {
   const hex = paletteHex(value), palette = personal(id);
-  if (!hex) throw new Error('Use a valid HEX color.');
+  if (!hex) throw messageError(new Error(''), "errors.colorPalette.useAValidHexColor", {});
   if (palette.colors.includes(hex)) return false;
-  if (palette.colors.length >= PERSONAL_PALETTE_LIMIT) throw new Error(`${palette.name} is full. Remove a color to add ${hex.toUpperCase()}.`);
+  if (palette.colors.length >= PERSONAL_PALETTE_LIMIT) throw messageError(new Error(''), "errors.colorPalette.isFullRemoveAColorToAdd", {name: palette.name, value: hex.toUpperCase()});
   return setPersonalColors(id, [...palette.colors, hex]);
 }
 export function removePersonalColor(id, value) { const hex = paletteHex(value), palette = personal(id); return setPersonalColors(id, palette.colors.filter(color => color !== hex)); }
@@ -136,7 +137,7 @@ export function paletteView(project) {
   return state.view ?? fallback;
 }
 export function setPaletteView(view) {
-  if (!['project', 'recent'].includes(view)) throw new Error('Choose the project or recent colors.');
+  if (!['project', 'recent'].includes(view)) throw messageError(new Error(''), "errors.colorPalette.chooseTheProjectOrRecentColors", {});
   if (load().view !== view) { store.view = view; save(); }
 }
 /** Shows a personal palette. */

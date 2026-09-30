@@ -1,4 +1,6 @@
 'use strict';
+const { t, messageError, localization, normalizeLocale } = require('./localization.cjs');
+
 
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell, session, clipboard, contentTracing } = require('electron');
 const path = require('node:path');
@@ -37,13 +39,13 @@ if (relaunchOnX11(app)) return;
 
 const APP_ROOT = path.resolve(__dirname, '..');
 const MAX_FILE_BYTES = 256 * 1024 * 1024;
-const FILE_FILTERS = [
-  { name: 'Animation and stick figures', extensions: ['styk', 'stykmov', 'stkz', 'piv', 'stk', 'json', 'nodes', 'nodemc', 'stknds', 'zip'] },
-  { name: 'StykAnimate movieclip', extensions: ['stykmov'] },
-  { name: 'StykAnimate figure', extensions: ['stkz'] },
-  { name: 'Pivot animation', extensions: ['piv'] },
-  { name: 'Pivot stick figure', extensions: ['stk'] },
-  { name: 'StykAnimate project', extensions: ['styk', 'json'] },
+const fileFilters = () => [
+  { name: t('desktop.main.animationAndStickFigures'), extensions: ['styk', 'stykmov', 'stkz', 'piv', 'stk', 'json', 'nodes', 'nodemc', 'stknds', 'zip'] },
+  { name: t('desktop.main.stykanimateMovieclip'), extensions: ['stykmov'] },
+  { name: t('desktop.main.stykanimateFigure'), extensions: ['stkz'] },
+  { name: t('desktop.main.pivotAnimation'), extensions: ['piv'] },
+  { name: t('desktop.main.pivotStickFigure'), extensions: ['stk'] },
+  { name: t('desktop.main.stykanimateProject'), extensions: ['styk', 'json'] },
 ];
 let window;
 let backend;
@@ -113,7 +115,7 @@ else {
   app.on('open-url', (event, url) => { event.preventDefault(); handleProtocol(url); });
   app.on('open-file', (event, file) => { event.preventDefault(); queueOpenFile(file); });
   app.whenReady().then(start).catch(async (error) => {
-    dialog.showErrorBox('StykAnimate could not start', error.message);
+    dialog.showErrorBox(t('desktop.main.stykanimateCouldNotStart'), error.message);
     app.quit();
   });
 }
@@ -121,8 +123,19 @@ else {
 function trusted(event) {
   const url = event.senderFrame?.url || '';
   if (!window || event.sender !== window.webContents || !backend || new URL(url).origin !== backend.origin) {
-    throw new Error('This operation is restricted to the StykAnimate workspace.');
+    throw messageError(new Error(''), 'desktop.main.errors.thisOperationIsRestrictedToTheStykAnimateWorkspace', {});
   }
+}
+
+function handle(channel, listener) {
+  ipcMain.handle(channel, async (...args) => {
+    try { return await listener(...args); }
+    catch (error) {
+      // Electron only carries an Error's text across invoke; translate at that boundary.
+      if (error?.messageKey) { const visible = new Error(t(error.messageKey, error.messageParams), {cause: error}); visible.name = error.name; throw visible; }
+      throw error;
+    }
+  });
 }
 
 function sendAction(action) {
@@ -140,36 +153,36 @@ function nativeMenu() {
   const item = (label, action) => ({ label, click: () => sendAction(action) });
   const template = [
     ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
-    { label: 'File', submenu: [
-      item('New animation', 'new'),
-      item('New window', 'new-window'),
-      item('Open…', 'open'),
+    { label: t('desktop.main.file'), submenu: [
+      item(t('menu.newAnimation'), 'new'),
+      item(t('desktop.main.newWindow'), 'new-window'),
+      item(t('menu.openProject'), 'open'),
       { type: 'separator' },
-      item('Save', 'save'),
-      item('Save as…', 'save-as'),
-      item('Save figure…', 'export-stkz'),
-      item('Export…', 'export'),
+      item(t('common.save'), 'save'),
+      item(t('common.saveAs'), 'save-as'),
+      item(t('desktop.main.saveFigure'), 'export-stkz'),
+      item(t('common.export'), 'export'),
       { type: 'separator' },
       process.platform === 'darwin' ? { role: 'close' } : { role: 'quit' },
     ] },
-    { label: 'Edit', submenu: [
-      item('Undo', 'undo'), item('Redo', 'redo'),
+    { label: t('desktop.main.edit'), submenu: [
+      item(t('common.undo'), 'undo'), item(t('common.redo'), 'redo'),
       { type: 'separator' },
-      item('Cut', 'cut'), item('Copy', 'copy'), item('Paste', 'paste'),
-      item('Duplicate', 'duplicate'), item('Delete', 'delete'),
-      { type: 'separator' }, item('Select all', 'select-all'),
+      item(t('common.cut'), 'cut'), item(t('common.copy'), 'copy'), item(t('common.paste'), 'paste'),
+      item(t('common.duplicate'), 'duplicate'), item(t('common.delete'), 'delete'),
+      { type: 'separator' }, item(t('desktop.main.selectAll'), 'select-all'),
     ] },
-    { label: 'Animation', submenu: [
-      item('Play / pause', 'play'), item('Add frame', 'add-frame'),
-      item('Previous frame', 'previous-frame'), item('Next frame', 'next-frame'),
-      { type: 'separator' }, item('Onion skin', 'toggle-onion'),
+    { label: t('desktop.main.animation'), submenu: [
+      item(t('desktop.main.playPause'), 'play'), item(t('timeline.addFrame'), 'add-frame'),
+      item(t('desktop.main.previousFrame'), 'previous-frame'), item(t('desktop.main.nextFrame'), 'next-frame'),
+      { type: 'separator' }, item(t('timeline.onion'), 'toggle-onion'),
     ] },
-    { label: 'View', submenu: [
-      item('Zoom in', 'zoom-in'), item('Zoom out', 'zoom-out'),
-      item('Fit canvas', 'zoom-reset'), { type: 'separator' }, { role: 'togglefullscreen', accelerator: '' },
+    { label: t('desktop.main.view'), submenu: [
+      item(t('desktop.main.zoomIn'), 'zoom-in'), item(t('desktop.main.zoomOut'), 'zoom-out'),
+      item(t('desktop.main.fitCanvas'), 'zoom-reset'), { type: 'separator' }, { role: 'togglefullscreen', accelerator: '' },
       ...(!app.isPackaged ? [{ role: 'toggleDevTools', accelerator: '' }] : []),
     ] },
-    { label: 'Help', submenu: [item('Keyboard shortcuts', 'help'), item('Check for updates…', 'check-updates'), item('What’s new', 'release-notes'), item('Support development', 'donate'), item('About StykAnimate', 'about')] },
+    { label: t('desktop.main.help'), submenu: [item(t('menu.shortcuts'), 'help'), item(t('desktop.main.checkForUpdates'), 'check-updates'), item(t('desktop.main.whatSNew'), 'release-notes'), item(t('desktop.main.supportDevelopment'), 'donate'), item(t('desktop.main.aboutStykAnimate'), 'about')] },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -177,13 +190,13 @@ function nativeMenu() {
 async function readImportFile(file) {
   const started = performance.now();
   const extension = path.extname(file).toLowerCase();
-  if (!['.piv', '.stk', '.styk', '.stkz', '.stykmov', '.json', '.nodes', '.nodemc', '.stknds', '.zip'].includes(extension)) throw new Error('Choose a StykAnimate, Pivot or Stick Nodes file.');
+  if (!['.piv', '.stk', '.styk', '.stkz', '.stykmov', '.json', '.nodes', '.nodemc', '.stknds', '.zip'].includes(extension)) throw messageError(new Error(''), 'desktop.main.errors.chooseAStykAnimatePivotOrStickNodesFile', {});
   const limit = ['.styk', '.stkz', '.stykmov', '.json'].includes(extension) ? MAX_FILE_BYTES : 128 * 1024 * 1024;
   const stat = await fs.stat(file);
-  if (!stat.isFile()) throw new Error('Choose an animation or stick figure file.');
-  if (stat.size > limit) throw new Error(`This file exceeds the ${limit / 1024 / 1024} MB import limit.`);
+  if (!stat.isFile()) throw messageError(new Error(''), 'desktop.main.errors.chooseAnAnimationOrStickFigureFile', {});
+  if (stat.size > limit) throw messageError(new Error(''), 'desktop.main.errors.thisFileExceedsTheValueMBImportLimit', {value: limit / 1024 / 1024});
   const bytes = await fs.readFile(file);
-  if (bytes.length > limit) throw new Error('This file grew past the import limit while being read.');
+  if (bytes.length > limit) throw messageError(new Error(''), 'desktop.main.errors.thisFileGrewPastTheImportLimitWhileBeingRead', {});
   app.addRecentDocument(file);
   await rememberRecent(file);
   // The renderer transfers these compact source bytes to its import worker.
@@ -209,7 +222,7 @@ async function rememberRecent(file) {
 async function queueOpenFile(file) {
   if (!window || !backend || !pageLoaded) { pendingFiles.push(file); return; }
   try { window.webContents.send('styk:file-opened', await readImportFile(file)); }
-  catch (error) { dialog.showErrorBox('Unable to open file', error.message); }
+  catch (error) { dialog.showErrorBox(t('desktop.main.unableToOpenFile'), error.message); }
 }
 
 // loadURL resolves around did-finish-load while webContents.isLoading() may
@@ -223,26 +236,26 @@ async function flushPendingOpens() {
 }
 
 function registerIpc() {
-  ipcMain.handle('styk:update-state', event => { trusted(event); return updates.snapshot(); });
-  ipcMain.handle('styk:update-check', event => { trusted(event); void updates.check(); return updates.snapshot(); });
-  ipcMain.handle('styk:update-releases', event => { trusted(event); return shell.openExternal(RELEASES_URL); });
-  ipcMain.handle('styk:donate', event => { trusted(event); return shell.openExternal(DONATE_URL); });
-  ipcMain.handle('styk:release-history', event => { trusted(event); return getReleaseHistory(); });
-  ipcMain.handle('styk:release-info', (event, startup = false) => {
+  handle('styk:update-state', event => { trusted(event); return updates.snapshot(); });
+  handle('styk:update-check', event => { trusted(event); void updates.check(); return updates.snapshot(); });
+  handle('styk:update-releases', event => { trusted(event); return shell.openExternal(RELEASES_URL); });
+  handle('styk:donate', event => { trusted(event); return shell.openExternal(DONATE_URL); });
+  handle('styk:release-history', event => { trusted(event); return getReleaseHistory(); });
+  handle('styk:release-info', (event, startup = false) => {
     trusted(event);
     if (startup && startupShown) return null;
     if (startup) startupShown = true;
     return { ...releaseInfo, version: app.getVersion() };
   });
-  ipcMain.handle('styk:update-restart', event => {
+  handle('styk:update-restart', event => {
     trusted(event);
     return updates.restart(async () => {
       const revision = documentState.revision;
       if (documentState.dirty) {
         const answer = await dialog.showMessageBox(window, {
-          type: 'question', title: 'Restart to update', message: `Save changes to ${documentState.name}?`,
-          detail: 'StykAnimate will close, install the downloaded update, and reopen.',
-          buttons: ['Save and restart', 'Cancel', 'Discard and restart'], defaultId: 0, cancelId: 1,
+          type: 'question', title: t('desktop.main.restartToUpdate'), message: t('desktop.main.saveChangesToName', {name: documentState.name}),
+          detail: t('desktop.main.stykanimateWillCloseInstallTheDownloadedUpdateAndReopen'),
+          buttons: [t('desktop.main.saveAndRestart'), t('desktop.main.cancel'), t('desktop.main.discardAndRestart')], defaultId: 0, cancelId: 1,
         });
         if (answer.response === 0) { sendAction('save-and-update'); return false; }
         if (answer.response !== 2) return false;
@@ -253,110 +266,110 @@ function registerIpc() {
       return true;
     }, () => { quitting = false; });
   });
-  const withTelemetry = handler => async (event, value) => { trusted(event); await telemetryReady; if (!telemetry) throw new Error('Privacy settings are unavailable. Please restart StykAnimate.'); return handler(value); };
+  const withTelemetry = handler => async (event, value) => { trusted(event); await telemetryReady; if (!telemetry) throw messageError(new Error(''), 'desktop.main.errors.privacySettingsAreUnavailablePleaseRestartStykAnimate', {}); return handler(value); };
   const support = new SupportService({ directory: app.getPath('userData'), version: app.getVersion(), development: !app.isPackaged });
-  ipcMain.handle('styk:support-context', event => { trusted(event); return support.context(); });
-  ipcMain.handle('styk:support-live', (event, id) => { trusted(event); return support.connectLive(id, value => { if (!event.sender.isDestroyed()) event.sender.send('styk:support-live-event', value); }); });
-  ipcMain.handle('styk:support-live-close', (event, connection) => { trusted(event); if (Number.isSafeInteger(connection)) support.closeLive(connection); });
+  handle('styk:support-context', event => { trusted(event); return support.context(); });
+  handle('styk:support-live', (event, id) => { trusted(event); return support.connectLive(id, value => { if (!event.sender.isDestroyed()) event.sender.send('styk:support-live-event', value); }); });
+  handle('styk:support-live-close', (event, connection) => { trusted(event); if (Number.isSafeInteger(connection)) support.closeLive(connection); });
   app.on('browser-window-created', (_event, createdWindow) => createdWindow.on('closed', () => support.closeLive()));
-  ipcMain.handle('styk:support-save-state', (event, value) => { trusted(event); return support.saveState(value); });
-  ipcMain.handle('styk:support-request', (event, value) => { trusted(event); return support.request(value); });
-  ipcMain.handle('styk:support-copy-access', async event => { trusted(event); clipboard.writeText(await support.accessLink()); return { copied: true }; });
-  ipcMain.handle('styk:support-restore', (event, key) => { trusted(event); return support.restore(key); });
-  ipcMain.handle('styk:support-download', async (event, value) => {
+  handle('styk:support-save-state', (event, value) => { trusted(event); return support.saveState(value); });
+  handle('styk:support-request', (event, value) => { trusted(event); return support.request(value); });
+  handle('styk:support-copy-access', async event => { trusted(event); clipboard.writeText(await support.accessLink()); return { copied: true }; });
+  handle('styk:support-restore', (event, key) => { trusted(event); return support.restore(key); });
+  handle('styk:support-download', async (event, value) => {
     trusted(event);
-    if (!/^[a-f0-9]{32}$/.test(value?.threadId || '') || !/^[a-f0-9]{32}$/.test(value?.fileId || '')) throw new Error('Invalid attachment.');
+    if (!/^[a-f0-9]{32}$/.test(value?.threadId || '') || !/^[a-f0-9]{32}$/.test(value?.fileId || '')) throw messageError(new Error(''), 'desktop.main.errors.invalidAttachment', {});
     const result = await support.request({ path: `/threads/${value.threadId}/files/${value.fileId}` });
-    if (!result.ok) throw new Error('Attachment could not be downloaded.');
+    if (!result.ok) throw messageError(new Error(''), 'desktop.main.errors.attachmentCouldNotBeDownloaded', {});
     const encoded = /filename\*=UTF-8''([^;]+)/.exec(result.disposition)?.[1];
     let name = 'attachment'; try { if (encoded) name = path.basename(decodeURIComponent(encoded)); } catch { /* Safe fallback. */ }
-    const destination = await dialog.showSaveDialog(window, { title: 'Save report attachment', defaultPath: name });
+    const destination = await dialog.showSaveDialog(window, { title: t('desktop.main.saveReportAttachment'), defaultPath: name });
     if (destination.canceled || !destination.filePath) return { saved: false };
     await atomicWrite(destination.filePath, Buffer.from(result.bytes)); return { saved: true };
   });
-  ipcMain.handle('styk:telemetry-state', withTelemetry(() => telemetry.getState()));
-  ipcMain.handle('styk:telemetry-consent', withTelemetry(value => telemetry.setConsent(value)));
-  ipcMain.handle('styk:telemetry-record', withTelemetry(value => telemetry.record(value)));
-  ipcMain.handle('styk:telemetry-preview', withTelemetry(() => telemetry.preview()));
-  ipcMain.handle('styk:telemetry-sync', withTelemetry(async () => { await telemetry.upload(); return telemetry.getState(); }));
-  ipcMain.handle('styk:telemetry-delete', withTelemetry(() => telemetry.deleteData()));
-  ipcMain.handle('styk:telemetry-feedback', withTelemetry(value => telemetry.feedback(value)));
-  ipcMain.handle('styk:telemetry-export', withTelemetry(async () => {
-    const result = await dialog.showSaveDialog(window, { title: 'Save optional telemetry report', defaultPath: 'StykAnimate-telemetry.json', filters: [{ name: 'JSON report', extensions: ['json'] }] });
+  handle('styk:telemetry-state', withTelemetry(() => telemetry.getState()));
+  handle('styk:telemetry-consent', withTelemetry(value => telemetry.setConsent(value)));
+  handle('styk:telemetry-record', withTelemetry(value => telemetry.record(value)));
+  handle('styk:telemetry-preview', withTelemetry(() => telemetry.preview()));
+  handle('styk:telemetry-sync', withTelemetry(async () => { await telemetry.upload(); return telemetry.getState(); }));
+  handle('styk:telemetry-delete', withTelemetry(() => telemetry.deleteData()));
+  handle('styk:telemetry-feedback', withTelemetry(value => telemetry.feedback(value)));
+  handle('styk:telemetry-export', withTelemetry(async () => {
+    const result = await dialog.showSaveDialog(window, { title: t('desktop.main.saveOptionalTelemetryReport'), defaultPath: 'StykAnimate-telemetry.json', filters: [{ name: t('desktop.main.jsonReport'), extensions: ['json'] }] });
     if (result.canceled || !result.filePath) return { saved: false };
     await fs.writeFile(result.filePath, JSON.stringify(telemetry.preview(), null, 2), 'utf8'); return { saved: true };
   }));
-  ipcMain.handle('styk:service-page', withTelemetry(page => {
+  handle('styk:service-page', withTelemetry(page => {
     const route = { home: '/', download: '/download/' }[page];
-    if (!route) throw new Error('Unknown StykAnimate page.');
-    if (!telemetry.siteUrl) throw new Error('The public website is not configured yet. Contact ale.ripreso@gmail.com.');
+    if (!route) throw messageError(new Error(''), 'desktop.main.errors.unknownStykAnimatePage', {});
+    if (!telemetry.siteUrl) throw messageError(new Error(''), 'desktop.main.errors.thePublicWebsiteIsNotConfiguredYetContactAleRipresoGmailCom', {});
     return shell.openExternal(telemetry.siteUrl + route);
   }));
-  ipcMain.handle('styk:performance-trace', async event => {
+  handle('styk:performance-trace', async event => {
     trusted(event);
-    if (traceRunning) throw new Error('A performance recording is already running.');
+    if (traceRunning) throw messageError(new Error(''), 'desktop.main.errors.aPerformanceRecordingIsAlreadyRunning', {});
     traceRunning = true;
     let temporary;
     try {
       await contentTracing.startRecording({ included_categories: ['v8.execute', 'disabled-by-default-v8.cpu_profiler', 'devtools.timeline'], recording_mode: 'record-until-full', trace_buffer_size_in_kb: 16384 });
       await new Promise(resolve => setTimeout(resolve, !app.isPackaged && process.env.STYK_TRACE_TEST === '1' ? 2000 : 30000));
       temporary = await contentTracing.stopRecording();
-      const result = await dialog.showSaveDialog(window, { title: 'Save local performance trace — review before sharing', defaultPath: 'StykAnimate-performance-trace.json', filters: [{ name: 'Chrome / Perfetto trace', extensions: ['json'] }] });
+      const result = await dialog.showSaveDialog(window, { title: t('desktop.main.saveLocalPerformanceTraceReviewBeforeSharing'), defaultPath: 'StykAnimate-performance-trace.json', filters: [{ name: t('desktop.main.chromePerfettoTrace'), extensions: ['json'] }] });
       if (result.canceled || !result.filePath) return { saved: false };
       await fs.copyFile(temporary, result.filePath); return { saved: true };
     } finally { traceRunning = false; if (temporary) await fs.unlink(temporary).catch(() => {}); }
   });
   for (const [channel, method] of [['list','list'], ['mkdir','createFolder'], ['thumbnail','thumbnail'], ['save-begin','beginSave'], ['write','write'], ['finish','finish'], ['cancel','cancel'], ['read-begin','beginRead'], ['read','read'], ['change','change']])
-    ipcMain.handle(`styk:library-${channel}`, (event, ...args) => { trusted(event); return library[method](...args); });
-  ipcMain.handle('styk:library-reveal', async (event, folder = '') => { trusted(event); const error = await shell.openPath(await library.folder(folder)); if (error) throw new Error(error); });
-  ipcMain.handle('styk:library-trash', (event, relative) => { trusted(event); return library.trash(relative, target => shell.trashItem(target)); });
-  ipcMain.handle('styk:library-thumbnail-cache', (event, options) => { trusted(event); return library.cacheThumbnail(options); });
+    handle(`styk:library-${channel}`, (event, ...args) => { trusted(event); return library[method](...args); });
+  handle('styk:library-reveal', async (event, folder = '') => { trusted(event); const error = await shell.openPath(await library.folder(folder)); if (error) throw new Error(error); });
+  handle('styk:library-trash', (event, relative) => { trusted(event); return library.trash(relative, target => shell.trashItem(target)); });
+  handle('styk:library-thumbnail-cache', (event, options) => { trusted(event); return library.cacheThumbnail(options); });
   // The community library (desktop/public-library.cjs): what people share on the website, read through its API.
   // Which assets were already downloaded once (public ids only): the site counts each person's first download of an asset, no more.
   const communityDownloads = new DownloadLedger(new WorkspacePreferences(app.getPath('userData'), { filename: 'community-downloads.json', maxBytes: 128 * 1024 }));
   const publicLibrary = new PublicLibrary({site: process.env.STYK_PUBLIC_LIBRARY_URL, downloads: communityDownloads});
-  ipcMain.handle('styk:public-library-list', (event, refresh = false) => { trusted(event); return publicLibrary.catalog({refresh: refresh === true}); });
-  ipcMain.handle('styk:public-library-preview', (event, id) => { trusted(event); return publicLibrary.preview(id); });
-  ipcMain.handle('styk:public-library-read', async (event, id) => {
+  handle('styk:public-library-list', (event, refresh = false) => { trusted(event); return publicLibrary.catalog({refresh: refresh === true}); });
+  handle('styk:public-library-preview', (event, id) => { trusted(event); return publicLibrary.preview(id); });
+  handle('styk:public-library-read', async (event, id) => {
     trusted(event); const {name, bytes} = await publicLibrary.asset(id);
     return {name, bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)};
   });
-  ipcMain.handle('styk:public-library-save', async (event, options) => {
+  handle('styk:public-library-save', async (event, options) => {
     trusted(event);
     // The panel converts the website's poster to the PNG preview the library keeps; the store validates it.
     const {item, extension, bytes} = await publicLibrary.asset(options?.id);
     return library.saveBytes({folder: typeof options?.folder === 'string' ? options.folder : '', name: item.name, extension, kind: item.kind, thumbnail: options?.thumbnail, bytes});
   });
-  ipcMain.handle('styk:public-library-page', (event, id) => { trusted(event); return shell.openExternal(publicLibrary.pageFor(id)); });
-  ipcMain.handle('styk:public-library-link', event => { trusted(event); const id = publicLibraryLink; publicLibraryLink = null; return id; });
+  handle('styk:public-library-page', (event, id) => { trusted(event); return shell.openExternal(publicLibrary.pageFor(id)); });
+  handle('styk:public-library-link', event => { trusted(event); const id = publicLibraryLink; publicLibraryLink = null; return id; });
   recentFiles = new RecentFiles({directory: app.getPath('userData'), limit: 20});
-  ipcMain.handle('styk:recent-list', event => { trusted(event); return recentFiles.list(); });
-  ipcMain.handle('styk:recent-open', async (event, id) => { trusted(event); return readImportFile(await recentFiles.resolve(id)); });
-  ipcMain.handle('styk:recent-clear', event => { trusted(event); return recentFiles.clear(); });
-  ipcMain.handle('styk:clipboard-text-read', event => {
+  handle('styk:recent-list', event => { trusted(event); return recentFiles.list(); });
+  handle('styk:recent-open', async (event, id) => { trusted(event); return readImportFile(await recentFiles.resolve(id)); });
+  handle('styk:recent-clear', event => { trusted(event); return recentFiles.clear(); });
+  handle('styk:clipboard-text-read', event => {
     trusted(event); const text = clipboard.readText();
-    if (text.length > 100) throw new Error('The clipboard does not contain a short segment value.');
+    if (text.length > 100) throw messageError(new Error(''), 'desktop.main.errors.theClipboardDoesNotContainAShortSegmentValue', {});
     return text;
   });
-  ipcMain.handle('styk:clipboard-text-write', (event, text) => {
+  handle('styk:clipboard-text-write', (event, text) => {
     trusted(event);
-    if (typeof text !== 'string' || text.length > 100) throw new Error('Segment clipboard text must contain at most 100 characters.');
+    if (typeof text !== 'string' || text.length > 100) throw messageError(new Error(''), 'desktop.main.errors.segmentClipboardTextMustContainAtMost100Characters', {});
     clipboard.writeText(text); return true;
   });
   const encoderRoot = app.isPackaged ? process.resourcesPath : path.join(APP_ROOT, 'build');
   audioImports = new AudioService({encoderPath: path.join(encoderRoot, 'video-encoder', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'), tempRoot: app.getPath('temp')});
   for (const [channel, method] of [['audio-begin','begin'],['audio-write','write'],['audio-finish','finish'],['audio-read','read'],['audio-cancel','cancel']])
-    ipcMain.handle(`styk:${channel}`, (event, ...args) => { trusted(event); return audioImports[method](...args); });
+    handle(`styk:${channel}`, (event, ...args) => { trusted(event); return audioImports[method](...args); });
   videoExports = new VideoExportService({encoderPath: path.join(encoderRoot, 'video-encoder', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'), tempRoot: app.getPath('temp')});
   for (const [channel, method] of [
     ['video-capabilities', 'capabilities'], ['video-begin', 'begin'], ['video-frame-begin', 'beginFrame'], ['video-frame-chunk', 'writeFrameChunk'],
     ['video-frame-end', 'endFrame'], ['video-finish', 'finish'], ['video-read', 'read'], ['video-cancel', 'cancel'], ['video-audio-chunk', 'writeAudioChunk'],
-  ]) ipcMain.handle(`styk:${channel}`, (event, ...args) => { trusted(event); return videoExports[method](...args); });
-  ipcMain.handle('styk:video-save', async (event, token, options) => {
+  ]) handle(`styk:${channel}`, (event, ...args) => { trusted(event); return videoExports[method](...args); });
+  handle('styk:video-save', async (event, token, options) => {
     trusted(event);
     const filters = saveFilters(options, 'webm');
     const result = await dialog.showSaveDialog(window, {
-      title: 'Save video', defaultPath: path.basename(String(options?.defaultPath || 'video.webm')), filters,
+      title: t('desktop.main.saveVideo'), defaultPath: path.basename(String(options?.defaultPath || 'video.webm')), filters,
       properties: ['createDirectory', 'showOverwriteConfirmation'],
     });
     if (result.canceled || !result.filePath) { await videoExports.cancel(token).catch(() => {}); return { saved: false }; }
@@ -367,18 +380,18 @@ function registerIpc() {
   for (const [channel, method] of [
     ['vfw-capabilities', 'capabilities'], ['vfw-begin', 'begin'], ['vfw-frame-begin', 'beginFrame'], ['vfw-frame-chunk', 'writeFrameChunk'],
     ['vfw-frame-end', 'endFrame'], ['vfw-finish', 'finish'], ['vfw-read', 'read'], ['vfw-cancel', 'cancel'],
-  ]) ipcMain.handle(`styk:${channel}`, (event, ...args) => { trusted(event); return vfwExports[method](...args); });
-  ipcMain.handle('styk:vfw-save', async (event, token, options) => {
+  ]) handle(`styk:${channel}`, (event, ...args) => { trusted(event); return vfwExports[method](...args); });
+  handle('styk:vfw-save', async (event, token, options) => {
     trusted(event);
     const filters = saveFilters(options, 'avi');
     const result = await dialog.showSaveDialog(window, {
-      title: 'Save video', defaultPath: path.basename(String(options?.defaultPath || 'video.avi')), filters,
+      title: t('desktop.main.saveVideo'), defaultPath: path.basename(String(options?.defaultPath || 'video.avi')), filters,
       properties: ['createDirectory', 'showOverwriteConfirmation'],
     });
     if (result.canceled || !result.filePath) { await vfwExports.cancel(token).catch(() => {}); return { saved: false }; }
     return vfwExports.save(token, result.filePath);
   });
-  ipcMain.handle('styk:vfw-configure', async (event, options) => {
+  handle('styk:vfw-configure', async (event, options) => {
     trusted(event); const owner = window;
     const handle = owner.getNativeWindowHandle();
     const hwnd = (handle.length >= 8 ? handle.readBigUInt64LE() : BigInt(handle.readUInt32LE())).toString();
@@ -388,9 +401,9 @@ function registerIpc() {
   const recovery = new RecoveryStore(instanceDirectory);
   const sharedClipboard = new SharedClipboard(clipboard);
   for (const [channel, method] of [['write-begin', 'beginWrite'], ['write', 'write'], ['finish', 'finish'], ['read-begin', 'beginRead'], ['read', 'read'], ['cancel', 'cancel']])
-    ipcMain.handle(`styk:shared-clipboard-${channel}`, (event, ...args) => { trusted(event); return sharedClipboard[method](...args); });
+    handle(`styk:shared-clipboard-${channel}`, (event, ...args) => { trusted(event); return sharedClipboard[method](...args); });
   app.on('will-quit', () => sharedClipboard.dispose());
-  ipcMain.handle('styk:new-window', event => {
+  handle('styk:new-window', event => {
     trusted(event);
     return new Promise((resolve, reject) => {
       const child = spawn(process.execPath, app.isPackaged ? [] : [APP_ROOT], {detached: true, stdio: 'ignore', windowsHide: true, env: process.env});
@@ -403,23 +416,28 @@ function registerIpc() {
   // The person's effect presets (src/vfx-user-presets.mjs): their own file, so they never crowd the 16 KB settings.
   const vfxPresets = new WorkspacePreferences(app.getPath('userData'), { filename: 'vfx-presets.json', maxBytes: 1024 * 1024 });
   const fonts = new FontService();
-  ipcMain.handle('styk:fonts-list', event => { trusted(event); return fonts.listFonts(); });
-  ipcMain.handle('styk:fonts-read', async (event, id) => {
+  handle('styk:fonts-list', event => { trusted(event); return fonts.listFonts(); });
+  handle('styk:fonts-read', async (event, id) => {
     trusted(event); const bytes = await fonts.readFont(id);
     return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   });
-  ipcMain.handle('styk:workspace-preferences-get', (event) => { trusted(event); return preferences.get(); });
-  ipcMain.handle('styk:workspace-preferences-set', (event, value) => { trusted(event); return preferences.set(value); });
-  ipcMain.handle('styk:editor-settings-get', (event) => { trusted(event); return editorSettings.get(); });
-  ipcMain.handle('styk:editor-settings-set', (event, value) => { trusted(event); return editorSettings.set(value); });
-  ipcMain.handle('styk:vfx-presets-get', (event) => { trusted(event); return vfxPresets.get(); });
-  ipcMain.handle('styk:vfx-presets-set', (event, value) => { trusted(event); return vfxPresets.set(value); });
+  handle('styk:workspace-preferences-get', (event) => { trusted(event); return preferences.get(); });
+  handle('styk:workspace-preferences-set', (event, value) => { trusted(event); return preferences.set(value); });
+  handle('styk:editor-settings-get', (event) => { trusted(event); return editorSettings.get(); });
+  handle('styk:editor-settings-set', async (event, value) => {
+    trusted(event);
+    await editorSettings.set(value);
+    if (localization.setLocale(normalizeLocale(value?.locale))) nativeMenu();
+    return {saved: true};
+  });
+  handle('styk:vfx-presets-get', (event) => { trusted(event); return vfxPresets.get(); });
+  handle('styk:vfx-presets-set', (event, value) => { trusted(event); return vfxPresets.set(value); });
   fileStreams = new FileStreams({onCommitError:error=>telemetry?.error(error?.name||'Error','app',null,{code:error?.code||'write_failed',stage:'write'})});
   const clipboardFile = path.join(app.getPath('userData'), 'frame-clipboard.styk');
   let clipboardWriteToken = null, clipboardControl = Promise.resolve();
-  ipcMain.handle('styk:clipboard-write-begin', (event, options) => {
+  handle('styk:clipboard-write-begin', (event, options) => {
     trusted(event); fileStreams.validateSize(options?.size);
-    if (!options.size) throw new Error('The frame clipboard is empty.');
+    if (!options.size) throw messageError(new Error(''), 'desktop.main.errors.theFrameClipboardIsEmpty', {});
     const pending = clipboardControl.then(async () => {
       if (clipboardWriteToken) await fileStreams.cancel(clipboardWriteToken);
       const transfer = await fileStreams.beginWrite({destination: clipboardFile, size: options.size});
@@ -427,13 +445,13 @@ function registerIpc() {
     });
     clipboardControl = pending.catch(() => {}); return pending;
   });
-  ipcMain.handle('styk:clipboard-read-begin', async event => {
+  handle('styk:clipboard-read-begin', async event => {
     trusted(event); const transfer = await fileStreams.beginRead(clipboardFile);
     return transfer ? {...transfer, name: 'Copied keyframes'} : null;
   });
   const projectTransfers = new Map();
   let projectRequestPending = false;
-  ipcMain.handle('styk:document-activate', async (event, options) => {
+  handle('styk:document-activate', async (event, options) => {
     trusted(event);
     const document = projectFiles.activate(options || {});
     const stale = [...projectTransfers.keys()];
@@ -441,12 +459,12 @@ function registerIpc() {
     await Promise.all(stale.map((token) => fileStreams.cancel(token)));
     return document;
   });
-  ipcMain.handle('styk:project-write-begin', async (event, options) => {
+  handle('styk:project-write-begin', async (event, options) => {
     trusted(event);
     fileStreams.validateSize(options?.size);
     const document = projectFiles.requireCurrent(options?.documentToken);
     for (const token of projectTransfers.keys()) if (!fileStreams.jobs.has(token)) projectTransfers.delete(token);
-    if (projectRequestPending || projectTransfers.size) throw new Error('A project save is already in progress.');
+    if (projectRequestPending || projectTransfers.size) throw messageError(new Error(''), 'desktop.main.errors.aProjectSaveIsAlreadyInProgress', {});
     projectRequestPending = true;
     try {
       let destination = document.filename;
@@ -454,7 +472,7 @@ function registerIpc() {
         const result = await dialog.showSaveDialog(window, {
           title: options.saveAs ? 'Save animation as' : 'Save animation',
           defaultPath: destination || path.basename(String(options.defaultPath || 'Untitled.styk')),
-          filters: [{ name: 'StykAnimate project', extensions: ['styk'] }],
+          filters: [{ name: t('desktop.main.stykanimateProject'), extensions: ['styk'] }],
           properties: ['createDirectory', 'showOverwriteConfirmation'],
         });
         if (result.canceled || !result.filePath) return null;
@@ -483,14 +501,14 @@ function registerIpc() {
   const saveFilters = (options, fallback = 'styk') => (Array.isArray(options?.filters) ? options.filters.slice(0, 8).map((filter) => ({
     name: String(filter.name || 'File').slice(0, 80),
     extensions: Array.isArray(filter.extensions) ? filter.extensions.filter((ext) => /^[a-z0-9*]{1,12}$/i.test(ext)) : [],
-  })).filter((filter) => filter.extensions.length) : [{ name: 'StykAnimate project', extensions: [fallback] }]);
-  ipcMain.handle('styk:file-write-begin', async (event, options) => {
+  })).filter((filter) => filter.extensions.length) : [{ name: t('desktop.main.stykanimateProject'), extensions: [fallback] }]);
+  handle('styk:file-write-begin', async (event, options) => {
     trusted(event);
     const stream = options?.stream === true;
     if (stream) fileStreams.validateStreamSize(options?.size); else fileStreams.validateSize(options?.size);
     const filters = saveFilters(options);
     const result = await dialog.showSaveDialog(window, {
-      title: 'Save animation', defaultPath: path.basename(String(options.defaultPath || 'Untitled.styk')), filters,
+      title: t('desktop.main.saveAnimation'), defaultPath: path.basename(String(options.defaultPath || 'Untitled.styk')), filters,
       properties: ['createDirectory', 'showOverwriteConfirmation'],
     });
     if (result.canceled || !result.filePath) return null;
@@ -499,10 +517,10 @@ function registerIpc() {
       await rememberRecent(result.filePath);
     } });
   });
-  ipcMain.handle('styk:recovery-write-begin', async (event, options) => {
+  handle('styk:recovery-write-begin', async (event, options) => {
     trusted(event);
     fileStreams.validateSize(options?.size);
-    if (!options.size) throw new Error('Recovery data is empty.');
+    if (!options.size) throw messageError(new Error(''), 'desktop.main.errors.recoveryDataIsEmpty', {});
     return controlRecovery(async () => {
       if (recoveryWriteToken) await fileStreams.cancel(recoveryWriteToken);
       const result = await fileStreams.beginWrite({ destination: recovery.file, size: options.size, onCommit: () => recovery.updateMetadata(options.name) });
@@ -510,9 +528,9 @@ function registerIpc() {
       return result;
     });
   });
-  ipcMain.handle('styk:file-write-chunk', (event, token, bytes) => { trusted(event); return fileStreams.write(token, bytes); });
-  ipcMain.handle('styk:file-write-patch', (event, token, offset, bytes) => { trusted(event); return fileStreams.patch(token, offset, bytes); });
-  ipcMain.handle('styk:file-write-finish', async (event, token) => {
+  handle('styk:file-write-chunk', (event, token, bytes) => { trusted(event); return fileStreams.write(token, bytes); });
+  handle('styk:file-write-patch', (event, token, offset, bytes) => { trusted(event); return fileStreams.patch(token, offset, bytes); });
+  handle('styk:file-write-finish', async (event, token) => {
     trusted(event);
     const documentToken = projectTransfers.get(token);
     if (documentToken) projectFiles.requireCurrent(documentToken);
@@ -522,59 +540,59 @@ function registerIpc() {
       return documentToken ? { ...result, documentToken, filename: path.basename(result.path) } : result;
     } finally { if (!fileStreams.jobs.has(token)) projectTransfers.delete(token); }
   });
-  ipcMain.handle('styk:file-write-cancel', async (event, token) => {
+  handle('styk:file-write-cancel', async (event, token) => {
     trusted(event);
     const result = await fileStreams.cancel(token);
     projectTransfers.delete(token);
     if (token === recoveryWriteToken) recoveryWriteToken = null;
     return result;
   });
-  ipcMain.handle('styk:recovery-info', (event) => { trusted(event); return recovery.info(); });
-  ipcMain.handle('styk:recovery-read-begin', async (event) => {
+  handle('styk:recovery-info', (event) => { trusted(event); return recovery.info(); });
+  handle('styk:recovery-read-begin', async (event) => {
     trusted(event);
     const info = await recovery.info();
     if (!info) return null;
     const transfer = await fileStreams.beginRead(recovery.file);
     return transfer ? { ...info, ...transfer } : null;
   });
-  ipcMain.handle('styk:file-read-chunk', (event, token) => { trusted(event); return fileStreams.read(token); });
-  ipcMain.handle('styk:file-read-close', (event, token) => { trusted(event); return fileStreams.closeRead(token); });
-  ipcMain.handle('styk:recovery-save', (event, options) => {
+  handle('styk:file-read-chunk', (event, token) => { trusted(event); return fileStreams.read(token); });
+  handle('styk:file-read-close', (event, token) => { trusted(event); return fileStreams.closeRead(token); });
+  handle('styk:recovery-save', (event, options) => {
     trusted(event);
     return controlRecovery(async () => {
       if (recoveryWriteToken) { await fileStreams.cancel(recoveryWriteToken); recoveryWriteToken = null; }
       return recovery.save(options);
     });
   });
-  ipcMain.handle('styk:recovery-get', (event) => { trusted(event); return recovery.get(); });
-  ipcMain.handle('styk:recovery-delete', async (event) => {
+  handle('styk:recovery-get', (event) => { trusted(event); return recovery.get(); });
+  handle('styk:recovery-delete', async (event) => {
     trusted(event);
     return controlRecovery(async () => {
       if (recoveryWriteToken) { await fileStreams.cancel(recoveryWriteToken); recoveryWriteToken = null; }
       return recovery.delete();
     });
   });
-  ipcMain.handle('styk:open-file', async (event) => {
+  handle('styk:open-file', async (event) => {
     trusted(event);
-    const result = await dialog.showOpenDialog(window, { title: 'Open animation or stick figure', properties: ['openFile'], filters: FILE_FILTERS });
+    const result = await dialog.showOpenDialog(window, { title: t('desktop.main.openAnimationOrStickFigure'), properties: ['openFile'], filters: fileFilters() });
     return result.canceled ? null : readImportFile(result.filePaths[0]);
   });
-  ipcMain.handle('styk:save-file', async (event, options) => {
+  handle('styk:save-file', async (event, options) => {
     trusted(event);
-    if (!options || typeof options !== 'object') throw new Error('Save options are required.');
+    if (!options || typeof options !== 'object') throw messageError(new Error(''), 'desktop.main.errors.saveOptionsAreRequired', {});
     let data;
     if (typeof options.data === 'string') {
-      if (!['base64', 'utf8', undefined].includes(options.encoding)) throw new Error('Unsupported file encoding.');
+      if (!['base64', 'utf8', undefined].includes(options.encoding)) throw messageError(new Error(''), 'desktop.main.errors.unsupportedFileEncoding', {});
       data = Buffer.from(options.data, options.encoding || 'utf8');
     } else if (options.data instanceof Uint8Array || Array.isArray(options.data)) data = Buffer.from(options.data);
-    else throw new Error('The file must contain text or bytes.');
-    if (data.byteLength > MAX_FILE_BYTES) throw new Error('This export exceeds the 256 MB limit.');
+    else throw messageError(new Error(''), 'desktop.main.errors.theFileMustContainTextOrBytes', {});
+    if (data.byteLength > MAX_FILE_BYTES) throw messageError(new Error(''), 'desktop.main.errors.thisExportExceedsThe256MBLimit', {});
     const filters = Array.isArray(options.filters) ? options.filters.slice(0, 8).map((filter) => ({
       name: String(filter.name || 'File').slice(0, 80),
       extensions: Array.isArray(filter.extensions) ? filter.extensions.filter((ext) => /^[a-z0-9*]{1,12}$/i.test(ext)) : [],
-    })).filter((filter) => filter.extensions.length) : [{ name: 'StykAnimate project', extensions: ['styk'] }];
+    })).filter((filter) => filter.extensions.length) : [{ name: t('desktop.main.stykanimateProject'), extensions: ['styk'] }];
     const result = await dialog.showSaveDialog(window, {
-      title: 'Save animation',
+      title: t('desktop.main.saveAnimation'),
       defaultPath: path.basename(String(options.defaultPath || 'Untitled.styk')),
       filters,
       properties: ['createDirectory', 'showOverwriteConfirmation'],
@@ -586,15 +604,15 @@ function registerIpc() {
     await rememberRecent(result.filePath);
     return { saved: true, path: result.filePath };
   });
-  ipcMain.handle('styk:window', (event, action) => {
+  handle('styk:window', (event, action) => {
     trusted(event);
     if (action === 'minimize') window.minimize();
     else if (action === 'maximize') window.isMaximized() ? window.unmaximize() : window.maximize();
     else if (action === 'close') window.close();
-    else throw new Error('Unknown window action.');
+    else throw messageError(new Error(''), 'desktop.main.errors.unknownWindowAction', {});
     return windowState();
   });
-  ipcMain.handle('styk:window-state', (event) => { trusted(event); return windowState(); });
+  handle('styk:window-state', (event) => { trusted(event); return windowState(); });
   // Only the trusted workspace frame receives the codec session token.
   ipcMain.on('styk:api-token', (event) => {
     try { trusted(event); event.returnValue = apiToken; }
@@ -604,7 +622,7 @@ function registerIpc() {
     try { trusted(event); event.returnValue = os.totalmem(); }
     catch { event.returnValue = 0; }
   });
-  ipcMain.handle('styk:document-state', (event, state) => {
+  handle('styk:document-state', (event, state) => {
     trusted(event);
     documentState = { name: String(state?.name || 'Untitled').slice(0, 180), dirty: Boolean(state?.dirty), revision: String(state?.revision || '').slice(0, 160) };
     window.setTitle(`${documentState.dirty ? '• ' : ''}${documentState.name} — StykAnimate`);
@@ -643,9 +661,9 @@ async function createWindow() {
     crashDialogPending = true;
     try {
       const answer = await dialog.showMessageBox(editorWindow, {
-        type: 'error', title: 'Editor stopped', message: 'The animation editor stopped unexpectedly.',
-        detail: 'Saved files and any recovery snapshot remain on disk. Reopen the editor to use the recovery option or open your saved project. Changes made after the last saved snapshot may be lost.',
-        buttons: ['Reopen editor', 'Keep window open', 'Close window'], defaultId: 0, cancelId: 1,
+        type: 'error', title: t('desktop.main.editorStopped'), message: t('desktop.main.theAnimationEditorStoppedUnexpectedly'),
+        detail: t('desktop.main.savedFilesAndAnyRecoverySnapshotRemainOnDiskReopenTheEditorToUseTheRecoveryOptionOrOpenYourSavedProjectChangesMadeAfterT'),
+        buttons: [t('desktop.main.reopenEditor'), t('desktop.main.keepWindowOpen'), t('desktop.main.closeWindow')], defaultId: 0, cancelId: 1,
       });
       if (editorWindow.isDestroyed() || !rendererFailed) return;
       if (answer.response === 0) {
@@ -682,9 +700,9 @@ async function createWindow() {
     if (!quitting && documentState.dirty) {
       event.preventDefault();
       const answer = await dialog.showMessageBox(window, {
-        type: 'question', title: 'Unsaved animation', message: `Save changes to ${documentState.name}?`,
-        detail: 'Your animation has changes that have not been saved.',
-        buttons: ['Save', 'Cancel', 'Discard'], defaultId: 0, cancelId: 1,
+        type: 'question', title: t('desktop.main.unsavedAnimation'), message: t('desktop.main.saveChangesToName', {name: documentState.name}),
+        detail: t('desktop.main.yourAnimationHasChangesThatHaveNotBeenSaved'),
+        buttons: [t('common.save'), t('desktop.main.cancel'), t('desktop.main.discard')], defaultId: 0, cancelId: 1,
       });
       if (answer.response === 0) sendAction('save-and-close');
       else if (answer.response === 2) { documentState.dirty = false; window.close(); }
@@ -700,6 +718,8 @@ async function createWindow() {
 }
 
 async function start() {
+  const saved = await new WorkspacePreferences(app.getPath('userData'), {filename: 'editor-settings.json'}).get();
+  localization.setLocale(normalizeLocale(saved.locale));
   const unavailable = updateAvailability({ packaged: app.isPackaged, platform: process.platform,
     appImage: process.env.APPIMAGE,
     portable: Boolean(process.env.PORTABLE_EXECUTABLE_DIR), installed: existsSync(path.join(path.dirname(process.execPath), 'Uninstall StykAnimate.exe')) });

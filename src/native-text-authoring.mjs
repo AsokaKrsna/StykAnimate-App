@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Edit portable native text without substituting an unavailable font. */
 import {
   textOptionsWithDefaults,
@@ -83,7 +84,7 @@ function sourceMetrics(asset, metadata = {}) {
 }
 export function readTextFigureOptions(figure, { assetIndex } = {}) {
   const asset = textAssetFor(figure, assetIndex);
-  if (!asset) throw new Error("Select a text figure.");
+  if (!asset) throw messageError(new Error(''), "errors.nativeTextAuthoring.selectATextFigure", {});
   const index = assetId(asset),
     segment = textSegments(figure, index)[0] ?? figure.segments[0],
     style = figure.segment_decode?.global_style ?? {},
@@ -155,16 +156,12 @@ export function compileEmbeddedTextFigure(options, sourceFigure) {
     ),
     original = textAssetFor(sourceFigure, initial.assetIndex);
   if (o.bold !== initial.bold || o.italic !== initial.italic)
-    throw new Error(
-      "Choose a font face to change bold or italic. Embedded glyph outlines retain their original style.",
-    );
+    throw messageError(new Error(''), "errors.nativeTextAuthoring.chooseAFontFaceToChangeBoldOr", {});
   const factor = initial.fontSizeKnown
     ? o.fontSize / initial.fontSize
     : Number(options?.embeddedScale ?? 100) / 100;
   if (!Number.isFinite(factor) || factor <= 0 || factor > 40)
-    throw new Error(
-      "Embedded text scale must be greater than zero and at most 4,000%.",
-    );
+    throw messageError(new Error(''), "errors.nativeTextAuthoring.embeddedTextScaleMustBeGreaterThanZero", {});
   const source = new Map(original.glyphs.map((g) => [g.utf16_code_unit, g])),
     missing = [...new Set(o.text)].filter(
       (char) =>

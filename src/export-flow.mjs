@@ -1,3 +1,6 @@
+import {messageError} from './localized-error.mjs';
+import {t as interfaceText} from './localization.mjs';
+import {localizedMarkup} from './localization-bindings.mjs';
 /**
  * Exporting (architecture.md §3.15): the export dialog (showExport opens
  * export-sheet.mjs), every export command, the export renderer's job with its
@@ -76,8 +79,8 @@ export function createExportFlow(ctx) {
   function exported(saved, filename) {
     const path = typeof saved === "string" ? saved : typeof saved?.path === "string" ? saved.path : "";
     const name = path ? path.split(/[\/]/).at(-1) : filename;
-    status(`Exported ${name}`);
-    toast(`Exported ${name}`);
+    status(interfaceText("exportFlow.exported", {name: name}));
+    toast(interfaceText("exportFlow.exported", {name: name}));
   }
   async function saveBlob(blob, filename, signal) {
     const measurement = signal && exportTelemetry.get(signal), writeStarted = performance.now();
@@ -174,7 +177,7 @@ export function createExportFlow(ctx) {
     interruptRecovery();
     const request = currentRequest(type),
       { format, filename } = exportJob(request, jobContext(request));
-    status(`Writing .${format}…`, false, true);
+    status(interfaceText("exportFlow.writing", {format: format}), false, true);
     let saved;
     try {
       saved = await runDocumentExport(format, (blob, signal) =>
@@ -182,15 +185,15 @@ export function createExportFlow(ctx) {
       );
     } catch (error) {
       if (error.name === "AbortError") {
-        status("Export cancelled");
+        status(interfaceText("exportFlow.exportCancelled"));
         return;
       }
       throw error;
     }
     if (saved) {
-      status(`Exported .${format}`);
+      status(interfaceText("exportFlow.exported2", {format: format}));
       toast(
-        `Your ${["stk", "stkz", "stykmov"].includes(format) ? "figure" : "animation"} was exported as .${format}.`,
+        interfaceText("exportFlow.yourWasExportedAs", {value: ["stk", "stkz", "stykmov"].includes(format) ? "figure" : "animation", format: format}),
       );
     }
     sheet?.close();
@@ -203,9 +206,9 @@ export function createExportFlow(ctx) {
     options,
     report,
     render,
-    { frames = 1, title = "Exporting animation", format = 'unknown', fps, passes = 1, start = options.start ?? editor.tick } = {},
+    { frames = 1, title = interfaceText("exportFlow.exportingAnimation"), format = 'unknown', fps, passes = 1, start = options.start ?? editor.tick } = {},
   ) {
-    if ([...exportJobs].some(job => job.raster)) throw new Error('An export is already running. Wait for it to finish or cancel it.');
+    if ([...exportJobs].some(job => job.raster)) throw messageError(new Error(''), "errors.exportFlow.anExportIsAlreadyRunningWaitForIt", {});
     pause();
     interruptRecovery();
     // Drop speculative playback pixels while keeping the editable document and
@@ -223,7 +226,7 @@ export function createExportFlow(ctx) {
     let frameRenderer;
     const host = progressHost(title),
       cancel = () => controller.abort();
-    host.content.innerHTML = exportProgressMarkup;
+    localizedMarkup(host.content, exportProgressMarkup);
     // Closing the dialog while the export runs cancels it.
     host.onClose(cancel);
     const progressUI = mountExportProgress(host.content, {frames, passes, start}, cancel);
@@ -264,7 +267,7 @@ export function createExportFlow(ctx) {
       telemetry.operation({ ...measurement.context, operation: 'export', stage: 'complete', outcome: error.name === 'AbortError' ? 'cancelled' : 'failed' }, performance.now() - measurement.started);
       if (error.name !== 'AbortError') telemetry.error(error, 'export', { ...measurement.context, stage: measurement.stage });
       if (error.name === "AbortError") {
-        status("Export cancelled");
+        status(interfaceText("exportFlow.exportCancelled"));
         return false;
       }
       throw persistentFailure(error);
@@ -292,14 +295,14 @@ export function createExportFlow(ctx) {
           canvas.toBlob(resolve, "image/png"),
         );
         checkExportContext(renderer.context);
-        if (!blob) throw new Error("PNG export failed.");
+        if (!blob) throw messageError(new Error(''), "errors.exportFlow.pngExportFailed", {});
         if (signal.aborted)
-          throw new DOMException("Export cancelled.", "AbortError");
+          throw messageError(new DOMException('', "AbortError"), "errors.exportFlow.exportCancelled", {});
         const saved = await saveBlob(blob, filename, signal);
         if (saved) exported(saved, filename);
         return saved;
       },
-      { title: "Exporting frame", format: 'png', start: editor.tick },
+      { title: interfaceText("exportFlow.exportingFrame"), titleKey: "exportFlow.exportingFrame", format: 'png', start: editor.tick },
     );
   }
   async function exportSVGFrame() {
@@ -318,7 +321,7 @@ export function createExportFlow(ctx) {
         if (saved) exported(saved, filename);
         return saved;
       },
-      { title: "Exporting vector frame", format: 'svg', start: editor.tick },
+      { title: interfaceText("exportFlow.exportingVectorFrame"), titleKey: "exportFlow.exportingVectorFrame", format: 'svg', start: editor.tick },
     );
   }
   async function exportImages(format) {
@@ -328,7 +331,7 @@ export function createExportFlow(ctx) {
     const request = currentRequest(format),
       report = playedReport(),
       { options, ticks, fps, filename, animation } = exportJob(request, jobContext(request, report));
-    if ([...exportJobs].some(job => job.raster)) throw new Error('An export is already running. Wait for it to finish or cancel it.');
+    if ([...exportJobs].some(job => job.raster)) throw messageError(new Error(''), "errors.exportFlow.anExportIsAlreadyRunningWaitForIt", {});
     // Streamed exports pick their destination up front, then write while encoding.
     const sink = await openExportSink({
       filename,
@@ -388,7 +391,7 @@ export function createExportFlow(ctx) {
           : null;
     const directSave =
       saveMethod && typeof desktop?.[saveMethod] === "function";
-    if ([...exportJobs].some(job => job.raster)) throw new Error('An export is already running. Wait for it to finish or cancel it.');
+    if ([...exportJobs].some(job => job.raster)) throw messageError(new Error(''), "errors.exportFlow.anExportIsAlreadyRunningWaitForIt", {});
     const sink = directSave
       ? null
       : await openExportSink({

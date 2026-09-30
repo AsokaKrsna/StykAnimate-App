@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /**
  * Transient polygon connections; committing/cancelling remains the caller's job.
  *
@@ -22,29 +23,29 @@ export class PolygonDraft {
 
   constructor(graph, {handles = []} = {}) {
     const segments = graph?.fig?.segments ?? graph?.segments;
-    if (!Array.isArray(segments)) throw new TypeError('A polygon draft needs figure segments.');
+    if (!Array.isArray(segments)) throw messageError(new TypeError(''), "errors.polygonDraft.aPolygonDraftNeedsFigureSegments", {});
     const validId = id => Number.isSafeInteger(id) && id >= 0;
     this.#adjacency.set(0, []);
     const edges = [];
     for (const segment of segments) {
       const from = segment?.parent_id, to = segment?.segment_id;
-      if (!validId(from) || !validId(to)) throw new TypeError('Polygon handle IDs must be nonnegative integers.');
+      if (!validId(from) || !validId(to)) throw messageError(new TypeError(''), "errors.polygonDraft.polygonHandleIdsMustBeNonnegativeIntegers", {});
       if (!this.#adjacency.has(to)) this.#adjacency.set(to, []);
       edges.push([from, to]);
     }
     for (const [from, to] of edges) {
-      if (!this.#adjacency.has(from)) throw new TypeError('A polygon segment refers to a missing parent handle.');
+      if (!this.#adjacency.has(from)) throw messageError(new TypeError(''), "errors.polygonDraft.aPolygonSegmentRefersToAMissingParent", {});
       this.#adjacency.get(from).push(to);
       this.#adjacency.get(to).push(from);
     }
-    if (!Array.isArray(handles)) throw new TypeError('Polygon draft handles must be an array.');
+    if (!Array.isArray(handles)) throw messageError(new TypeError(''), "errors.polygonDraft.polygonDraftHandlesMustBeAnArray", {});
     for (let i = 0; i < handles.length; i++) {
       const id = handles[i];
       if (i === handles.length - 1 && this.#handles.length >= 3 && id === this.#handles[0]) {
         this.#complete = true;
       } else {
         if (!this.#adjacency.has(id) || this.#selected.has(id))
-          throw new TypeError('Polygon draft handles must be distinct existing handles.');
+          throw messageError(new TypeError(''), "errors.polygonDraft.polygonDraftHandlesMustBeDistinctExistingHandles", {});
         this.#handles.push(id);
         this.#selected.add(id);
       }

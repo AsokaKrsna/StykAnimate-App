@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** One-use native import handoff. Never part of the editable document or history. */
 import {materializeNativeFrames} from './import-wire.mjs';
 export const MAX_NATIVE_PLAYBACK_BYTES = 64 * 1024 * 1024;
@@ -30,10 +31,10 @@ export function* nativePlaybackChunks(snapshot) {
 }
 
 export async function materializePlaybackSnapshot(report, {bytes, meta, position}, options) {
-  if(position !== bytes.byteLength) throw new Error('Incomplete native snapshot.');
+  if(position !== bytes.byteLength) throw messageError(new Error(''), "errors.playbackNative.incompleteNativeSnapshot", {});
   const frames = report.keyframes;
   await materializeNativeFrames({document:report, nativeFrames:meta}, bytes.buffer, 0, options);
-  if(report.keyframes.length !== frames.length) throw new Error('Native snapshot frame count changed.');
+  if(report.keyframes.length !== frames.length) throw messageError(new Error(''), "errors.playbackNative.nativeSnapshotFrameCountChanged", {});
   for(let index=0; index<frames.length; index++) if(Object.hasOwn(frames[index], '_styk'))
     report.keyframes[index]._styk = frames[index]._styk;
 }

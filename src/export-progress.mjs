@@ -1,3 +1,6 @@
+import {interfaceLocalization, t as interfaceText} from './localization.mjs';
+
+import {messageHTML, localizedText} from './localization-bindings.mjs';
 /** Presentation state only. Frame completion is reported by the renderer/encoder;
  * elapsed time never advances the progress bar. GIF has two explicit passes. */
 export class ExportProgress {
@@ -34,19 +37,19 @@ export class ExportProgress {
 export function exportTime(seconds) {
   if (!Number.isFinite(seconds)) return '—';
   const value = Math.max(0, Math.round(seconds));
-  if (value < 60) return `${value}s`;
-  if (value < 3600) return `${Math.floor(value / 60)}m ${value % 60}s`;
-  return `${Math.floor(value / 3600)}h ${Math.floor(value % 3600 / 60)}m`;
+  if (value < 60) return `${interfaceLocalization.formatNumber(value)}s`;
+  if (value < 3600) return `${interfaceLocalization.formatNumber(Math.floor(value / 60))}m ${interfaceLocalization.formatNumber(value % 60)}s`;
+  return `${interfaceLocalization.formatNumber(Math.floor(value / 3600))}h ${interfaceLocalization.formatNumber(Math.floor(value % 3600 / 60))}m`;
 }
 
 /** The progress view (features/export.css): it replaces the export dialog's settings while an export runs. */
 export const exportProgressMarkup = `<div class="export-progress">
-  <div class="export-progress-head"><strong id="export-stage" role="status" aria-live="polite">Preparing animation…</strong><output id="export-percent">0%</output></div>
-  <progress id="export-progress" max="100" aria-label="Export progress" aria-describedby="export-frame-detail"></progress>
+  <div class="export-progress-head"><strong id="export-stage" role="status" aria-live="polite" data-i18n="exportProgress.preparingAnimation">Preparing animation…</strong><output id="export-percent">0%</output></div>
+  <progress id="export-progress" max="100" aria-label="Export progress" aria-describedby="export-frame-detail" data-i18n-aria-label="exportProgress.exportProgress"></progress>
   <p id="export-frame-detail"></p>
-  <dl class="export-progress-stats"><div><dt>Rendered</dt><dd id="export-rendered">0</dd></div><div><dt>Left to render</dt><dd id="export-remaining">—</dd></div><div><dt>Elapsed</dt><dd id="export-elapsed">0s</dd></div><div><dt>Est. remaining</dt><dd id="export-eta">—</dd></div></dl>
+  <dl class="export-progress-stats"><div><dt>${messageHTML("exportProgress.rendered", {})}</dt><dd id="export-rendered">0</dd></div><div><dt>${messageHTML("exportProgress.leftToRender", {})}</dt><dd id="export-remaining">—</dd></div><div><dt>${messageHTML("exportProgress.elapsed", {})}</dt><dd id="export-elapsed">${messageHTML("exportProgress.message0s", {})}</dd></div><div><dt>${messageHTML("exportProgress.estRemaining", {})}</dt><dd id="export-eta">—</dd></div></dl>
   <p id="export-pass-note" hidden></p>
-  <div class="export-progress-actions"><button type="button" class="ui-button" data-variant="outline" id="cancel-export">Cancel export</button></div>
+  <div class="export-progress-actions"><button type="button" class="ui-button" data-variant="outline" id="cancel-export" data-i18n="exportProgress.cancelExport">Cancel export</button></div>
 </div>`;
 
 export function mountExportProgress(content, options, cancel) {
@@ -55,25 +58,20 @@ export function mountExportProgress(content, options, cancel) {
   const paint = () => {
     if (!field('progress')?.isConnected) return;
     const s = model.snapshot(), preparing = s.phase === 'preparing';
-    const title = s.phase === 'saving' ? 'Saving your file…' : s.phase === 'encoding' ? 'Finishing your file…'
-      : preparing ? 'Preparing animation…' : s.pass === 1 && s.passes === 2 ? 'Building GIF colors…'
-      : s.phase === 'processing' ? 'Encoding frames…' : 'Rendering frames…';
-    if (field('stage').textContent !== title) field('stage').textContent = title;
+    const stageKey = s.phase === 'saving' ? 'exportProgress.savingYourFile' : s.phase === 'encoding' ? 'exportProgress.finishingYourFile' : preparing ? 'exportProgress.preparingAnimation' : s.pass === 1 && s.passes === 2 ? 'exportProgress.buildingGifColors' : s.phase === 'processing' ? 'exportProgress.encodingFrames' : 'exportProgress.renderingFrames';
+    localizedText(field('stage'), stageKey);
     if (preparing) field('progress').removeAttribute('value'); else field('progress').value = s.percent;
     field('percent').textContent = preparing ? '—' : `${s.percent}%`;
-    field('frame-detail').textContent = preparing ? `${s.frames.toLocaleString()} ${s.frames === 1 ? 'frame' : 'frames'} to export`
-      : s.phase === 'saving' ? 'Choose where to save.'
-      : s.phase === 'encoding' ? 'All frames rendered.'
-      : `${s.phase === 'processing' ? 'Processing' : 'Rendering'} frame ${s.frame.toLocaleString()} of ${s.frames.toLocaleString()} · Animation frame ${s.sourceFrame.toLocaleString()}`;
-    field('rendered').textContent = `${s.rendered.toLocaleString()} / ${s.frames.toLocaleString()}`;
-    field('remaining').textContent = s.remaining.toLocaleString();
+    localizedText(field('frame-detail'), preparing ? 'counts.framesToExport' : s.phase === 'saving' ? 'exportProgress.chooseWhereToSave' : s.phase === 'encoding' ? 'exportProgress.allFramesRendered' : 'exportProgress.frameProgress', {count: s.frames, stage: {messageKey: s.phase === 'processing' ? 'exportProgress.processing' : 'exportProgress.rendering'}, frame: s.frame, total: s.frames, sourceFrame: s.sourceFrame});
+    field('rendered').textContent = `${interfaceLocalization.formatNumber(s.rendered)} / ${interfaceLocalization.formatNumber(s.frames)}`;
+    field('remaining').textContent = interfaceLocalization.formatNumber(s.remaining);
     field('elapsed').textContent = exportTime(s.elapsed);
     field('eta').textContent = s.eta === null ? '—' : `~${exportTime(s.eta)}`;
     field('pass-note').hidden = s.passes !== 2;
-    field('pass-note').textContent = s.passes === 2 ? `Pass ${s.pass} of 2` : '';
+    if (s.passes === 2) localizedText(field('pass-note'), 'exportProgress.passProgress', {pass:s.pass,total:2});
   };
   const button = content.querySelector('#cancel-export');
-  button.onclick = () => { button.disabled = true; button.textContent = 'Cancelling…'; cancel(); };
+  button.onclick = () => { button.disabled = true; localizedText(button, "exportProgress.cancelling", {}); cancel(); };
   paint(); const timer = setInterval(paint, 250);
   return {
     frameStarted(tick) {model.frameStarted(tick); paint();},

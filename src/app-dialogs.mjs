@@ -1,3 +1,10 @@
+import {importWarningMessage} from './import-notes-localization.mjs';
+import {presentError} from './error-presentation.mjs';
+import {replaceLocalized, messageTuple, translatedElement, appendLocalized, localizedText, localizedMarkup, localizedAttribute} from './localization-bindings.mjs';
+import {interfaceLocalization, t as interfaceText} from './localization.mjs';
+
+import {messageError} from './localized-error.mjs';
+
 /**
  * The app's own prompts (architecture.md §3.8): Save changes? before a
  * document is replaced, the project's name, Recent files, Performance, the
@@ -57,14 +64,14 @@ export function createAppDialogs(ctx) {
       if (entry.icon) button.insertAdjacentHTML("beforeend", glyph(entry.icon));
       text.className = "ui-dialog-choice-text";
       name.textContent = entry.label;
-      text.append(name);
+      appendLocalized(text, name);
       if (entry.detail) {
         const detail = document.createElement("small");
         detail.textContent = entry.detail;
-        text.append(detail);
+        appendLocalized(text, detail);
       }
-      button.append(text);
-      list.append(button);
+      appendLocalized(button, text);
+      appendLocalized(list, button);
     }
     const first = list.querySelector(".ui-dialog-choice:not(:disabled)");
     if (first) first.autofocus = true;
@@ -83,12 +90,12 @@ export function createAppDialogs(ctx) {
     if (!editor.dirty) return true;
     const dialog = dialogOf({
       size: "sm",
-      title: `Save changes to ${editor.name || "Untitled"}?`,
-      body: "Your changes will be lost if you don't save them.",
+      title: interfaceText("appDialogs.saveChangesTo", {value: editor.name || "Untitled"}), titleKey: "appDialogs.saveChangesTo", titleParams: {value: editor.name || "Untitled"},
+      body: interfaceText("appDialogs.yourChangesWillBeLostIfYouDon"), bodyKey: "appDialogs.yourChangesWillBeLostIfYouDon",
       actions: [
-        { label: "Don't save", value: "discard", id: "discard-changes", variant: "ghost", tone: "danger" },
-        { label: kitText(t, "common.cancel"), cancel: true, id: "keep-editing", variant: "ghost" },
-        { label: "Save", value: "save", id: "save-changes", variant: "primary", autofocus: true },
+        { label: interfaceText("appDialogs.donTSave"), labelKey: "appDialogs.donTSave", value: "discard", id: "discard-changes", variant: "ghost", tone: "danger" },
+        { label: kitText(t, "common.cancel"), labelKey: "common.cancel", labelParams: {}, cancel: true, id: "keep-editing", variant: "ghost" },
+        { label: interfaceText("common.save"), labelKey: "common.save", value: "save", id: "save-changes", variant: "primary", autofocus: true },
       ],
       onSubmit: (value) => {
         if (value !== "save") return undefined;
@@ -111,21 +118,21 @@ export function createAppDialogs(ctx) {
     return choice === "save" || choice === "discard";
   }
   /** The source features a Pivot or Stick Nodes import may show differently. */
-  function showImportNotes(warnings, { pivot = false } = {}) {
+  function showImportNotes(warnings, { pivot = false, report } = {}) {
     const list = document.createElement("ul");
     list.className = "import-notes";
     for (const warning of warnings) {
       const item = document.createElement("li");
-      item.textContent = warning.message;
-      list.append(item);
+      presentError(item, importWarningMessage(warning,report));
+      appendLocalized(list, item);
     }
     const dialog = dialogOf({
       size: "sm",
       className: "import-notes-dialog",
-      title: pivot ? "Pivot import notes" : "Stick Nodes import notes",
-      description: "The asset is ready to edit. These source features may look or behave differently:",
+      title: pivot ? interfaceText("appDialogs.pivotImportNotes") : interfaceText("appDialogs.stickNodesImportNotes"), titleKey: (pivot ? "appDialogs.pivotImportNotes" : "appDialogs.stickNodesImportNotes"), titleParams: (pivot ? {} : {}),
+      description: interfaceText("appDialogs.theAssetIsReadyToEditTheseSource"), descriptionKey: "appDialogs.theAssetIsReadyToEditTheseSource",
       body: list,
-      actions: [{ label: kitText(t, "overlays.ok"), value: true, variant: "primary" }],
+      actions: [{ label: kitText(t, "overlays.ok"), labelKey: "overlays.ok", labelParams: {}, value: true, variant: "primary" }],
     });
     void dialog.showModal();
   }
@@ -133,10 +140,10 @@ export function createAppDialogs(ctx) {
   async function chooseSticknodesEntry(entries) {
     const dialog = dialogOf({
       size: "sm",
-      title: "Choose a Stick Nodes asset",
-      description: `This pack contains ${entries.length} ${entries.length === 1 ? "asset" : "assets"}.`,
-      body: choiceList("Assets", entries.map((entry) => ({ label: entry.name, icon: "person", data: { sticknodesEntry: String(entry.index) } }))),
-      actions: [{ label: kitText(t, "common.cancel"), cancel: true, variant: "ghost" }],
+      title: interfaceText("appDialogs.chooseAStickNodesAsset"), titleKey: "appDialogs.chooseAStickNodesAsset",
+      description: interfaceText("appDialogs.thisPackContains", {count: entries.length}), descriptionKey: "appDialogs.thisPackContains", descriptionParams: {count: entries.length},
+      body: translatedElement(choiceList(interfaceText("appDialogs.assets"), entries.map((entry) => ({ label: entry.name, icon: "person", data: { sticknodesEntry: String(entry.index) } }))), "appDialogs.assets", {}, 'aria-label'),
+      actions: [{ label: kitText(t, "common.cancel"), labelKey: "common.cancel", labelParams: {}, cancel: true, variant: "ghost" }],
       onSubmit: (value, form, submitter) => (submitter?.dataset.sticknodesEntry === undefined ? false : { value: Number(submitter.dataset.sticknodesEntry) }),
     });
     return dialog.showModal();
@@ -145,11 +152,11 @@ export function createAppDialogs(ctx) {
   async function confirmDiscardFrame() {
     const dialog = dialogOf({
       size: "sm",
-      title: "Discard frame changes?",
-      body: "Restore the frame to its saved pose? You can undo this change.",
+      title: interfaceText("appDialogs.discardFrameChanges"), titleKey: "appDialogs.discardFrameChanges",
+      body: interfaceText("appDialogs.restoreTheFrameToItsSavedPoseYou"), bodyKey: "appDialogs.restoreTheFrameToItsSavedPoseYou",
       actions: [
-        { label: "Keep changes", cancel: true, id: "keep-frame-draft", variant: "ghost" },
-        { label: "Discard", value: true, id: "discard-frame-draft", variant: "primary" },
+        { label: interfaceText("appDialogs.keepChanges"), labelKey: "appDialogs.keepChanges", cancel: true, id: "keep-frame-draft", variant: "ghost" },
+        { label: interfaceText("appDialogs.discard"), labelKey: "appDialogs.discard", value: true, id: "discard-frame-draft", variant: "primary" },
       ],
     });
     return (await dialog.showModal()) === true;
@@ -162,19 +169,19 @@ export function createAppDialogs(ctx) {
           Math.min(sorted.length - 1, Math.floor(sorted.length * n))
         ]?.toFixed(2) || "—";
     const rows = [
-      ["Renderer", state.renderer?.stats?.backend || "Initializing"],
-      ["Playback FPS / target", presentation.fps === null ? "—"
-        : `${presentation.fps.toFixed(1)} / ${presentation.targetFps.toFixed(1)}`],
-      ["Playback startup", presentation.startupMs === null ? "—" : `${presentation.startupMs.toFixed(1)} ms`],
-      ["Playback buffering", `${presentation.bufferingMs.toFixed(1)} ms · ${presentation.bufferingEvents} waits`],
-      ["Recent CPU frame p50", `${p(0.5)} ms`],
-      ["Recent CPU frame p95", `${p(0.95)} ms`],
-      ["Recent CPU frame p99", `${p(0.99)} ms`],
-      ["Measured frames", sorted.length],
-      ["Current scene figures", editor.frame.objects.length.toLocaleString()],
-      [
-        "Current scene segments",
-        editor.frame.objects
+      messageTuple([interfaceText("appDialogs.renderer"), state.renderer?.stats?.backend || interfaceText("appDialogs.initializing")], {0: {key: "appDialogs.renderer", params: {}}}),
+      messageTuple([interfaceText("appDialogs.playbackFpsTarget"), presentation.fps === null ? "—"
+        : `${presentation.fps.toFixed(1)} / ${presentation.targetFps.toFixed(1)}`], {0: {key: "appDialogs.playbackFpsTarget", params: {}}}),
+      messageTuple([interfaceText("appDialogs.playbackStartup"), presentation.startupMs === null ? "—" : `${presentation.startupMs.toFixed(1)} ms`], {0: {key: "appDialogs.playbackStartup", params: {}}}),
+      messageTuple([interfaceText("appDialogs.playbackBuffering"), `${presentation.bufferingMs.toFixed(1)} ms · ${presentation.bufferingEvents} waits`], {0: {key: "appDialogs.playbackBuffering", params: {}}}),
+      messageTuple([interfaceText("appDialogs.recentCpuFrameP50"), `${p(0.5)} ms`], {0: {key: "appDialogs.recentCpuFrameP50", params: {}}}),
+      messageTuple([interfaceText("appDialogs.recentCpuFrameP95"), `${p(0.95)} ms`], {0: {key: "appDialogs.recentCpuFrameP95", params: {}}}),
+      messageTuple([interfaceText("appDialogs.recentCpuFrameP99"), `${p(0.99)} ms`], {0: {key: "appDialogs.recentCpuFrameP99", params: {}}}),
+      messageTuple([interfaceText("appDialogs.measuredFrames"), sorted.length], {0: {key: "appDialogs.measuredFrames", params: {}}}),
+      messageTuple([interfaceText("appDialogs.currentSceneFigures"), interfaceLocalization.formatNumber(editor.frame.objects.length)], {0: {key: "appDialogs.currentSceneFigures", params: {}}}),
+      messageTuple([
+        interfaceText("appDialogs.currentSceneSegments"),
+        interfaceLocalization.formatNumber(editor.frame.objects
           .reduce(
             (n, o) =>
               n +
@@ -182,15 +189,14 @@ export function createAppDialogs(ctx) {
                 (f) => f.figure_type_id === o.figure_type_id,
               )?.segments.length || 0),
             0,
-          )
-          .toLocaleString(),
-      ],
-      [
-        "Import decode",
+          )),
+      ], {0: {key: "appDialogs.currentSceneSegments", params: {}}}),
+      messageTuple([
+        interfaceText("appDialogs.importDecode"),
         state.lastImport?.decode_ms !== undefined
           ? `${state.lastImport.decode_ms.toFixed(1)} ms`
           : "—",
-      ],
+      ], {0: {key: "appDialogs.importDecode", params: {}}}),
     ];
     const body = document.createDocumentFragment(), table = document.createElement("table");
     table.className = "metric-table";
@@ -199,38 +205,38 @@ export function createAppDialogs(ctx) {
       row.insertCell().textContent = name;
       row.insertCell().textContent = String(value);
     }
-    body.append(table, paragraph("CPU submission timings include geometry evaluation and selection overlays. They do not measure GPU completion or input-to-display latency. Performance varies with hardware, scene complexity, effects, and media.", "ui-dialog-desc performance-note"));
+    appendLocalized(body, table, translatedElement(paragraph(interfaceText("appDialogs.cpuSubmissionTimingsIncludeGeometryEvaluationAndSelection"), interfaceText('appDialogs.uiDialogDescPerformanceNote')), "appDialogs.cpuSubmissionTimingsIncludeGeometryEvaluationAndSelection", {}));
     // The editor's recent activity (there is no status bar): newest first, a problem marked.
     const activity = ctx.activity?.() ?? [];
-    const clock = (time) => new Date(time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const clock = (time) => interfaceLocalization.formatDate(time, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     if (activity.length) {
       const heading = document.createElement("h3"), list = document.createElement("ol");
       heading.className = "ui-dialog-section-title";
-      heading.textContent = "Activity";
+      localizedText(heading, "appDialogs.activity", {});
       list.className = "performance-activity";
       for (const entry of activity.slice(0, 12)) {
         const item = document.createElement("li"), time = document.createElement("time");
         time.textContent = clock(entry.time);
-        item.append(time, ` ${entry.text}`);
+        appendLocalized(item, time, ` ${entry.text}`);
         if (entry.error) item.dataset.tone = "error";
-        list.append(item);
+        appendLocalized(list, item);
       }
-      body.append(heading, list);
+      appendLocalized(body, heading, list);
     }
     const report = () => [...rows.map(([name, value]) => `${name}: ${value}`), "", ...activity.map((entry) => `${clock(entry.time)} ${entry.error ? "! " : ""}${entry.text}`)].join("\n");
     const dialog = dialogOf({
       size: "md",
       id: "performance-dialog",
-      title: "Performance",
+      title: interfaceText("appDialogs.performance"), titleKey: "appDialogs.performance",
       body,
       actions: [
-        { label: "Copy report", id: "copy-performance-report", value: "copy", variant: "ghost" },
-        { label: kitText(t, "common.close"), cancel: true, variant: "secondary" },
+        { label: interfaceText("appDialogs.copyReport"), labelKey: "appDialogs.copyReport", id: "copy-performance-report", value: "copy", variant: "ghost" },
+        { label: kitText(t, "common.close"), labelKey: "common.close", labelParams: {}, cancel: true, variant: "secondary" },
       ],
       // Copy report keeps the dialog open: the numbers and the activity, for a bug report.
       onSubmit: (value) => {
         if (value !== "copy") return undefined;
-        navigator.clipboard?.writeText(report()).then(() => dialog.setMeta("Copied"), () => dialog.setMeta("Could not copy"));
+        navigator.clipboard?.writeText(report()).then(() => dialog.setMeta(interfaceText("appDialogs.copied")), () => dialog.setMeta(interfaceText("appDialogs.couldNotCopy")));
         return false;
       },
     });
@@ -240,21 +246,21 @@ export function createAppDialogs(ctx) {
   async function showRecentFiles() {
     pause();
     const entries = await desktop.listRecentFiles();
-    const empty = () => paragraph("No recent files.");
+    const empty = () => translatedElement(paragraph(interfaceText("appDialogs.noRecentFiles")), "appDialogs.noRecentFiles", {});
     const list = entries.length
-      ? choiceList("Recent files", entries.map((entry) => ({
-        label: entry.name, detail: `${entry.directory}${entry.missing ? " · Unavailable" : ""}`, icon: "file",
+      ? translatedElement(choiceList(interfaceText("appDialogs.recentFiles"), entries.map((entry) => ({
+        label: entry.name, detail: `${entry.directory}${entry.missing ? interfaceText("appDialogs.unavailable") : ""}`, icon: "file",
         disabled: entry.missing, data: { recentId: entry.id },
-      })), "recent-files")
+      })), "recent-files"), "appDialogs.recentFiles", {}, 'aria-label')
       : Object.assign(document.createElement("div"), { className: "recent-files" });
-    if (!entries.length) list.append(empty());
+    if (!entries.length) appendLocalized(list, empty());
     const dialog = dialogOf({
       size: "sm",
-      title: "Recent files",
+      title: interfaceText("appDialogs.recentFiles"), titleKey: "appDialogs.recentFiles",
       body: list,
       actions: [
-        ...(entries.length ? [{ label: "Clear history", value: "clear", id: "clear-recent", variant: "ghost" }] : []),
-        { label: kitText(t, "common.close"), cancel: true, variant: "ghost" },
+        ...(entries.length ? [{ label: interfaceText("appDialogs.clearHistory"), labelKey: "appDialogs.clearHistory", value: "clear", id: "clear-recent", variant: "ghost" }] : []),
+        { label: kitText(t, "common.close"), labelKey: "common.close", labelParams: {}, cancel: true, variant: "ghost" },
       ],
       onSubmit: (value, form, submitter) => {
         if (submitter?.dataset.recentId) return { value: { recent: submitter.dataset.recentId } };
@@ -267,7 +273,7 @@ export function createAppDialogs(ctx) {
       try {
         await desktop.clearRecentFiles();
         if (!dialog.open) return;
-        list.replaceChildren(empty());
+        replaceLocalized(list, empty());
         list.removeAttribute("role");
         const button = dialog.element.querySelector("#clear-recent");
         if (button) button.hidden = true;
@@ -284,9 +290,9 @@ export function createAppDialogs(ctx) {
   Object.assign(actions, {
     rename: async () => {
       const name = await promptText({
-        title: "Name your project",
+        title: interfaceText("appDialogs.nameYourProject"), titleKey: "appDialogs.nameYourProject",
         value: editor.name,
-        confirmLabel: "Save name",
+        confirmLabel: interfaceText("appDialogs.saveName"), confirmLabelKey: "appDialogs.saveName", confirmLabelParams: {},
         maxLength: 120,
         inputId: "rename-input",
         overlays,
@@ -303,22 +309,22 @@ export function createAppDialogs(ctx) {
   });
   async function chooseRecovery(records, discard) {
     const body=document.createDocumentFragment(), label=document.createElement('label'), select=document.createElement('select'), wrap=document.createElement('span');
-    label.className='ui-form-row';label.textContent='Recovery copy';wrap.className='ui-select';wrap.innerHTML=icon('chevron-down');
-    select.setAttribute('aria-label','Recovery copy');
-    for(const record of records){const option=document.createElement('option');option.value=record.id;option.textContent=`${record.name || 'Untitled'} · ${new Date(record.savedAt).toLocaleString()}`;select.append(option);}
-    wrap.prepend(select);label.append(wrap);body.append(label,paragraph('Restore opens this copy as an edited project. Discard permanently removes this recovery copy.'));
-    const dialog=dialogOf({title:'Restore unsaved work',size:'sm',body,
-      actions:[{label:'Cancel',cancel:true},{label:'Discard copy',value:'discard',tone:'danger'},{label:'Restore',value:'restore',variant:'primary'}],
+    label.className='ui-form-row';localizedText(label, "appDialogs.recoveryCopy", {});wrap.className='ui-select';localizedMarkup(wrap, icon('chevron-down'));
+    localizedAttribute(select, 'aria-label', "appDialogs.recoveryCopy", {});
+    for(const record of records){const option=document.createElement('option');option.value=record.id;option.textContent=`${record.name || 'Untitled'} · ${interfaceLocalization.formatDate(record.savedAt, {dateStyle: "short", timeStyle: "short"})}`;appendLocalized(select, option);}
+    wrap.prepend(select);appendLocalized(label, wrap);appendLocalized(body, label, translatedElement(paragraph(interfaceText("appDialogs.restoreOpensThisCopyAsAnEditedProject")), "appDialogs.restoreOpensThisCopyAsAnEditedProject", {}));
+    const dialog=dialogOf({title:interfaceText("appDialogs.restoreUnsavedWork"), titleKey: "appDialogs.restoreUnsavedWork",size:'sm',body,
+      actions:[{label:interfaceText("common.cancel"), labelKey: "common.cancel",cancel:true},{label:interfaceText("appDialogs.discardCopy"), labelKey: "appDialogs.discardCopy",value:'discard',tone:'danger'},{label:interfaceText("appDialogs.restore"), labelKey: "appDialogs.restore",value:'restore',variant:'primary'}],
       onSubmit:value=>{
         const record=records.find(copy=>copy.id===select.value);
         if(value==='restore')return {value:record};
         if(value==='discard'){
           dialog.setBusy(true);
           void discard(record).then(deleted=>{
-            if(!deleted)throw new Error('The recovery copy changed or is open in another tab.');
+            if(!deleted)throw messageError(new Error(''), "errors.appDialogs.theRecoveryCopyChangedOrIsOpenIn", {});
             records.splice(records.indexOf(record),1);
             select.selectedOptions[0].remove();if(!select.options.length)dialog.close();
-          }).catch(error=>dialog.setError(error.message)).finally(()=>dialog.setBusy(false));
+          }).catch(error=>dialog.setError(error)).finally(()=>dialog.setBusy(false));
           return false;
         }
         return false;

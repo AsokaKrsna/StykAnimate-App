@@ -1,3 +1,4 @@
+import {t as interfaceText} from './localization.mjs';
 /** Lets the web build start without a network (docs/WEB.md).
  *
  * The page registers web/sw.js once it has finished loading, so the first visit's
@@ -46,7 +47,7 @@ export async function enableOffline({env = globalThis, delay = 3000, onUpdate = 
 
 if (typeof document !== 'undefined' && document.querySelector('meta[name="styk-codec"][content="browser"]')) {
   enableOffline({
-    onUpdate: () => globalThis.styk?.ui?.toasts?.show({message: 'A new version of StykAnimate is ready. It is used the next time you open the app.', slot: 'update', timeout: 10000, dismissible: true}),
+    onUpdate: () => globalThis.styk?.ui?.toasts?.show({message: interfaceText("webOffline.aNewVersionOfStykanimateIsReadyIt"), messageKey: "webOffline.aNewVersionOfStykanimateIsReadyIt", slot: 'update', timeout: 10000, dismissible: true}),
     onError: error => console.warn('Offline use is unavailable:', error?.message ?? error),
   });
 }

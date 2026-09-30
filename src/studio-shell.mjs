@@ -1,6 +1,8 @@
+import {localizedText, messageTuple} from './localization-bindings.mjs';
+import {t as interfaceText} from './localization.mjs';
 import {setAttr, setHidden, setProp, setText} from './ui/dom-write.mjs';
 import {syncRail} from './shell/rail.mjs';
-const names = {select: 'Select', pose: 'Pose joints', tweener: 'Tweener', rig: 'Edit shared rig', line: 'Draw a line', chain: 'Chain pen', circle: 'Draw a circle', polygon: 'Draw a polygon', hand: 'Pan canvas', attach: 'Attach figure'};
+const nameKeys = {select: 'studioShell.select', pose: 'studioShell.poseJoints', tweener: 'studioShell.tweener', rig: 'studioShell.editSharedRig', line: 'studioShell.drawALine', chain: 'studioShell.chainPen', circle: 'studioShell.drawACircle', polygon: 'studioShell.drawAPolygon', hand: 'studioShell.panCanvas', attach: 'studioShell.attachFigure'};
 
 /** Presentation only: all editing still uses the existing document commands.
  * `builder` is the bounded builder-session controller from builder-mode.mjs;
@@ -37,7 +39,7 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
   document.getElementById('leave-rig').addEventListener('click', () => changeMode('animate'), options);
   /** Today's Insert dialog, now the Add menu's "All in this project…": the project's figures with search and previews. */
   function showInsertDialog() {
-    if (builder?.active) { toast?.('Finish the figure or return to Animate to insert figures.'); return; }
+    if (builder?.active) { toast?.(interfaceText("studioShell.finishTheFigureOrReturnToAnimateTo")); return; }
     state.activeTab = 'assets';
     dialog.showModal();
     renderAssets();
@@ -49,7 +51,7 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
     if (event.target.closest('[data-action],[data-sample]')) dialog.close();
   }, options);
   document.getElementById('object-actions').addEventListener('click', event => {
-    showCommandMenu(objectMenuItems(), event.currentTarget, {label: 'More actions'});
+    showCommandMenu(objectMenuItems(), event.currentTarget, {label: interfaceText("studioShell.moreActions"), labelKey: "studioShell.moreActions"});
   }, options);
   /**
    * Properties ⋯ (experience.md §5.1): the selection's less frequent commands, grouped under names, families in
@@ -59,69 +61,69 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
     const object = editor.object, none = !object;
     const segment = editor.figure?.segments?.[editor.selectedJoint];
     if (builder?.active && segment) return [
-      ['segment-values', 'sliders', 'Exact values…', 'I'],
-      ['origin-segment', 'origin', 'Set as origin'],
+      messageTuple(['segment-values', 'sliders', interfaceText("studioShell.exactValues"), "I"], {2: {key: "studioShell.exactValues", params: {}}}),
+      messageTuple(['origin-segment', 'origin', interfaceText("studioShell.setAsOrigin")], {2: {key: "studioShell.setAsOrigin", params: {}}}),
       null,
-      {label: 'Appearance'},
-      ['copy-builder-appearance', 'duplicate', 'Copy appearance'],
-      ['paste-builder-appearance', 'clipboard', 'Paste appearance', '', !state.builderAppearance],
+      {label: interfaceText("studioShell.appearance"), labelKey: "studioShell.appearance"},
+      messageTuple(['copy-builder-appearance', 'duplicate', interfaceText("studioShell.copyAppearance")], {2: {key: "studioShell.copyAppearance", params: {}}}),
+      messageTuple(['paste-builder-appearance', 'clipboard', interfaceText("studioShell.pasteAppearance"), '', !state.builderAppearance], {2: {key: "studioShell.pasteAppearance", params: {}}}),
       null,
-      {label: 'Arrange', icon: 'layers', submenu: [
-        ['segment-order-front', 'bring-to-front', 'Bring to front'],
-        ['segment-order-up', 'up', 'Bring forward'],
-        ['segment-order-down', 'down', 'Send backward'],
-        ['segment-order-back', 'send-to-back', 'Send to back'],
+      {label: interfaceText("studioShell.arrange"), labelKey: "studioShell.arrange", icon: 'layers', submenu: [
+        messageTuple(['segment-order-front', 'bring-to-front', interfaceText("studioShell.bringToFront")], {2: {key: "studioShell.bringToFront", params: {}}}),
+        messageTuple(['segment-order-up', 'up', interfaceText("studioShell.bringForward")], {2: {key: "studioShell.bringForward", params: {}}}),
+        messageTuple(['segment-order-down', 'down', interfaceText("studioShell.sendBackward")], {2: {key: "studioShell.sendBackward", params: {}}}),
+        messageTuple(['segment-order-back', 'send-to-back', interfaceText("studioShell.sendToBack")], {2: {key: "studioShell.sendToBack", params: {}}}),
       ]},
-      {label: 'Branch', icon: 'builder-branch', submenu: [
-        ['duplicate-branch', 'duplicate', 'Duplicate branch'],
-        ['mirror-branch', 'flip', 'Flip branch horizontally'],
-        ['mirror-branch-vertical', 'flip-vertical', 'Flip branch vertically'],
+      {label: interfaceText("studioShell.branch"), labelKey: "studioShell.branch", icon: 'builder-branch', submenu: [
+        messageTuple(['duplicate-branch', 'duplicate', interfaceText("studioShell.duplicateBranch")], {2: {key: "studioShell.duplicateBranch", params: {}}}),
+        messageTuple(['mirror-branch', 'flip', interfaceText("studioShell.flipBranchHorizontally")], {2: {key: "studioShell.flipBranchHorizontally", params: {}}}),
+        messageTuple(['mirror-branch-vertical', 'flip-vertical', interfaceText("studioShell.flipBranchVertically")], {2: {key: "studioShell.flipBranchVertically", params: {}}}),
         null,
-        ['delete-segment', 'trash', 'Delete branch', 'Shift Del'],
+        messageTuple(['delete-segment', 'trash', interfaceText("studioShell.deleteBranch"), 'Shift Del'], {2: {key: "studioShell.deleteBranch", params: {}}}),
       ]},
-      {label: 'Rig', icon: 'link', submenu: [
-        ['rig-connect', 'link', 'Connect joints…'],
-        ['rig-weighted', 'nodes', 'Add weighted joint'],
-        ['rig-bind-branch', 'stretch-horizontal', 'Bind branch to stretch'],
+      {label: interfaceText("studioShell.rig"), labelKey: "studioShell.rig", icon: 'link', submenu: [
+        messageTuple(['rig-connect', 'link', interfaceText("studioShell.connectJoints")], {2: {key: "studioShell.connectJoints", params: {}}}),
+        messageTuple(['rig-weighted', 'nodes', interfaceText("studioShell.addWeightedJoint")], {2: {key: "studioShell.addWeightedJoint", params: {}}}),
+        messageTuple(['rig-bind-branch', 'stretch-horizontal', interfaceText("studioShell.bindBranchToStretch")], {2: {key: "studioShell.bindBranchToStretch", params: {}}}),
       ]},
       null,
-      ['add-sprite-segment', 'image', 'Attach image…'],
-      ...(segment.primitive_code === 5 ? [['edit-text', 'text', 'Edit text…']] : []),
+      messageTuple(['add-sprite-segment', 'image', interfaceText("studioShell.attachImage")], {2: {key: "studioShell.attachImage", params: {}}}),
+      ...(segment.primitive_code === 5 ? [messageTuple(['edit-text', 'text', interfaceText("studioShell.editText")], {2: {key: "studioShell.editText", params: {}}})] : []),
       null,
-      ['unsplit-segment', 'builder-unsplit', 'Remove joint, keep ends', 'Ctrl Del'],
-      ['delete-single-segment', 'trash', 'Delete part', 'Del'],
+      messageTuple(['unsplit-segment', 'builder-unsplit', interfaceText("studioShell.removeJointKeepEnds"), 'Ctrl Del'], {2: {key: "studioShell.removeJointKeepEnds", params: {}}}),
+      messageTuple(['delete-single-segment', 'trash', interfaceText("studioShell.deletePart"), 'Del'], {2: {key: "studioShell.deletePart", params: {}}}),
     ];
     if (builder?.active) return [
-      ['add-sprite-segment', 'image', 'Attach image…', '', none],
-      ['rig-connect', 'link', 'Connect joints…', '', none],
-      ['rig-examples', 'layers', 'Rig examples…'],
+      messageTuple(['add-sprite-segment', 'image', interfaceText("studioShell.attachImage"), '', none], {2: {key: "studioShell.attachImage", params: {}}}),
+      messageTuple(['rig-connect', 'link', interfaceText("studioShell.connectJoints"), '', none], {2: {key: "studioShell.connectJoints", params: {}}}),
+      messageTuple(['rig-examples', 'layers', interfaceText("studioShell.rigExamples")], {2: {key: "studioShell.rigExamples", params: {}}}),
       null,
-      ['zoom-selection', 'center', 'Fit figure', 'Shift 2', none],
-      ['rig-test', 'play', 'Test rig'],
+      messageTuple(['zoom-selection', 'center', interfaceText("studioShell.fitFigure"), 'Shift 2', none], {2: {key: "studioShell.fitFigure", params: {}}}),
+      messageTuple(['rig-test', 'play', interfaceText("studioShell.testRig")], {2: {key: "studioShell.testRig", params: {}}}),
     ];
     const clip = Boolean(editor.figure?._styk?.movieclip);
     return [
-      {label: 'Edit'},
-      ['duplicate', 'duplicate', 'Duplicate', 'Ctrl D', none],
-      ['mirror', 'flip', 'Flip horizontally', '', none],
-      ['rotate', 'rotate', 'Rotate 15°', '', none],
-      ['center', 'center', 'Center', '', none],
-      ['reset-pose', 'undo', 'Reset pose', '', none],
-      ['toggle-isolate', 'detach', state.isolateMode ? 'Stop isolating joint' : 'Isolate joint', 'Caps Lock', none],
+      {label: interfaceText("studioShell.edit"), labelKey: "studioShell.edit"},
+      messageTuple(['duplicate', 'duplicate', interfaceText("common.duplicate"), 'Ctrl D', none], {2: {key: "common.duplicate", params: {}}}),
+      messageTuple(['mirror', 'flip', interfaceText("studioShell.flipHorizontally"), '', none], {2: {key: "studioShell.flipHorizontally", params: {}}}),
+      messageTuple(['rotate', 'rotate', interfaceText("studioShell.rotate15"), '', none], {2: {key: "studioShell.rotate15", params: {}}}),
+      messageTuple(['center', 'center', interfaceText("studioShell.center"), '', none], {2: {key: "studioShell.center", params: {}}}),
+      messageTuple(['reset-pose', 'undo', interfaceText("studioShell.resetPose"), '', none], {2: {key: "studioShell.resetPose", params: {}}}),
+      messageTuple(['toggle-isolate', 'detach', state.isolateMode ? interfaceText("studioShell.stopIsolatingJoint") : interfaceText("studioShell.isolateJoint"), "Caps Lock", none]),
       null,
-      {label: 'Arrange'},
-      ['selection-up', 'bring-to-front', 'Bring forward', '', none],
-      ['selection-down', 'send-to-back', 'Send backward', '', none],
+      {label: interfaceText("studioShell.arrange"), labelKey: "studioShell.arrange"},
+      messageTuple(['selection-up', 'bring-to-front', interfaceText("studioShell.bringForward"), '', none], {2: {key: "studioShell.bringForward", params: {}}}),
+      messageTuple(['selection-down', 'send-to-back', interfaceText("studioShell.sendBackward"), '', none], {2: {key: "studioShell.sendBackward", params: {}}}),
       null,
-      {label: 'Movieclip', icon: 'frame', submenu: [
-        ['movieclip-create', 'frame', 'Create movieclip', '', none],
-        ['movieclip-edit', 'frame', 'Edit movieclip', '', !clip],
-        ['movieclip-range', 'frame', 'Movieclip from frames…'],
+      {label: interfaceText("studioShell.movieclip"), labelKey: "studioShell.movieclip", icon: 'frame', submenu: [
+        messageTuple(['movieclip-create', 'frame', interfaceText("studioShell.createMovieclip"), '', none], {2: {key: "studioShell.createMovieclip", params: {}}}),
+        messageTuple(['movieclip-edit', 'frame', interfaceText("studioShell.editMovieclip"), '', !clip], {2: {key: "studioShell.editMovieclip", params: {}}}),
+        messageTuple(['movieclip-range', 'frame', interfaceText("studioShell.movieclipFromFrames")], {2: {key: "studioShell.movieclipFromFrames", params: {}}}),
       ]},
-      ['add-to-library', 'plus', 'Add to library', '', none],
-      ...(object && !clip ? [['edit-in-build-mode', 'nodes', 'Edit in Build', '', editor.selectedUids.size !== 1]] : []),
+      messageTuple(['add-to-library', 'plus', interfaceText("studioShell.addToLibrary"), '', none], {2: {key: "studioShell.addToLibrary", params: {}}}),
+      ...(object && !clip ? [messageTuple(['edit-in-build-mode', 'nodes', interfaceText("studioShell.editInBuild"), '', editor.selectedUids.size !== 1], {2: {key: "studioShell.editInBuild", params: {}}})] : []),
       null,
-      ['delete', 'trash', 'Delete', 'Delete', none],
+      messageTuple(['delete', 'trash', interfaceText('common.delete'), 'Delete', none], {2: {key: 'common.delete'}}),
     ];
   }
   // Every write compares first (ui/dom-write.mjs): sync runs on every chrome pass, so an unchanged
@@ -134,22 +136,20 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
     document.querySelectorAll('.workspace-switch [data-workspace-mode]').forEach(button => setAttr(button, 'aria-pressed', String(button.dataset.workspaceMode === current)));
     // The rail: this workspace's tools, their names and the active one (src/shell/rail.mjs).
     syncRail(document.querySelector('.studio-rail'), {mode: drawingActive ? 'draw' : current, tool: state.tool});
-    setText(document.getElementById('tool-context'), drawingActive ? 'Draw · '+drawing.tool : names[state.tool] || 'Select');
+    localizedText(document.getElementById('tool-context'), drawingActive ? 'studioShell.drawTool' : nameKeys[state.tool] || 'studioShell.select', drawingActive ? {tool: {messageKey: ({brush:'drawingView.brush',eraser:'drawingView.eraser',fill:'drawingView.fill',shape:'drawingView.shapes',select:'drawingView.selectPixels',transform:'drawingView.transform',pan:'studioShell.panCanvas'})[drawing.tool] || 'drawingController.drawing'}} : {});
     const context = state.inspectorContext;
-    const figureName = editor.figure?.name || builder?.session?.figure?.name || 'Figure';
+    const figureName = editor.figure?.name || builder?.session?.figure?.name || interfaceText("studioShell.figure");
     const count = editor.selectedUids?.size || 0;
     document.querySelectorAll('[data-selection-order]').forEach(button => { setProp(button, 'disabled', !editor.selectedObjects.length); });
-    let scope = context === 'camera' ? 'Camera' : context === 'scene' ? 'Scene' : context === 'layer' ? 'Layer' : context === 'frame' ? 'Timing' : count > 1 ? `${count} figures` : editor.object ? figureName : 'Scene';
-    const joint = editor.figure?.segments?.[editor.selectedJoint];
-    const inspectingFigure = !['camera', 'scene', 'layer', 'frame'].includes(context) && editor.object;
-    setText(document.getElementById('inspector-context'), drawingActive ? 'Drawing' : inspectingFigure ? count > 1 ? 'Figures' : joint ? 'Joint' : 'Figure' : scope);
-    setAttr(document.getElementById('inspector'), 'data-selection-kind', inspectingFigure ? count > 1 ? 'figures' : joint ? 'joint' : 'figure' : context);
-    const scopeText = state.tool === 'hand' ? 'View only · Your animation stays unchanged' : current === 'rig' ? (editor.object ? `${figureName} · Shared definition — changes affect every instance` : 'Draw a line or circle to create a figure')
-      : state.applyRange && state.rangeIndices?.length > 1 ? `${scope} · ${state.rangeIndices.length} selected frames`
-      : `${scope} · Frame ${editor.tick + 1}${editor.frameDraft?.dirty ? ' · Working pose' : ''}`;
-    setText(document.getElementById('edit-scope'), drawingActive ? drawing.exposureLabel : scopeText);
+    const scope = context === 'camera' ? {messageKey: 'studioShell.camera'} : context === 'scene' ? {messageKey: 'studioShell.scene'} : context === 'layer' ? {messageKey: 'studioShell.layer'} : context === 'frame' ? {messageKey: 'studioShell.timing'} : count > 1 ? {messageKey: 'counts.figures', messageParams: {count}} : editor.object ? figureName : {messageKey: 'studioShell.scene'};
+    // The inspector header owns its context and selection-kind; the shell only
+    // owns the workspace scope below the stage.
+    const scopeKey = state.tool === 'hand' ? 'studioShell.viewOnlyYourAnimationStaysUnchanged' : current === 'rig' ? (editor.object ? 'studioShell.sharedDefinition' : 'studioShell.drawALineOrCircleToCreateA') : state.applyRange && state.rangeIndices?.length > 1 ? 'studioShell.rangeScope' : 'studioShell.frameScope';
+    const scopeParams = {scope, name: figureName, count: state.rangeIndices?.length || 0, frame: editor.tick + 1, draft: editor.frameDraft?.dirty ? {messageKey: 'studioShell.workingPose'} : ''};
+    if (drawingActive) localizedText(document.getElementById('edit-scope'), drawing.exposureMessage.key, drawing.exposureMessage.params);
+    else localizedText(document.getElementById('edit-scope'), scopeKey, scopeParams);
     setHidden(document.getElementById('leave-rig'), current !== 'rig');
-    setText(document.getElementById('selection-summary'), scopeText);
+    localizedText(document.getElementById('selection-summary'), scopeKey, scopeParams);
     // #viewport-hint stays hidden: a tool's instruction is the stage header's mode message (app.mjs modeMessage).
     builder?.sync();
     if(drawingActive)drawing.sync();

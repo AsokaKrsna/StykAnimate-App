@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Clock construction projects only membership and playback descriptors. The
  * existing sheet sampler still owns blanks, time remapping and replacements;
  * it never needs to interpolate a joint, build geometry or copy a dense pose. */
@@ -40,6 +41,6 @@ export function createSheetMembershipSampler(report, nativeRows) {
       const row=nativeRows[low];
       return sampleNative(source,low,row?.count ? (time-row.start)/row.count : 0);
     },
-    resolveGeometry:()=>{throw new Error('Movieclip membership must not require geometry.');},
+    resolveGeometry:()=>{throw messageError(new Error(''), "errors.movieclipMembership.movieclipMembershipMustNotRequireGeometry", {});},
   });
 }

@@ -1,3 +1,6 @@
+import {appendLocalized} from './localization-bindings.mjs';
+import {messageError} from './localized-error.mjs';
+import {t as interfaceText} from './localization.mjs';
 /** Delegated numeric/property controls. Model transactions are supplied by the owner. */
 import {dragSlop} from "./pen-input.mjs";
 export const propertyStep = (
@@ -66,7 +69,7 @@ function installStyles(doc) {
     const element = doc.createElement("style");
     element.dataset.stykPropertyStyles = "";
     element.textContent = `@layer legacy{${STYLES}}`;
-    doc.head.append(element);
+    appendLocalized(doc.head, element);
     shared = { element, count: 0 };
     styles.set(doc, shared);
   }
@@ -87,7 +90,7 @@ function installStyles(doc) {
 export class PropertyControls {
   constructor(container, callbacks = {}) {
     if (!container?.addEventListener)
-      throw new TypeError("Property controls need a container.");
+      throw messageError(new TypeError(''), "errors.propertyControls.propertyControlsNeedAContainer", {});
     this.container = container;
     this.callbacks = callbacks;
     this.gesture = null;
@@ -163,7 +166,7 @@ export class PropertyControls {
       supplied ?? input.dataset.propertyValue ?? input.value,
     );
     if (!Number.isFinite(value))
-      throw new Error("This property has no finite numeric value.");
+      throw messageError(new Error(''), "errors.propertyControls.thisPropertyHasNoFiniteNumericValue", {});
     return value;
   }
   _payload(g = this.gesture) {
@@ -197,9 +200,7 @@ export class PropertyControls {
     try {
       g.token = this.callbacks.begin?.(this._payload(g));
       if (g.token?.then)
-        throw new Error(
-          "Property begin must return a synchronous transaction token.",
-        );
+        throw messageError(new Error(''), "errors.propertyControls.propertyBeginMustReturnASynchronousTransactionToken", {});
     } catch (error) {
       this.gesture = null;
       throw error;
@@ -370,7 +371,7 @@ export class PropertyControls {
       input.setCustomValidity(
         Number.isFinite(value)
           ? `Enter a value between ${min} and ${max}.`
-          : "Enter a finite number.",
+          : interfaceText("propertyControls.enterAFiniteNumber"),
       );
       return;
     }

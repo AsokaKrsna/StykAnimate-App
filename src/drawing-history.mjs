@@ -1,7 +1,9 @@
+import {restoreMessageError, messageError} from './localized-error.mjs';
+
 import {historyChunks,historyPixelBytes} from './drawing-history-codec.mjs';
 import {drawingPixelCommands as pixelCommands} from './drawing-preparation.mjs';
 
-const aborted=()=>new DOMException('Drawing history operation cancelled.','AbortError');
+const aborted=()=>messageError(new DOMException('', 'AbortError'), "errors.drawingHistory.drawingHistoryOperationCancelled", {});
 const yieldToInput=()=>new Promise(resolve=>setTimeout(resolve,0));
 
 /** The lease lives in the editor thread so a worker crash cannot make another
@@ -21,12 +23,12 @@ export class DrawingHistoryDisk {
       if(this.closed&&kind!=='close')throw aborted();await this.lease();
       if(!this.worker){
         const worker=this.worker=new Worker(new URL('./drawing-history-worker.mjs',import.meta.url),{type:'module',name:'StykAnimate drawing undo disk'});
-        worker.onmessage=({data})=>{const entry=this.pending.get(data.id);if(!entry)return;this.pending.delete(data.id);clearTimeout(entry.timer);data.error?entry.reject(Object.assign(new Error(data.error.message),{name:data.error.name})):entry.resolve(data);};
-        worker.onerror=event=>{event.preventDefault();this.fail(new Error(event.message||'The drawing undo worker stopped. Retry undo.'));};
-        worker.onmessageerror=()=>this.fail(new Error('Drawing undo data could not be transferred.'));
+        worker.onmessage=({data})=>{const entry=this.pending.get(data.id);if(!entry)return;this.pending.delete(data.id);clearTimeout(entry.timer);data.error?entry.reject(Object.assign(restoreMessageError(new Error(data.error.message), data.error),{name:data.error.name})):entry.resolve(data);};
+        worker.onerror=event=>{event.preventDefault();this.fail((event.message ? new Error(event.message) : messageError(new Error(''), "errors.drawingHistory.theDrawingUndoWorkerStoppedRetryUndo")));};
+        worker.onmessageerror=()=>this.fail(messageError(new Error(''), "errors.drawingHistory.drawingUndoDataCouldNotBeTransferred", {}));
       }
       return new Promise((resolve,reject)=>{
-        const id=++this.next,timer=setTimeout(()=>this.fail(new Error('Drawing undo disk access timed out. Retry the operation.')),30000);
+        const id=++this.next,timer=setTimeout(()=>this.fail(messageError(new Error(''), "errors.drawingHistory.drawingUndoDiskAccessTimedOutRetryThe", {})),30000);
         this.pending.set(id,{resolve,reject,timer});
         try{this.worker.postMessage({id,kind,session:this.session,...data});}catch(error){this.pending.delete(id);clearTimeout(timer);reject(error);}
       });
@@ -66,7 +68,7 @@ export class DrawingHistory {
       const record=this.queue.shift();if(record.disposed)continue;
       record.writing=true;
       let scratch=false;try{
-        if(!this.enabled)throw new Error('The drawing undo disk cache is unavailable.');
+        if(!this.enabled)throw messageError(new Error(''), "errors.drawingHistory.theDrawingUndoDiskCacheIsUnavailable", {});
         this.beginScratch();scratch=true;await this.disk.request('begin',{record:record.id});record.state='writing';
         for(const tiles of historyChunks(record.command.tiles)){
           if(this.disposed||record.disposed)throw aborted();
@@ -79,7 +81,7 @@ export class DrawingHistory {
         if(!this.disposed)this.disk.request('remove',{record:record.id}).catch(()=>{});
         if(!record.disposed&&!this.disposed){
           record.state='memory';record.root.bytes+=record.bytes;record.onSizeChange(record.bytes);
-          if(this.enabled){this.enabled=false;this.onWarning(new Error('Drawing undo disk cache is unavailable. Recent undo remains in memory: '+error.message));}
+          if(this.enabled){this.enabled=false;this.onWarning(messageError(new Error(''), 'errors.drawingHistory.diskUnavailable', {detail:error.message}));}
         }
       }finally{record.writing=false;this.releaseRetired(record);if(scratch)this.endScratch();}
     }
@@ -112,13 +114,13 @@ export class DrawingHistory {
     try{
       this.reserve(record.bytes);this.residentBytes+=record.bytes;reserved=true;
       const {result}=await this.disk.request('info',{record:record.id});
-      if(result.tiles!==record.count||!Number.isInteger(result.parts)||result.parts<1||result.parts>record.count)throw new Error('Drawing undo record is damaged.');
+      if(result.tiles!==record.count||!Number.isInteger(result.parts)||result.parts<1||result.parts>record.count)throw messageError(new Error(''), "errors.drawingHistory.drawingUndoRecordIsDamaged", {});
       const tiles=[];let bytes=0;
       for(let part=0;part<result.parts;part++){
         check();const chunk=await this.disk.request('read',{record:record.id,part});bytes+=historyPixelBytes(chunk.tiles);
-        if(tiles.length+chunk.tiles.length>record.count||bytes>record.bytes)throw new Error('Drawing undo record is damaged.');tiles.push(...chunk.tiles);await yieldToInput();
+        if(tiles.length+chunk.tiles.length>record.count||bytes>record.bytes)throw messageError(new Error(''), "errors.drawingHistory.drawingUndoRecordIsDamaged", {});tiles.push(...chunk.tiles);await yieldToInput();
       }
-      check();if(tiles.length!==record.count||bytes!==record.bytes)throw new Error('Drawing undo record is damaged.');
+      check();if(tiles.length!==record.count||bytes!==record.bytes)throw messageError(new Error(''), "errors.drawingHistory.drawingUndoRecordIsDamaged", {});
       record.command.tiles=tiles;this.payloads.set(tiles,record);installed=true;
     }finally{if(reserved&&!installed)this.residentBytes=Math.max(0,this.residentBytes-record.bytes);this.endScratch();}
   }

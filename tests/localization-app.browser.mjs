@@ -45,7 +45,7 @@ try {
   await page.getByRole('button',{name:'Chiudi impostazioni',exact:true}).click();
   await page.evaluate(() => styk.settingsUI.flush());
   await page.locator('.brand[data-action=menu]').click();
-  check('Actual menu lifecycle translates commands while retaining keyboard hints',await page.locator('#menu').evaluate(menu => menu.querySelector('[data-action=new] span').textContent==='Nuova animazione' && menu.querySelector('[data-action=save] span').textContent==='Salva' && menu.querySelector('[data-action=save] kbd').textContent==='Ctrl S'));
+  check('Actual menu lifecycle translates commands while retaining keyboard hints',await page.locator('#menu').evaluate(menu => menu.querySelector('[data-action=new] span').textContent==='Nuova animazione' && menu.querySelector('[data-action=save] span').textContent==='Salva' && menu.querySelector('[data-action=save] kbd').textContent==='Ctrl+S'));
   await page.keyboard.press('Escape');
   await page.keyboard.press('Control+z');
   await page.waitForFunction(value => styk.editor.object.root_x===value,originalX);
@@ -62,7 +62,7 @@ try {
   check('Stopping preview restores the localized Play action',await page.locator('#play-button').getAttribute('aria-label')==='Riproduci');
   await page.reload();
   await page.waitForFunction(() => window.styk?.ready && styk.localization);
-  check('Actual app reload restores Italian settings and translated chrome',await page.evaluate(() => styk.state.settings.locale==='it' && styk.localization.localization.locale==='it' && document.documentElement.lang==='it' && document.querySelector('.titlebar [data-action=open]').textContent.trim()==='Apri'));
+  check('Actual app reload restores Italian settings and translated chrome',await page.evaluate(() => styk.state.settings.locale==='it' && styk.localization.localization.locale==='it' && document.documentElement.lang==='it' && document.querySelector('.titlebar [data-action=save]').textContent.trim()==='Salva'));
   await settings();
   await page.locator('.styk-settings [data-setting=locale]').selectOption('en');
   await page.getByRole('button',{name:'Close settings',exact:true}).click();

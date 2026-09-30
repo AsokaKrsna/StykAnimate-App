@@ -1,8 +1,9 @@
+import {messageError} from './localized-error.mjs';
 import {TILE,TILE_BYTES,TileStore,tileKey,tileTransparent,assertTileCoordinates} from './drawing-tiles.mjs';
 import {levelStore} from './drawing-raster.mjs';
 
 export const TRANSFORM_BYTES=384*1024*1024;
-const limit=()=>{throw new Error('The transform exceeds the drawing working memory limit.');};
+const limit=()=>{throw messageError(new Error(''), "errors.drawingTransform.theTransformExceedsTheDrawingWorkingMemoryLimit", {});};
 export const tileIntersects=(t,r)=>t.tx*TILE<r.x+r.width&&(t.tx+1)*TILE>r.x&&t.ty*TILE<r.y+r.height&&(t.ty+1)*TILE>r.y;
 
 export function transformBounds(r,m){
@@ -12,16 +13,16 @@ export function transformBounds(r,m){
   return {x,y,width:Math.ceil(Math.max(...xs))-x,height:Math.ceil(Math.max(...ys))-y};
 }
 export function inverseMatrix(m){
-  if(!Array.isArray(m)||m.length!==6||!m.every(Number.isFinite))throw new Error('Invalid drawing transform.');
+  if(!Array.isArray(m)||m.length!==6||!m.every(Number.isFinite))throw messageError(new Error(''), "errors.drawingTransform.invalidDrawingTransform", {});
   const [a,b,c,d,x,y]=m,det=a*d-b*c;
-  if(!Number.isFinite(det)||Math.abs(det)<1e-12)throw new Error('The drawing transform is singular.');
+  if(!Number.isFinite(det)||Math.abs(det)<1e-12)throw messageError(new Error(''), "errors.drawingTransform.theDrawingTransformIsSingular", {});
   return [d/det,-b/det,-c/det,a/det,(c*y-d*x)/det,(b*x-a*y)/det];
 }
 export function multiplyMatrix(a,b){return [a[0]*b[0]+a[2]*b[1],a[1]*b[0]+a[3]*b[1],a[0]*b[2]+a[2]*b[3],a[1]*b[2]+a[3]*b[3],a[0]*b[4]+a[2]*b[5]+a[4],a[1]*b[4]+a[3]*b[5]+a[5]];}
 
 function filterLevel(matrix,filter){
   inverseMatrix(matrix);
-  if(!['smooth','nearest'].includes(filter))throw new Error('Invalid drawing transform filter.');
+  if(!['smooth','nearest'].includes(filter))throw messageError(new Error(''), "errors.drawingTransform.invalidDrawingTransformFilter", {});
   const [a,b,c,d]=matrix,det=a*d-b*c,q=a*a+b*b+c*c+d*d;
   const largest=Math.sqrt((q+Math.sqrt(Math.max(0,q*q-4*det*det)))/2),smallest=Math.abs(det)/largest;
   return filter==='nearest'?0:Math.max(0,Math.min(8,Math.floor(Math.log2(1/smallest)+1e-9)));
@@ -39,7 +40,7 @@ export function transformSupportBounds(bounds,matrix,filter='smooth'){return sup
  * image's bounding rectangle can cause an allocation. Preflight all output
  * and mip tiles before rasterizing or touching a destination. */
 function planTransform(source,matrix,filter,maxBytes,baseBytes,tileCost){
-  if(!Number.isFinite(maxBytes)||maxBytes<0)throw new Error('Invalid drawing transform options.');
+  if(!Number.isFinite(maxBytes)||maxBytes<0)throw messageError(new Error(''), "errors.drawingTransform.invalidDrawingTransformOptions", {});
   const level=filterLevel(matrix,filter);
   const coverage=Array.from({length:level},()=>new Set());let mipBytes=0;
   for(const t of source)for(let k=1;k<=level;k++){
@@ -92,7 +93,7 @@ function sampler(store){
  * authoritative cels are published only after this operation succeeds.
  * `before` optionally captures exact undo sides for paste/selection. */
 export function transformTiles(source,matrix,{target=new TileStore(),before,filter='smooth',maxBytes=TRANSFORM_BYTES}={}){
-  if(source===target)throw new Error('Transform source must be an immutable snapshot.');
+  if(source===target)throw messageError(new Error(''), "errors.drawingTransform.transformSourceMustBeAnImmutableSnapshot", {});
   let historyBytes=0;for(const pixels of before?.values()??[])historyBytes+=pixels?.byteLength??0;
   const baseBytes=source.bytes+target.bytes+historyBytes+256*256*4;
   // A private destination allocates one tile per candidate: a new output tile

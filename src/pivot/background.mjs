@@ -1,3 +1,4 @@
+import {messageError} from '../localized-error.mjs';
 import {cameraAtTime} from '../camera-motion.mjs';
 import {canvasPaint} from '../paint.mjs';
 // Backgrounds are native ARGB; figure COLORREF colors use a different byte order.
@@ -47,7 +48,7 @@ export function cameraIsIdentity(camera) {
 export function inverseCameraScale(camera) {
   const inverse = Math.fround(1 / Math.fround(Number(camera?.scale ?? 1)));
   if (!Number.isFinite(inverse) || inverse <= 0)
-    throw new Error("Camera scale exceeds the native rendering range.");
+    throw messageError(new Error(''), "errors.background.cameraScaleExceedsTheNativeRenderingRange", {});
   return inverse;
 }
 

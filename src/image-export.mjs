@@ -1,3 +1,5 @@
+import {restoreMessageError, messageError} from './localized-error.mjs';
+
 import { normalizeGIFDither } from "./gif-options.mjs";
 import { EXPORT_MAX_PIXELS } from "./export-sampling.mjs";
 /** Offline animated image and numbered image-sequence exports.
@@ -20,7 +22,7 @@ const formats = new Set([
   "svg-sequence",
 ]);
 const abortError = () =>
-  new DOMException("Image export cancelled.", "AbortError");
+  messageError(new DOMException('', "AbortError"), "errors.imageExport.imageExportCancelled", {});
 
 /**
  * @param {{format:'gif'|'apng'|'png-sequence'|'jpeg-sequence'|'gif-sequence'|'svg-sequence',width:number,height:number,
@@ -57,7 +59,7 @@ export async function exportAnimation({
       "jpg-zip": "jpeg-sequence",
     }[format] || format;
   if (!formats.has(format))
-    throw new Error("Choose GIF, APNG, or a PNG, JPEG, GIF or SVG sequence.");
+    throw messageError(new Error(''), "errors.imageExport.chooseGifApngOrAPngJpegGif", {});
   const vector = format === "svg-sequence";
   if (
     !Number.isInteger(width) ||
@@ -68,9 +70,7 @@ export async function exportAnimation({
     height > 16384 ||
     (!vector && width * height > EXPORT_MAX_PIXELS)
   ) {
-    throw new Error(
-      `Image exports support dimensions up to 16,384 pixels and ${Math.round(EXPORT_MAX_PIXELS / 1e6)} million pixels per frame.`,
-    );
+    throw messageError(new Error(''), "errors.imageExport.imageExportsSupportDimensionsUpTo16384", {value: Math.round(EXPORT_MAX_PIXELS / 1e6)});
   }
   const maxFrames = format.endsWith("sequence") ? 65534 : 100000;
   if (
@@ -78,9 +78,7 @@ export async function exportAnimation({
     totalFrames < 1 ||
     totalFrames > maxFrames
   )
-    throw new Error(
-      `Choose between 1 and ${maxFrames.toLocaleString()} export frames.`,
-    );
+    throw messageError(new Error(''), "errors.imageExport.chooseBetween1AndExportFrames", {value: maxFrames.toLocaleString()});
   if (
     !Number.isFinite(fps) ||
     fps < 1 ||
@@ -99,7 +97,7 @@ export async function exportAnimation({
         : "Image export needs a frame renderer.",
     );
   if (!Number.isFinite(quality) || quality < 0 || quality > 1)
-    throw new Error("JPEG quality must be between zero and one.");
+    throw messageError(new Error(''), "errors.imageExport.jpegQualityMustBeBetweenZeroAndOne", {});
   const streamed = sink?.streamed === true;
   const maxBytesCap = streamed
     ? format.endsWith("sequence")
@@ -121,9 +119,7 @@ export async function exportAnimation({
       (typeof createImageBitmap === "undefined" ||
         typeof OffscreenCanvas === "undefined"))
   ) {
-    throw new Error(
-      "This browser cannot export images in a worker. Open the StykAnimate desktop app or a current Chromium browser.",
-    );
+    throw messageError(new Error(''), "errors.imageExport.thisBrowserCannotExportImagesInAWorker", {});
   }
   const worker = new Worker(
     new URL("./image-export-worker.mjs", import.meta.url),
@@ -141,10 +137,10 @@ export async function exportAnimation({
   };
   worker.addEventListener("error", (event) => {
     event.preventDefault();
-    fail(new Error(event.message || "The image export worker stopped."));
+    fail((event.message ? new Error(event.message) : messageError(new Error(''), "errors.imageExport.theImageExportWorkerStopped")));
   });
   worker.addEventListener("messageerror", () =>
-    fail(new Error("An image frame could not be transferred.")),
+    fail(messageError(new Error(''), "errors.imageExport.anImageFrameCouldNotBeTransferred", {})),
   );
   worker.addEventListener("message", (event) => {
     if (!pending || pending.id !== event.data?.id) return;
@@ -153,7 +149,7 @@ export async function exportAnimation({
     clearTimeout(request.timer);
     event.data.ok
       ? request.resolve(event.data)
-      : request.reject(new Error(event.data.error || "Image encoding failed."));
+      : request.reject(restoreMessageError((event.data.error ? new Error(event.data.error) : messageError(new Error(''), "errors.imageExport.imageEncodingFailed")), event.data));
   });
   const check = () => {
     if (signal?.aborted) throw abortError();
@@ -163,7 +159,7 @@ export async function exportAnimation({
     check();
     return new Promise((resolve, reject) => {
       const id = ++sequence;
-      const timer = setTimeout(() => fail(new Error('Image encoding timed out. Export stopped; try again at a smaller size.')), timeoutMs);
+      const timer = setTimeout(() => fail(messageError(new Error(''), "errors.imageExport.imageEncodingTimedOutExportStoppedTryAgain", {})), timeoutMs);
       pending = { id, resolve, reject, timer };
       try {
         worker.postMessage({ id, operation, ...data }, transfer);
@@ -207,9 +203,7 @@ export async function exportAnimation({
           const svg = await renderSVGFrame(index);
           check();
           if (!(svg instanceof Blob) && typeof svg !== "string")
-            throw new Error(
-              `Rendered SVG frame ${index + 1} must contain SVG text or a Blob.`,
-            );
+            throw messageError(new Error(''), "errors.imageExport.renderedSvgFrameMustContainSvgTextOr", {value: index + 1});
           await forward(await request("frame", { svg }));
           check();
           onProgress?.({
@@ -223,9 +217,7 @@ export async function exportAnimation({
         const canvas = await renderFrame(index);
         check();
         if (!canvas || canvas.width !== width || canvas.height !== height)
-          throw new Error(
-            `Rendered image frame ${index + 1} has the wrong dimensions.`,
-          );
+          throw messageError(new Error(''), "errors.imageExport.renderedImageFrameHasTheWrongDimensions", {value: index + 1});
         const bitmap = await createImageBitmap(canvas);
         try {
           check();

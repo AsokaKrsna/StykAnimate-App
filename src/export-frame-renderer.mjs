@@ -1,3 +1,5 @@
+import {restoreMessageError, messageError} from './localized-error.mjs';
+
 import { documentChunks } from "./document-transport.mjs";
 import {drawingBarrier} from './drawing-resources.mjs';
 import { exportMemoryPlan } from "./export-memory.mjs";
@@ -69,7 +71,7 @@ export class ExportFrameRenderer {
       clearTimeout(pending.timer);
       if (data.ok) pending.resolve(data);
       else {
-        const error = Object.assign(new Error(data.error || "Export rendering failed."), {code: data.code,
+        const error = Object.assign(restoreMessageError((data.error ? new Error(data.error) : messageError(new Error(''), "errors.exportFrameRenderer.exportRenderingFailed")), data), {code: data.code,
           name:data.name||'Error',recoverable:Boolean(data.recoverable),telemetryCode:data.telemetryCode,telemetryStage:data.telemetryStage,telemetryFrames:data.telemetryFrames});
         data.bitmap?.close();
         // Recoverable render errors keep the worker alive for a tile retry.
@@ -79,10 +81,10 @@ export class ExportFrameRenderer {
     });
     this.worker.addEventListener("error", (event) => {
       event.preventDefault();
-      this._fail(Object.assign(new Error(event.message || "The export renderer stopped."),{telemetryCode:'worker_failed',telemetryStage:'encode'}));
+      this._fail(Object.assign((event.message ? new Error(event.message) : messageError(new Error(''), "errors.exportFrameRenderer.theExportRendererStopped")),{telemetryCode:'worker_failed',telemetryStage:'encode'}));
     });
     this.worker.addEventListener("messageerror", () =>
-      this._fail(Object.assign(new Error("An export frame could not be transferred."),{telemetryCode:'snapshot_failed',telemetryStage:'prepare'})),
+      this._fail(Object.assign(messageError(new Error(''), "errors.exportFrameRenderer.anExportFrameCouldNotBeTransferred", {}),{telemetryCode:'snapshot_failed',telemetryStage:'prepare'})),
     );
   }
   _check() {
@@ -105,14 +107,14 @@ export class ExportFrameRenderer {
     this._check();
     if (this.pending)
       return Promise.reject(
-        new Error("Export renderer requests must run sequentially."),
+        messageError(new Error(''), "errors.exportFrameRenderer.exportRendererRequestsMustRunSequentially", {}),
       );
     return new Promise((resolve, reject) => {
       const id = ++this.sequence,
         timer =
           this.timeoutMs > 0
             ? setTimeout(
-                () => this._fail(Object.assign(new Error("Export rendering timed out."),{telemetryCode:'timeout',telemetryStage:operation==='render'?'encode':'prepare'})),
+                () => this._fail(Object.assign(messageError(new Error(''), "errors.exportFrameRenderer.exportRenderingTimedOut", {}),{telemetryCode:'timeout',telemetryStage:operation==='render'?'encode':'prepare'})),
                 this.timeoutMs,
               )
             : null;
@@ -152,7 +154,7 @@ export class ExportFrameRenderer {
   async load(report) {
     this._check();
     await drawingBarrier(report,{signal:this.signal});this._check();
-    if (this.busy) throw new Error("Wait for the current export frame.");
+    if (this.busy) throw messageError(new Error(''), "errors.exportFrameRenderer.waitForTheCurrentExportFrame", {});
     this.busy = true;
     this.loaded = false;
     try {
@@ -210,14 +212,14 @@ export class ExportFrameRenderer {
   }
   _paint(result) {
     if (!result.bitmap)
-      throw new Error("The export renderer returned no pixel frame.");
+      throw messageError(new Error(''), "errors.exportFrameRenderer.theExportRendererReturnedNoPixelFrame", {});
     try {
       this._check();
       if (this.canvas.width !== this.width) this.canvas.width = this.width;
       if (this.canvas.height !== this.height) this.canvas.height = this.height;
       checkExportContext(this.context);
       if (result.bitmap.width !== this.width || result.bitmap.height !== this.height)
-        throw new Error('The export renderer returned an incomplete frame.');
+        throw messageError(new Error(''), "errors.exportFrameRenderer.theExportRendererReturnedAnIncompleteFrame", {});
       this.context.setTransform(1, 0, 0, 1, 0, 0);
       this.context.clearRect(0, 0, this.width, this.height);
       this.context.imageSmoothingEnabled = false;
@@ -232,9 +234,9 @@ export class ExportFrameRenderer {
   }
   async _render({ tick, frame, svg = false, native = false, preserveAlpha = false }) {
     this._check();
-    if (!this.loaded) throw new Error("Load the animation before exporting.");
+    if (!this.loaded) throw messageError(new Error(''), "errors.exportFrameRenderer.loadTheAnimationBeforeExporting", {});
     if (this.busy)
-      throw new Error("Export frames must be rendered sequentially.");
+      throw messageError(new Error(''), "errors.exportFrameRenderer.exportFramesMustBeRenderedSequentially", {});
     this.busy = true;
     try {
       this.onFrame?.({stage: 'rendering', tick});
@@ -276,7 +278,7 @@ export class ExportFrameRenderer {
         const output = result.nativeFrame;
         if (!(output?.blob instanceof Blob) || output.blob.type !== 'image/png' || !output.blob.size ||
             output.width !== this.width || output.height !== this.height)
-          throw new Error('The export renderer returned an incomplete native frame.');
+          throw messageError(new Error(''), "errors.exportFrameRenderer.theExportRendererReturnedAnIncompleteNativeFrame", {});
         Object.assign(this.stats, result.stats);
         this.stats.renderedFrames++;
         this.onFrame?.({stage: 'rendered', tick});

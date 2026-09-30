@@ -1,5 +1,7 @@
+import {errorMessageData, messageError} from './localized-error.mjs';
+
 import {vectorVfxSource} from './renderer-vfx-vector.mjs';
-import {vfxRasterScale,hasDrawableVfx} from './vfx-canvas.mjs';
+import {vfxRasterScale, hasDrawableVfx, releaseVfxSurface} from './vfx-canvas.mjs';
 import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {cameraAtTime} from './camera-motion.mjs';
 import {isolationStroke,isolationStrokeFits} from './renderer-vector-raster.mjs';
@@ -24,7 +26,7 @@ import {glyphTextureDescriptor,glyphTextureKey,drawGlyphMask,glyphTextureShape,g
 import { drawBackground, backgroundBounds } from './pivot/background.mjs';
 import { layerVisible } from './layers.mjs';
 import { activeVfx, vfxStack } from './vfx.mjs';
-import { releaseVfxSurface } from './vfx-canvas.mjs';
+
 import { CameraVfx } from './vfx-camera.mjs';
 import {sceneVfxPlan} from './vfx-scene.mjs';
 import {opacityArtwork} from './renderer-opacity.mjs';
@@ -102,7 +104,7 @@ export async function compilePlaybackPacket(report, tick, options = {}) {
   const frameBudget=options.maxPacketBytes??128*1024*1024;
   const started = performance.now();
   for (;;) {
-    if (options.cancelled?.()) throw new DOMException('Playback preparation was superseded.', 'AbortError');
+    if (options.cancelled?.()) throw messageError(new DOMException('', 'AbortError'), "errors.playbackWorker.playbackPreparationWasSuperseded", {});
     const recovering=!options.softwareFrames&&options.resources?.previewPressureScale<quality;
     const maxPacketBytes=recovering?frameBudget/4:frameBudget;
     try {
@@ -144,12 +146,12 @@ export async function compilePlaybackPacket(report, tick, options = {}) {
 
 async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, quality = 1, rasterizeVectors = false, gpuIsolation = false, entries, sampleReport, resources, maxTextureDimension = 8192, maxPacketBytes = 128 * 1024 * 1024, cameraEnabled = true, vfxEnabled = true, storedFrames = false, sharedArtwork = true, artworkRegistry, geometryCache, tweenCache, cancelled = () => false } = {}) {
   resources?.artworkBitmaps?.beginFrame();
-  if (typeof cameraEnabled !== 'boolean') throw new TypeError('Playback camera mode must be a boolean.');
-  if (typeof storedFrames !== 'boolean') throw new TypeError('Playback stored-frame mode must be a boolean.');
+  if (typeof cameraEnabled !== 'boolean') throw messageError(new TypeError(''), "errors.playbackWorker.playbackCameraModeMustBeABoolean", {});
+  if (typeof storedFrames !== 'boolean') throw messageError(new TypeError(''), "errors.playbackWorker.playbackStoredFrameModeMustBeABoolean", {});
   report = sampleReport || (storedFrames ? storedFrameReport(report) : report); entries ??= timeline(report);
   const started = performance.now(), location = playbackLocation(entries, tick);
   const native = evaluatedFrame(report, location.index, location.t, tick, {tweenCache}), evaluated = performance.now();
-  if (!native) throw new Error('The playback tick has no native frame.');
+  if (!native) throw messageError(new Error(''), "errors.playbackWorker.thePlaybackTickHasNoNativeFrame", {});
   const sourceGeometry=geometryCache?geometryCache.get(report,native,revision):buildGeometry(report,native),geometry=vfxEnabled?connectedVfxGeometry(sourceGeometry,native,report):vfxPreviewGeometry(sourceGeometry),geometrized=performance.now();
   const frame = { camera: cameraAtTime(report,native), background_id: native.background_id, background_id_b: native.background_id_b, background_mix: native.background_mix, duration_raw: native.duration_raw,
     ...(vfxEnabled&&vfxStack(native).length ? {_stykVfx:{figure:vfxStack(native)}} : {}),
@@ -176,7 +178,7 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
     // textures and are constrained by total packet residency instead.
     const vectorOverflow = shapeCount * SHAPE_FLOATS * 4 > 64 * 1024 * 1024;
     if (bytes > maxPacketBytes || vectorOverflow) {
-      const error = new Error('A playback frame exceeds its preparation memory budget.');
+      const error = messageError(new Error(''), "errors.playbackWorker.aPlaybackFrameExceedsItsPreparationMemoryBudget", {});
       error.code = 'playback_frame_budget'; error.vectorOverflow = vectorOverflow; error.preflight = true;
       error.fixedBytes = shapeCount * SHAPE_FLOATS * 4 + (groups.length + 1) * 84; throw error;
     }
@@ -185,7 +187,7 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
   let priorSlot, items = [];
   const append = async () => {
     if (!items.length) return;
-    if (cancelled()) throw new DOMException('Playback preparation was superseded.', 'AbortError');
+    if (cancelled()) throw messageError(new DOMException('', 'AbortError'), "errors.playbackWorker.playbackPreparationWasSuperseded", {});
     const g = geometry.objects.get(priorSlot), transformIndex = uids.length;
     if (!g) return;
     if(g.drawables.every(item=>item.opacity<=0)){clipping.culledObjects++;return;}
@@ -217,7 +219,7 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
       // the same content identity as packet/GPU ownership before admission,
       // otherwise duplicate masks can falsely trigger a quality reduction.
       const rasterKey=await glyphTextureKey(glyph),shared=rasters.get(rasterKey);
-      if(cancelled())throw new DOMException('Playback preparation was superseded.', 'AbortError');
+      if(cancelled())throw messageError(new DOMException('', 'AbortError'), "errors.playbackWorker.playbackPreparationWasSuperseded", {});
       if (shared !== undefined) {
         group.compatibilityIndex=shared; sharing.reusedInstances++; sharing.savedBitmapBytes+=glyph.bytes;
       } else {
@@ -345,7 +347,7 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
     // Admit the complete packet before capturing path/glyph rasters. Images
     // consume their currently decoded variant during traversal above.
     for(let i=0;i<rasterJobs.length;i++){
-      if(cancelled())throw new DOMException('Playback preparation was superseded.', 'AbortError');
+      if(cancelled())throw messageError(new DOMException('', 'AbortError'), "errors.playbackWorker.playbackPreparationWasSuperseded", {});
       await rasterJobs[i]();if((i+1)%16===0)await yieldPlaybackTask();
     }
     const ended = performance.now();
@@ -372,12 +374,12 @@ let softwareCameraVfx = null;
  * low-end machines never re-evaluate or re-rasterize the scene on the UI thread. */
 async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, quality = 1, entries, sampleReport, resources, maxPacketBytes = 128 * 1024 * 1024, cameraEnabled = true, vfxEnabled = true, storedFrames = false, hiddenUids, hiddenKey = '', geometryCache, tweenCache, cancelled = () => false, maxTextureDimension = 8192 } = {}) {
   resources?.artworkBitmaps?.beginFrame();
-  if (typeof cameraEnabled !== 'boolean') throw new TypeError('Playback camera mode must be a boolean.');
-  if (typeof storedFrames !== 'boolean') throw new TypeError('Playback stored-frame mode must be a boolean.');
+  if (typeof cameraEnabled !== 'boolean') throw messageError(new TypeError(''), "errors.playbackWorker.playbackCameraModeMustBeABoolean", {});
+  if (typeof storedFrames !== 'boolean') throw messageError(new TypeError(''), "errors.playbackWorker.playbackStoredFrameModeMustBeABoolean", {});
   report = sampleReport || (storedFrames ? storedFrameReport(report) : report); entries ??= timeline(report);
   const started = performance.now(), location = playbackLocation(entries, tick);
   const native = evaluatedFrame(report, location.index, location.t, tick, {tweenCache}), evaluated = performance.now();
-  if (!native) throw new Error('The playback tick has no native frame.');
+  if (!native) throw messageError(new Error(''), "errors.playbackWorker.thePlaybackTickHasNoNativeFrame", {});
   const sourceGeometry = geometryCache ? geometryCache.get(report, native, revision) : buildGeometry(report, native);
   const geometry = vfxEnabled ? connectedVfxGeometry(sourceGeometry,native,report,hiddenUids instanceof Set?hiddenUids:new Set(hiddenUids||[])) : vfxPreviewGeometry(sourceGeometry), geometrized = performance.now();
   const frame = { camera: cameraAtTime(report,native), background_id: native.background_id, background_id_b: native.background_id_b, background_mix: native.background_mix, duration_raw: native.duration_raw,
@@ -399,7 +401,7 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
   const pixelWidth = Math.max(1, Math.ceil(report.canvas_width * pixelScale)), pixelHeight = Math.max(1, Math.ceil(report.canvas_height * pixelScale));
   const bitmapBytes = pixelWidth * pixelHeight * 4;
   if (bitmapBytes + 128 > maxPacketBytes) {
-    const error = new Error('A playback frame exceeds its preparation memory budget.');
+    const error = messageError(new Error(''), "errors.playbackWorker.aPlaybackFrameExceedsItsPreparationMemoryBudget", {});
     error.code = 'playback_frame_budget'; error.fixedBytes = bitmapBytes + 128; throw error;
   }
   const imageItems = drawables.filter(item => item.type === 'image' && item.asset);
@@ -411,7 +413,7 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
     for(const {items,offset} of groups.values()){await resources.preload(items,{scale:resolution,maxDimension:maxTextureDimension,visible:visible?{...visible,x:visible.x-offset.x,y:visible.y-offset.y}:undefined});reducedImages||=Boolean(resources.pressureReduced);}
     if(backgroundItems.length){await resources.preload(backgroundItems,{scale:resolution,maxDimension:maxTextureDimension});reducedImages||=Boolean(resources.pressureReduced);}
   }
-  if (cancelled()) throw new DOMException('Playback preparation was superseded.', 'AbortError');
+  if (cancelled()) throw messageError(new DOMException('', 'AbortError'), "errors.playbackWorker.playbackPreparationWasSuperseded", {});
   let bitmap = null;
   if (typeof OffscreenCanvas !== 'undefined') {
     // Compatibility frames rasterize on this worker's CPU, like the live
@@ -504,7 +506,7 @@ export function createPlaybackWorkerEndpoint(postMessage) {
         } catch (error) {
           if (serial === generation && !job.dropped) {
             if(suspended)queue.unshift(request);
-            else postMessage({ type: 'error', revision: snapshot.revision, tick: request.tick, message: error.message, code: error.code });
+            else postMessage({ type: 'error', revision: snapshot.revision, tick: request.tick, message: error.message, ...errorMessageData(error), code: error.code });
           }
         } finally { if (preparing === job) preparing = null; }
         // Let load/invalidate/cancel messages interrupt between ticks, never halfway through a native pose.
@@ -522,14 +524,14 @@ export function createPlaybackWorkerEndpoint(postMessage) {
     if (message.type === 'patch-chunk') {
       if (message.revision < latestRevision) return;
       try {
-        if (current?.revision !== message.revision) throw new Error('Playback patches require a complete document snapshot.');
+        if (current?.revision !== message.revision) throw messageError(new Error(''), "errors.playbackWorker.playbackPatchesRequireACompleteDocumentSnapshot", {});
         if (message.chunk.header) incomingPatch = {revision: message.revision, patch: applyDocumentChunk(null, message.chunk)};
         else {
-          if (incomingPatch?.revision !== message.revision) throw new Error('Playback patch chunks arrived before their header.');
+          if (incomingPatch?.revision !== message.revision) throw messageError(new Error(''), "errors.playbackWorker.playbackPatchChunksArrivedBeforeTheirHeader", {});
           applyDocumentChunk(incomingPatch.patch, message.chunk);
         }
         postMessage({type: 'load-ack', revision: message.revision, sequence: message.sequence});
-      } catch (error) { postMessage({type: 'load-error', revision: message.revision, message: error.message}); }
+      } catch (error) { postMessage({type: 'load-error', revision: message.revision, message: error.message, ...errorMessageData(error)}); }
     } else if (message.type === 'patch-complete') {
       if (incomingPatch?.revision !== message.revision || current?.revision !== message.revision) return;
       try {
@@ -543,29 +545,29 @@ export function createPlaybackWorkerEndpoint(postMessage) {
         if (dirty.size) geometryCache.markFiguresDirty(dirty);
         invalidateEvaluationCaches(current.report); refreshSampling(current); incomingPatch = null;
         postMessage({type: 'loaded', revision: message.revision, sequence: message.sequence});
-      } catch (error) { postMessage({type: 'load-error', revision: message.revision, message: error.message}); }
+      } catch (error) { postMessage({type: 'load-error', revision: message.revision, message: error.message, ...errorMessageData(error)}); }
     } else if (message.type === 'frame-chunk') {
       if (message.revision < latestRevision) return;
       try {
-        if (current?.revision !== message.revision) throw new Error('Playback frame updates require a complete document snapshot.');
+        if (current?.revision !== message.revision) throw messageError(new Error(''), "errors.playbackWorker.playbackFrameUpdatesRequireACompleteDocumentSnapshot", {});
         if (message.chunk.header) incomingFrames = { revision: message.revision, report: applyDocumentChunk(null, message.chunk) };
         else {
-          if (incomingFrames?.revision !== message.revision) throw new Error('Playback frame chunks arrived before their header.');
+          if (incomingFrames?.revision !== message.revision) throw messageError(new Error(''), "errors.playbackWorker.playbackFrameChunksArrivedBeforeTheirHeader", {});
           applyDocumentChunk(incomingFrames.report, message.chunk);
         }
         postMessage({ type: 'load-ack', revision: message.revision, sequence: message.sequence });
-      } catch (error) { postMessage({ type: 'load-error', revision: message.revision, message: error.message }); }
+      } catch (error) { postMessage({ type: 'load-error', revision: message.revision, message: error.message, ...errorMessageData(error) }); }
     } else if (message.type === 'frame-complete') {
       if (incomingFrames?.revision !== message.revision || current?.revision !== message.revision) return;
       try {
         const updates = incomingFrames.report.frames;
         if (!Array.isArray(updates) || updates.some(entry => !Number.isInteger(entry.index) || entry.index < 0 || entry.index >= current.report.keyframes.length || !Array.isArray(entry.frame?.objects)))
-          throw new Error('Playback frame update targets are invalid.');
+          throw messageError(new Error(''), "errors.playbackPatch.playbackFrameUpdateTargetsAreInvalid", {});
         for (const { index, frame } of updates) current.report.keyframes[index] = frame;
         invalidateEvaluationCaches(current.report);
         refreshSampling(current); incomingFrames = null;
         postMessage({ type: 'loaded', revision: message.revision, sequence: message.sequence });
-      } catch (error) { postMessage({ type: 'load-error', revision: message.revision, message: error.message }); }
+      } catch (error) { postMessage({ type: 'load-error', revision: message.revision, message: error.message, ...errorMessageData(error) }); }
     } else if (message.type === 'load-chunk') {
       if (message.revision < latestRevision) return;
       latestRevision = message.revision;
@@ -576,32 +578,32 @@ export function createPlaybackWorkerEndpoint(postMessage) {
           serial++; releaseDelivery(); queue.length = 0; current?.resources.dispose(); current = null;
           incoming = { ...message.options, revision: message.revision, report: applyDocumentChunk(null, message.chunk) };
         } else {
-          if (incoming?.revision !== message.revision) throw new Error('Playback snapshot chunks arrived before their header.');
+          if (incoming?.revision !== message.revision) throw messageError(new Error(''), "errors.playbackWorker.playbackSnapshotChunksArrivedBeforeTheirHeader", {});
           applyDocumentChunk(incoming.report, message.chunk);
         }
         postMessage({ type: 'load-ack', revision: message.revision, sequence: message.sequence });
-      } catch (error) { postMessage({ type: 'load-error', revision: message.revision, message: error.message }); }
+      } catch (error) { postMessage({ type: 'load-error', revision: message.revision, message: error.message, ...errorMessageData(error) }); }
     } else if (message.type === 'load-native-chunk') {
       if(message.revision < latestRevision) return;
       try {
-        if(incoming?.revision !== message.revision || incoming.completing) throw new Error('Native frames require a pending snapshot.');
+        if(incoming?.revision !== message.revision || incoming.completing) throw messageError(new Error(''), "errors.playbackWorker.nativeFramesRequireAPendingSnapshot", {});
         const {buffer,position,meta}=message;
         if(!(buffer instanceof ArrayBuffer) || !buffer.byteLength || buffer.byteLength>NATIVE_PLAYBACK_CHUNK_BYTES ||
-          !Number.isSafeInteger(position) || position<0) throw new Error('Invalid native snapshot chunk.');
+          !Number.isSafeInteger(position) || position<0) throw messageError(new Error(''), "errors.playbackWorker.invalidNativeSnapshotChunk", {});
         if(meta) {
           if(position!==0 || incoming.native || meta.version!==1 || !Number.isSafeInteger(meta.byteLength) ||
             meta.byteLength<4 || meta.byteLength>MAX_NATIVE_PLAYBACK_BYTES || !Number.isSafeInteger(meta.sourceOffset) || meta.sourceOffset<0)
-            throw new Error('Invalid native snapshot extent.');
+            throw messageError(new Error(''), "errors.playbackWorker.invalidNativeSnapshotExtent", {});
           incoming.native={bytes:new Uint8Array(meta.byteLength),meta,position:0};
         }
         const target=incoming.native;
         if(!target || position!==target.position || position+buffer.byteLength>target.bytes.byteLength)
-          throw new Error('Native snapshot chunks arrived out of order.');
+          throw messageError(new Error(''), "errors.playbackWorker.nativeSnapshotChunksArrivedOutOfOrder", {});
         target.bytes.set(new Uint8Array(buffer),position);target.position+=buffer.byteLength;
         postMessage({type:'load-ack',revision:message.revision,sequence:message.sequence});
       } catch(error) {
         incoming=null;
-        postMessage({type:'load-error',revision:message.revision,message:error.message});
+        postMessage({type:'load-error',revision:message.revision,message:error.message, ...errorMessageData(error)});
       }
     } else if (message.type === 'load-complete') {
       if (message.revision !== incoming?.revision || message.revision < latestRevision) return;
@@ -623,7 +625,7 @@ export function createPlaybackWorkerEndpoint(postMessage) {
         } catch(error) {
           if(incoming!==snapshot || serial!==generation) return;
           incoming=null;
-          postMessage({type:'load-error',revision:message.revision,message:error.message});
+          postMessage({type:'load-error',revision:message.revision,message:error.message, ...errorMessageData(error)});
         }
       })();
     } else if (message.type === 'load') {

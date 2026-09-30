@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Coordinates one cancellable return to the editable canvas. Preparation never
  * records an edit, moves the playhead, or publishes a superseded scene. */
 export class EditableScenePreparation {
@@ -18,12 +19,12 @@ export class EditableScenePreparation {
       // Capture the final seek/draft state without delaying every scrub request
       // by a display frame. The bounded geometry and GPU slices yield as needed.
       await Promise.resolve();
-      if(!checkCurrent())throw new DOMException('Editable preparation was cancelled.', 'AbortError');
+      if(!checkCurrent())throw messageError(new DOMException('', 'AbortError'), "errors.editableScenePreparation.editablePreparationWasCancelled", {});
       const geometry=await editor.prepareGeometry({signal:job.controller.signal,checkCurrent,onTiming:value=>{job.timings.geometry=value;}});
-      if(!checkCurrent())throw new DOMException('Editable preparation was superseded.', 'AbortError');
+      if(!checkCurrent())throw messageError(new DOMException('', 'AbortError'), "errors.editableScenePreparation.editablePreparationWasSuperseded", {});
       const options=getOptions(geometry);
       job.prepared=await renderer.prepareSceneUpdate({...options,report,geometry,signal:job.controller.signal,checkCurrent});
-      if(!checkCurrent())throw new DOMException('Editable preparation was superseded.', 'AbortError');
+      if(!checkCurrent())throw messageError(new DOMException('', 'AbortError'), "errors.editableScenePreparation.editablePreparationWasSuperseded", {});
       job.prepared.activate();job.timings.gpu=job.prepared.timings;
       this.stats={...job.timings,completed:true,elapsedMs:performance.now()-job.started};
       if(job.context&&this.diagnostics?.enabled&&job.diagnosticGeneration===this.diagnostics.generation){

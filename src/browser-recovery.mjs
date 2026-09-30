@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 // Recovery bytes and tiny display/capacity metadata have separate stores.
 // Listing never materializes project bytes. Each tab owns one key; saves cannot
 // clear another tab's work. Web Locks keep live copies out of recovery offers.
@@ -8,7 +9,7 @@ const metadata=(record,id)=>({id,name:record.name,savedAt:record.savedAt,token:r
 
 function open(database){
   return new Promise((resolve,reject)=>{
-    if(!database){reject(new Error('This browser does not allow recovery copies.'));return;}
+    if(!database){reject(messageError(new Error(''), "errors.browserRecovery.thisBrowserDoesNotAllowRecoveryCopies", {}));return;}
     let request,failed=false;
     try{request=database.open(NAME,VERSION);}catch(error){reject(error);return;}
     request.onupgradeneeded=()=>{
@@ -22,8 +23,8 @@ function open(database){
       }
     };
     request.onsuccess=()=>{const db=request.result;if(failed){db.close();return;}db.onversionchange=()=>db.close();resolve(db);};
-    request.onerror=()=>reject(request.error??new Error('Recovery storage could not be opened.'));
-    request.onblocked=()=>{failed=true;reject(new Error('Close older StykAnimate tabs to update recovery storage.'));};
+    request.onerror=()=>reject(request.error??messageError(new Error(''), "errors.browserRecovery.recoveryStorageCouldNotBeOpened", {}));
+    request.onblocked=()=>{failed=true;reject(messageError(new Error(''), "errors.browserRecovery.closeOlderStykanimateTabsToUpdateRecoveryStorage", {}));};
   });
 }
 
@@ -37,8 +38,8 @@ async function within(database,mode,work,signal){
     const cancel=()=>{try{tx.abort();}catch{/* The commit already completed. */}};
     try{tx=db.transaction([STORE,META],mode);}catch(error){db.close();reject(error);return;}
     tx.oncomplete=()=>finish();
-    tx.onabort=()=>{if(signal?.aborted){value=false;finish();}else finish(failure??tx.error??new Error('Recovery transaction aborted.'));};
-    tx.onerror=()=>finish(tx.error??new Error('Recovery write failed.'));
+    tx.onabort=()=>{if(signal?.aborted){value=false;finish();}else finish(failure??tx.error??messageError(new Error(''), "errors.browserRecovery.recoveryTransactionAborted", {}));};
+    tx.onerror=()=>finish(tx.error??messageError(new Error(''), "errors.browserRecovery.recoveryWriteFailed", {}));
     signal?.addEventListener('abort',cancel,{once:true});
     const fail=error=>{failure=error;cancel();};
     try{work(tx.objectStore(STORE),tx.objectStore(META),result=>{value=result;},fail);}catch(error){fail(error);}
@@ -82,7 +83,7 @@ export function writeBrowserRecovery(blob,name,signal,database=globalThis.indexe
     const request=entries.getAll();request.onsuccess=()=>{
       const others=request.result.filter(entry=>entry.id!==id),size=sizeOf(record);
       if(others.length>=MAX_RECOVERY_COPIES||size+others.reduce((sum,entry)=>sum+entry.size,0)>MAX_RECOVERY_BYTES){
-        fail(new Error('Recovery storage is full. Save a project or discard an old recovery copy, then try again.'));return;
+        fail(messageError(new Error(''), "errors.browserRecovery.recoveryStorageIsFullSaveAProjectOr", {}));return;
       }
       try{files.put(record,id);entries.put(metadata(record,id),id);done(true);}catch(error){fail(error);}
     };
@@ -119,7 +120,7 @@ export class BrowserRecoverySession{
     // Store ArrayBuffers for WebKit compatibility; reject oversized snapshots
     // before allocating a second copy of their bytes on the UI thread.
     if(blob instanceof Blob){
-      if(blob.size>MAX_RECOVERY_BYTES)throw new Error('Recovery storage is full. Save a project or discard an old recovery copy, then try again.');
+      if(blob.size>MAX_RECOVERY_BYTES)throw messageError(new Error(''), "errors.browserRecovery.recoveryStorageIsFullSaveAProjectOr", {});
       blob=await blob.arrayBuffer();
       if(this.disposed||signal?.aborted)return false;
     }

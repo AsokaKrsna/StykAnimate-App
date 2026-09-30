@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Absolute native values on selected frames; only touched components are copied. */
 import { buildGeometry, evaluatedFrame } from "./pivot/geometry.mjs";
 import { rotationEdits } from "./pivot/structure.mjs";
@@ -156,7 +157,7 @@ function mutatePose(
     if (key === "group_width" || key === "group_height") {
       const size = key === "group_width" ? b.maxX - b.minX : b.maxY - b.minY;
       if (size <= 0)
-        throw new Error("A selected frame has a zero-sized figure group.");
+        throw messageError(new Error(''), "errors.nativePropertyRanges.aSelectedFrameHasAZeroSizedFigure", {});
       const factor = value / size,
         cx = (b.minX + b.maxX) / 2,
         cy = (b.minY + b.maxY) / 2;
@@ -262,7 +263,7 @@ export function commitNativePoseRange(token) {
     return true;
   }
   if (drag?.authored)
-    throw new Error("Choose native frames to apply an absolute value range.");
+    throw messageError(new Error(''), "errors.nativePropertyEdit.chooseNativeFramesToApplyAnAbsoluteValue", {});
   const selected = new Set(token.selection.uids),
     before = [],
     after = [];

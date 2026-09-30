@@ -1,3 +1,5 @@
+import {messageError} from './localized-error.mjs';
+import {t as interfaceText} from './localization.mjs';
 /** Bounded figure-builder sessions.
  *
  * A session is bound to one figure definition: either the selected scene
@@ -140,7 +142,7 @@ export class BuilderSession {
   }
   _resolveImportNew() {
     const editor = this.editor;
-    if (!this.figure?.segments?.length) throw new Error('The edited figure no longer exists.');
+    if (!this.figure?.segments?.length) throw messageError(new Error(''), "errors.builderSession.theEditedFigureNoLongerExists", {});
     // The definition alone is not the displayed figure: native poses, paint
     // overrides and rig controls belong to its instance. Capture both before
     // undo restores the original, using the same portable format as the library.
@@ -163,7 +165,7 @@ export class BuilderSession {
     if (this.mode === 'edit') {
       const current = this.figure;
       if (current && JSON.stringify(current) !== JSON.stringify(this.baselineFigure))
-        editor.replaceFigureDefinition(this.typeId, clone(this.baselineFigure), {label: 'Discard figure edits'});
+        editor.replaceFigureDefinition(this.typeId, clone(this.baselineFigure), {label: interfaceText("builderSession.discardFigureEdits"), labelKey: "builderSession.discardFigureEdits"});
       return;
     }
     if (this.typeId === null || !editor.report.figure_types.some(figure => figure.figure_type_id === this.typeId)) return;
@@ -187,10 +189,10 @@ export class BuilderSession {
     report.figure_types = report.figure_types.filter(figure => figure.figure_type_id !== typeId);
     if (editor.selectedUids.size) editor._selectIds([...editor.selectedUids].filter(uid => editor.selectionFrame.objects.some(o => o.unique_id === uid)));
     validateScene({...report, keyframes: editor._allSourceFrames()});
-    editor._record({kind: 'import', label: 'Discard new figure', index: editor.frameIndex, before,
+    editor._record({kind: 'import', label: interfaceText("builderSession.discardNewFigure"), labelKey: "builderSession.discardNewFigure", index: editor.frameIndex, before,
       after: {figures: clone(report.figure_types), frame: clone(editor.frame)},
       beforeSelection, afterSelection: editor._selectionState(), structural: true, timing: false});
     editor._invalidate();
-    editor._emit('edit', {label: 'Discard new figure', structural: true});
+    editor._emit('edit', {label: interfaceText("builderSession.discardNewFigure"), labelKey: "builderSession.discardNewFigure", structural: true});
   }
 }

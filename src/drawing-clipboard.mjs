@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {TILE,TILE_BYTES,MIN_TILE,MAX_TILE,TileStore,tileKey,assertTileCoordinates} from './drawing-tiles.mjs';
 import {drawingPNGBytes,drawingPNGDataURL,decodeDrawingPNGBytes,encodeDrawingPNG} from './drawing-png.mjs';
 import {inverseMatrix,TRANSFORM_BYTES} from './drawing-transform.mjs';
@@ -6,15 +7,15 @@ const PREFIX='data:image/png;base64,';
 export const PIXEL_CLIPBOARD_MAX_TILES=32768;
 export const PIXEL_CLIPBOARD_MAX_CHARACTERS=128*1024*1024;
 const MAX_TILE_CHARACTERS=PREFIX.length+4*Math.ceil(65536/3),SCRATCH_BYTES=128*1024;
-const invalid=()=>{throw new Error('Invalid drawing pixel clipboard.');};
-const memory=()=>{throw new Error('The pixel clipboard exceeds the drawing working memory limit.');};
+const invalid=()=>{throw messageError(new Error(''), "errors.drawingClipboard.invalidDrawingPixelClipboard", {});};
+const memory=()=>{throw messageError(new Error(''), "errors.drawingClipboard.thePixelClipboardExceedsTheDrawingWorkingMemory", {});};
 
 /** Plain records and small PNG strings use the existing bounded clipboard wire
  * protocol. Version two preserves source coordinates and the full affine pose;
  * no dense image or second resampling is needed to copy a transformed lasso. */
 export function validatePixelClipboard(data){
   if(!data||![1,2,4].includes(data.pixelsPerUnit))invalid();
-  if(!data.world||![data.world.x,data.world.y].every(Number.isFinite))throw new Error('Invalid drawing pixel origin.');
+  if(!data.world||![data.world.x,data.world.y].every(Number.isFinite))throw messageError(new Error(''), "errors.drawingClipboard.invalidDrawingPixelOrigin", {});
   if(data.matrix)inverseMatrix(data.matrix);
   if(data.version===2){
     if(!data.matrix||!Array.isArray(data.tiles)||data.tiles.length>PIXEL_CLIPBOARD_MAX_TILES)invalid();

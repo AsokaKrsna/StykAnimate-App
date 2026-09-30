@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Pure, copy-on-write plans for figure controls applied to native frame ranges.
  * Slots address joins; UIDs identify the same figure across different frames.
  * Numeric scale affects selected instances only, whereas flip includes their
@@ -15,21 +16,21 @@ import {animationRotation,reflectAnimationOriginOffset} from './animation-origin
 const owns = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const finite = (value, label) => {
   if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isFinite(Math.fround(value)))
-    throw new Error(`${label} must be finite and within the native numeric range.`);
+    throw messageError(new Error(''), "errors.rangeFigureOperations.mustBeFiniteAndWithinTheNativeNumeric", {label: label});
   return value;
 };
 const integer = (value, min, max, label) => {
-  if (!Number.isInteger(value) || value < min || value > max) throw new Error(`Invalid ${label}.`);
+  if (!Number.isInteger(value) || value < min || value > max) throw messageError(new Error(''), "errors.rangeFigureOperations.invalid", {label: label});
   return value;
 };
 function validateOperation(report, operation) {
-  if (!operation || typeof operation !== 'object') throw new Error('Choose a figure operation.');
+  if (!operation || typeof operation !== 'object') throw messageError(new Error(''), "errors.rangeFigureOperations.chooseAFigureOperation", {});
   const {kind} = operation;
   if (kind === 'recolor') return validateRecolor(operation);
   if (kind === 'appearance') {
     const patch = {...(operation.patch ?? {})};
     if (operation.opacity !== undefined) {
-      if (owns(patch, 'opacity') || owns(patch, 'field28')) throw new Error('Specify opacity only once.');
+      if (owns(patch, 'opacity') || owns(patch, 'field28')) throw messageError(new Error(''), "errors.rangeFigureOperations.specifyOpacityOnlyOnce", {});
       patch.opacity = operation.opacity;
     }
     for (const key of Object.keys(patch)) {
@@ -37,36 +38,36 @@ function validateOperation(report, operation) {
       else if (key === 'field28') integer(patch[key], 0, 255, 'figure transparency');
       else if (key === 'opacity') {
         finite(patch[key], 'Opacity');
-        if (patch[key] < 0 || patch[key] > 1 || owns(patch, 'field28')) throw new Error('Opacity must be between 0 and 1 and specified only once.');
-      } else throw new Error(`Unsupported appearance field: ${key}.`);
+        if (patch[key] < 0 || patch[key] > 1 || owns(patch, 'field28')) throw messageError(new Error(''), "errors.rangeFigureOperations.opacityMustBeBetween0And1And", {});
+      } else throw messageError(new Error(''), "errors.rangeFigureOperations.unsupportedAppearanceField", {key: key});
     }
     if (owns(patch, 'opacity')) { patch.field28 = Math.round((1 - patch.opacity) * 255); delete patch.opacity; }
     return {...operation, patch};
   }
   if (kind === 'order') {
     if (!['front', 'back'].includes(operation.direction) && !Number.isSafeInteger(operation.direction))
-      throw new Error('Figure order needs front, back, or a whole number of steps.');
+      throw messageError(new Error(''), "errors.rangeFigureOperations.figureOrderNeedsFrontBackOrAWhole", {});
   } else if (kind === 'join') {
     integer(operation.targetUid, 0, 0xffffffff, 'join target identity');
     integer(operation.handleId ?? 0, 0, 0xffff, 'join target handle');
   } else if (kind === 'scale') {
-    if (owns(operation, 'factor') === owns(operation, 'value')) throw new Error('Specify one scale factor or absolute scale value.');
+    if (owns(operation, 'factor') === owns(operation, 'value')) throw messageError(new Error(''), "errors.rangeFigureOperations.specifyOneScaleFactorOrAbsoluteScaleValue", {});
     const value = finite(operation.factor ?? operation.value, 'Scale');
-    if (value < 0) throw new Error('Scale cannot be negative.');
+    if (value < 0) throw messageError(new Error(''), "errors.editor.scaleCannotBeNegative", {});
     if (operation.referenceUid !== undefined) integer(operation.referenceUid, 0, 0xffffffff, 'scale reference identity');
   } else if (kind === 'mirror') {
-    if (!['horizontal', 'vertical'].includes(operation.axis ?? 'horizontal')) throw new Error('Choose a horizontal or vertical flip.');
+    if (!['horizontal', 'vertical'].includes(operation.axis ?? 'horizontal')) throw messageError(new Error(''), "errors.editorBuilderTopology.chooseAHorizontalOrVerticalFlip", {});
   } else if (kind === 'duplicate') {
-    if (!(operation.uidMap instanceof Map)) throw new Error('Duplicate figures require a stable identity map.');
+    if (!(operation.uidMap instanceof Map)) throw messageError(new Error(''), "errors.rangeFigureOperations.duplicateFiguresRequireAStableIdentityMap", {});
     finite(operation.offset ?? 24, 'Duplicate offset');
   } else if (kind === 'rotate') {
     finite(operation.radians, 'Rotation');
   } else if (kind === 'align') {
-    if (!['x', 'y'].includes(operation.axis) || !['start', 'center', 'end'].includes(operation.edge)) throw new Error('Choose an alignment axis and edge.');
-    if (operation.boundsOf !== undefined && typeof operation.boundsOf !== 'function') throw new Error('Provide a figure bounds function.');
+    if (!['x', 'y'].includes(operation.axis) || !['start', 'center', 'end'].includes(operation.edge)) throw messageError(new Error(''), "errors.rangeFigureOperations.chooseAnAlignmentAxisAndEdge", {});
+    if (operation.boundsOf !== undefined && typeof operation.boundsOf !== 'function') throw messageError(new Error(''), "errors.editorCamera.provideAFigureBoundsFunction", {});
   } else if (kind === 'center') {
     finite(report.canvas_width, 'Canvas width'); finite(report.canvas_height, 'Canvas height');
-  } else if (!['delete', 'detach', 'reset'].includes(kind)) throw new Error(`Unsupported figure operation: ${kind}.`);
+  } else if (!['delete', 'detach', 'reset'].includes(kind)) throw messageError(new Error(''), "errors.rangeFigureOperations.unsupportedFigureOperation", {kind: kind});
   if (operation.center !== undefined) {
     finite(operation.center?.x, 'Transform center X'); finite(operation.center?.y, 'Transform center Y');
   }
@@ -78,12 +79,12 @@ function hierarchy(objects) {
     if (!object.join) ready.push(slot);
     else {
       const parent = object.join.target_object_slot;
-      if (!Number.isInteger(parent) || !objects[parent]) throw new Error('Join target is missing.');
+      if (!Number.isInteger(parent) || !objects[parent]) throw messageError(new Error(''), "errors.editorSelection.joinTargetIsMissing", {});
       const list = children.get(parent) ?? []; list.push(slot); children.set(parent, list);
     }
   });
   for (let i = 0; i < ready.length; i++) for (const child of children.get(ready[i]) ?? []) ready.push(child);
-  if (ready.length !== objects.length) throw new Error('Figures contain a cyclic join.');
+  if (ready.length !== objects.length) throw messageError(new Error(''), "errors.editorSelection.figuresContainACyclicJoin", {});
   return {children, order: ready};
 }
 function descendants(children, slots) {
@@ -95,7 +96,7 @@ function descendants(children, slots) {
 function nativeOrder(frame) {
   const order = frame.object_draw_order ?? frame.objects.map((_, slot) => slot);
   if (order.length !== frame.objects.length || new Set(order).size !== order.length ||
-      order.some(slot => !Number.isInteger(slot) || !frame.objects[slot])) throw new Error('Invalid native figure order.');
+      order.some(slot => !Number.isInteger(slot) || !frame.objects[slot])) throw messageError(new Error(''), "errors.layers.invalidNativeFigureOrder", {});
   return order;
 }
 
@@ -122,7 +123,7 @@ function movedOrder(order, selected, direction) {
  * polygons, styles and drawables a second time after each frame transform.
  */
 function jointEndpoints(object, figure, root) {
-  if (!figure) throw new Error('Unknown figure definition.');
+  if (!figure) throw messageError(new Error(''), "errors.rangeFigureOperations.unknownFigureDefinition", {});
   const segments = figure.segments, byHandle = new Map(segments.map((segment, index) => [segment.segment_id, index]));
   const children = new Map(), ready = [], joints = new Map([[0, root]]);
   segments.forEach((segment, index) => {
@@ -141,7 +142,7 @@ function jointEndpoints(object, figure, root) {
     joints.set(segment.segment_id, {x: Math.fround(finite(x, 'Joint X')), y: Math.fround(finite(y, 'Joint Y'))});
     for (const child of children.get(segment.segment_id) ?? []) ready.push(child);
   }
-  if (ready.length !== segments.length) throw new Error('Figure contains a cyclic segment hierarchy.');
+  if (ready.length !== segments.length) throw messageError(new Error(''), "errors.rangeFigureOperations.figureContainsACyclicSegmentHierarchy", {});
   return joints;
 }
 
@@ -193,7 +194,7 @@ export function planFigureFrameOperation(report, frame, uids, input) {
         object_draw_order: localObjects.map((_, index) => index), object_draw_order_unique_ids: localObjects.map(object => object.unique_id)});
       geometry = {warnings: local.warnings, objects: new Map(ordered.map(slot => [slot, local.objects.get(localSlots.get(slot))]))};
       if (geometry.warnings.length || [...geometry.objects.values()].some(value => !value))
-        throw new Error('Cannot transform a frame with unresolved figure geometry.');
+        throw messageError(new Error(''), "errors.rangeFigureOperations.cannotTransformAFrameWithUnresolvedFigureGeometry", {});
     }
     return geometry;
   };
@@ -225,11 +226,11 @@ export function planFigureFrameOperation(report, frame, uids, input) {
     return result();
   }
   if (operation.kind === 'duplicate') {
-    if (objects.length + slots.length > 65535) throw new Error('A native keyframe supports at most 65,535 figures.');
+    if (objects.length + slots.length > 65535) throw messageError(new Error(''), "errors.editorRangeCommands.aNativeKeyframeSupportsAtMost65535", {});
     const occupied = new Set(objects.map(object => object.unique_id)), nextSlots = new Map(), offset = operation.offset ?? 24;
     for (const slot of slots) {
       const uid = operation.uidMap.get(objects[slot].unique_id); integer(uid, 0, 0xffffffff, 'duplicate figure identity');
-      if (occupied.has(uid)) throw new Error('Duplicate figure identities must be fresh and distinct.');
+      if (occupied.has(uid)) throw messageError(new Error(''), "errors.rangeFigureOperations.duplicateFigureIdentitiesMustBeFreshAndDistinct", {});
       occupied.add(uid); nextSlots.set(slot, objects.length + nextSlots.size);
     }
     const types = new Map(report.figure_types.map(figure => [figure.figure_type_id, figure]));
@@ -253,7 +254,7 @@ export function planFigureFrameOperation(report, frame, uids, input) {
       const object = copied.get(slot), original = objects[slot];
       if (object.join) {
         const root = endpoints.get(original.join.target_object_slot)?.get(object.join.target_handle_id);
-        if (!root) throw new Error('Duplicate attachment has an unresolved joint.');
+        if (!root) throw messageError(new Error(''), "errors.rangeFigureOperations.duplicateAttachmentHasAnUnresolvedJoint", {});
         object.root_x = root.x; object.root_y = root.y;
       }
       if ((children.get(slot) ?? []).some(child => selected.has(child))) endpoints.set(slot,
@@ -290,7 +291,7 @@ export function planFigureFrameOperation(report, frame, uids, input) {
         const underflow = Math.max(0, -1000000 - depths[0]);
         if (underflow && depths.at(-1) + underflow <= 1000000) for (let i = 0; i < depths.length; i++) depths[i] += underflow;
         if (depths[0] < -1000000) {
-          if (depths.length > 2000001) throw new Error('Too many figures to assign distinct Z-index values in this layer.');
+          if (depths.length > 2000001) throw messageError(new Error(''), "errors.rangeFigureOperations.tooManyFiguresToAssignDistinctZIndex", {});
           for (let i = 0; i < depths.length; i++) depths[i] = i - Math.floor(depths.length / 2);
         }
       }
@@ -335,7 +336,7 @@ export function planFigureFrameOperation(report, frame, uids, input) {
   const {children} = getHierarchy(), types = new Map(report.figure_types.map(figure => [figure.figure_type_id, figure]));
   if (operation.kind === 'reset') {
     for (const slot of slots) {
-      const figure = types.get(objects[slot].figure_type_id); if (!figure) throw new Error('Unknown figure definition.');
+      const figure = types.get(objects[slot].figure_type_id); if (!figure) throw messageError(new Error(''), "errors.rangeFigureOperations.unknownFigureDefinition", {});
       const angles = figure.segments.map(segment => segment.angle_rad ?? 0), original = objects[slot];
       const reset = {...original}, ghostsChanged = resetOriginSupport(figure, reset);
       if (!ghostsChanged && !original.len_flag && !original.bend_flag && !original.runtime_segments && !original.lengths?.length && !original.bends?.length &&
@@ -372,7 +373,7 @@ export function planFigureFrameOperation(report, frame, uids, input) {
         for (const slot of members) {
           const raw = boundsOf(geometry.objects.get(slot)), bounds = raw && ('minX' in raw ? raw : {minX: raw.x, minY: raw.y, maxX: raw.x + raw.width, maxY: raw.y + raw.height});
           if (!bounds || !['minX', 'minY', 'maxX', 'maxY'].every(key => Number.isFinite(bounds[key])) || bounds.maxX < bounds.minX || bounds.maxY < bounds.minY)
-            throw new Error('Figure bounds must contain finite, ordered coordinates.');
+            throw messageError(new Error(''), "errors.editorSelection.figureBoundsMustContainFiniteOrderedCoordinates", {});
           min = Math.min(min, bounds[lo]); max = Math.max(max, bounds[hi]);
         }
         extents.set(root, {min, max}); start = Math.min(start, min); end = Math.max(end, max);
@@ -385,9 +386,9 @@ export function planFigureFrameOperation(report, frame, uids, input) {
     const target = objects.findIndex(object => object.unique_id === operation.targetUid);
     if (target < 0) return null;
     const handle = operation.handleId ?? 0, figure = types.get(objects[target].figure_type_id);
-    if (!figure || (handle !== 0 && !figure.segments.some(segment => segment.segment_id === handle))) throw new Error('Choose a valid target joint.');
+    if (!figure || (handle !== 0 && !figure.segments.some(segment => segment.segment_id === handle))) throw messageError(new Error(''), "errors.rangeFigureOperations.chooseAValidTargetJoint", {});
     for (let cursor = target; cursor !== undefined; cursor = objects[cursor].join?.target_object_slot)
-      if (selected.has(cursor)) throw new Error('Joining these figures would create a cycle.');
+      if (selected.has(cursor)) throw messageError(new Error(''), "errors.editor.joiningTheseFiguresWouldCreateACycle", {});
     for (const slot of slots) {
       const join = objects[slot].join;
       if (join?.target_object_slot === target && join.target_handle_id === handle && join.target_unique_id === operation.targetUid) continue;
@@ -404,7 +405,7 @@ export function planFigureFrameOperation(report, frame, uids, input) {
       if (original) scaleFactor = operation.value / original;
       else if (!operation.value) scaleFactor = 1;
       else if (slots.every(slot => !objects[slot].scale)) { scaleFactor = 1; collapsedScale = operation.value; }
-      else throw new Error('Cannot infer relative figure scales from a zero-scale reference.');
+      else throw messageError(new Error(''), "errors.rangeFigureOperations.cannotInferRelativeFigureScalesFromAZero", {});
       finite(scaleFactor, 'Scale factor');
     }
     const selectedScales = operation.kind === 'scale' ? new Map(slots.map(slot => [slot,
@@ -501,7 +502,7 @@ export function planFigureFrameOperation(report, frame, uids, input) {
     if (object.join) {
       const parent = object.join.target_object_slot;
       root = (endpoints.get(parent) ?? originalGeometry.objects.get(parent)?.joints)?.get(object.join.target_handle_id);
-      if (!root) throw new Error('Join target handle is missing.');
+      if (!root) throw messageError(new Error(''), "errors.rangeFigureOperations.joinTargetHandleIsMissing", {});
       object = patchObject(slot, {root_x: root.x, root_y: root.y});
     }
     if (nextHierarchy.children.has(slot)) endpoints.set(slot, jointEndpoints(object, types.get(object.figure_type_id), root));

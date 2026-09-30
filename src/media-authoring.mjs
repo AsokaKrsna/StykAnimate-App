@@ -1,14 +1,16 @@
+import {restoreMessageError, messageError} from './localized-error.mjs';
+
 /** Portable image authoring. Results contain inline PNG bytes, never temporary URLs. */
 export const DEFAULT_MEDIA_PIXELS = 16 * 1024 * 1024;
 export const MAX_MEDIA_BYTES = 64 * 1024 * 1024;
 
 const dimensions = (width, height, maxPixels = DEFAULT_MEDIA_PIXELS) => {
   if (![width, height].every(n => Number.isInteger(n) && n > 0) || width * height > maxPixels)
-    throw new Error(`Image dimensions must be positive and contain at most ${maxPixels.toLocaleString()} pixels.`);
+    throw messageError(new Error(''), "errors.mediaAuthoring.imageDimensionsMustBePositiveAndContainAt", {value: maxPixels.toLocaleString()});
 };
 const pngURL = value => {
   if (typeof value !== 'string' || !/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(value))
-    throw new Error('Image assets require an embedded PNG data URL.');
+    throw messageError(new Error(''), "errors.mediaAuthoring.imageAssetsRequireAnEmbeddedPngDataUrl", {});
   return value;
 };
 // PIV/STK definition and background names use Windows ANSI, unlike text objects.
@@ -20,7 +22,7 @@ const legacyName = (value, fallback) => String(value || fallback).replace(/\.[a-
 /** Pure factory; pass the result directly to Editor.importFigure(). */
 export function createImageFigure({dataUrl, width, height, name = 'Sprite', figureTypeId = 1, maxPixels} = {}) {
   dimensions(width, height, maxPixels); pngURL(dataUrl);
-  if (!Number.isInteger(figureTypeId) || figureTypeId < 1) throw new Error('Figure ID must be positive.');
+  if (!Number.isInteger(figureTypeId) || figureTypeId < 1) throw messageError(new Error(''), "errors.mediaAuthoring.figureIdMustBePositive", {});
   const anchor_start = {x: Math.floor(width / 2), y: Math.floor(height / 2)};
   const anchor_length = Math.max(1, Math.ceil(width / 2));
   const asset = {kind: 'image', asset_index: 0, table_index: 0, mime_type: 'image/png',
@@ -39,7 +41,7 @@ export function createImageFigure({dataUrl, width, height, name = 'Sprite', figu
 /** Pure factory; the editor assigns a unique background_id before committing. */
 export function createImageBackground({dataUrl, width, height, name = 'Background', backgroundId = 1, maxPixels} = {}) {
   dimensions(width, height, maxPixels); pngURL(dataUrl);
-  if (!Number.isInteger(backgroundId) || backgroundId < 1) throw new Error('Background ID must be positive.');
+  if (!Number.isInteger(backgroundId) || backgroundId < 1) throw messageError(new Error(''), "errors.mediaAuthoring.backgroundIdMustBePositive", {});
   return {background_id: backgroundId, name: legacyName(name, 'Background'), kind: 1,
     mime_type: 'image/png', width, height, data_url: dataUrl, _styk: {sourceName: String(name)}};
 }
@@ -48,7 +50,7 @@ export function createImageBackground({dataUrl, width, height, name = 'Backgroun
 export function applySpriteColorKey(rgba, width, height) {
   dimensions(width, height, Number.MAX_SAFE_INTEGER);
   if (!(rgba instanceof Uint8ClampedArray || rgba instanceof Uint8Array) || rgba.length !== width * height * 4)
-    throw new Error('Sprite pixels must contain exactly four bytes per pixel.');
+    throw messageError(new Error(''), "errors.mediaAuthoring.spritePixelsMustContainExactlyFourBytesPer", {});
   for (let i = 3; i < rgba.length; i += 4) if (rgba[i] !== 255) return false;
   const key = (height - 1) * width * 4, r = rgba[key], g = rgba[key + 1], b = rgba[key + 2];
   let changed = false;
@@ -66,9 +68,9 @@ function readDataURL(blob, signal) {
       error ? reject(error) : resolve(result);
     };
     reader.onload = () => finish(null, reader.result);
-    reader.onerror = () => finish(reader.error || new Error('The image bytes could not be read.'));
-    reader.onabort = () => finish(new DOMException('Image import cancelled.', 'AbortError'));
-    if (signal?.aborted) return finish(new DOMException('Image import cancelled.', 'AbortError'));
+    reader.onerror = () => finish(reader.error || messageError(new Error(''), "errors.mediaAuthoring.theImageBytesCouldNotBeRead", {}));
+    reader.onabort = () => finish(messageError(new DOMException('', 'AbortError'), "errors.mediaAuthoring.imageImportCancelled", {}));
+    if (signal?.aborted) return finish(messageError(new DOMException('', 'AbortError'), "errors.mediaAuthoring.imageImportCancelled", {}));
     signal?.addEventListener('abort', abort, {once: true});
     reader.readAsDataURL(blob);
   });
@@ -76,7 +78,7 @@ function readDataURL(blob, signal) {
 
 /** Classify source bytes, not a user-controlled extension or MIME label. */
 export function mediaImageFormat(bytes) {
-  if (!(bytes instanceof Uint8Array)) throw new Error('Image signature must be bytes.');
+  if (!(bytes instanceof Uint8Array)) throw messageError(new Error(''), "errors.mediaAuthoring.imageSignatureMustBeBytes", {});
   if (bytes.length >= 8 && [137,80,78,71,13,10,26,10].every((value,index) => bytes[index] === value)) return 'png';
   if (bytes.length >= 6 && [71,73,70,56].every((value,index) => bytes[index] === value) && [55,57].includes(bytes[4]) && bytes[5] === 97) return 'gif';
   if (bytes.length >= 2 && bytes[0] === 66 && bytes[1] === 77) return 'bmp';
@@ -87,21 +89,21 @@ export function mediaImageFormat(bytes) {
 
 /** Preserve source pixels by default; callers may explicitly request Pivot color key. */
 export function preserveMediaBackground(format, explicit) {
-  if (explicit !== undefined && typeof explicit !== 'boolean') throw new Error('Image transparency option must be true or false.');
+  if (explicit !== undefined && typeof explicit !== 'boolean') throw messageError(new Error(''), "errors.mediaAuthoring.imageTransparencyOptionMustBeTrueOrFalse", {});
   return explicit ?? true;
 }
 
 async function decodeImage(file, {maxPixels = DEFAULT_MEDIA_PIXELS, preserveOpaqueBackground, signal} = {}) {
   if (!file || typeof file.arrayBuffer !== 'function' || !Number.isFinite(file.size))
-    throw new Error('Choose an image file.');
-  if (!file.size || file.size > MAX_MEDIA_BYTES) throw new Error('Image files must contain 1 byte to 64 MB.');
-  if (!Number.isSafeInteger(maxPixels) || maxPixels < 1) throw new Error('Image pixel limit must be a positive whole number.');
+    throw messageError(new Error(''), "errors.mediaAuthoring.chooseAnImageFile", {});
+  if (!file.size || file.size > MAX_MEDIA_BYTES) throw messageError(new Error(''), "errors.mediaAuthoring.imageFilesMustContain1ByteTo64", {});
+  if (!Number.isSafeInteger(maxPixels) || maxPixels < 1) throw messageError(new Error(''), "errors.mediaAuthoring.imagePixelLimitMustBeAPositiveWhole", {});
   preserveMediaBackground(null, preserveOpaqueBackground);
   const extension = /\.(png|jpe?g|gif|bmp|webp)$/i.test(file.name || '');
   if (!/^image\/(png|jpeg|gif|bmp|x-ms-bmp|webp)$/i.test(file.type || '') && !extension)
-    throw new Error('Choose a PNG, JPEG, GIF, BMP, or WebP image.');
-  if (signal?.aborted) throw new DOMException('Image import cancelled.', 'AbortError');
-  if (typeof Worker === 'undefined') throw new Error('Image decoding workers are unavailable in this app.');
+    throw messageError(new Error(''), "errors.mediaAuthoring.chooseAPngJpegGifBmpOrWebp", {});
+  if (signal?.aborted) throw messageError(new DOMException('', 'AbortError'), "errors.mediaAuthoring.imageImportCancelled", {});
+  if (typeof Worker === 'undefined') throw messageError(new Error(''), "errors.mediaAuthoring.imageDecodingWorkersAreUnavailableInThisApp", {});
   const result = await new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./media-image-worker.mjs', import.meta.url), {type: 'module', name: 'StykAnimate image import'});
     let settled = false;
@@ -110,18 +112,18 @@ async function decodeImage(file, {maxPixels = DEFAULT_MEDIA_PIXELS, preserveOpaq
       settled = true; clearTimeout(timer); worker.terminate(); signal?.removeEventListener('abort', abort);
       error ? reject(error) : resolve(result);
     };
-    const abort = () => finish(new DOMException('Image import cancelled.', 'AbortError'));
-    const timer = setTimeout(() => finish(new Error('Image decoding timed out.')), 120000);
+    const abort = () => finish(messageError(new DOMException('', 'AbortError'), "errors.mediaAuthoring.imageImportCancelled", {}));
+    const timer = setTimeout(() => finish(messageError(new Error(''), "errors.mediaAuthoring.imageDecodingTimedOut", {})), 120000);
     worker.addEventListener('message', ({data}) => {
-      if (!data.ok) return finish(new Error(data.error || 'The image could not be decoded.'));
+      if (!data.ok) return finish(restoreMessageError((data.error ? new Error(data.error) : messageError(new Error(''), "errors.mediaAuthoring.theImageCouldNotBeDecoded")), data));
       if (!(data.png instanceof Blob) || data.png.type !== 'image/png' || data.png.size > MAX_MEDIA_BYTES)
-        return finish(new Error('The decoded image exceeds the embedded asset limit.'));
+        return finish(messageError(new Error(''), "errors.mediaAuthoring.theDecodedImageExceedsTheEmbeddedAssetLimit", {}));
       try { dimensions(data.width, data.height, maxPixels); }
       catch (error) { return finish(error); }
       finish(null, data);
     });
-    worker.addEventListener('error', event => { event.preventDefault(); finish(new Error(event.message || 'The image decoding worker stopped.')); });
-    worker.addEventListener('messageerror', () => finish(new Error('The decoded image could not be transferred.')));
+    worker.addEventListener('error', event => { event.preventDefault(); finish((event.message ? new Error(event.message) : messageError(new Error(''), "errors.mediaAuthoring.theImageDecodingWorkerStopped"))); });
+    worker.addEventListener('messageerror', () => finish(messageError(new Error(''), "errors.mediaAuthoring.theDecodedImageCouldNotBeTransferred", {})));
     signal?.addEventListener('abort', abort, {once: true});
     try { worker.postMessage({file, maxPixels, preserveOpaqueBackground}); }
     catch (error) { finish(error); }

@@ -1,3 +1,5 @@
+import {t as interfaceText} from '../localization.mjs';
+import {appendLocalized, localizedAttribute} from '../localization-bindings.mjs';
 /**
  * The touch interface's own chrome (docs/TOUCH.md). The stylesheets
  * (layout/touch.css, features/touch.css) arrange the editor's regions for
@@ -55,11 +57,11 @@ function createMover(doc) {
     move(node, host) {
       if (!node || node.parentNode === host) return;
       if (!homes.has(node)) {
-        const mark = doc.createComment(' touch: moved to the tab bar ');
+        const mark = doc.createComment(" touch: moved to the tab bar ");
         node.before(mark);
         homes.set(node, mark);
       }
-      host.append(node);
+      appendLocalized(host, node);
     },
     restore() {
       for (const [node, mark] of homes) {
@@ -81,7 +83,7 @@ export function installTouchShell({touch, stageHead = null, shell = null, docume
     if (tabbar) return tabbar;
     tabbar = doc.createElement('nav');
     tabbar.className = 'touch-tabbar';
-    tabbar.setAttribute('aria-label', 'Workspaces and panels');
+    localizedAttribute(tabbar, 'aria-label', "touchShell.workspacesAndPanels", {});
     return tabbar;
   };
 

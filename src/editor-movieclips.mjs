@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {drawingResourcesFor} from './drawing-resources.mjs';
 import {movieclipFigure,movieclipAsset,isMovieclip,playbackSettings,validatePlayback,invalidateMovieclipTypes,movieclipSourceFrames,movieclipTime} from './movieclips.mjs';
 import {evaluatedFrame,timeline,buildGeometry,movieclipPresenceIndex} from './pivot/geometry.mjs';
@@ -32,12 +33,12 @@ function filteredFrame(frame,selected){
 /** Sparse capture retains the original curves as an immutable baseline. Local
  * stored poses provide editing boundaries; no per-output-frame baking occurs. */
 export function captureMovieclip(editor,{start=editor.tick,end=start+1,uids=[...editor.selectedUids],name='Movieclip'}={}){
-  if(!Number.isInteger(start)||!Number.isInteger(end)||start<0||end<=start||end>Math.max(editor.totalTicks,start+1))throw new Error('Choose a valid movieclip range.');
+  if(!Number.isInteger(start)||!Number.isInteger(end)||start<0||end<=start||end>Math.max(editor.totalTicks,start+1))throw messageError(new Error(''), "errors.editorMovieclips.chooseAValidMovieclipRange", {});
   const report=editor.report,selected=new Set(uids);
   // All contents: everything shown in the range, including drawing layers,
   // whose cels live in layer keys rather than the native frames.
   if(!selected.size){for(const frame of report.keyframes)for(const obj of frame.objects)selected.add(obj.unique_id);for(let tick=start;tick<end;tick++)for(const obj of at(report,tick).objects)selected.add(obj.unique_id);}
-  if(!selected.size)throw new Error('Select figures to create a movieclip.');
+  if(!selected.size)throw messageError(new Error(''), "errors.editorMovieclips.selectFiguresToCreateAMovieclip", {});
   // Include the connected assembly across its complete animation.
   const neighbors=new Map();
   for(const frame of [...report.keyframes,...Object.values(report._styk?.frameSources??{})])for(const obj of frame.objects)if(obj.join){
@@ -178,14 +179,14 @@ function validateReplacementOrder(editor,selected,start,end){
     for(const key of channel.keys)if(key.tick>start&&key.tick<end)ticks.add(key.tick);
   for(const tick of ticks){
     const order=frameOrder(at(editor.report,tick)),positions=order.map((uid,i)=>selected.has(uid)?i:-1).filter(i=>i>=0);
-    if(positions.length&&positions.at(-1)-positions[0]+1!==positions.length)throw new Error(`Selected figures cross other figures in the stacking order at frame ${tick+1}. Include those figures in the movieclip.`);
+    if(positions.length&&positions.at(-1)-positions[0]+1!==positions.length)throw messageError(new Error(''), "errors.editorMovieclips.selectedFiguresCrossOtherFiguresInTheStacking", {value: tick+1});
   }
 }
 export const editorMovieclipMethods={
   addMovieclipToNextKeyframes(count){
-    if(!isMovieclip(this.figure))throw new Error('Select a movieclip.');
-    if(!Number.isSafeInteger(count)||count<1)throw new Error('Enter a positive whole number of keyframes.');
-    if(this.getLayer(this.layerForUid(this.selectedUid))?.locked)throw new Error('Unlock the movieclip layer before editing it.');
+    if(!isMovieclip(this.figure))throw messageError(new Error(''), "errors.editorMovieclips.selectAMovieclip", {});
+    if(!Number.isSafeInteger(count)||count<1)throw messageError(new Error(''), "errors.editorMovieclips.enterAPositiveWholeNumberOfKeyframes", {});
+    if(this.getLayer(this.layerForUid(this.selectedUid))?.locked)throw messageError(new Error(''), "errors.editorMovieclips.unlockTheMovieclipLayerBeforeEditingIt", {});
     if(this.report._styk?.layerSheet)return this.sheetExtendMovieclip(count);
     const uid=this.selectedUid,source=filteredFrame(this.selectionFrame,new Set([uid])).objects[0],selection=this._selectionState();
     const layer=this.layerForUid(uid),orderIndex=frameOrder(this.selectionFrame).filter(id=>this.layerForUid(id)===layer).indexOf(uid);
@@ -256,7 +257,7 @@ export const editorMovieclipMethods={
     return this.editFrameDraftTimeline(()=>this.movieclipBatch(label,()=>{if(this.report._styk?.layerSheet&&!usesPresence(this.object))this._prepareSheetMovieclips();return operation();}));
   },
   createMovieclip(options={}){
-    if(drawingResourcesFor(this.report)?.stats.unpublished)throw new Error('Finish drawing publication before creating a movieclip.');
+    if(drawingResourcesFor(this.report)?.stats.unpublished)throw messageError(new Error(''), "errors.editorMovieclips.finishDrawingPublicationBeforeCreatingAMovieclip", {});
     if(this._drag)this.commitDrag();
     const capture=captureMovieclip(this,options);
     if(options.replace!==false)validateReplacementOrder(this,capture.selected,capture.start,capture.end);
@@ -270,7 +271,7 @@ export const editorMovieclipMethods={
       const end=options.end===undefined?(this.timeline.find(row=>row.start>start)?.start??this.totalTicks):capture.end;
       if(options.end!==undefined||!this._frameDraftEnabled){
         const source=at(this.report,start),order=frameOrder(source),positions=order.map((uid,i)=>selected.has(uid)?i:-1).filter(i=>i>=0);
-        if(positions.length&&positions.at(-1)-positions[0]+1!==positions.length)throw new Error('Select adjacent figures in the stacking order.');
+        if(positions.length&&positions.at(-1)-positions[0]+1!==positions.length)throw messageError(new Error(''), "errors.editorMovieclips.selectAdjacentFiguresInTheStackingOrder", {});
         const uid=this._identity(),pivot=movieclipAsset(figure).pivot,instance=createObject(figure,uid,pivot.x,pivot.y,
           {_stykMovieclip:this.report._styk?.layerSheet?presencePlayback():{start,end,offset:0,speed:1,mode:movieclipAsset(figure).duration===1?'single':'loop'}});
         // The clip belongs on a figure layer. Drawing layers hold only drawing
@@ -301,7 +302,7 @@ export const editorMovieclipMethods={
         this.transaction('Convert to movieclip',frame=>{
           const order=frameOrder(frame),insertAt=order.findIndex(id=>selected.has(id));
           const positions=order.map((id,i)=>selected.has(id)?i:-1).filter(i=>i>=0);
-          if(positions.length&&positions.at(-1)-positions[0]+1!==positions.length)throw new Error('Selected figures overlap other figures in the stacking order. Select the intervening figures too.');
+          if(positions.length&&positions.at(-1)-positions[0]+1!==positions.length)throw messageError(new Error(''), "errors.editorMovieclips.selectedFiguresOverlapOtherFiguresInTheStacking", {});
           for(const object of frame.objects)if(object.join)object.join.target_unique_id=frame.objects[object.join.target_object_slot]?.unique_id;
           frame.objects=frame.objects.filter(o=>!selected.has(o.unique_id));frame.objects.push(clone(instance));
           const next=order.filter(id=>!selected.has(id));next.splice(Math.max(0,insertAt),0,uid);setOrder(frame,next);normalizeFrame(frame);this._selectIds([uid]);
@@ -324,21 +325,21 @@ export const editorMovieclipMethods={
     return publishDefinition(this,movieclipFigure(allocateType(this),name,document,{duration:1,pivot:{x:document.canvas_width/2,y:document.canvas_height/2}}));
   },
   renameMovieclip(name){
-    if(!isMovieclip(this.figure))throw new Error('Select a movieclip.');
-    name=String(name).trim();if(!name||name.length>120)throw new Error('Use a name from 1 to 120 characters.');
+    if(!isMovieclip(this.figure))throw messageError(new Error(''), "errors.editorMovieclips.selectAMovieclip", {});
+    name=String(name).trim();if(!name||name.length>120)throw messageError(new Error(''), "errors.editorMovieclips.useANameFrom1To120Characters", {});
     if(name===this.figure.name)return;
     return publishDefinition(this,{...this.figure,name},this.report.figure_types.indexOf(this.figure),'Rename movieclip');
   },
   setMovieclipDrawing(uid,group,view){
     const object=this.selectionFrame.objects.find(o=>o.unique_id===uid),figure=this.report.figure_types.find(f=>f.figure_type_id===object?.figure_type_id),drawing=movieclipAsset(figure)?.drawingSets?.[group]?.views?.[view];
-    if(!drawing||!Number.isInteger(group)||!Number.isInteger(view))throw new Error('Choose an existing drawing.');
-    if(uid!==this.selectedUid&&object.join?.target_unique_id!==this.selectedUid)throw new Error('Select the drawing or its parent rig.');
-    if(layerLocked(this.report,uid))throw new Error('Unlock the drawing layer before changing it.');
+    if(!drawing||!Number.isInteger(group)||!Number.isInteger(view))throw messageError(new Error(''), "errors.editorMovieclips.chooseAnExistingDrawing", {});
+    if(uid!==this.selectedUid&&object.join?.target_unique_id!==this.selectedUid)throw messageError(new Error(''), "errors.editorMovieclips.selectTheDrawingOrItsParentRig", {});
+    if(layerLocked(this.report,uid))throw messageError(new Error(''), "errors.editorMovieclips.unlockTheDrawingLayerBeforeChangingIt", {});
     const settings=validatePlayback({...playbackSettings(object),mode:'single',offset:drawing.frame});
     return this._objectEdit('Change drawing',()=>{this.frame.objects.find(o=>o.unique_id===uid)._stykMovieclip=settings;});
   },
   setMovieclipPlayback(patch,{allFrames=false}={}){
-    if(!isMovieclip(this.figure))throw new Error('Select a movieclip.');
+    if(!isMovieclip(this.figure))throw messageError(new Error(''), "errors.editorMovieclips.selectAMovieclip", {});
     const settings=validatePlayback({...playbackSettings(this.object),...patch});
     if(usesPresence(this.object)&&this.report._styk?.layerSheet&&allFrames)return this.sheetSetMovieclipPlayback(this.selectedUid,patch,{allFrames});
     if(allFrames){
@@ -349,17 +350,17 @@ export const editorMovieclipMethods={
     this._objectEdit('Set movieclip playback',object=>{object._stykMovieclip=settings;});return settings;
   },
   restartMovieclip(){
-    if(!isMovieclip(this.figure))throw new Error('Select a movieclip.');
+    if(!isMovieclip(this.figure))throw messageError(new Error(''), "errors.editorMovieclips.selectAMovieclip", {});
     const p=playbackSettings(this.object),tick=Math.round(this.tick);
     const restarts=[...(p.restarts??[]).filter(key=>key.tick!==tick),{tick,offset:0}].sort((a,b)=>a.tick-b.tick);
     return this.setMovieclipPlayback({restarts},{allFrames:true});
   },
   removeMovieclipRestart(){
-    if(!isMovieclip(this.figure))throw new Error('Select a movieclip.');
+    if(!isMovieclip(this.figure))throw messageError(new Error(''), "errors.editorMovieclips.selectAMovieclip", {});
     return this.setMovieclipPlayback({restarts:(playbackSettings(this.object).restarts??[]).filter(key=>key.tick!==this.tick)},{allFrames:true});
   },
   placeMovieclip(patch,{move=false}={}){
-    if(!isMovieclip(this.figure))throw new Error('Select a movieclip.');
+    if(!isMovieclip(this.figure))throw messageError(new Error(''), "errors.editorMovieclips.selectAMovieclip", {});
     const uid=this.selectedUid,previous=playbackSettings(this.object),tick=this.tick,delta=move?(patch.start??previous.start)-previous.start:0;
     const next=validatePlayback({...previous,...patch,...(move&&previous.restarts?{
       offset:movieclipTime(movieclipAsset(this.figure),previous,previous.start,this.report.fps)??previous.offset,
@@ -391,9 +392,9 @@ export const editorMovieclipMethods={
     return {...own,nativeProperties:undefined,useBasePose:undefined,keys:first<0?[]:own.keys.slice(first,last+1)};
   },
   splitMovieclip(tick=this.tick){
-    if(!isMovieclip(this.figure))throw new Error('Select a movieclip.');
+    if(!isMovieclip(this.figure))throw messageError(new Error(''), "errors.editorMovieclips.selectAMovieclip", {});
     const p=playbackSettings(this.object),figure=this.figure,oldUid=this.selectedUid;
-    if(!Number.isInteger(tick)||tick<=p.start||p.end!==null&&tick>=p.end)throw new Error('Place the playhead inside the movieclip.');
+    if(!Number.isInteger(tick)||tick<=p.start||p.end!==null&&tick>=p.end)throw messageError(new Error(''), "errors.editorMovieclips.placeThePlayheadInsideTheMovieclip", {});
     const originalChannels=this.animationChannels.filter(c=>c.target.uid===oldUid&&c.property!=='pose');
     const settings=validatePlayback({...p,start:tick,offset:movieclipTime(movieclipAsset(figure),p,tick,this.report.fps)??p.offset,restarts:(p.restarts??[]).filter(k=>k.tick>tick)});
     return this.movieclipTimelineEdit('Split movieclip',()=>{
@@ -418,7 +419,7 @@ export const editorMovieclipMethods={
     });
   },
   makeMovieclipUnique(){
-    if(!isMovieclip(this.figure))throw new Error('Select a movieclip.');
+    if(!isMovieclip(this.figure))throw messageError(new Error(''), "errors.editorMovieclips.selectAMovieclip", {});
     return this.movieclipBatch('Make movieclip unique',()=>{
       const figure={...this.figure,figure_type_id:allocateType(this),name:`${this.figure.name} copy`};
       if(this.report._styk?.layerSheet){
@@ -441,7 +442,7 @@ export const editorMovieclipMethods={
     });
   },
   breakApartMovieclip(){
-    if(!isMovieclip(this.figure))throw new Error('Select a movieclip.');
+    if(!isMovieclip(this.figure))throw messageError(new Error(''), "errors.editorMovieclips.selectAMovieclip", {});
     const tick=Math.round(this.tick),uid=this.selectedUid,source=this.evaluatedFrame;
     const materializer=createMovieclipMaterializer(this.report),expanded=this._expandMovieclipPose(source,uid,materializer);
     const object=this.object,step=usesPresence(object)?{uid,typeId:object.figure_type_id,playback:clone(object._stykMovieclip)}:null;
@@ -498,24 +499,24 @@ export const editorMovieclipMethods={
     this.seek(start);this._selectIds(children);this._emit('selection');return children;
   },
   async bakeMovieclip(){
-    if(!isMovieclip(this.figure))throw new Error('Select a movieclip.');
+    if(!isMovieclip(this.figure))throw messageError(new Error(''), "errors.editorMovieclips.selectAMovieclip", {});
     if(this._drag)this.commitDrag();if(this._animationEdit)this.commitAnimationEdit();
     const report=this.report,revision=this.revision,uid=this.selectedUid,p=playbackSettings(this.object),start=p.clock==='presence'?0:p.start,end=Math.min(p.end??this.totalTicks,this.totalTicks);
-    if(end-start>5000)throw new Error('Bake supports scenes up to 5,000 frames. Use Break apart frame for individual frames.');
+    if(end-start>5000)throw messageError(new Error(''), "errors.editorMovieclips.bakeSupportsScenesUpTo5000Frames", {});
     const materializer=createMovieclipMaterializer(report),frames=[];let count=0,lastYield=performance.now();
     for(let tick=start;tick<end;tick++){
       const frame=this._expandMovieclipPose(at(report,tick),uid,materializer);
-      count+=frame.objects.length;if(count>250000)throw new Error('Bake a shorter range for this scene.');
+      count+=frame.objects.length;if(count>250000)throw messageError(new Error(''), "errors.editorMovieclips.bakeAShorterRangeForThisScene", {});
       frames.push({tick,frame});
-      if(performance.now()-lastYield>6){await new Promise(resolve=>setTimeout(resolve,0));lastYield=performance.now();if(this.report!==report||this.revision!==revision)throw new Error('The scene changed while baking. Try again.');}
+      if(performance.now()-lastYield>6){await new Promise(resolve=>setTimeout(resolve,0));lastYield=performance.now();if(this.report!==report||this.revision!==revision)throw messageError(new Error(''), "errors.editorMovieclips.theSceneChangedWhileBakingTryAgain", {});}
     }
     if(!frames.length)return false;
     return this.movieclipTimelineEdit('Bake animation',()=>this._publishExpandedMovieclip(frames,uid,materializer,{start,end,label:'Bake animation'}));
   },
   enterMovieclip(typeId=this.figure?.figure_type_id){
-    if(drawingResourcesFor(this.report)?.stats.unpublished)throw new Error('Finish drawing publication before editing a movieclip.');
-    const figure=this.report.figure_types.find(f=>f.figure_type_id===typeId);if(!isMovieclip(figure))throw new Error('Choose a movieclip.');
-    if(movieclipAsset(figure).spatialMeshes)throw new Error('This is an attached mesh. Pose its parent joint and choose a Form in the inspector; its geometry is authored in the source model.');
+    if(drawingResourcesFor(this.report)?.stats.unpublished)throw messageError(new Error(''), "errors.editorMovieclips.finishDrawingPublicationBeforeEditingAMovieclip", {});
+    const figure=this.report.figure_types.find(f=>f.figure_type_id===typeId);if(!isMovieclip(figure))throw messageError(new Error(''), "errors.editorMovieclips.chooseAMovieclip", {});
+    if(movieclipAsset(figure).spatialMeshes)throw messageError(new Error(''), "errors.editorMovieclips.thisIsAnAttachedMeshPoseItsParent", {});
     if(this._drag)this.commitDrag();if(this._animationEdit)this.commitAnimationEdit();
     const scopes=this._movieclipScopes??[],parent={};
     for(const key of Object.keys(this))if(key!=='_movieclipScopes')parent[key]=this[key];
@@ -536,7 +537,7 @@ export const editorMovieclipMethods={
     const scopes=this._movieclipScopes;if(!scopes?.length)return false;
     if(this._drag)this.commitDrag();if(this._animationEdit)this.commitAnimationEdit();
     if(save&&this._frameDraftEnabled)this.disableFrameDrafts();
-    if(save&&drawingResourcesFor(this.report)?.stats.unpublished)throw new Error('Finish drawing publication before leaving this movieclip.');
+    if(save&&drawingResourcesFor(this.report)?.stats.unpublished)throw messageError(new Error(''), "errors.editorMovieclips.finishDrawingPublicationBeforeLeavingThisMovieclip", {});
     const changed=this.revision!==this._savedRevision;
     const scope=scopes.at(-1),document=save?storedFrameReport(this.report,{validate:false}):null;
     const duration=save?Math.max(1,this.totalTicks):0;

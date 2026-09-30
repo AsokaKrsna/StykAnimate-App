@@ -1,3 +1,8 @@
+import {presentError} from './error-presentation.mjs';
+import {messageError} from './localized-error.mjs';
+import {t as interfaceText} from './localization.mjs';
+
+import {appendLocalized, localizedMarkup, messageAttributes, messageHTML, localizedText} from './localization-bindings.mjs';
 import { PropertyControls, formatPropertyValue } from "./property-controls.mjs";
 import {
   parseSegmentValues,
@@ -63,7 +68,7 @@ export class SegmentValuesDialog {
       const style = document.createElement("style");
       style.id = "segment-values-style";
       style.textContent = `@layer legacy{${CSS}}`;
-      document.head.append(style);
+      appendLocalized(document.head, style);
     }
   }
   open({ relative = this.relative, editMode = false, isolate = false } = {}) {
@@ -71,15 +76,13 @@ export class SegmentValuesDialog {
     const editor = this.editor,
       segment = editor.figure?.segments[editor.selectedJoint];
     if (!segment)
-      throw new Error("Select a segment handle to edit its values.");
+      throw messageError(new Error(''), "errors.segmentValuesDialog.selectASegmentHandleToEditItsValues", {});
     if (editor.dragging)
-      throw new Error(
-        "Finish the current gesture before editing segment values.",
-      );
+      throw messageError(new Error(''), "errors.segmentValuesDialog.finishTheCurrentGestureBeforeEditingSegmentValues", {});
     this.relative = Boolean(relative);
     this.options = { relative: this.relative, editMode, isolate };
     if (!editor.beginSegmentValueEdit(this.options))
-      throw new Error("This segment cannot be edited.");
+      throw messageError(new Error(''), "errors.segmentValuesDialog.thisSegmentCannotBeEdited", {});
     this.session = {
       drag: editor._drag,
       report: editor.report,
@@ -91,15 +94,15 @@ export class SegmentValuesDialog {
     this.events = new AbortController();
     const signal = this.events.signal;
     this.dialog.classList.add("segment-values-dialog");
-    this.content.innerHTML = `<div class="dialog-head"><h2>Segment values</h2><button class="icon-button" data-segment-close aria-label="Close segment values">${icon("close")}</button></div>
-      <div class="dialog-body"><p class="segment-values-caption">${esc(editor.figure.name || "Figure")} · Segment ${segment.segment_id}${editMode ? " · Handle Edit" : ""}</p>
-      <div class="segment-values-fields">${keys.map((key) => `<div class="property-row" data-property-row="${key}"><label class="field"><span class="property-scrub" data-property-scrub tabindex="0" role="button" aria-label="Scrub segment ${key}">${key[0].toUpperCase() + key.slice(1)}</span><input id="segment-${key}" type="number" step="any" data-property="${key}" data-property-step="1" data-property-precision="3" ${key === "length" ? 'min="1.401298464324817e-45"' : ""} aria-label="Segment ${key}"><small>${key === "length" ? "px" : "°"}</small></label></div>`).join("")}</div>
-      <label class="segment-values-relative"><input id="segment-relative" type="checkbox" ${this.relative ? "checked" : ""}>Relative angle</label>
+    localizedMarkup(this.content, `<div class="dialog-head"><h2 data-i18n="segmentValuesDialog.segmentValues">Segment values</h2><button class="icon-button" data-segment-close aria-label="Close segment values" data-i18n-aria-label="segmentValuesDialog.closeSegmentValues">${icon("close")}</button></div>
+      <div class="dialog-body"><p class="segment-values-caption" ${messageAttributes("segmentValuesDialog.segment", {value: editor.figure.name || interfaceText("segmentValuesDialog.figure"), segment_id: segment.segment_id, value2: editMode ? {messageKey: "segmentValuesDialog.handleEdit"} : ""})}>${esc(editor.figure.name || interfaceText("segmentValuesDialog.figure"))} · Segment ${segment.segment_id}${editMode ? interfaceText("segmentValuesDialog.handleEdit") : ""}</p>
+      <div class="segment-values-fields">${keys.map((key) => `<div class="property-row" data-property-row="${key}"><label class="field"><span class="property-scrub" data-property-scrub tabindex="0" role="button" aria-label="Scrub segment ${key}" ${messageAttributes("segmentValuesDialog.scrubSegment", {key: key}, "aria-label")}>${key[0].toUpperCase() + key.slice(1)}</span><input id="segment-${key}" type="number" step="any" data-property="${key}" data-property-step="1" data-property-precision="3" ${key === "length" ? 'min="1.401298464324817e-45"' : ""} aria-label="Segment ${key}" ${messageAttributes("segmentValuesDialog.segment2", {key: key}, "aria-label")}><small>${key === "length" ? "px" : "°"}</small></label></div>`).join("")}</div>
+      <label class="segment-values-relative"><input id="segment-relative" type="checkbox" ${this.relative ? "checked" : ""}>${messageHTML("segmentValuesDialog.relativeAngle", {})}</label>
       <p class="segment-values-help" id="segment-values-reference"></p>
-      <div class="segment-values-clipboard-tools"><button class="button" id="segment-values-copy">${icon("copy")}Copy values</button><button class="button" id="segment-values-paste">${icon("clipboard")}Paste values</button></div>
+      <div class="segment-values-clipboard-tools"><button class="button" id="segment-values-copy">${icon("copy")}${messageHTML("segmentValuesDialog.copyValues", {})}</button><button class="button" id="segment-values-paste">${icon("clipboard")}${messageHTML("segmentValuesDialog.pasteValues", {})}</button></div>
       <p id="segment-values-status" role="status"></p><p id="segment-values-error" class="form-error" role="alert" hidden></p>
-      <div class="segment-clipboard-fallback" id="segment-clipboard-fallback" hidden><label for="segment-clipboard-input">Angle : Bend : Length</label><textarea id="segment-clipboard-input" maxlength="100" spellcheck="false" placeholder="30:-15:42.5"></textarea><button class="button" id="segment-clipboard-use">Use values</button></div></div>
-      <div class="dialog-actions"><button class="button" id="segment-values-cancel">Cancel</button><button class="button primary" id="segment-values-apply">Apply</button></div>`;
+      <div class="segment-clipboard-fallback" id="segment-clipboard-fallback" hidden><label for="segment-clipboard-input" data-i18n="segmentValuesDialog.angleBendLength">Angle : Bend : Length</label><textarea id="segment-clipboard-input" maxlength="100" spellcheck="false" placeholder="30:-15:42.5"></textarea><button class="button" id="segment-clipboard-use" data-i18n="segmentValuesDialog.useValues">Use values</button></div></div>
+      <div class="dialog-actions"><button class="button" id="segment-values-cancel" data-i18n="segmentValuesDialog.cancel">Cancel</button><button class="button primary" id="segment-values-apply" data-i18n="segmentValuesDialog.apply">Apply</button></div>`);
     this.$ = (id) => this.content.querySelector("#" + id);
     this.sync();
     // This observer runs before the delegated controller consumes the input.
@@ -232,7 +235,7 @@ export class SegmentValuesDialog {
   }
   assertCurrent() {
     if (!this.current())
-      throw new Error("The selection changed. Reopen segment values.");
+      throw messageError(new Error(''), "errors.segmentValuesDialog.theSelectionChangedReopenSegmentValues", {});
   }
   values() {
     this.assertCurrent();
@@ -247,9 +250,7 @@ export class SegmentValuesDialog {
       input.removeAttribute("aria-invalid");
       input.setCustomValidity("");
     }
-    this.$("segment-values-reference").textContent = this.relative
-      ? "Angle is measured from the incoming segment’s end tangent. Length is independent of figure scale."
-      : "Angle is measured from the canvas X axis. Length is independent of figure scale.";
+    localizedText(this.$("segment-values-reference"), (this.relative ? "segmentValuesDialog.angleIsMeasuredFromTheIncomingSegmentS" : "segmentValuesDialog.angleIsMeasuredFromTheCanvasXAxis"), (this.relative ? {} : {}));
   }
   preview(values) {
     this.assertCurrent();
@@ -260,11 +261,9 @@ export class SegmentValuesDialog {
           Math.fround(key === "length" ? value : (value * Math.PI) / 180),
         )
       )
-        throw new Error(
-          "Enter finite values supported by the native figure format.",
-        );
+        throw messageError(new Error(''), "errors.segmentValuesDialog.enterFiniteValuesSupportedByTheNativeFigure", {});
       if (key === "length" && !(Math.fround(value) > 0))
-        throw new Error("Segment length must be greater than zero.");
+        throw messageError(new Error(''), "errors.editorHandleCommands.segmentLengthMustBeGreaterThanZero", {});
     }
     this.editor.setSegmentValues(values, this.options);
     this.$("segment-values-error").hidden = true;
@@ -280,18 +279,16 @@ export class SegmentValuesDialog {
       const text = formatSegmentValues(this.values());
       this.editor._segmentValuesClipboard = text;
       if (!this.clipboard?.writeText)
-        throw new Error(
-          "Clipboard writing is unavailable. Copy the selected values below.",
-        );
+        throw messageError(new Error(''), "errors.segmentValuesDialog.clipboardWritingIsUnavailableCopyTheSelectedValues", {});
       await this.clipboard.writeText(text);
       if (!signal.aborted)
-        this.$("segment-values-status").textContent = "Segment values copied.";
+        localizedText(this.$("segment-values-status"), "segmentValuesDialog.segmentValuesCopied", {});
     } catch (error) {
       if (!signal.aborted) {
         if (this.current()) {
           this.fallback(formatSegmentValues(this.values()), true);
           this.error(
-            new Error("Copy the selected Angle:Bend:Length values below."),
+            messageError(new Error(''), "errors.segmentValuesDialog.copyTheSelectedAngleBendLengthValuesBelow", {}),
           );
         } else this.error(error);
       }
@@ -302,14 +299,14 @@ export class SegmentValuesDialog {
     try {
       this.finishField();
       if (!this.clipboard?.readText)
-        throw new Error("Clipboard reading is unavailable.");
+        throw messageError(new Error(''), "errors.segmentValuesDialog.clipboardReadingIsUnavailable", {});
       const text = await this.clipboard.readText();
       if (!signal.aborted) this.usePastedText(text);
     } catch (error) {
       if (!signal.aborted) {
         this.fallback("", false);
         this.error(
-          new Error("Paste Angle:Bend:Length below to use clipboard values."),
+          messageError(new Error(''), "errors.segmentValuesDialog.pasteAngleBendLengthBelowToUseClipboard", {}),
         );
       }
     }
@@ -322,12 +319,10 @@ export class SegmentValuesDialog {
       if (count) {
         this.preview(values);
         this.sync();
-        this.$("segment-values-status").textContent =
-          `Pasted ${count} ${count === 1 ? "value" : "values"}.`;
+        localizedText(this.$("segment-values-status"), 'counts.pastedValues', {count});
       } else {
         this.$("segment-values-error").hidden = true;
-        this.$("segment-values-status").textContent =
-          "No numeric segment values found. Existing values are unchanged.";
+        localizedText(this.$("segment-values-status"), "segmentValuesDialog.noNumericSegmentValuesFoundExistingValuesAre", {});
       }
       return Boolean(count);
     } catch (error) {
@@ -343,7 +338,7 @@ export class SegmentValuesDialog {
   }
   error(error) {
     if (!this.session) return;
-    this.$("segment-values-error").textContent = error.message;
+    presentError(this.$("segment-values-error"), error);
     this.$("segment-values-error").hidden = false;
     this.onError(error);
   }

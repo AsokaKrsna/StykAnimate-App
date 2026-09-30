@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** Small native-field gestures. Authored transform channels use editor-animation. */
 import { objectBounds } from "./renderer-geometry.mjs";
 import { cameraValues } from "./editor-camera.mjs";
@@ -213,9 +214,9 @@ function validate(key, value) {
     !Number.isFinite(value) ||
     !Number.isFinite(Math.fround(value))
   )
-    throw new Error("Enter a finite number within the native range.");
+    throw messageError(new Error(''), "errors.nativePropertyEdit.enterAFiniteNumberWithinTheNativeRange", {});
   if (/^polygon_\d+_opacity$/.test(key) && (value < 0 || value > 100))
-    throw new Error('Polygon opacity must be from 0 to 100%.');
+    throw messageError(new Error(''), "errors.editorBuilderStyle.polygonOpacityMustBeFrom0To100", {});
   const integer = ["fps", "canvas_width", "canvas_height", "duration", "figure_z_order"].includes(
     key,
   );
@@ -261,9 +262,9 @@ function validate(key, value) {
               ? 1e6
               : Infinity;
   if (integer && !Number.isInteger(value))
-    throw new Error("Enter a whole number.");
+    throw messageError(new Error(''), "errors.nativePropertyEdit.enterAWholeNumber", {});
   if (value < min || value > max)
-    throw new Error(`Enter a value from ${min} to ${max}.`);
+    throw messageError(new Error(''), "errors.nativePropertyEdit.enterAValueFromTo", {min: min, max: max});
   return value;
 }
 function rootFor(editor, scope, index) {
@@ -331,7 +332,7 @@ export function applyNativePropertyCommand(editor, command, direction) {
     return;
   }
   const root = rootFor(editor, command.scope, command.index);
-  if (!root) throw new Error("The property target no longer exists.");
+  if (!root) throw messageError(new Error(''), "errors.nativePropertyEdit.thePropertyTargetNoLongerExists", {});
   applyPatch(root, command[direction]);
 }
 function signal(
@@ -354,7 +355,7 @@ function signal(
 }
 function assertCurrent(token) {
   if (!token || token.closed || active.get(token.editor) !== token)
-    throw new Error("This property gesture has ended.");
+    throw messageError(new Error(''), "errors.nativePropertyEdit.thisPropertyGestureHasEnded", {});
   const editor = token.editor;
   if (
     editor.report !== token.report ||
@@ -364,7 +365,7 @@ function assertCurrent(token) {
         editor.selectedJoint !== token.joint))
   ) {
     cancelNativePropertyEdit(token);
-    throw new Error("The selected property changed during the gesture.");
+    throw messageError(new Error(''), "errors.nativePropertyEdit.theSelectedPropertyChangedDuringTheGesture", {});
   }
 }
 export function beginNativePropertyEdit(
@@ -373,7 +374,7 @@ export function beginNativePropertyEdit(
   { bounds, indices, rangeMode = "absolute", branch = false } = {},
 ) {
   if (!canEditNativeProperty(editor, key))
-    throw new Error("Select the property before editing it.");
+    throw messageError(new Error(''), "errors.nativePropertyEdit.selectThePropertyBeforeEditingIt", {});
   if (active.has(editor)) cancelNativePropertyEdit(active.get(editor));
   if (editor._animationEdit) editor.commitAnimationEdit();
   if (editor.dragging) editor.commitDrag();
@@ -425,7 +426,7 @@ export function beginNativePropertyEdit(
   };
   if(token.sheetTicks)token.indices.sheetTicks=token.sheetTicks;
   if (!Number.isFinite(token.value))
-    throw new Error("The selected property has no finite value.");
+    throw messageError(new Error(''), "errors.nativePropertyEdit.theSelectedPropertyHasNoFiniteValue", {});
   token.initialValue = token.value;
   if(builder?.animated){
     token.definition=false;token.orderAnimation=beginBuilderOrderAnimation(editor,builder);
@@ -438,12 +439,12 @@ export function beginNativePropertyEdit(
     active.set(editor, token); return token;
   }
   if (token.pose && token.indices.length > 1 && editor.animationChannels.length && !editor.propertyChannels)
-    throw new Error("Choose native frames to apply an absolute value range.");
+    throw messageError(new Error(''), "errors.nativePropertyEdit.chooseNativeFramesToApplyAnAbsoluteValue", {});
   if (branchPlan?.authored) {
     token.branchAnimation = beginBranchStyleAnimation(editor, branchPlan);
   } else if (token.camera) {
     if (!editor.beginCameraDrag({ label: token.label }))
-      throw new Error("Choose a camera frame.");
+      throw messageError(new Error(''), "errors.nativePropertyEdit.chooseACameraFrame", {});
   } else if (token.pose) {
     if (
       !editor.beginDrag(token.label, {
@@ -453,7 +454,7 @@ export function beginNativePropertyEdit(
             : "selection",
       })
     )
-      throw new Error("Choose a figure first.");
+      throw messageError(new Error(''), "errors.nativePropertyEdit.chooseAFigureFirst", {});
     token.beforeObjects = new Map(
       editor._drag.before.map((o) => [o.unique_id, o]),
     );
@@ -558,7 +559,7 @@ export function previewNativePropertyEdit(token, value) {
       });
     else if (key === "group_width" || key === "group_height") {
       if (token.initialValue <= 0)
-        throw new Error("Increase the selection size before scaling.");
+        throw messageError(new Error(''), "errors.nativePropertyEdit.increaseTheSelectionSizeBeforeScaling", {});
       const factor = value / token.initialValue;
       for (const object of editor.frame.objects) {
         const before = token.beforeObjects.get(object.unique_id);

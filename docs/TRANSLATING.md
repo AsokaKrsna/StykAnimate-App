@@ -5,12 +5,16 @@ metadata contains `id`, English `name`, `nativeName`, `direction` (`ltr` or `rtl
 and optional explicit `aliases`. Its `messages` object uses the stable semantic
 keys in `src/locales/en.mjs`, composed from English feature files. Keys describe
 intent, not English spelling or an element's location. Read the owning component
-for context; preserve distinctions between a figure definition, its instances,
-joints, frames, keyframes, inbetweens, layers and movieclips. Build edits figures;
+for context; `docs/localization-message-context.json` lists source locations and
+caption snippets for review. Preserve distinctions between a figure definition,
+its instances, joints, frames, keyframes, inbetweens, layers and movieclips. Build edits figures;
 Animate poses them; Draw edits pixels. Keep terminology consistent within a pack.
 
 Translate plain text only. Do not add HTML. Preserve named `{placeholders}` exactly;
-reorder them to suit the language. Numbers are formatted for the selected locale.
+reorder them to suit the language. Do not translate placeholders, add punctuation
+inside them, or introduce positional parameters. A parameter may itself contain a
+translated feature name, so translate the surrounding sentence naturally. Numbers
+are formatted for the selected locale.
 Plural messages are objects with the categories returned by
 `new Intl.PluralRules(id).resolvedOptions().pluralCategories`; every supplied form
 must preserve the placeholders in English `other`. Keep `other`. Missing messages
@@ -22,23 +26,29 @@ starting point), use a canonical ID, and specify the direction. Use explicit scr
 IDs such as `zh-Hant` and region IDs such as `pt-PT` when their vocabulary differs.
 Exact IDs take precedence; language packs serve regional preferences, script packs
 serve only that script, and region packs need explicit aliases. Never map a different
-script or region just to increase coverage. No UI edit is needed.
+script or region just to increase coverage. No UI edit is needed. Keep the original
+language/script/region distinction; choose RTL direction for an RTL pack. English pack metadata is separate from authoritative
+English messages and does not duplicate them.
 
-Run `npm run locales:build`, then `npm run locales:check` and `npm run check`.
+During pack work run `npm run locales:validate -- --locale fr` (substitute your ID).
+This reads shared sources but writes no generated files. The integration agent runs
+`npm run locales:build`, `npm run locales:check` and `npm run check` after merging.
 Validation reports exact missing-message counts and incomplete plural categories;
 malformed messages, unknown keys and altered placeholders fail. Use
-`node scripts/build-locales.mjs --check --strict` to require complete coverage.
+`npm run locales:validate -- --locale fr --strict` to require complete coverage.
 Review captions in the app in narrow windows and dialogs. Native speakers should
 review meaning, terminology, grammar, plural categories and fit before merging.
 
 For parallel translation, assign one pack file per subagent, for example:
 “Translate `src/locales/packs/fr.json` only, using docs/TRANSLATING.md. Preserve
-existing translations and all placeholders. Report uncertain terminology. Do not
+existing translations and all placeholders. Validate with `npm run locales:validate
+-- --locale fr`; report coverage and uncertain terminology. Do not
 edit generated files, English catalogs or UI code.” Disjoint pack files can merge
 independently. The integration agent owns English keys, UI bindings, shared code,
-`src/locales/locale-packs.mjs` (generated), scripts, tests and documentation. It merges
-pack edits, regenerates once, validates, runs relevant UI checks and commits the
-reviewed result. Do not edit `native-catalogs.mjs`: it records the original imported
+`src/locales/locale-packs.mjs`, `docs/localization-message-context.json`, the marked
+generated diagnostic block in `desktop/preload.cjs`, scripts, tests and
+documentation. It merges pack edits, regenerates once, validates, runs relevant
+UI checks and commits the reviewed result. Do not edit `native-catalogs.mjs`: it records the original imported
 Pivot captions, while the independent packs own current translations.
 
 Development layout checks can call `styk.localization.localization.setPseudo('long')`

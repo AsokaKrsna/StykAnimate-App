@@ -1,8 +1,9 @@
+import {messageError} from './localized-error.mjs';
 import {ensureLayerState, validateLayerState, layerIdForUid, FIXED_LAYER_IDS, LAYER_COLORS} from './layers.mjs';
 import {planLayerMembershipMigration} from './editor-layer-migration.mjs';
 const owns = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 const clone = value => structuredClone(value);
-const cleanName = name => { if (typeof name !== 'string' || !name.trim() || name.trim().length > 160) throw new Error('Layer names need 1–160 characters.'); return name.trim(); };
+const cleanName = name => { if (typeof name !== 'string' || !name.trim() || name.trim().length > 160) throw messageError(new Error(''), "errors.editorLayers.layerNamesNeed1160Characters", {}); return name.trim(); };
 function leaf(state, path) { let object = state; for (const key of path.slice(0, -1)) object = object[key]; return [object, path.at(-1)]; }
 function capture(state, path) { const [object, key] = leaf(state, path); return {exists: owns(object, key), value: clone(object[key])}; }
 function write(state, path, value) { const [object, key] = leaf(state, path); if (value.exists) object[key] = clone(value.value); else delete object[key]; }
@@ -60,7 +61,7 @@ export const editorLayerMethods = {
     return values;
   },
   setActiveLayer(id) {
-    if (!this.getLayer(id)) throw new Error('Choose an existing layer.');
+    if (!this.getLayer(id)) throw messageError(new Error(''), "errors.editorLayers.chooseAnExistingLayer", {});
     const state = ensureLayerState(this.report); if (state.activeId === id) return false;
     state.activeId = id; this._emit('selection', {layerSelection: true, activeLayerId: id, layerRevision: this.layerRevision}); return true;
   },
@@ -110,32 +111,32 @@ export const editorLayerMethods = {
   },
   createLayer(name, {index, activate = true, drawing = false} = {}) {
     const state = ensureLayerState(this.report), id = `layer-${state.nextId}`;
-    if (state.order.length >= 10000) throw new Error('A project supports at most 10,000 user layers.');
+    if (state.order.length >= 10000) throw messageError(new Error(''), "errors.editorLayers.aProjectSupportsAtMost10000User", {});
     const insertion = index ?? state.order.length;
-    if (!Number.isInteger(insertion) || insertion < 0 || insertion > state.order.length) throw new Error('Invalid layer position.');
+    if (!Number.isInteger(insertion) || insertion < 0 || insertion > state.order.length) throw messageError(new Error(''), "errors.editorLayers.invalidLayerPosition", {});
     const title = cleanName(name ?? `Layer ${state.nextId}`), order = state.order.slice(); order.splice(insertion, 0, id);
     this._layerEdit('Create layer', [[['byId', id], {name: title, visible: true, locked: false, ...(drawing ? {drawing:{version:1}} : {})}], [['order'], order], [['nextId'], state.nextId + 1]],
       {structural: true, reindex: true, activeId: activate ? id : undefined}); return this.getLayer(id);
   },
   renameLayer(id, name) {
-    if (FIXED_LAYER_IDS.includes(id)) throw new Error('Scene and Camera are permanent tracks and cannot be renamed.');
-    if (!owns(ensureLayerState(this.report).byId, id)) throw new Error('Choose an existing user layer.');
+    if (FIXED_LAYER_IDS.includes(id)) throw messageError(new Error(''), "errors.editorLayers.sceneAndCameraArePermanentTracksAndCannot", {});
+    if (!owns(ensureLayerState(this.report).byId, id)) throw messageError(new Error(''), "errors.editorLayers.chooseAnExistingUserLayer", {});
     return this._layerEdit('Rename layer', [[['byId', id, 'name'], cleanName(name)]]);
   },
   setLayerColor(ids, color) {
-    if (color !== null && !owns(LAYER_COLORS, color)) throw new Error('Choose a layer color.');
+    if (color !== null && !owns(LAYER_COLORS, color)) throw messageError(new Error(''), "errors.editorLayers.chooseALayerColor", {});
     const state = ensureLayerState(this.report), unique = [...new Set(ids)];
-    if (unique.some(id => !owns(state.byId, id))) throw new Error('Choose existing user layers.');
+    if (unique.some(id => !owns(state.byId, id))) throw messageError(new Error(''), "errors.editorLayers.chooseExistingUserLayers", {});
     return this._layerEdit('Set layer color', unique.map(id => [['byId', id, 'color'], color, color === null]));
   },
   deleteLayer(id, {targetLayerId} = {}) {
     if(this.report._styk?.layerSheet&&!targetLayerId)return this.sheetDeleteLayer(id);
     if (this._drag) this.commitDrag();
     const state = ensureLayerState(this.report), position = state.order.indexOf(id);
-    if (position < 0) throw new Error('Scene and Camera cannot be deleted.');
-    if (state.order.length === 1) throw new Error('Keep at least one user layer.');
+    if (position < 0) throw messageError(new Error(''), "errors.editorLayerSheet.sceneAndCameraCannotBeDeleted", {});
+    if (state.order.length === 1) throw messageError(new Error(''), "errors.editorLayerAsync.keepAtLeastOneUserLayer", {});
     const target = targetLayerId ?? state.order[position - 1] ?? state.order[position + 1];
-    if (target === id || !owns(state.byId, target)) throw new Error('Choose another user layer for its figures.');
+    if (target === id || !owns(state.byId, target)) throw messageError(new Error(''), "errors.editorLayers.chooseAnotherUserLayerForItsFigures", {});
     if(this.report._styk.layerSheet&&!this._sheetDeletingLayer){
       return this.movieclipBatch('Delete layer',()=>{this.sheetAssignFigures(this.getLayerFigureUids(id),target);this._sheetDeletingLayer=true;
         try{return this.deleteLayer(id,{targetLayerId:target});}finally{this._sheetDeletingLayer=false;}});
@@ -148,19 +149,19 @@ export const editorLayerMethods = {
   },
   reorderLayers(ids) {
     const state = ensureLayerState(this.report), order = [...ids];
-    if (order.length !== state.order.length || new Set(order).size !== order.length || order.some(id => !owns(state.byId, id))) throw new Error('Include every user layer exactly once. Scene and Camera cannot be reordered.');
+    if (order.length !== state.order.length || new Set(order).size !== order.length || order.some(id => !owns(state.byId, id))) throw messageError(new Error(''), "errors.editorLayers.includeEveryUserLayerExactlyOnceSceneAnd", {});
     return this._layerEdit('Reorder layers', [[['order'], order]], {structural: true});
   },
   moveLayerTo(id, index) {
     const state = ensureLayerState(this.report), from = state.order.indexOf(id);
-    if (from < 0 || !Number.isInteger(index) || index < 0 || index >= state.order.length) throw new Error('Choose a valid user layer position.');
+    if (from < 0 || !Number.isInteger(index) || index < 0 || index >= state.order.length) throw messageError(new Error(''), "errors.editorLayers.chooseAValidUserLayerPosition", {});
     const order = state.order.slice(); order.splice(from, 1); order.splice(index, 0, id); return this.reorderLayers(order);
   },
   assignFiguresToLayer(uids, id) {
     if(this.report._styk?.layerSheet)return this.sheetAssignFigures(uids,id);
     if (this._drag) this.commitDrag();
-    const state = ensureLayerState(this.report); if (!owns(state.byId, id)) throw new Error('Figures belong to user layers, not Scene or Camera.');
-    const ids = [...new Set(uids)]; if (ids.some(uid => !this._layerUidCounts.has(uid))) throw new Error('Choose figures present in this animation.');
+    const state = ensureLayerState(this.report); if (!owns(state.byId, id)) throw messageError(new Error(''), "errors.editorLayers.figuresBelongToUserLayersNotSceneOr", {});
+    const ids = [...new Set(uids)]; if (ids.some(uid => !this._layerUidCounts.has(uid))) throw messageError(new Error(''), "errors.editorLayerAsync.chooseFiguresPresentInThisAnimation", {});
     const updates = ids.filter(uid => this.layerForUid(uid) !== id).map(uid => [['assignments', String(uid)], id]);
     const migration = updates.length ? planLayerMembershipMigration(this, ids, id) : null;
     return this._layerEdit('Assign figures to layer', updates, {structural: true, reindex: true, migration});
@@ -168,7 +169,7 @@ export const editorLayerMethods = {
   setLayerVisible(id, visible) { return this._setLayerFlag(id, 'visible', visible); },
   setLayerLocked(id, locked) { return this._setLayerFlag(id, 'locked', locked); },
   _setLayerFlag(id, key, value) {
-    if (typeof value !== 'boolean' || !this.getLayer(id)) throw new Error('Choose an existing track and a boolean state.');
+    if (typeof value !== 'boolean' || !this.getLayer(id)) throw messageError(new Error(''), "errors.editorLayers.chooseAnExistingTrackAndABooleanState", {});
     const state = ensureLayerState(this.report); state.fixed ??= {scene: {visible: true, locked: false}, camera: {visible: true, locked: false}};
     return this._layerEdit(key === 'visible' ? 'Set layer visibility' : 'Set layer lock', [[[FIXED_LAYER_IDS.includes(id) ? 'fixed' : 'byId', id, key], value]]);
   },

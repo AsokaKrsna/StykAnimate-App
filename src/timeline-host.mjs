@@ -1,3 +1,6 @@
+import {messageTuple, localizedText} from './localization-bindings.mjs';
+import {t as interfaceText, messageText as sayTimeline} from './localization.mjs';
+
 /**
  * The timeline island's host (architecture.md §3.14): mounts the Simple or
  * Advanced timeline into #timeline with the app's callbacks and the shared
@@ -34,7 +37,6 @@ import {refreshHotkeyHints} from './hotkey-hints.mjs';
 import {icon} from './icons.mjs';
 import {setAttr, setMarkup, setProp, setText} from './ui/dom-write.mjs';
 import {createTimelineHeader} from './timeline-header.mjs';
-import {messageText as sayTimeline} from './localization.mjs';
 
 export function createTimelineHost(ctx) {
   const {editor, state, $, actions} = ctx;
@@ -99,7 +101,7 @@ export function createTimelineHost(ctx) {
       // The Simple frame bar's Edit together switch runs the header's command; syncRangeEdit writes its state.
       onToggleRangeEdit: () => actions["toggle-range-edit"](),
       localizationText: (key, params) => ctx.localization?.()?.t?.(key, params) ?? key,
-      onDeleteLayer: id => ctx.changeFigureLayer('Delete layer',options=>editor.deleteLayerAsync(id,options)),
+      onDeleteLayer: id => ctx.changeFigureLayer(interfaceText("timelineHost.deleteLayer"),options=>editor.deleteLayerAsync(id,options), {labelKey:"timelineHost.deleteLayer"}),
       hotkeys: ctx.hotkeys,
       runClipboardOperation: ctx.runClipboardOperation,
       sharedClipboard: ctx.sharedClipboard(),
@@ -163,8 +165,7 @@ export function createTimelineHost(ctx) {
         if (!ctx.rangeFrames(true)) state.applyRange = false;
         ctx.syncSelectionControls();
         if (!state.scrubbing) ctx.renderInspector();
-        $("selection-summary").textContent =
-          `${indices.length} keyframe${indices.length === 1 ? "" : "s"} selected`;
+        localizedText($("selection-summary"), "timelineHost.keyframeSelected", {count: indices.length});
       },
       onLoopRangeChange: (range) => {
         ctx.pause();
@@ -198,7 +199,7 @@ export function createTimelineHost(ctx) {
       tick = editor.tick;
     setText($("time-display"),
       `${String(Math.floor(tick / fps / 60)).padStart(2, "0")}:${String(Math.floor(tick / fps) % 60).padStart(2, "0")}:${String(tick % fps).padStart(2, "0")}`);
-    setText($("frame-badge"), `FRAME ${String(tick + 1).padStart(2, "0")}`);
+    localizedText($("frame-badge"), "timelineHost.frame", {value: String(tick + 1).padStart(2, "0")});
     // Simple mode counts Pivot-style timeline frames; playback, the ruler and
     // export count every frame including inbetweens. Name both explicitly.
     const stored = ctx.simpleFrameCount(), total = editor.totalTicks,
@@ -215,7 +216,7 @@ export function createTimelineHost(ctx) {
    * The Simple timeline hears it too: it stays still while playing and catches up at the stop. */
   function syncPlayButton() {
     timeline?.setPlaying?.(state.playing);
-    const [glyph, label] = state.previewing ? ["stop", "Stop preview"] : state.playing ? ["pause", "Pause"] : ["play", "Play"];
+    const [glyph, label] = state.previewing ? messageTuple(["stop", interfaceText("timelineHost.stopPreview")], {1: {key: "timelineHost.stopPreview", params: {}}}) : state.playing ? messageTuple(["pause", interfaceText("timelineHost.pause")], {1: {key: "timelineHost.pause", params: {}}}) : messageTuple(["play", interfaceText("timelineHost.play")], {1: {key: "timelineHost.play", params: {}}});
     if (glyph === shownPlayback) return;
     shownPlayback = glyph;
     setMarkup($("play-button"), icon(glyph));

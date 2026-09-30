@@ -1,4 +1,6 @@
 'use strict';
+const { messageError } = require('./localization.cjs');
+
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -9,7 +11,7 @@ const PNG = Buffer.from('89504e470d0a1a0a', 'hex');
 
 function validName(value, max = 120) {
   if (typeof value !== 'string' || !value.trim() || value.length > max || /[<>:"/\\|?*\x00-\x1f]/.test(value) || /[. ]$/.test(value) || value.startsWith('.') || /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(value))
-    throw new Error('Use a name of 1–120 characters without reserved filename characters.');
+    throw messageError(new Error(''), 'desktop.libraryStore.errors.useANameOf1120CharactersWithoutReservedFilenameCharacters', {});
   return value.trim();
 }
 /** A display name made safe for a file name (the renderer does the same for Add to library). */
@@ -29,22 +31,22 @@ class LibraryStore {
     return this.root;
   }
   async resolve(relative = '') {
-    if (typeof relative !== 'string' || relative.length > 2000 || relative.includes('\\') || path.isAbsolute(relative) || relative.split('/').some(p => p && (p === '.' || p === '..' || /[:\x00-\x1f]/.test(p)))) throw new Error('Invalid library path.');
+    if (typeof relative !== 'string' || relative.length > 2000 || relative.includes('\\') || path.isAbsolute(relative) || relative.split('/').some(p => p && (p === '.' || p === '..' || /[:\x00-\x1f]/.test(p)))) throw messageError(new Error(''), 'desktop.libraryStore.errors.invalidLibraryPath', {});
     let current = this.root;
     for (const part of ['', ...relative.split('/').filter(Boolean)]) {
       if (part) { validName(part, 255); current = path.join(current, part); }
       const stat = await fs.lstat(current);
-      if (stat.isSymbolicLink()) throw new Error('Linked folders and files are not supported in the library.');
+      if (stat.isSymbolicLink()) throw messageError(new Error(''), 'desktop.libraryStore.errors.linkedFoldersAndFilesAreNotSupportedInTheLibrary', {});
     }
     return current;
   }
-  async folder(relative = '') { const target = await this.resolve(relative); if (!(await fs.stat(target)).isDirectory()) throw new Error('Choose a library folder.'); return target; }
+  async folder(relative = '') { const target = await this.resolve(relative); if (!(await fs.stat(target)).isDirectory()) throw messageError(new Error(''), 'desktop.libraryStore.errors.chooseALibraryFolder', {}); return target; }
   async available(folder, name, suffix = '', unique = false) {
     const names = new Set((await fs.readdir(folder)).map(n => n.toLocaleLowerCase()));
     for (const item of this.pending.values()) if (path.dirname(item.destination) === folder) names.add(path.basename(item.destination).toLocaleLowerCase());
     let candidate = name + suffix, i = 2;
     while (names.has(candidate.toLocaleLowerCase()) || suffix && ['.png','.json'].some(ext => names.has((candidate + ext).toLocaleLowerCase()))) {
-      if (!unique) throw new Error('An item with this name already exists.');
+      if (!unique) throw messageError(new Error(''), 'desktop.libraryStore.errors.anItemWithThisNameAlreadyExists', {});
       candidate = `${name} (${i++})${suffix}`;
     }
     return path.join(folder, candidate);
@@ -75,12 +77,12 @@ class LibraryStore {
     try { await this.resolve(this.relative(thumb)); const stat = await fs.stat(thumb); if (stat.size > 1024 * 1024) return null; const bytes = await fs.readFile(thumb); return bytes.subarray(0,8).equals(PNG) ? `data:image/png;base64,${bytes.toString('base64')}` : null; }
     catch (error) { if (error.code === 'ENOENT') return null; throw error; }
   }
-  async asset(relative) { const target = await this.resolve(relative); if (!EXTENSIONS.has(path.extname(target).toLowerCase()) || !(await fs.stat(target)).isFile()) throw new Error('Choose a saved figure or movieclip.'); return target; }
+  async asset(relative) { const target = await this.resolve(relative); if (!EXTENSIONS.has(path.extname(target).toLowerCase()) || !(await fs.stat(target)).isFile()) throw messageError(new Error(''), 'desktop.libraryStore.errors.chooseASavedFigureOrMovieclip', {}); return target; }
   beginSave({folder = '', name, extension, size, thumbnail, kind}) { return this.serial(async () => {
-    if (!EXTENSIONS.has(extension)) throw new Error('Unsupported library format.');
-    if (typeof thumbnail !== 'string' || thumbnail.length > 1400000 || !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(thumbnail)) throw new Error('A PNG thumbnail is required.');
+    if (!EXTENSIONS.has(extension)) throw messageError(new Error(''), 'desktop.libraryStore.errors.unsupportedLibraryFormat', {});
+    if (typeof thumbnail !== 'string' || thumbnail.length > 1400000 || !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(thumbnail)) throw messageError(new Error(''), 'desktop.libraryStore.errors.aPNGThumbnailIsRequired', {});
     const png = Buffer.from(thumbnail.split(',')[1], 'base64');
-    if (!png.subarray(0,8).equals(PNG)) throw new Error('Invalid PNG thumbnail.');
+    if (!png.subarray(0,8).equals(PNG)) throw messageError(new Error(''), 'desktop.libraryStore.errors.invalidPNGThumbnail', {});
     const parent = await this.folder(folder), destination = await this.available(parent, validName(name), extension, true);
     const transfer = await this.streams.beginWrite({destination, size, exclusive:true});
     this.pending.set(transfer.token, {destination, png, kind: kind === 'set' ? 'set' : extension === '.stykmov' ? 'movieclip' : 'figure'});
@@ -96,12 +98,12 @@ class LibraryStore {
   }
   write(token, bytes) { return this.streams.write(token, bytes); }
   finish(token) { return this.serial(async () => {
-    const item = this.pending.get(token); if (!item) throw new Error('Library save is no longer active.');
+    const item = this.pending.get(token); if (!item) throw messageError(new Error(''), 'desktop.libraryStore.errors.librarySaveIsNoLongerActive', {});
     const thumb = `${item.destination}.png`, temporary = `${thumb}.${randomUUID()}.tmp`;
     try {
       await this.folder(this.relative(path.dirname(item.destination)));
       // Refuse overwriting a file created externally during a transfer.
-      try { await fs.lstat(item.destination); throw new Error('This name was taken while saving. Try again.'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      try { await fs.lstat(item.destination); throw messageError(new Error(''), 'desktop.libraryStore.errors.thisNameWasTakenWhileSavingTryAgain', {}); } catch (error) { if (error.code !== 'ENOENT') throw error; }
       await fs.writeFile(temporary, item.png, {flag: 'wx'});
       await fs.link(temporary, thumb);
       let metadataCreated = false;
@@ -115,20 +117,20 @@ class LibraryStore {
   async cacheThumbnail({path:relative, thumbnail, modified, kind}) {
     const target = await this.asset(relative);
     if ((await fs.stat(target)).mtimeMs !== modified) return false;
-    if (typeof thumbnail !== 'string' || thumbnail.length > 1400000 || !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(thumbnail)) throw new Error('A PNG thumbnail is required.');
-    const png = Buffer.from(thumbnail.split(',')[1],'base64'); if (!png.subarray(0,8).equals(PNG)) throw new Error('Invalid PNG thumbnail.');
+    if (typeof thumbnail !== 'string' || thumbnail.length > 1400000 || !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(thumbnail)) throw messageError(new Error(''), 'desktop.libraryStore.errors.aPNGThumbnailIsRequired', {});
+    const png = Buffer.from(thumbnail.split(',')[1],'base64'); if (!png.subarray(0,8).equals(PNG)) throw messageError(new Error(''), 'desktop.libraryStore.errors.invalidPNGThumbnail', {});
     try { await fs.writeFile(`${target}.png`,png,{flag:'wx'}); } catch(error) { if (error.code !== 'EEXIST') throw error; }
     if (kind === 'set') try { await fs.writeFile(`${target}.json`,JSON.stringify({version:1,kind}),{flag:'wx'}); } catch(error) { if (error.code !== 'EEXIST') throw error; }
     return true;
   }
   read(token) { return this.streams.read(token); }
   change({path: relative, name, folder}) { return this.serial(async () => {
-    if (!relative) throw new Error('The library root cannot be moved or renamed.');
+    if (!relative) throw messageError(new Error(''), 'desktop.libraryStore.errors.theLibraryRootCannotBeMovedOrRenamed', {});
     const source = await this.resolve(relative), stat = await fs.stat(source);
     if (!stat.isDirectory()) await this.asset(relative);
-    for (const item of this.pending.values()) if (item.destination === source || item.destination.startsWith(source + path.sep)) throw new Error('Wait for the current save to finish.');
+    for (const item of this.pending.values()) if (item.destination === source || item.destination.startsWith(source + path.sep)) throw messageError(new Error(''), 'desktop.libraryStore.errors.waitForTheCurrentSaveToFinish', {});
     const parent = folder === undefined ? path.dirname(source) : await this.folder(folder);
-    if (stat.isDirectory() && (parent === source || parent.startsWith(source + path.sep))) throw new Error('A folder cannot be moved into itself.');
+    if (stat.isDirectory() && (parent === source || parent.startsWith(source + path.sep))) throw messageError(new Error(''), 'desktop.libraryStore.errors.aFolderCannotBeMovedIntoItself', {});
     const ext = stat.isDirectory() ? '' : path.extname(source), stem = name === undefined ? path.basename(source, ext) : validName(name);
     if (parent === path.dirname(source) && stem + ext === path.basename(source)) return {path: relative};
     const desired = path.join(parent, stem + ext);
@@ -144,10 +146,10 @@ class LibraryStore {
     return {path: this.relative(destination)};
   }); }
   trash(relative, trashItem) { return this.serial(async () => {
-    if (!relative) throw new Error('The library root cannot be removed.');
+    if (!relative) throw messageError(new Error(''), 'desktop.libraryStore.errors.theLibraryRootCannotBeRemoved', {});
     const target = await this.resolve(relative), stat = await fs.stat(target);
     if (!stat.isDirectory()) await this.asset(relative);
-    for (const item of this.pending.values()) if (item.destination === target || item.destination.startsWith(target + path.sep)) throw new Error('Wait for the current save to finish.');
+    for (const item of this.pending.values()) if (item.destination === target || item.destination.startsWith(target + path.sep)) throw messageError(new Error(''), 'desktop.libraryStore.errors.waitForTheCurrentSaveToFinish', {});
     await trashItem(target);
     if (!stat.isDirectory()) for (const ext of ['.png','.json']) {
       try { await this.resolve(`${relative}${ext}`); await trashItem(`${target}${ext}`); } catch (error) { if (error.code !== 'ENOENT') throw error; }

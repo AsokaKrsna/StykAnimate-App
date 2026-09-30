@@ -98,7 +98,7 @@ export class Localization {
     return this.formatter('date', options).format(date);
   }
 
-  t(key, params = {}) {
+  t(key, params = {}, depth = 0) {
     if (typeof key !== 'string' || !key || key.length > 160) throw new TypeError('A translation key must be a short nonempty string.');
     const localized = catalogs[this.locale];
     const translated = owns(localized, key);
@@ -115,6 +115,11 @@ export class Localization {
       const value = params[name];
       if (typeof value === 'string') return value;
       if (typeof value === 'number' && Number.isFinite(value)) return this.formatNumber(value);
+      if (value && typeof value === 'object' && depth < 8) {
+        if (owns(value, 'messageKey') && typeof value.messageKey === 'string') return this.t(value.messageKey, value.messageParams, depth + 1);
+        if (value.format === 'number' && Number.isFinite(value.value)) return this.formatNumber(value.value, value.options);
+        if (value.format === 'date') return this.formatDate(value.value, value.options);
+      }
       return token;
     });
   }

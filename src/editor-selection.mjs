@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 import {remapSurface} from './pivot/surfaces.mjs';
 import {frameOrder, setOrder} from './pivot/structure.mjs';
 import {objectBounds} from './renderer-geometry.mjs';
@@ -42,9 +43,9 @@ function selectedComponents(editor) {
     let slot = selected;
     const path = [], visiting = new Set();
     while (!roots.has(slot) && objects[slot]?.join) {
-      if (visiting.has(slot)) throw new Error('Figures contain a cyclic join.');
+      if (visiting.has(slot)) throw messageError(new Error(''), "errors.editorSelection.figuresContainACyclicJoin", {});
       visiting.add(slot); path.push(slot); slot = objects[slot].join.target_object_slot;
-      if (!objects[slot]) throw new Error('Join target is missing.');
+      if (!objects[slot]) throw messageError(new Error(''), "errors.editorSelection.joinTargetIsMissing", {});
     }
     const root = roots.get(slot) ?? slot;
     roots.set(slot, root);
@@ -72,7 +73,7 @@ function normalizedBounds(value) {
   });
   if (!bounds || !['minX', 'minY', 'maxX', 'maxY'].every(key => Number.isFinite(bounds[key])) ||
       bounds.maxX < bounds.minX || bounds.maxY < bounds.minY)
-    throw new Error('Figure bounds must contain finite, ordered coordinates.');
+    throw messageError(new Error(''), "errors.editorSelection.figureBoundsMustContainFiniteOrderedCoordinates", {});
   return bounds;
 }
 
@@ -147,7 +148,7 @@ export const editorSelectionMethods = {
   copyBranchSelection() {
     const figure = this.figure, joint = this.selectedJoint;
     if (!figure?.segments[joint]) return 0;
-    if (figure._styk?.spatialMesh) throw new Error('Copy the whole figure to include its 3D mesh.');
+    if (figure._styk?.spatialMesh) throw messageError(new Error(''), "errors.editorSelection.copyTheWholeFigureToIncludeIts3d", {});
     const indices = segmentBranchIndices(figure.segments, figure.segments[joint].segment_id);
     const handles = new Set(indices.map(i => figure.segments[i].segment_id));
     const boundary = figure.segments[joint].parent_id, geometry = this.geometry.objects.get(this.selectedSlot);
@@ -165,7 +166,7 @@ export const editorSelectionMethods = {
     delete branch.segment_z_raw; delete branch.poly_z_raw;
     branch.polyfills = (branch.polyfills ?? []).filter(poly => poly.segment_ids.every(id => handles.has(id) || id === boundary)).map(poly => {
       poly.segment_ids = poly.segment_ids.map(id => id === boundary ? 0 : id);
-      if(poly._stykSurface?.basis.some(id=>!handles.has(id)&&id!==boundary))throw new Error('Copy the whole figure to include its face reference joints.');
+      if(poly._stykSurface?.basis.some(id=>!handles.has(id)&&id!==boundary))throw messageError(new Error(''), "errors.editorSelection.copyTheWholeFigureToIncludeItsFace", {});
       remapSurface(poly,id=>id===boundary?0:id);
       poly.segment_ids_raw = [...poly.segment_ids]; return poly;
     });
@@ -209,7 +210,7 @@ export const editorSelectionMethods = {
 
   /** Geometric hit testing belongs to the canvas. Pass initial UIDs on every drag update. */
   selectMarquee(uids, {mode = 'replace', initial = this.selectedUids} = {}) {
-    if (!['replace', 'add', 'toggle', 'subtract'].includes(mode)) throw new Error('Choose a valid marquee selection mode.');
+    if (!['replace', 'add', 'toggle', 'subtract'].includes(mode)) throw messageError(new Error(''), "errors.editorSelection.chooseAValidMarqueeSelectionMode", {});
     const existing = new Set(this.selectionFrame.objects.map(object => object.unique_id));
     const hits = validIds(uids, existing), ids = mode === 'replace' ? new Set() : validIds(initial, existing);
     for (const uid of hits) {
@@ -223,7 +224,7 @@ export const editorSelectionMethods = {
    * inside a single figure uses its internal order; selecting the entire rig
    * (including a single-segment figure) moves that instance in the scene. */
   orderSelection(direction, {frameIndices} = {}) {
-    if (![1, -1, 'front', 'back'].includes(direction)) throw new Error('Choose a valid draw-order direction.');
+    if (![1, -1, 'front', 'back'].includes(direction)) throw messageError(new Error(''), "errors.editorBuilderStyle.chooseAValidDrawOrderDirection", {});
     const objects = this.selectedObjects;
     if (!objects.length) return false;
     if (objects.length === 1 && this.figure?.segments[this.selectedJoint]) {
@@ -243,9 +244,9 @@ export const editorSelectionMethods = {
 
   /** Align selected artwork while translating its complete joined component. */
   alignSelection(axis, edge, {boundsOf = defaultBounds} = {}) {
-    if (!['x', 'y'].includes(axis)) throw new Error('Alignment axis must be x or y.');
-    if (!['start', 'center', 'end'].includes(edge)) throw new Error('Alignment edge must be start, center or end.');
-    if (typeof boundsOf !== 'function') throw new Error('Provide a figure bounds function.');
+    if (!['x', 'y'].includes(axis)) throw messageError(new Error(''), "errors.editorSelection.alignmentAxisMustBeXOrY", {});
+    if (!['start', 'center', 'end'].includes(edge)) throw messageError(new Error(''), "errors.editorSelection.alignmentEdgeMustBeStartCenterOrEnd", {});
+    if (typeof boundsOf !== 'function') throw messageError(new Error(''), "errors.editorCamera.provideAFigureBoundsFunction", {});
     if (this._drag) this.commitDrag();
     const groups = selectedComponents(this);
     if (groups.size < 2) return false;

@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** A reusable native figure retains its displayed pose and exact style overlays. */
 import {evaluatedFrame, timeline, buildGeometry} from './pivot/geometry.mjs';
 import {createFrame} from './demo.mjs';
@@ -11,7 +12,7 @@ export function nativeFigureDocument(report, {figureTypeId, figureUid, figureUid
   const frame = sourceFrame ?? evaluatedFrame(report, index, row.count ? Math.max(0, Math.min(1, (tick - row.start) / row.count)) : 0, tick);
   if (figureUids?.length) {
     const selected = new Set(figureUids), sources = frame.objects.filter(o => selected.has(o.unique_id));
-    if (!sources.length) throw new Error('Select figures to save to the library.');
+    if (!sources.length) throw messageError(new Error(''), "errors.nativeFigure.selectFiguresToSaveToTheLibrary", {});
     const slots = new Map(sources.map((o, i) => [o.object_slot, i])), geometry = buildGeometry(report, frame);
     const figures = report.figure_types.filter(f => sources.some(o => o.figure_type_id === f.figure_type_id));
     const objects = sources.map((source, i) => {
@@ -38,7 +39,7 @@ export function nativeFigureDocument(report, {figureTypeId, figureUid, figureUid
   }
   const source = frame.objects.find(object => figureUid == null ? object.figure_type_id === figureTypeId : object.unique_id === figureUid);
   const figure = report.figure_types.find(figure => figure.figure_type_id === source?.figure_type_id);
-  if (!source || !figure) throw new Error('Select a figure or movieclip to export.');
+  if (!source || !figure) throw messageError(new Error(''), "errors.nativeFigure.selectAFigureOrMovieclipToExport", {});
   const object = {...source, object_slot: 0, join: null};
   delete object._stykMovieclipPart;
   if (source._stykIK || source.join) {

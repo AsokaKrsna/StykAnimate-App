@@ -1,3 +1,7 @@
+import {localizedText, replaceLocalized, messageTuple, translatedElement, appendLocalized, localizedAttribute} from '../localization-bindings.mjs';
+
+import {t as interfaceText} from '../localization.mjs';
+
 /**
  * The Layout popover (View › Layout…, Ctrl+Alt+L; experience §1.5–1.7):
  * the workspace's presets as small dock maps (its built-in presets, then the
@@ -15,8 +19,8 @@ import {installRovingFocus} from '../ui/roving-focus.mjs';
 import {presetArrangement, presetsFor} from './layout-schema.mjs';
 import {bandBottom} from './topbar.mjs';
 
-const POSITION = Object.freeze({left: 'Left', right: 'Right', with: 'With Properties', float: 'Floating', hidden: 'Hidden'});
-const SAVE_REASONS = Object.freeze({limit: '8 presets saved. Delete one first.', budget: 'Preset storage is full. Delete one first.'});
+const POSITION = Object.freeze({left: interfaceText("layoutPopover.left"), right: interfaceText("layoutPopover.right"), with: interfaceText("layoutPopover.withProperties"), float: interfaceText("layoutPopover.floating"), hidden: interfaceText("layoutPopover.hidden")});
+const SAVE_REASONS = Object.freeze({limit: interfaceText("layoutPopover.message8PresetsSavedDeleteOneFirst"), budget: interfaceText("layoutPopover.presetStorageIsFullDeleteOneFirst")});
 /** Each workspace's presets, its default first (experience §1.6). */
 const ORDER = Object.freeze({animate: ['animate', 'timing', 'focus', 'review'], draw: ['draw', 'focus'], rig: ['build', 'build-timeline', 'focus']});
 
@@ -49,7 +53,7 @@ function dockMap(doc, arrangement, {focus = false} = {}) {
   const size = value => (value === 'docked' ? '1fr' : '0.35fr');
   const columns = [];
   if (sides.left) columns.push(['left', size(sides.left)]);
-  columns.push(['stage', '3fr']);
+  columns.push(messageTuple(['stage', interfaceText("layoutPopover.message3fr")], {1: {key: "layoutPopover.message3fr", params: {}}}));
   if (sides.right) columns.push(['right', size(sides.right)]);
   const tall = arrangement?.tall;
   map.style.gridTemplateColumns = columns.map(([, value]) => value).join(' ');
@@ -59,7 +63,7 @@ function dockMap(doc, arrangement, {focus = false} = {}) {
     if (name === 'stage') item.dataset.stage = '';
     if ((name === 'left' ? sides.left : name === 'right' ? sides.right : name === 'bottom' ? bottom : null) === 'strip') item.dataset.folded = '';
     item.style.gridArea = `${row} / ${column} / ${row + 1} / ${column + span}`;
-    map.append(item);
+    appendLocalized(map, item);
   };
   columns.forEach(([name], index) => cell(name, index + 1, 1));
   if (bottom) {
@@ -84,14 +88,14 @@ export function createLayoutPopover({host, document: doc = globalThis.document, 
   const presets = doc.createElement('div');
   presets.className = 'shell-layout-presets';
   presets.setAttribute('role', 'radiogroup');
-  presets.setAttribute('aria-label', 'Layout presets');
+  localizedAttribute(presets, 'aria-label', "layoutPopover.layoutPresets", {});
   const rows = doc.createElement('div');
   rows.className = 'shell-layout-rows';
   const note = doc.createElement('p');
   note.className = 'shell-layout-note';
   note.hidden = true;
   const body = doc.createDocumentFragment();
-  body.append(presets, rows, note);
+  appendLocalized(body, presets, rows, note);
 
   const button = (label, variant, run) => {
     const element = doc.createElement('button');
@@ -103,22 +107,22 @@ export function createLayoutPopover({host, document: doc = globalThis.document, 
     element.addEventListener('click', () => guard(run));
     return element;
   };
-  const reset = button('Reset', 'ghost', () => workspace.resetWorkspace());
-  reset.setAttribute('aria-label', 'Reset layout');
+  const reset = translatedElement(button(interfaceText("common.reset"), 'ghost', () => workspace.resetWorkspace()), "common.reset", {});
+  localizedAttribute(reset, 'aria-label', "layoutPopover.resetLayout", {});
   const glyph = icon?.('reset');
   if (typeof glyph === 'string') reset.insertAdjacentHTML('afterbegin', glyph);
-  const save = button('Save as preset…', 'outline', () => saveAs());
+  const save = translatedElement(button(interfaceText("layoutPopover.saveAsPreset"), 'outline', () => saveAs()), "layoutPopover.saveAsPreset", {});
   const foot = doc.createDocumentFragment();
   const spacer = doc.createElement('span');
   spacer.className = 'shell-layout-spacer';
-  foot.append(reset, spacer, save);
+  appendLocalized(foot, reset, spacer, save);
 
   // Under the band, not under the menu button inside it: the anchor's box reaches down to the band's bottom.
   const target = {getBoundingClientRect: () => {
     const box = (anchor() ?? doc.body).getBoundingClientRect(), edge = bandBottom(doc) || box.bottom;
     return new DOMRect(box.left, box.top, box.width, Math.max(box.bottom, edge) - box.top);
   }};
-  const popover = createPopover({anchor: target, title: 'Layout', closeLabel: 'Close layout', body, foot, overlays, icon, t,
+  const popover = createPopover({anchor: target, title: interfaceText("layoutPopover.layout"), titleKey: "layoutPopover.layout", closeLabel: interfaceText("layoutPopover.closeLayout"), closeLabelKey: "layoutPopover.closeLayout", body, foot, overlays, icon, t,
     // Typing belongs to the popover (a preset card's "h" never picks the Hand tool); it opens 6px under the band, as menus do.
     className: 'shell-layout', placement: 'bottom-start', keyboardScope: true, topInset: () => bandBottom(doc) + 6,
     onOpen: () => { render(); (presets.querySelector('[aria-checked="true"]') ?? presets.firstElementChild)?.focus({preventScroll: true}); }, onClose: () => { unsubscribe?.(); unsubscribe = null; }, document: doc});
@@ -146,7 +150,7 @@ export function createLayoutPopover({host, document: doc = globalThis.document, 
     const rank = id => { const index = (ORDER[mode] ?? []).indexOf(id); return index < 0 ? Infinity : index; };
     const cards = [...presetsFor(mode)].sort((a, b) => rank(a.id) - rank(b.id)).map(preset => {
       const arrangement = preset.id === 'focus' ? current.focus ?? current : presetArrangement(preset.id, mode, {layout});
-      return {id: preset.id, title: preset.title, arrangement: preset.sizes ? {...arrangement, tall: true} : arrangement,
+      return {id: preset.id, title: preset.title, titleKey: preset.titleKey, arrangement: preset.sizes ? {...arrangement, tall: true} : arrangement,
         focus: preset.id === 'focus', checked: preset.id === 'focus' ? Boolean(current.focus) : placement(arrangement) === now};
     });
     for (const item of savedPresets()) {
@@ -162,7 +166,7 @@ export function createLayoutPopover({host, document: doc = globalThis.document, 
     if (presets.dataset.key !== key) {
       presets.dataset.key = key;
       const focused = presets.contains(doc.activeElement) ? doc.activeElement.dataset.preset : null;
-      presets.replaceChildren(...cards.map(card => {
+      replaceLocalized(presets, ...cards.map(card => {
         const choice = doc.createElement('button');
         choice.type = 'button';
         choice.className = 'ui-choice';
@@ -170,8 +174,8 @@ export function createLayoutPopover({host, document: doc = globalThis.document, 
         choice.dataset.preset = card.id;
         const label = doc.createElement('span');
         label.className = 'ui-choice-label';
-        label.textContent = card.title;
-        choice.append(dockMap(doc, card.arrangement, {focus: card.focus}), label);
+        if (card.titleKey) localizedText(label, card.titleKey); else label.textContent = card.title;
+        appendLocalized(choice, dockMap(doc, card.arrangement, {focus: card.focus}), label);
         if (card.saved) { choice.setAttribute('aria-haspopup', 'menu'); choice.title = card.title; }
         return choice;
       }));
@@ -202,10 +206,10 @@ export function createLayoutPopover({host, document: doc = globalThis.document, 
     const item = savedPresets().find(saved => `user:${saved.id}` === choice.dataset.preset);
     if (!item) return;
     openMenu([
-      {label: 'Rename…', icon: 'file', run: () => renameSaved(item)},
-      {label: 'Update', icon: 'save', run: () => { guard(() => workspace.updateLayout(item.id)); refocus(); }},
+      {label: interfaceText("layoutPopover.rename"), labelKey: "layoutPopover.rename", icon: 'file', run: () => renameSaved(item)},
+      {label: interfaceText("layoutPopover.update"), labelKey: "layoutPopover.update", icon: 'save', run: () => { guard(() => workspace.updateLayout(item.id)); refocus(); }},
       null,
-      {label: 'Delete', icon: 'trash', danger: true, run: () => { guard(() => workspace.deleteLayout(item.id)); refocus(); }},
+      {label: interfaceText('layoutPopover.delete'), labelKey: "common.delete", icon: 'trash', danger: true, run: () => { guard(() => workspace.deleteLayout(item.id)); refocus(); }},
     ], at ?? choice);
   };
   presets.addEventListener('contextmenu', event => {
@@ -223,8 +227,8 @@ export function createLayoutPopover({host, document: doc = globalThis.document, 
   });
 
   async function renameSaved(item) {
-    const name = await prompt({title: 'Rename preset', label: 'Name', value: item.name, confirmLabel: 'Rename', maxLength: 48,
-      validate: value => (value.trim() ? null : 'Name the preset first.')});
+    const name = await prompt({title: interfaceText("layoutPopover.renamePreset"), titleKey: "layoutPopover.renamePreset", label: interfaceText("common.name"), labelKey: "common.name", value: item.name, confirmLabel: interfaceText("layoutPopover.rename2"), confirmLabelKey: "layoutPopover.rename2", confirmLabelParams: {}, maxLength: 48,
+      validate: value => (value.trim() ? null : interfaceText("layoutPopover.nameThePresetFirst"))});
     if (typeof name === 'string') guard(() => workspace.renameLayout(item.id, name));
   }
 
@@ -232,8 +236,8 @@ export function createLayoutPopover({host, document: doc = globalThis.document, 
     const allowed = workspace.canSaveLayout();
     if (!allowed.ok) { notify(SAVE_REASONS[allowed.reason]); return; }
     popover.hide('replace');
-    const name = await prompt({title: 'Save layout as preset', label: 'Name', placeholder: 'Fight setup', confirmLabel: 'Save preset', maxLength: 48,
-      validate: value => (value.trim() ? null : 'Name the preset first.')});
+    const name = await prompt({title: interfaceText("layoutPopover.saveLayoutAsPreset"), titleKey: "layoutPopover.saveLayoutAsPreset", label: interfaceText("common.name"), labelKey: "common.name", placeholder: interfaceText("layoutPopover.fightSetup"), placeholderKey: "layoutPopover.fightSetup", confirmLabel: interfaceText("layoutPopover.savePreset"), confirmLabelKey: "layoutPopover.savePreset", confirmLabelParams: {}, maxLength: 48,
+      validate: value => (value.trim() ? null : interfaceText("layoutPopover.nameThePresetFirst"))});
     if (typeof name !== 'string') return;
     if (guard(() => workspace.saveLayout(name))) show();
   }
@@ -242,31 +246,31 @@ export function createLayoutPopover({host, document: doc = globalThis.document, 
   // Positions
 
   const selects = {};
-  function selectRow(key, label, name, onChange) {
+  function selectRow(key, labelKey, nameKey, onChange) {
     const row = doc.createElement('div');
     row.className = 'ui-row';
     const caption = doc.createElement('span');
     caption.className = 'ui-row-label';
-    caption.textContent = label;
+    localizedText(caption, labelKey);
     const wrap = doc.createElement('span');
     wrap.className = 'ui-select';
     wrap.dataset.size = 'sm';
     const select = doc.createElement('select');
-    select.setAttribute('aria-label', name);
+    localizedAttribute(select, 'aria-label', nameKey);
     select.dataset.layoutPosition = key;
     select.addEventListener('change', () => guard(() => onChange(select.value)));
-    wrap.append(select);
+    appendLocalized(wrap, select);
     const chevron = icon?.('chevron-down');
     if (typeof chevron === 'string') wrap.insertAdjacentHTML('beforeend', chevron);
-    row.append(caption, wrap);
-    rows.append(row);
+    appendLocalized(row, caption, wrap);
+    appendLocalized(rows, row);
     selects[key] = {row, select};
   }
   const setOptions = (select, options, value) => {
     const key = options.map(([id, text]) => `${id}:${text}`).join('|');
     if (select.dataset.options !== key) {
       select.dataset.options = key;
-      select.replaceChildren(...options.map(([id, text]) => new Option(text, id)));
+      replaceLocalized(select, ...options.map(([id, text]) => new Option(text, id)));
     }
     if (select.value !== value) select.value = value;
   };
@@ -278,11 +282,11 @@ export function createLayoutPopover({host, document: doc = globalThis.document, 
     if (value === 'with') return workspace.dock(id, propertiesSide(), {tabInto: 'properties'});
     return workspace.dock(id, value);
   };
-  selectRow('properties', 'Properties', 'Properties position', value => place('properties', value));
-  selectRow('vfx', 'VFX', 'VFX position', value => place('vfx', value));
-  selectRow('library', 'Library', 'Library position', value => place('library', value));
-  selectRow('timeline', 'Timeline', 'Timeline width', value => workspace.setTimelineSpan(value));
-  selectRow('rail', 'Tools', 'Tools side', value => workspace.setRail(value));
+  selectRow('properties', 'layoutPopover.properties', 'layoutPopover.propertiesPosition', value => place('properties', value));
+  selectRow('vfx', 'VFX', interfaceText("layoutPopover.vfxPosition"), value => place('vfx', value));
+  selectRow('library', 'layoutPopover.library', 'layoutPopover.libraryPosition', value => place('library', value));
+  selectRow('timeline', 'layoutPopover.timeline', 'layoutPopover.timelineWidth', value => workspace.setTimelineSpan(value));
+  selectRow('rail', 'layoutPopover.tools', 'layoutPopover.toolsSide', value => workspace.setRail(value));
 
   function renderRows() {
     const current = entry();
@@ -301,8 +305,8 @@ export function createLayoutPopover({host, document: doc = globalThis.document, 
       const where = sideOf(item);
       setOptions(select, options.map(value => [value, POSITION[value]]), where === propertiesSide() ? 'with' : where);
     }
-    setOptions(selects.timeline.select, [['full', 'Full width'], ['stage', 'Under stage']], current.bottomSpan ?? 'full');
-    setOptions(selects.rail.select, [['left', 'Left'], ['right', 'Right']], current.rail ?? 'left');
+    setOptions(selects.timeline.select, [messageTuple(['full', interfaceText("layoutPopover.fullWidth")], {1: {key: "layoutPopover.fullWidth", params: {}}}), messageTuple(['stage', interfaceText("layoutPopover.underStage")], {1: {key: "layoutPopover.underStage", params: {}}})], current.bottomSpan ?? 'full');
+    setOptions(selects.rail.select, [messageTuple(['left', interfaceText("layoutPopover.left")], {1: {key: "layoutPopover.left", params: {}}}), messageTuple(['right', interfaceText("layoutPopover.right")], {1: {key: "layoutPopover.right", params: {}}})], current.rail ?? 'left');
     const allowed = workspace.canSaveLayout();
     save.setAttribute('aria-disabled', String(!allowed.ok));
     note.hidden = allowed.ok;

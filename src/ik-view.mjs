@@ -1,3 +1,6 @@
+import {tupleMessages, messageTuple} from './localization-bindings.mjs';
+
+import {t as interfaceText} from './localization.mjs';
 import {renderInspector} from './inspector-kit.mjs';
 
 /**
@@ -8,21 +11,21 @@ import {renderInspector} from './inspector-kit.mjs';
  * and the target's rotation.
  */
 export function ikSection(ik) {
-  return {id: 'ik', title: 'IK', rows: [
+  return {id: 'ik', title: interfaceText("ikView.ik"), titleKey: "ikView.ik", rows: [
     {kind: 'grid', rows: [
-      {kind: 'field-switch', id: 'node-is-ik', label: 'Use IK', tip: 'Drag the joint to move its whole chain', checked: ik.enabled, controls: 'node-ik-options'},
+      {kind: 'field-switch', id: 'node-is-ik', label: interfaceText("ikView.useIk"), labelKey: "ikView.useIk", tip: interfaceText("ikView.dragTheJointToMoveItsWholeChain"), tipKey: "ikView.dragTheJointToMoveItsWholeChain", checked: ik.enabled, controls: 'node-ik-options'},
     ]},
-    {kind: 'group', id: 'node-ik-options', label: 'IK options', hidden: !ik.enabled, rows: ik.enabled ? [
+    {kind: 'group', id: 'node-ik-options', label: interfaceText("ikView.ikOptions"), labelKey: "ikView.ikOptions", hidden: !ik.enabled, rows: ik.enabled ? [
       {kind: 'grid', rows: [
-        {kind: 'field-switch', id: 'node-ik-pinned', label: 'Pinned', checked: ik.pinned, tip: 'Keep the joint where it is when the body moves'},
-        {kind: 'field-switch', id: 'node-ik-stretch', label: 'Stretch', checked: ik.allowStretch, tip: 'Allow stretch'},
+        {kind: 'field-switch', id: 'node-ik-pinned', label: interfaceText("ikView.pinned"), labelKey: "ikView.pinned", checked: ik.pinned, tip: interfaceText("ikView.keepTheJointWhereItIsWhenThe"), tipKey: "ikView.keepTheJointWhereItIsWhenThe"},
+        {kind: 'field-switch', id: 'node-ik-stretch', label: interfaceText("ikView.stretch"), labelKey: "ikView.stretch", checked: ik.allowStretch, tip: interfaceText("ikView.allowStretch"), tipKey: "ikView.allowStretch"},
       ]},
-      {kind: 'stepper', id: 'node-ik-chain', label: 'Chain', description: 'IK chain length', value: ik.chainLength, min: 1, max: ik.maxLength, step: 1,
-        down: {label: 'Shorter chain'}, up: {label: 'Longer chain'}},
-      {kind: 'segmented', mode: 'radio', name: 'node-ik-bend', label: 'Direction', description: 'IK bend direction', value: ik.bendDirection,
-        options: [[-1, 'Left'], [0, 'Both'], [1, 'Right']].map(([value, label]) => ({value, label, description: `Bend ${label.toLowerCase()}`}))},
+      {kind: 'stepper', id: 'node-ik-chain', label: interfaceText("ikView.chain"), labelKey: "ikView.chain", description: interfaceText("ikView.ikChainLength"), descriptionKey: "ikView.ikChainLength", value: ik.chainLength, min: 1, max: ik.maxLength, step: 1,
+        down: {label: interfaceText("ikView.shorterChain"), labelKey: "ikView.shorterChain"}, up: {label: interfaceText("ikView.longerChain"), labelKey: "ikView.longerChain"}},
+      {kind: 'segmented', mode: 'radio', name: 'node-ik-bend', label: interfaceText("ikView.direction"), labelKey: "ikView.direction", description: interfaceText("ikView.ikBendDirection"), descriptionKey: "ikView.ikBendDirection", value: ik.bendDirection,
+        options: [messageTuple([-1, interfaceText("ikView.left")], {1: {key: "ikView.left", params: {}}}), messageTuple([0, interfaceText("ikView.both")], {1: {key: "ikView.both", params: {}}}), messageTuple([1, interfaceText("ikView.right")], {1: {key: "ikView.right", params: {}}})].map((_tuple) => {const [value, label] = _tuple; const _messages = tupleMessages(_tuple); return {value, label, ...(_messages[1] ? {labelKey: _messages[1].key, labelParams: _messages[1].params} : {}), description: interfaceText("ikView.bend", {value: label.toLowerCase()}), descriptionKey: "ikView.bend", descriptionParams: {value: label.toLowerCase()}};})},
       {kind: 'grid', rows: [
-        {kind: 'number', id: 'node-ik-rotation', label: 'Rotation', description: 'IK target rotation', unit: '°', step: 1, precision: 2,
+        {kind: 'number', id: 'node-ik-rotation', label: interfaceText("ikView.rotation"), labelKey: "ikView.rotation", description: interfaceText("ikView.ikTargetRotation"), descriptionKey: "ikView.ikTargetRotation", unit: '°', step: 1, precision: 2,
           value: Math.round(ik.target.rotation * 180 / Math.PI * 100) / 100},
       ]},
     ] : []},

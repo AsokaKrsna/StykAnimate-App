@@ -1,3 +1,4 @@
+import {messageError} from './localized-error.mjs';
 /** A minimal MP4 (ISO base media) writer for one H.264 video track.
  * Sources: ISO/IEC 14496-12 (boxes), 14496-15 (avcC), https://www.w3.org/TR/webcodecs-avc-codec-registration/
  *
@@ -106,7 +107,7 @@ export class Mp4Muxer {
     this.audioBytes = this.audio ? this.audio.packets.reduce((sum, packet) => sum + packet.data.byteLength, 0) : 0;
     this.width = width; this.height = height; this.fps = fps; this.totalFrames = totalFrames;
     this.timescale = Math.round(fps * 1000);
-    if (!(this.timescale >= 1 && this.timescale <= 0xffffffff)) throw new Error('The frame rate cannot be stored in an MP4 file.');
+    if (!(this.timescale >= 1 && this.timescale <= 0xffffffff)) throw messageError(new Error(''), "errors.mp4Muxer.theFrameRateCannotBeStoredInAn", {});
     this.maxBytes = maxBytes;
     this.streamed = streamed;
     this.frames = 0;
@@ -135,17 +136,17 @@ export class Mp4Muxer {
 
   add(chunk, metadata) {
     if (!Number.isSafeInteger(chunk.timestamp) || chunk.timestamp < 0 || chunk.timestamp < this.lastTimestamp) {
-      throw new Error('The encoder returned out-of-order video timestamps.');
+      throw messageError(new Error(''), "errors.mp4Muxer.theEncoderReturnedOutOfOrderVideoTimestamps", {});
     }
     if (this.frames === 0) {
-      if (chunk.type !== 'key') throw new Error('The video encoder did not produce an initial keyframe.');
+      if (chunk.type !== 'key') throw messageError(new Error(''), "errors.mp4Muxer.theVideoEncoderDidNotProduceAnInitial", {});
       const description = metadata?.decoderConfig?.description;
-      if (!description) throw new Error('The video encoder did not describe its H.264 stream.');
+      if (!description) throw messageError(new Error(''), "errors.mp4Muxer.theVideoEncoderDidNotDescribeItsH", {});
       // A copy: the encoder may reuse the buffer it described the stream with.
       this.description = (description instanceof ArrayBuffer ? new Uint8Array(description) : new Uint8Array(description.buffer, description.byteOffset, description.byteLength)).slice();
       this.colorSpace = metadata.decoderConfig.colorSpace ?? null;
     }
-    if (this.dataStart + this.dataBytes + this.audioBytes + chunk.byteLength + 4096 > this.maxBytes) throw new Error('The encoded video exceeds the configured export size limit.');
+    if (this.dataStart + this.dataBytes + this.audioBytes + chunk.byteLength + 4096 > this.maxBytes) throw messageError(new Error(''), "errors.mp4Muxer.theEncodedVideoExceedsTheConfiguredExportSize", {});
     const data = new Uint8Array(chunk.byteLength);
     chunk.copyTo(data);
     if (chunk.type === 'key') this.keyframes.push(this.frames + 1);
@@ -183,9 +184,9 @@ export class Mp4Muxer {
   }
 
   finish(expectedFrames) {
-    if (this.frames !== expectedFrames) throw new Error(`Video export produced ${this.frames} of ${expectedFrames} frames.`);
+    if (this.frames !== expectedFrames) throw messageError(new Error(''), "errors.mp4Muxer.videoExportProducedOfFrames", {frames: this.frames, expectedFrames: expectedFrames});
     const moov = this.movie(), mdatSize = this.mdatHeader.byteLength + this.dataBytes + this.audioBytes;
-    if (this.dataStart + this.dataBytes + this.audioBytes + moov.byteLength > this.maxBytes) throw new Error('The encoded video exceeds the export size limit.');
+    if (this.dataStart + this.dataBytes + this.audioBytes + moov.byteLength > this.maxBytes) throw messageError(new Error(''), "errors.mp4Muxer.theEncodedVideoExceedsTheExportSizeLimit", {});
     const sound = this.audio ? blocks(this.audio.packets.map(packet => packet.data)) : [];
     if (this.streamed) {
       for (const block of sound) this.pending.push(block);

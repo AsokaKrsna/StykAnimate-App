@@ -1,3 +1,7 @@
+import {replaceLocalized, localizedMarkup, messageHTML, appendLocalized, localizedAttribute, localizedText} from './localization-bindings.mjs';
+import {messageError} from './localized-error.mjs';
+import {t as interfaceText} from './localization.mjs';
+
 import { icon } from "./icons.mjs";
 import { createObject, createFrame } from "./demo.mjs";
 import { buildGeometry, drawGeometry } from "./pivot/geometry.mjs";
@@ -15,11 +19,11 @@ const MAX_PATH_CHARS = 160000;
 const nameOf = (figure) =>
   String(figure.name || `Figure ${figure.figure_type_id}`);
 const kindOf = (figure) =>
-  figure._styk?.movieclip ? 'Movieclip' : figure.text_assets?.length
+  figure._styk?.movieclip ? interfaceText("assetLibrary.movieclip") : figure.text_assets?.length
     ? "Text"
     : figure.image_assets?.length
-      ? "Image"
-      : "Figure";
+      ? interfaceText("assetLibrary.image")
+      : interfaceText("assetLibrary.figure");
 const defaultUrl = (asset) =>
   asset?.asset_url ||
   asset?.data_url ||
@@ -38,7 +42,7 @@ const escapeHTML = (value) =>
         c
       ],
   );
-const abortError = () => new DOMException("Preview cancelled", "AbortError");
+const abortError = () => messageError(new DOMException('', "AbortError"), "errors.assetLibrary.previewCancelled", {});
 
 /** A bounded, idle-rendered figure library. Ordinary pose/selection updates are O(visible rows). */
 export class AssetLibrary {
@@ -46,7 +50,7 @@ export class AssetLibrary {
     container,
     { onAdd, onError = () => {}, resources = {}, maxPreviews = 64 } = {},
   ) {
-    if (!container) throw new TypeError("AssetLibrary requires a container");
+    if (!container) throw messageError(new TypeError(''), "errors.assetLibrary.assetlibraryRequiresAContainer", {});
     this.container = container;
     this.onAdd = onAdd;
     this.onError = onError;
@@ -83,7 +87,7 @@ export class AssetLibrary {
       maxPreviewMs: 0,
     };
     container.classList.add("styk-asset-library");
-    container.innerHTML = `<div class="styk-assets-search">${icon("search")}<input type="search" placeholder="Search figures" aria-label="Search figures" spellcheck="false"><button type="button" class="icon-button" aria-label="Clear figure search" hidden>${icon("x")}</button></div><div class="styk-assets-viewport" role="listbox" aria-label="Figure library" tabindex="0"><div class="styk-assets-spacer"></div><div class="styk-assets-empty" hidden>No figures found</div></div><div class="styk-assets-count" aria-live="polite"></div>`;
+    localizedMarkup(container, `<div class="styk-assets-search">${icon("search")}<input type="search" placeholder="Search figures" aria-label="Search figures" spellcheck="false" data-i18n-placeholder="assetLibrary.searchFigures" data-i18n-aria-label="assetLibrary.searchFigures"><button type="button" class="icon-button" aria-label="Clear figure search" hidden data-i18n-aria-label="assetLibrary.clearFigureSearch">${icon("x")}</button></div><div class="styk-assets-viewport" role="listbox" aria-label="Figure library" tabindex="0" data-i18n-aria-label="assetLibrary.figureLibrary"><div class="styk-assets-spacer"></div><div class="styk-assets-empty" hidden>${messageHTML("assetLibrary.noFiguresFound", {})}</div></div><div class="styk-assets-count" aria-live="polite"></div>`);
     this.input = container.querySelector("input");
     this.clearButton = container.querySelector(".styk-assets-search button");
     this.viewport = container.querySelector(".styk-assets-viewport");
@@ -218,9 +222,7 @@ export class AssetLibrary {
       : this.records;
     this.spacer.style.height = `${this.filtered.length * ROW_HEIGHT}px`;
     this.empty.hidden = this.filtered.length > 0;
-    this.count.textContent = this.query
-      ? `${this.filtered.length.toLocaleString()} of ${this.records.length.toLocaleString()}`
-      : `${this.records.length.toLocaleString()} ${this.records.length === 1 ? "figure" : "figures"}`;
+    localizedText(this.count, this.query ? 'counts.of' : 'counts.figures', {count: this.query ? this.filtered.length : this.records.length, total: this.records.length});
     this.render();
   }
 
@@ -248,42 +250,38 @@ export class AssetLibrary {
         row.className = "styk-asset-row";
         row.dataset.figure = record.id;
         row.setAttribute("role", "option");
-        row.innerHTML = `<span class="styk-asset-preview" aria-hidden="true"></span><span class="styk-asset-info"><span class="styk-asset-name"></span><span class="styk-asset-detail"></span></span><span class="styk-asset-add" aria-hidden="true">${icon("plus")}</span>`;
-        this.spacer.append(row);
+        localizedMarkup(row, `<span class="styk-asset-preview" aria-hidden="true"></span><span class="styk-asset-info"><span class="styk-asset-name"></span><span class="styk-asset-detail"></span></span><span class="styk-asset-add" aria-hidden="true">${icon("plus")}</span>`);
+        appendLocalized(this.spacer, row);
         this.rows.set(record.id, row);
       }
       row.style.top = `${index * ROW_HEIGHT}px`;
       row.dataset.index = String(index);
       row.setAttribute("aria-posinset", String(index + 1));
       row.setAttribute("aria-setsize", String(this.filtered.length));
-      row.setAttribute(
-        "aria-label",
-        `Add ${record.name}, ${record.kind.toLowerCase()} ${record.id}`,
-      );
+      localizedAttribute(row, "aria-label", "assetLibrary.add", {name: record.name, value: record.kind.toLowerCase(), id: record.id});
       row.setAttribute("aria-selected", String(record.id === this.selectedId));
       row.tabIndex = index === this.activeIndex ? 0 : -1;
-      row.title = `Add ${record.name} · #${record.id}`;
+      localizedAttribute(row, "title", "assetLibrary.add2", {name: record.name, id: record.id});
       row.querySelector(".styk-asset-name").textContent = record.name;
-      row.querySelector(".styk-asset-detail").textContent =
-        `${record.segmentCount.toLocaleString()} ${record.segmentCount === 1 ? "segment" : "segments"}`;
+      localizedText(row.querySelector('.styk-asset-detail'), 'counts.segments', {count: record.segmentCount});
       const target = row.querySelector(".styk-asset-preview");
       const cached = this.previews.get(record.id);
       if (cached && cached.figure === record.figure) {
         this.touchPreview(record.id, cached);
         if (target.firstChild !== cached.element)
-          target.replaceChildren(cached.element);
+          replaceLocalized(target, cached.element);
       } else {
         if (
           target.dataset.placeholder !== record.kind ||
           target.querySelector("canvas")
         ) {
-          target.innerHTML = icon(
+          localizedMarkup(target, icon(
             record.kind === "Text"
               ? "text"
               : record.kind === "Image"
                 ? "image"
                 : "person",
-          );
+          ));
           target.dataset.placeholder = record.kind;
         }
         this.queue.push(record);
@@ -428,7 +426,7 @@ export class AssetLibrary {
       const target = this.rows
         .get(record.id)
         ?.querySelector(".styk-asset-preview");
-      if (target) target.replaceChildren(preview.element);
+      if (target) replaceLocalized(target, preview.element);
       this.stats.previewRenders++;
       if (preview.fallback) this.stats.previewFallbacks++;
     } catch (error) {
@@ -437,7 +435,7 @@ export class AssetLibrary {
         generation === this.generation &&
         !this.disposed
       ) {
-        const element = this.fallback(record.figure, "Preview unavailable");
+        const element = this.fallback(record.figure, interfaceText("assetLibrary.previewUnavailable"));
         this.previews.set(record.id, {
           figure: record.figure,
           element,
@@ -468,7 +466,7 @@ export class AssetLibrary {
     const kind = kindOf(figure);
     span.className = "styk-asset-fallback";
     span.title = reason;
-    span.innerHTML = `${icon(kind === "Text" ? "text" : kind === "Image" ? "image" : "nodes")}<small>${escapeHTML(kind)}</small>`;
+    localizedMarkup(span, `${icon(kind === "Text" ? "text" : kind === "Image" ? "image" : "nodes")}<small>${escapeHTML(kind)}</small>`);
     return span;
   }
 
@@ -520,7 +518,7 @@ export class AssetLibrary {
       return {
         element: this.fallback(
           figure,
-          "Complex figure · add to canvas to view",
+          interfaceText("assetLibrary.complexFigureAddToCanvasToView"),
         ),
         bytes: 0,
         fallback: true,
@@ -542,7 +540,7 @@ export class AssetLibrary {
         return {
           element: this.fallback(
             figure,
-            "Large image figure · add to canvas to view",
+            interfaceText("assetLibrary.largeImageFigureAddToCanvasToView"),
           ),
           bytes: 0,
           fallback: true,
@@ -563,7 +561,7 @@ export class AssetLibrary {
     );
     if (!geometry.drawables.length)
       return {
-        element: this.fallback(figure, "Empty figure"),
+        element: this.fallback(figure, interfaceText("assetLibrary.emptyFigure")),
         bytes: 0,
         fallback: true,
       };
@@ -590,7 +588,7 @@ export class AssetLibrary {
       !["data:", "blob:"].includes(url.protocol) &&
       url.origin !== location.origin
     )
-      return Promise.reject(new Error("Preview media must be local"));
+      return Promise.reject(messageError(new Error(''), "errors.assetLibrary.previewMediaMustBeLocal", {}));
     return new Promise((resolve, reject) => {
       const image = new Image();
       let done = false;
@@ -607,7 +605,7 @@ export class AssetLibrary {
       };
       const cancel = () => finish(abortError());
       const timer = setTimeout(
-        () => finish(new Error("Preview image timed out")),
+        () => finish(messageError(new Error(''), "errors.assetLibrary.previewImageTimedOut", {})),
         5000,
       );
       this.imageCancels.add(cancel);
@@ -616,10 +614,10 @@ export class AssetLibrary {
           generation !== this.generation || !this.visible
             ? abortError()
             : image.naturalWidth * image.naturalHeight > MAX_IMAGE_PIXELS
-              ? new Error("Preview image is too large")
+              ? messageError(new Error(''), "errors.assetLibrary.previewImageIsTooLarge", {})
               : null,
         );
-      image.onerror = () => finish(new Error("Preview image unavailable"));
+      image.onerror = () => finish(messageError(new Error(''), "errors.assetLibrary.previewImageUnavailable", {}));
       image.src = url.href;
     });
   }
@@ -638,7 +636,7 @@ export class AssetLibrary {
     this.records = [];
     this.filtered = [];
     this.stats.rows = 0;
-    this.container.replaceChildren();
+    replaceLocalized(this.container);
     this.container.classList.remove("styk-asset-library");
     this.updateStats();
   }

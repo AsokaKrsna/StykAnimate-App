@@ -1,11 +1,12 @@
+import {localizedMarkup, appendLocalized} from './localization-bindings.mjs';
 import {hexColor} from './paint.mjs';
 
 /** A small, pointer-transparent loupe with one readback in flight and no idle polling. */
 export function createColorMagnifier({anchor,signal,sample}) {
   const lens=document.createElement('div');
   lens.className='paint-magnifier';lens.setAttribute('popover','manual');lens.setAttribute('aria-hidden','true');
-  lens.innerHTML='<div class="paint-magnifier-glass"><canvas width="11" height="11"></canvas><i></i></div><div class="paint-magnifier-label"><span></span><code></code></div>';
-  (anchor.closest('dialog') || document.body).append(lens);
+  localizedMarkup(lens, '<div class="paint-magnifier-glass"><canvas width="11" height="11"></canvas><i></i></div><div class="paint-magnifier-label"><span></span><code></code></div>');
+  appendLocalized(anchor.closest('dialog') || document.body, lens);
   const ctx=lens.querySelector('canvas').getContext('2d'),label=lens.querySelector('code'),swatch=lens.querySelector('span');
   let point,timer,request,lastSample=0;
   const hide=()=>{

@@ -1,3 +1,5 @@
+import {restoreMessageError, messageError} from './localized-error.mjs';
+
 /** File I/O boundary: bytes transfer to a worker; JSON parsing stays off the UI. */
 import { applyDocumentChunk } from './document-transport.mjs';
 import {materializeNativeFrames} from './import-wire.mjs';
@@ -7,7 +9,7 @@ export class ImportClient {
   // The desktop codec requires its per-launch token; the browser dev server has none.
   constructor({baseURL = globalThis.location?.origin, token = globalThis.stykDesktop?.apiToken || '', timeoutMs = 180000,
     workerURL = new URL('./import-worker.mjs', import.meta.url)} = {}) {
-    if (!baseURL) throw new Error('The importer requires a local backend URL.');
+    if (!baseURL) throw messageError(new Error(''), "errors.importClient.theImporterRequiresALocalBackendUrl", {});
     this.baseURL = new URL(baseURL, globalThis.location?.href).origin;
     this.token = token;
     this.timeoutMs = timeoutMs;
@@ -23,10 +25,10 @@ export class ImportClient {
     const worker = new Worker(this.workerURL, {type: 'module', name: 'StykAnimate file importer'});
     this.worker=worker;this.failure=null;
     worker.addEventListener('message', event => {if(this.worker===worker)this._receive(event.data);});
-    worker.addEventListener('messageerror', () => {if(this.worker===worker)this._fail(Object.assign(new Error('The imported project could not be transferred.'), { telemetryCode: 'snapshot_failed', telemetryStage: 'prepare' }));});
+    worker.addEventListener('messageerror', () => {if(this.worker===worker)this._fail(Object.assign(messageError(new Error(''), "errors.importClient.theImportedProjectCouldNotBeTransferred", {}), { telemetryCode: 'snapshot_failed', telemetryStage: 'prepare' }));});
     worker.addEventListener('error', event => {
       event.preventDefault();
-      if(this.worker===worker)this._fail(Object.assign(new Error(event.message || 'The file importer stopped unexpectedly.'), { telemetryCode: 'worker_failed', telemetryStage: 'decode' }));
+      if(this.worker===worker)this._fail(Object.assign((event.message ? new Error(event.message) : messageError(new Error(''), "errors.importClient.theFileImporterStoppedUnexpectedly")), { telemetryCode: 'worker_failed', telemetryStage: 'decode' }));
     });
   }
 
@@ -65,7 +67,7 @@ export class ImportClient {
     if (message.ok) { request.backendJob.finish(); request.resolve(message.complete ? { ...message.result, document: request.document } : message.result); }
     else {
       request.backendJob.cancel();
-      const error = new Error(message.error?.message || 'This file could not be imported.');
+      const error = restoreMessageError((message.error?.message ? new Error(message.error?.message) : messageError(new Error(''), "errors.importClient.thisFileCouldNotBeImported")), message.error);
       if (message.error?.code) error.code = message.error.code;
       if (message.error?.status) error.status = message.error.status;
       error.telemetryCode = message.error?.telemetryCode; error.telemetryStage = message.error?.telemetryStage;
@@ -87,13 +89,13 @@ export class ImportClient {
   }
 
   _request(operation, payload, transfer = [], onProgress) {
-    if (this.disposed) return Promise.reject(new Error('The file importer has been disposed.'));
+    if (this.disposed) return Promise.reject(messageError(new Error(''), "errors.importClient.theFileImporterHasBeenDisposed", {}));
     // Retry only the user's next operation; never silently repeat a failed one.
     if(this.failure){try{this._startWorker();}catch(error){this.diagnostics?.recovery('import_worker','failed');return Promise.reject(error);}}
     const id = ++this.sequence, backendJob = codecJob(this.baseURL, this.token);
     return new Promise((resolve, reject) => {
       const timer = this.timeoutMs > 0 ? setTimeout(() => {
-        const error = new Error('The file import timed out. Try opening a smaller project.');
+        const error = messageError(new Error(''), "errors.importClient.theFileImportTimedOutTryOpeningA", {});
         error.code = 'import_timeout';
         error.telemetryStage='decode';
         this._fail(error);
@@ -113,40 +115,40 @@ export class ImportClient {
   }
 
   async importFile(file,{entryIndex,onProgress}={}) {
-    if (this.disposed) throw new Error('The file importer has been disposed.');
+    if (this.disposed) throw messageError(new Error(''), "errors.importClient.theFileImporterHasBeenDisposed", {});
     if (!file || typeof file.arrayBuffer !== 'function' || typeof file.name !== 'string') {
-      throw new TypeError('Choose a StykAnimate, Pivot or Stick Nodes file.');
+      throw messageError(new TypeError(''), "errors.importClient.chooseAStykanimatePivotOrStickNodesFile", {});
     }
     const native = /\.(styk|stkz|stykmov|json)$/i.test(file.name);
     const limit = (native ? 256 : 128) * 1024 * 1024;
-    if (Number(file.size) > limit) throw Object.assign(new Error(`The file exceeds the ${limit / 1024 / 1024} MiB import limit.`), { telemetryCode: 'file_too_large', telemetryStage: 'prepare' });
+    if (Number(file.size) > limit) throw Object.assign(messageError(new Error(''), "errors.importClient.theFileExceedsTheMibImportLimit", {value: limit / 1024 / 1024}), { telemetryCode: 'file_too_large', telemetryStage: 'prepare' });
     const generation=this.cancelGeneration,bytes = await file.arrayBuffer();
-    if(generation!==this.cancelGeneration)throw new DOMException('Import superseded.','AbortError');
+    if(generation!==this.cancelGeneration)throw messageError(new DOMException('', 'AbortError'), "errors.importClient.importSuperseded", {});
     // Transfer ownership rather than structured-cloning a second upload buffer.
     return this._request('import', {filename: file.name, bytes,entryIndex}, [bytes],onProgress);
   }
 
   cancelPending() {
     this.cancelGeneration++;
-    for(const [id,request] of this.pending){clearTimeout(request.timer);request.backendJob.cancel();this.worker.postMessage({operation:'cancel',id});request.reject(new DOMException('Import superseded.','AbortError'));}
+    for(const [id,request] of this.pending){clearTimeout(request.timer);request.backendJob.cancel();this.worker.postMessage({operation:'cancel',id});request.reject(messageError(new DOMException('', 'AbortError'), "errors.importClient.importSuperseded", {}));}
     this.pending.clear();
   }
 
   importNative(file) {
     if (!/\.(styk|stkz|stykmov|json)$/i.test(file?.name || '')) {
-      return Promise.reject(new Error('Choose a .styk project, .stkz figure, .stykmov movieclip, or .json file.'));
+      return Promise.reject(messageError(new Error(''), "errors.importClient.chooseAStykProjectStkzFigureStykmovMovieclip", {}));
     }
     return this.importFile(file);
   }
 
   openSample(path) {
-    if (typeof path !== 'string' || !path) return Promise.reject(new Error('Choose a project from the library.'));
+    if (typeof path !== 'string' || !path) return Promise.reject(messageError(new Error(''), "errors.importClient.chooseAProjectFromTheLibrary", {}));
     return this._request('open', {path});
   }
 
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
-    this._fail(new Error('The file importer has been disposed.'));
+    this._fail(messageError(new Error(''), "errors.importClient.theFileImporterHasBeenDisposed", {}));
   }
 }
