@@ -86,13 +86,30 @@ struct Shape { a: vec4f, b: vec4f, color: vec4f, color2: vec4f, gradient: vec4f,
 @group(0) @binding(2) var<storage, read> transforms: array<vec4f>;
 @group(1) @binding(0) var imageSampler: sampler;
 @group(1) @binding(1) var imageTexture: texture_2d<f32>;
-struct VertexOut { @builtin(position) position: vec4f, @location(0) local: vec2f, @location(1) uv: vec2f, @location(2) @interpolate(flat) shapeIndex: u32 }
+// Everything constant across a shape travels as flat varyings: fragments read
+// no storage buffers, and the artboard clip point is rotated per vertex (an
+// affine map, so interpolation reproduces the per-pixel rotation).
+struct VertexOut {
+  @builtin(position) position: vec4f,
+  @location(0) localUv: vec4f,
+  @location(1) clipPoint: vec2f,
+  @location(2) @interpolate(flat) a: vec4f,
+  @location(3) @interpolate(flat) color: vec4f,
+  @location(4) @interpolate(flat) color2: vec4f,
+  @location(5) @interpolate(flat) gradient: vec4f,
+  // radius, inner radius, figure opacity, clip-to-artboard flag
+  @location(6) @interpolate(flat) params: vec4f,
+  @location(7) @interpolate(flat) kind: i32,
+}
 @vertex fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut {
   let shape = shapes[instance];
   let transform = transforms[u32(shape.info.y)];
   var corners = array<vec2f,6>(vec2f(0,0),vec2f(1,0),vec2f(0,1),vec2f(0,1),vec2f(1,0),vec2f(1,1));
   let uv = corners[vertex];
   let kind = i32(shape.info.x);
+  var output: VertexOut;
+  // Disabled records and hidden figures rasterize nothing.
+  if (kind < 0 || transform.w < 0.5) { output.position = vec4f(2, 2, 0, 1); output.kind = -1; return output; }
   var p = vec2f(0);
   let aa = 1.1 / max(globals.row0.w * globals.viewport.z, 0.0001);
   if (kind == 0 || kind == 2) {
@@ -115,64 +132,68 @@ struct VertexOut { @builtin(position) position: vec4f, @location(0) local: vec2f
   }
   let world = p + transform.xy;
   let screen = vec2f(dot(globals.row0.xyz, vec3f(world,1)), dot(globals.row1.xyz, vec3f(world,1)));
-  var output: VertexOut;
   output.position = vec4f(screen.x / globals.viewport.x * 2.0 - 1.0, 1.0 - screen.y / globals.viewport.y * 2.0, 0, 1);
-  output.local = p;
-  output.uv = uv;
-  output.shapeIndex = instance;
+  let center = (globals.clip.xy + globals.clip.zw) * 0.5;
+  let angle = globals.row1.w;
+  let delta = screen / globals.viewport.z - center;
+  output.clipPoint = center + vec2f(cos(angle)*delta.x+sin(angle)*delta.y,-sin(angle)*delta.x+cos(angle)*delta.y);
+  output.localUv = vec4f(p, uv);
+  output.a = shape.a;
+  output.color = shape.color;
+  output.color2 = shape.color2;
+  output.gradient = shape.gradient;
+  output.params = vec4f(shape.b.z, shape.b.w, transform.z, select(0.0, 1.0, globals.viewport.w > 0.5 || shape.info.w > 0.5));
+  output.kind = kind;
   return output;
 }
 @fragment fn fs(input: VertexOut) -> @location(0) vec4f {
-  let shape = shapes[input.shapeIndex];
-  let transform = transforms[u32(shape.info.y)];
-  let kind = i32(shape.info.x);
-  let point = input.position.xy / globals.viewport.z;
-  let center = (globals.clip.xy + globals.clip.zw) * 0.5;
-  let angle = globals.row1.w;
-  let delta = point - center;
-  let screen = center + vec2f(cos(angle)*delta.x+sin(angle)*delta.y,-sin(angle)*delta.x+cos(angle)*delta.y);
+  let kind = input.kind;
+  let local = input.localUv.xy;
+  let screen = input.clipPoint;
   let outsideCanvas = screen.x < globals.clip.x || screen.y < globals.clip.y || screen.x > globals.clip.z || screen.y > globals.clip.w;
   // Backgrounds stay on the artboard; editor figures can extend into the workspace.
-  if (kind < 0 || transform.w < 0.5 || (outsideCanvas && (globals.viewport.w > 0.5 || shape.info.w > 0.5))) { discard; }
+  if (kind < 0 || (outsideCanvas && input.params.w > 0.5)) { discard; }
+  let radiusB = input.params.x;
+  let opacity = input.params.z;
   var coverage = 1.0;
   var distance = -1.0;
   if (kind == 0) {
-    let delta = shape.a.zw - shape.a.xy;
+    let delta = input.a.zw - input.a.xy;
     let norm = dot(delta, delta);
-    let t = clamp(dot(input.local - shape.a.xy, delta) / max(norm, 0.000001), 0.0, 1.0);
-    distance = length(input.local - shape.a.xy - delta * t) - shape.b.z;
+    let t = clamp(dot(local - input.a.xy, delta) / max(norm, 0.000001), 0.0, 1.0);
+    distance = length(local - input.a.xy - delta * t) - radiusB;
   } else if (kind == 2) {
-    let delta = shape.a.zw - shape.a.xy;
+    let delta = input.a.zw - input.a.xy;
     let len = length(delta);
     let direction = select(vec2f(1,0), delta / max(len, 0.0001), len > 0.0001);
-    let p = input.local - (shape.a.xy + shape.a.zw) * 0.5;
-    let q = abs(vec2f(dot(p, direction), dot(p, vec2f(-direction.y, direction.x)))) - vec2f(len * 0.5 + shape.b.z, shape.b.z);
+    let p = local - (input.a.xy + input.a.zw) * 0.5;
+    let q = abs(vec2f(dot(p, direction), dot(p, vec2f(-direction.y, direction.x)))) - vec2f(len * 0.5 + radiusB, radiusB);
     distance = length(max(q, vec2f(0))) + min(max(q.x,q.y),0.0);
   } else if (kind == 1) {
-    let radius = length(input.local - shape.a.xy);
-    distance = radius - shape.b.z;
-    if (shape.b.w > 0.0) { distance = max(distance, shape.b.w - radius); }
+    let radius = length(local - input.a.xy);
+    distance = radius - radiusB;
+    if (input.params.y > 0.0) { distance = max(distance, input.params.y - radius); }
   }
   let edge = max(fwidth(distance), 0.00001);
   if (kind <= 2) { coverage = clamp(0.5 - distance / edge, 0.0, 1.0); }
-  var t = clamp(dot(input.local - shape.gradient.xy, shape.gradient.zw), 0.0, 1.0);
-  if (kind == 6) { t = clamp((length(input.local - shape.gradient.xy) - shape.gradient.z) / max(shape.gradient.w - shape.gradient.z, 0.0001), 0.0, 1.0); }
-  var color = mix(shape.color, shape.color2, t);
+  var t = clamp(dot(local - input.gradient.xy, input.gradient.zw), 0.0, 1.0);
+  if (kind == 6) { t = clamp((length(local - input.gradient.xy) - input.gradient.z) / max(input.gradient.w - input.gradient.z, 0.0001), 0.0, 1.0); }
+  var color = mix(input.color, input.color2, t);
   if (kind == 7) {
-    let alpha = textureSampleLevel(imageTexture, imageSampler, input.uv, 0.0).a * color.a * transform.z;
+    let alpha = textureSampleLevel(imageTexture, imageSampler, input.localUv.zw, 0.0).a * color.a * opacity;
     return vec4f(color.rgb * alpha, alpha);
   }
   if (kind == 4 || kind == 8 || kind == 9) {
-    var uv = input.uv;
-    if (kind == 8) { uv = (input.local - shape.gradient.xy) * shape.gradient.zw; }
+    var uv = input.localUv.zw;
+    if (kind == 8) { uv = (local - input.gradient.xy) * input.gradient.zw; }
     // Pooled artwork uses the top-left of a larger texture: scale, then clamp
     // to the last used texel centre so unused texels never filter in.
-    if (kind == 4 && shape.gradient.z > 0.0) { uv = min(uv * shape.gradient.zw, shape.gradient.xy); }
+    if (kind == 4 && input.gradient.z > 0.0) { uv = min(uv * input.gradient.zw, input.gradient.xy); }
     let texel = textureSampleLevel(imageTexture, imageSampler, clamp(uv, vec2f(0), vec2f(1)), 0.0);
     // copyExternalImageToTexture uses premultiplied textures; preserve that convention.
-    return texel * (color.a * transform.z);
+    return texel * (color.a * opacity);
   }
-  let alpha = color.a * coverage * transform.z;
+  let alpha = color.a * coverage * opacity;
   return vec4f(color.rgb * alpha, alpha);
 }`;
 
