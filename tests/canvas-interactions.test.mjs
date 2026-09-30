@@ -64,13 +64,15 @@ test('hidden static endpoints have retained selection-only targets without chang
   assert.equal(getPivotHandles(scene, {...options, allowStaticManipulation: true})[1].action, 'pose');
 });
 
-test('join target handles include static endpoints, exclude ineligible figures and render white', () => {
+test('join target handles include static endpoints, exclude ineligible figures and colour dynamic nodes', () => {
   const a = object(1, 0, {x: 0, y: 0}, {x: 100, y: 0}, {static: true});
   const b = object(2, 1, {x: 200, y: 0}, {x: 230, y: 0});
   const handles = getPivotHandles(geometry([a, b]), {attaching: true, joinTargetUids: new Set([1]), showUnselected: false});
   assert.deepEqual(handles.map(h => h.uid), [1, 1]);
-  assert.ok(handles.every(h => h.color === '#ffffff'));
+  assert.deepEqual(handles.map(h => h.color), ['#ff8800', '#ffffff']);
   assert.equal(handles[1].id, 7);
+  const dynamic = getPivotHandles(geometry([b]), {attaching: true, showUnselected: false});
+  assert.deepEqual(dynamic.map(h => h.color), ['#ff8800', '#ff0000']);
 });
 
 test('padded node picking chooses the nearest node and keeps painter order for ties', () => {

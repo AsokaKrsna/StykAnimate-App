@@ -3233,7 +3233,9 @@ overlay.addEventListener("dblclick", guarded((event) => {
   const hit = pick(worldPoint(event));
   if (!hit || isHidden(hit.uid) || isLocked(hit.uid)) return;
   event.preventDefault();
-  if (hit.joint < 0 || hit.action === 'select') {
+  // Static and dynamic nodes both select their branch; bodies and origins
+  // select the connected group.
+  if (hit.joint < 0) {
     state.builderBranch = false;
     editor.selectConnected(hit.uid, {add: event.shiftKey, candidates: editor.selectionFrame.objects
       .filter(o => !isHidden(o.unique_id) && !isLocked(o.unique_id)).map(o => o.unique_id)});

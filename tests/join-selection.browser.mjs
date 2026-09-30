@@ -62,9 +62,9 @@ try {
     await page.keyboard.down('Shift'); await click(101, 3); await page.keyboard.up('Shift');
     check(`${mode}: Shift-click static node adds a figure`, await page.evaluate(() => styk.editor.selectedUids.size === 2));
     await page.keyboard.press('j'); check(`${mode}: ambiguous multi-selection does not start joining`, await page.evaluate(() => styk.state.tool === 'select'));
-    await page.evaluate(() => {styk.editor.select(707); styk.editor.joinTo(101, 3); styk.editor.select(909);});
+    await page.evaluate(() => {styk.editor.select(707); styk.editor.joinTo(101, 4); styk.editor.select(909);});
     p = await point(101, 3); await page.mouse.dblclick(p.x, p.y); await settle();
-    check(`${mode}: static-node double-click selects the connected figures`, await page.evaluate(() => styk.editor.selectedUids.has(101) && styk.editor.selectedUids.has(707) && !styk.editor.selectedUids.has(909) && styk.editor.selectedJoint === -1));
+    check(`${mode}: static-node double-click selects its branch with attachments`, await page.evaluate(() => styk.editor.branchSelected && styk.editor.selectedUid === 101 && styk.editor.selectedJoint === 3 && styk.editor.selectedUids.has(707) && !styk.editor.selectedUids.has(909)));
   }
   await fixture();
   await page.locator('#inspector [data-action="join-figure"]').click();

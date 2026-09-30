@@ -6,8 +6,8 @@ owning figure. An independently selected group of multiple figures is ambiguous
 and disables this action. A branch selection may include attached descendants;
 the action still operates only on the branch's owning figure.
 
-An unjoined figure enters parent-handle picking. Eligible handles appear white,
-including static handles. The source and its descendants are excluded to prevent
+An unjoined figure enters parent-handle picking. Eligible dynamic handles appear
+red (origins orange) and eligible static handles white. The source and its descendants are excluded to prevent
 cycles. Hidden and locked figures cannot be sources or targets. Clicking a target
 attaches the source's origin; unjoining retains its visible position. Each edit
 is one undo step, including an enabled timeline range. Escape or a second J
@@ -16,8 +16,8 @@ stale gestures. Text inputs and the figure builder do not dispatch this command.
 
 Clicking a hidden static endpoint selects its figure/node without moving its pose
 or recording history. Shift-click toggles figure membership. Double-click on a
-static endpoint selects its connected group, using the app's existing connected
-selection rules. Dynamic-node double-click retains branch selection. Normal
+static or dynamic node selects its branch, including figures joined to it;
+double-click on a body or origin selects the connected group. Normal
 visible handles take priority over hidden static targets. Static posing still
 requires the existing explicit editing tools; ordinary static-node dragging
 does not alter the pose.

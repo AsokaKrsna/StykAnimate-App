@@ -46,10 +46,12 @@ What's new in each version of StykAnimate.
 - Short hints tell you what to do next while joining figures, placing images, drawing shapes or using the Tweener.
 - A clearer What's new screen that matches the website.
 - New projects start with Blue, a simple 2D stick figure with balanced proportions and hand/foot IK for easy posing.
+- While joining figures, movable nodes are shown in red and static nodes in white.
 
 ### Fixed
 
 - Fixed selecting figures on the canvas while using the Tweener.
+- Double-clicking a static node now selects its branch, just like other nodes.
 - Fixed onion skins looking patchy where parts of a figure overlap.
 - Fixed Feedback sometimes opening on the wrong report type.
 - Fixed the timeline and effect list jumping while selecting several frames.

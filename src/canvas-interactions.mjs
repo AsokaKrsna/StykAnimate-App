@@ -153,7 +153,8 @@ export function getPivotHandles(geometry, {
       result.push({ g, uid, joint, id, kind, point, selected, joined, static: isStatic, ik,
         connector,
         action: spatial ? 'select' : kind === 'origin' ? 'move' : isStatic && !ik && !attaching && !allowStaticManipulation ? 'select' : 'pose',
-        color: attaching ? PIVOT_HANDLE_COLORS.joined : builder && isStatic && !joined && !builderSelection?.has(joint) ? '#999999'
+        // Join targets: dynamic nodes keep their pose colours, static nodes are white.
+        color: attaching ? isStatic ? PIVOT_HANDLE_COLORS.joined : kind === 'origin' ? PIVOT_HANDLE_COLORS.origin : PIVOT_HANDLE_COLORS.segment : builder && isStatic && !joined && !builderSelection?.has(joint) ? '#999999'
           : pivotHandleColor({ selected, nodeSelected: Boolean(builderSelection?.has(joint)), origin: kind === 'origin', joined, static: isStatic }),
         radius: screenRadius / scale, screenRadius });
     };
