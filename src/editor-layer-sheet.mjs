@@ -554,6 +554,8 @@ export const editorLayerSheetMethods={
     if(!this.getLayer(id))return false;this.setActiveLayer(id);this._sheetSelection={id,contents};
     if(contents)this._followSheetSelection();this._emit('selection',{sheetSelection:true});return true;
   },
+  /** Keep the current figure selection across seeks (Simple frame navigation). */
+  keepSelectionOnSeek(){if(this._sheetSelection?.contents)this._sheetSelection={...this._sheetSelection,contents:false};},
   _followSheetSelection(){
     const selection=this._sheetSelection;if(!selection?.contents||!this.report._styk.layerSheet)return;
     const objects=this.evaluatedFrame.objects.filter(o=>this.layerForUid(o.unique_id)===selection.id);

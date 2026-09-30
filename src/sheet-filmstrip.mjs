@@ -226,6 +226,8 @@ export class SheetFilmstrip {
     if (extend) this.selected = new Set(Array.from({length: Math.abs(index - this.anchor) + 1}, (_, i) => Math.min(index, this.anchor) + i));
     else { this.selected = new Set([index]); this.anchor = index; }
     this.onSeek?.();
+    // Frame navigation never changes which figures are selected.
+    this.editor.keepSelectionOnSeek?.();
     this.selecting = true;
     try { this.editor.seek(this.times[index]); } finally { this.selecting = false; }
     this.ensureVisible(index);

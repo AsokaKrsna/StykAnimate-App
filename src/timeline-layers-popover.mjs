@@ -43,8 +43,8 @@ export function createLayersPopover({anchor, editor, run, overlays = null, t = n
     button.addEventListener('click', () => run(action), {signal: events.signal});
     return button;
   };
-  footButton('plus', say('layers.newLayer'), () => editor.selectSheetLayer(editor.createLayer().id));
-  footButton('brush', say('layers.drawingLayer'), () => editor.selectSheetLayer(editor.createDrawingLayer().id));
+  footButton('plus', say('layers.newLayer'), () => editor.selectSheetLayer(editor.createLayer().id, {contents: false}));
+  footButton('brush', say('layers.drawingLayer'), () => editor.selectSheetLayer(editor.createDrawingLayer().id, {contents: false}));
 
   let changes = null;
   const popover = createPopover({
@@ -91,7 +91,7 @@ export function createLayersPopover({anchor, editor, run, overlays = null, t = n
       dot.style.setProperty('--dot', LAYER_COLORS[layer.color] ?? 'var(--sheet-layer)');
       element('span', pick, 'ui-list-row-label', layer.name);
       if (layer.drawing) pick.insertAdjacentHTML('beforeend', icon('brush', 'tl-layers-kind'));
-      pick.addEventListener('click', () => run(() => editor.selectSheetLayer(layer.id)));
+      pick.addEventListener('click', () => run(() => editor.selectSheetLayer(layer.id, {contents: false})));
       const actions = element('span', row, 'ui-list-row-actions');
       const hidden = layer.visible === false;
       iconButton(actions, hidden ? 'eye-off' : 'eye', say(hidden ? 'layers.show' : 'layers.hide', {name: layer.name}), hidden,
