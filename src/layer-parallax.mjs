@@ -1,3 +1,4 @@
+import {cameraTravelAt} from './camera-motion.mjs';
 /** Camera-relative translations; original geometry, topology and artwork stay immutable. */
 const zero=Object.freeze({x:0,y:0});
 export function validateCameraParallaxOffset(camera){const p=camera?._parallaxMotionOffset;if(p!==undefined&&(!p||![p.x,p.y].every(Number.isFinite)))throw new Error('Invalid baked camera parallax offset.');}
@@ -8,7 +9,8 @@ export function validateParallax(p){
 export function parallaxResolver(report,frame,cameraEnabled=true){
   const layers=report?._styk?.layers;
   if(!cameraEnabled||layers?.fixed?.camera?.visible===false||!layers)return ()=>zero;
-  const camera=frame?.camera?.is_default?{}:frame?.camera??{},impulse=camera._parallaxMotionOffset??zero,offsets=new Map();
+  // Follow moves the camera itself, so it drives depth like authored travel; shake-style impulses do not.
+  const travel=cameraTravelAt(report,frame),camera=travel?.is_default?{}:travel??{},impulse=camera._parallaxMotionOffset??zero,offsets=new Map();
   for(const id of layers.order){const p=layers.byId[id].parallax;if(p?.enabled)offsets.set(id,{x:(1-p.x)*((camera.x??0)-impulse.x-p.reference.x),y:(1-p.y)*((camera.y??0)-impulse.y-p.reference.y)});}
   if(!offsets.size)return ()=>zero;
   const objects=frame?.objects,roots=new Map(),rootUids=new Map();

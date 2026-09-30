@@ -9,12 +9,13 @@ try{
   await page.evaluate(()=>{const e=styk.editor;e.newDocument();e.addFigure();styk.settingsUI.commit({timelineMode:'advanced',onionCount:0});styk.state.onion=false;styk.fit();});
   await page.getByRole('button',{name:'Select layer Camera',exact:true}).click();
   await page.locator('[data-camera-tab="motion"]').click();
-  await page.locator('[data-motion-preset]').selectOption('impact');await page.locator('[data-motion-action="add"]').click();
+  await page.locator('[data-motion-add="impact"]').click();
   await page.waitForSelector('[data-motion-id]');
   check('Adding an impact creates a motion row and extends the shot',await page.evaluate(()=>styk.editor.getCameraMotions().length===1&&styk.editor.totalTicks===12&&styk.timeline.tracks[1].kind==='motion'));
-  const id=await page.evaluate(()=>styk.editor.getCameraMotions()[0].id),card=page.locator(`[data-motion-id="${id}"]`),field=card.locator('[data-motion-field="moveX"]');
+  const id=await page.evaluate(()=>styk.editor.getCameraMotions()[0].id),card=page.locator(`[data-motion-id="${id}"]`),field=card.locator('input[type="number"][data-motion-field="move"]');
   const before=await page.evaluate(()=>styk.editor._undo.length);await field.fill('32');
-  check('Motion fields preview without creating undo entries',await page.evaluate(n=>styk.editor.getCameraMotions()[0].params.moveX===32&&styk.editor._undo.length===n,before));
+  check('Motion fields preview without creating undo entries',await page.evaluate(n=>styk.editor.getCameraMotions()[0].params.moveX===32&&styk.editor.getCameraMotions()[0].params.moveY===32&&styk.editor._undo.length===n,before));
+  check('The intensity slider mirrors the typed value',await card.locator('input[type="range"][data-motion-field="move"]').inputValue()==='32');
   await field.press('Escape');await page.waitForTimeout(50);check('Escape restores the original motion',await page.evaluate(()=>styk.editor.getCameraMotions()[0].params.moveX===18));
   await field.fill('25');await field.press('Enter');await page.waitForTimeout(50);check('Enter commits one motion edit',await page.evaluate(n=>styk.editor.getCameraMotions()[0].params.moveX===25&&styk.editor._undo.length===n+1,before));
   await card.locator('[data-motion-action="duplicate"]').click();await page.waitForTimeout(60);

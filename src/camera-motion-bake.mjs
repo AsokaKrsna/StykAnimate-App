@@ -1,9 +1,20 @@
 import {evaluatedFrame,timeline} from './pivot/geometry.mjs';
-import {cameraAtTime} from './camera-motion.mjs';
+import {cameraAtTime,cameraTravelAt} from './camera-motion.mjs';
+import {followSamplingReport} from './camera-follow.mjs';
 import {sheetKeyAt} from './layer-sheet.mjs';
 import {autoKeyRange} from './keyframe-easing.mjs';
-/** Camera-only projection: never copy figure arrays, media or geometry to bake. */
+/** Camera projection for baking. Follow clips also need the figures they follow, and
+ * only those; other figures, media and geometry never reach the bake. */
 export function cameraSamplingReport(report){
+  const follows=(report._styk?.cameraMotion?.clips??[]).filter(c=>c.type==='follow'&&c.enabled);
+  if(follows.length){
+    const projection=followSamplingReport(report,[...new Set(follows.flatMap(c=>c.targets.map(t=>t.uid)))]);
+    const types=new Set([...projection.keyframes,...Object.values(projection._styk.frameSources??{})].flatMap(f=>f.objects.map(o=>o.figure_type_id)));
+    return {...projection,figure_types:report.figure_types.filter(f=>types.has(f.figure_type_id)),backgrounds:[],_styk:{...projection._styk,cameraMotion:report._styk.cameraMotion}};
+  }
+  return cameraOnlyReport(report);
+}
+function cameraOnlyReport(report){
   const frame=f=>({objects:[],camera:f.camera,duration_raw:f.duration_raw,_styk:{frameId:f._styk?.frameId,easing:f._styk?.easing}});
   const animation=a=>a?{...a,channels:a.channels.filter(c=>c.target.kind==='camera')}:undefined;
   const sheet=report._styk?.layerSheet,layers=report._styk?.layers;
@@ -32,10 +43,11 @@ export async function sampleMotionBake(report,{start,end,signal,onProgress}={}){
   for(let tick=sampleStart;tick<sampleEnd+Number(restore);tick++){
     if(signal?.aborted)throw new DOMException('Camera bake cancelled.','AbortError');
     while(index+1<rows.length&&rows[index+1].start<=tick)index++;
-    const row=rows[index],frame=evaluatedFrame(source,index,row.count?(tick-row.start)/row.count:0,tick),base=frame.camera?.is_default?{x:0,y:0,scale:1,angle_rad:0}:frame.camera??{x:0,y:0,scale:1,angle_rad:0},camera=tick>=start&&tick<end?(cameraAtTime(source,frame)??base):base;
-    // Keep the baked screen impulse separate from depth-driving camera travel.
+    const row=rows[index],frame=evaluatedFrame(source,index,row.count?(tick-row.start)/row.count:0,tick),base=frame.camera?.is_default?{x:0,y:0,scale:1,angle_rad:0}:frame.camera??{x:0,y:0,scale:1,angle_rad:0},inside=tick>=start&&tick<end;
+    const moved=inside?cameraTravelAt(source,frame):null,travel=moved&&!moved.is_default?moved:base,camera=inside?(cameraAtTime(source,frame)??base):base;
+    // Keep the baked screen impulse separate from depth-driving camera travel, which includes follow.
     const previous=base._parallaxMotionOffset??{x:0,y:0};
-    frames.push({tick,restore:tick===sampleEnd,camera:{...camera,is_default:false,_parallaxMotionOffset:{x:camera.x-base.x+previous.x,y:camera.y-base.y+previous.y}}});
+    frames.push({tick,restore:tick===sampleEnd,camera:{...camera,is_default:false,_parallaxMotionOffset:{x:camera.x-travel.x+previous.x,y:camera.y-travel.y+previous.y}}});
     if(performance.now()>=deadline){onProgress?.((tick-start+1)/(end-start));await new Promise(resolve=>setTimeout(resolve,0));deadline=performance.now()+6;}
   }
   return frames;

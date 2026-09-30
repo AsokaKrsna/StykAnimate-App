@@ -30,8 +30,9 @@ try{
   await page.evaluate(()=>{const e=styk.editor;e.newDocument();e.addFigure();styk.settingsUI.commit({timelineMode:'advanced',onionCount:0});styk.state.onion=false;styk.fit();});
   await page.getByRole('button',{name:'Select layer Camera',exact:true}).click();
   await page.locator('[data-camera-tab="motion"]').click();
-  await page.locator('[data-motion-preset]').selectOption('impact');
-  await page.locator('[data-motion-action="add"]').click();
+  await page.locator('[data-motion-add="impact"]').click();
+  // Exact per-axis values live under Fine tune.
+  await page.locator('.motion-advanced > summary').click();
   await field('motion_moveX').waitFor();
 
   let before=await snapshot(),p=await begin('motion_moveX');
@@ -66,15 +67,16 @@ try{
   check('Cancelled drag releases capture and cursor',await page.evaluate(()=>!document.body.classList.contains('styk-property-scrubbing')&&!document.querySelector('#inspector').hasPointerCapture(1)));
   await drag('motion_moveX',-100);
   check('Motion drag clamps at the parameter bound',(await snapshot()).clip.params.moveX===0);
-  await drag('motion_roll',10,'Shift');
-  check('Rotation supports fractional fine adjustment',near((await snapshot()).clip.params.roll,1.6));
-  await drag('motion_zoom',10,'Alt');
-  check('Zoom scrubs in percentage units',near((await snapshot()).clip.params.zoom,.041));
+  // Rotation and Zoom are sliders; their keyboard steps commit in field units.
+  let undo=(await snapshot()).undo;await page.locator('input[type="range"][data-motion-field="roll"]').focus();await page.keyboard.press('ArrowRight');
+  check('The rotation slider steps in tenths of a degree',near((await snapshot()).clip.params.roll,1.6)&&(await snapshot()).undo===undo+1);
+  await page.locator('input[type="range"][data-motion-field="zoom"]').focus();await page.keyboard.press('ArrowRight');
+  check('The zoom slider steps in percentage units',near((await snapshot()).clip.params.zoom,.05));
+  check('A slider and its typed value agree',Number(await page.locator('input[type="number"][data-motion-field="zoom"]').inputValue())===5);
   await drag('motion_duration',16,'Shift');
   check('Timing stays in whole frames with fine adjustment',(await snapshot()).clip.duration===14);
   await drag('motion_start',5);
   check('Start retains the one-based inspector offset',(await snapshot()).clip.start===5&&Number(await field('motion_start').inputValue())===6);
-  await page.locator('.motion-advanced summary').click();
   await drag('motion_fadeIn',25,'Shift');
   check('Fade dragging stays in whole frames',(await snapshot()).clip.params.fadeIn===3);
   await drag('motion_frequency',10,'Shift');

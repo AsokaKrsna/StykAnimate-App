@@ -4123,6 +4123,7 @@ overlay.addEventListener(
       ["mirror", "flip", "Flip horizontally", "Shift H"],
       ["mirror-vertical", "flip-vertical", "Flip vertically", "Shift V"],
       joinMenuItem(),
+      ["camera-follow", "camera", "Follow with camera", "", Boolean(builderMode?.active)],
       ...(joint ? [["segment-values", "sliders", "Exact values…", "I"]] : []),
       ["selection-more", "more", "More figure actions…"],
       ...(!builderMode?.active && !editor.figure?._styk?.movieclip ? [
@@ -4200,6 +4201,18 @@ function toggleFigureJoin() {
 }
 const actions = {
   'join-figure': toggleFigureJoin,
+  /** A follow clip for the selected figures from the playhead, opened in Camera → Motion. */
+  'camera-follow': () => {
+    if (builderMode?.active) return toast("Finish the figure or return to Animate to follow it.");
+    if (!selection().size) return toast("Select the figures the camera should follow.");
+    pause(); finishCurrentEdit();
+    editor._selectedCameraMotion = editor.addCameraMotion('follow');
+    editor._cameraInspectorTab = 'motion'; editor._cameraMotionAdding = false;
+    state.selectedTrackId = 'camera'; state.inspectorContext = 'camera'; state.inspectorTab = 'design';
+    if (!state.settings.showCamera) editorSettings?.commit({ showCamera: true });
+    status(selection().size > 1 ? 'The camera follows the selected figures' : 'The camera follows this figure');
+    queueUI(); requestRender();
+  },
   'rig-connect':()=>beginRigAnchorPick(),
   'rig-weighted':()=>{const s=editor.figure?.segments[editor.selectedJoint];if(s)editor.addWeightedJoint(s.parent_id,[{joint:s.segment_id,weight:.5}]);},
   'rig-pick-start':()=>beginRigAnchorPick('start'),

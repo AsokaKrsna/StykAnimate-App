@@ -1,5 +1,6 @@
 import {prepareCameraBake} from './camera-motion-bake-client.mjs';
 import {createCameraMotion,validateCameraMotion} from './camera-motion.mjs';
+import {FOLLOW_FRAME_LIMIT} from './camera-follow.mjs';
 import {validateParallax} from './layer-parallax.mjs';
 
 const empty=Object.freeze({version:1,clips:Object.freeze([])});
@@ -30,12 +31,19 @@ export const editorCameraMotionMethods={
   getCameraMotions(){return this.report._styk.cameraMotion?.clips??empty.clips;},
   copyCameraMotion(id){const clip=this.getCameraMotions().find(c=>c.id===id);if(!clip)return false;this._cameraMotionClipboard=structuredClone(clip);return true;},
   pasteCameraMotion(start=Math.floor(this.tick)){const clip=this._cameraMotionClipboard;if(!clip)throw new Error('Copy a camera motion clip first.');const next={...clip,id:`motion-${crypto.randomUUID()}`,start,...shiftedRanges(clip,start)};publish(this,{version:1,clips:[...this.getCameraMotions(),next]},'Paste camera motion');this._selectedCameraMotion=next.id;return next.id;},
-  addCameraMotion(type,{start=Math.floor(this.tick),duration=type==='impact'?12:24}={}){
-    const id=`motion-${crypto.randomUUID()}`,clip=createCameraMotion(type,id,start,duration);
+  /** Follow defaults to the selected figures from the playhead to the end of the animation. */
+  addCameraMotion(type,{start=Math.floor(this.tick),duration,targets}={}){
+    if(type==='follow'){
+      targets??=[...this.selectedUids].map(uid=>({uid,weight:1}));
+      if(!targets.length)throw new Error('Select the figures the camera should follow.');
+      duration??=Math.min(FOLLOW_FRAME_LIMIT,Math.max(24,this.totalTicks-start));
+    }
+    duration??=type==='impact'?12:24;
+    const id=`motion-${crypto.randomUUID()}`,clip=createCameraMotion(type,id,start,duration,{targets});
     publish(this,{version:1,clips:[...this.getCameraMotions(),clip]},'Add camera motion');return id;
   },
   setCameraMotion(id,patch){
-    if(Object.keys(patch).some(k=>!['start','duration','enabled','params'].includes(k)))throw new Error('Unsupported camera motion property.');
+    if(Object.keys(patch).some(k=>!['start','duration','enabled','params','targets'].includes(k)))throw new Error('Unsupported camera motion property.');
     const clips=this.getCameraMotions(),old=clips.find(c=>c.id===id);if(!old)throw new Error('Select a camera motion clip.');
     return publish(this,{version:1,clips:clips.map(c=>c!==old?c:{...c,...patch,...shiftedRanges(c,patch.start??c.start,patch.duration??c.duration),params:{...c.params,...patch.params}})},'Edit camera motion');
   },

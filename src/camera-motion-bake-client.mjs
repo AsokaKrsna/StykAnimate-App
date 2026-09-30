@@ -1,8 +1,8 @@
 import {documentChunks} from './document-transport.mjs';
 import {cameraSamplingReport,sampleMotionBake} from './camera-motion-bake.mjs';
 const abort=()=>new DOMException('Camera bake cancelled.','AbortError');
-/** One short-lived worker, acknowledged camera-only snapshot chunks, one bounded
- * typed result. No figures, artwork or media cross this boundary. */
+/** One short-lived worker, acknowledged camera snapshot chunks, one bounded typed
+ * result. Only followed figures cross this boundary; other artwork and media do not. */
 export async function prepareCameraBake(report,options){
   if(typeof Worker==='undefined')return sampleMotionBake(report,options);
   const worker=new Worker(new URL('./camera-motion-bake-worker.mjs',import.meta.url),{type:'module'}),{signal}=options;

@@ -25,6 +25,7 @@ What's new in each version of StykAnimate.
 - A Canvas setting to choose whether pasted figures keep their original layering or appear in front.
 - Pinch with two fingers to zoom and pan the canvas on a touch screen.
 - Auto key in the Advanced timeline: turn it on (K) and every change you make adds a keyframe at the playhead.
+- Camera follow: right-click figures and choose Follow with camera to keep them in frame, with smooth catch-up, look ahead, a dead zone and auto zoom. Projects that use it need this version or newer.
 
 ### Changed
 
@@ -49,6 +50,7 @@ What's new in each version of StykAnimate.
 - A clearer What's new screen that matches the website.
 - New projects start with Blue, a simple 2D stick figure with balanced proportions and hand/foot IK for easy posing.
 - While joining figures, movable nodes are shown in red and static nodes in white.
+- A simpler Motion tab for camera moves, with a gallery that explains each preset and plain sliders for the settings that matter most.
 - Redesigned onion skin markers on the timeline: drag them straight to the frame you want, without catching the playhead. You can hide them in onion skin settings.
 
 ### Fixed

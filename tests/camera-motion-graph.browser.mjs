@@ -8,7 +8,7 @@ const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[],
 page.on('pageerror',e=>errors.push(e.stack));
 const check=(name,ok)=>{assert.ok(ok,name);checks.push(name);console.log('PASS',name);};
 const settle=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-const field=key=>page.locator(`[data-motion-field="${key}"]`);
+const field=key=>page.locator(`input[type="number"][data-motion-field="${key}"]`);
 const graph=page.locator('[data-motion-graph]');
 const curve=key=>graph.locator(`[data-motion-curve="${key}"]`);
 const points=key=>curve(key).getAttribute('points');
@@ -19,6 +19,7 @@ try{
   await curve('x').waitFor();
   check('Move shows separate X/Y curves with frame labels',await curve('y').count()===1&&await graph.locator('.motion-graph-axis').textContent().then(s=>s.includes('48')));
   let before=await state(),x=await points('x'),y=await points('y'),scale=await graph.locator('svg.motion-graph-plot').getAttribute('data-scale');
+  await page.locator('.motion-advanced > summary').click();
   await page.evaluate(()=>{window.retainedMotionInput=document.querySelector('[data-motion-field="moveX"]');});
   const label=page.locator('[data-property-row="motion_moveX"] [data-property-scrub]');await label.scrollIntoViewIfNeeded();
   const r=await label.boundingBox(),p={x:r.x+r.width/2,y:r.y+r.height/2};

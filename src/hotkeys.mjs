@@ -49,6 +49,7 @@ group('Animation', [
   ['first-frame', 'First frame', ['Home']], ['last-frame', 'Last frame', ['End']],
   ['toggle-loop', 'Toggle playback loop'], ['toggle-onion', 'Toggle onion skin', ['KeyO']],
   ['toggle-auto-key', 'Toggle auto key', ['KeyK']],
+  ['camera-follow', 'Follow selected figures with the camera'],
 ]);
 group('Timeline', [
   ['remove-frames', 'Remove frames', ['Shift+F5']],
