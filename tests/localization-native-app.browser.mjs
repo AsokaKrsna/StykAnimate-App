@@ -41,10 +41,11 @@ try {
   }));
   await page.locator('[data-setting=locale]').selectOption('ar');
   check('Arabic interface follows RTL while canvas and timeline coordinates remain left-to-right',await page.evaluate(()=>document.querySelector('.titlebar [data-action=save]').textContent.trim()==='حفظ'&&document.querySelector('[data-setting=locale]').getAttribute('aria-label')==='اللغة'&&getComputedStyle(document.documentElement).direction==='rtl'&&getComputedStyle(document.querySelector('#viewport')).direction==='ltr'&&getComputedStyle(document.querySelector('#timeline')).direction==='ltr'));
-  check('Partial modern captions remain explicit English fallback',await page.locator('[data-locale-coverage]').textContent()==='Some controls are still shown in English.');
+  check('Settings shows the coverage notice only for incomplete messages or plurals',await page.evaluate(()=>
+    Boolean(document.querySelector('[data-locale-coverage]'))===styk.localization.localization.hasFallback));
   await page.screenshot({path:path.join(output,'arabic-root-settings.png')});
   await page.locator('[data-setting=locale]').selectOption('he');
-  check('Hebrew uses supplied Unicode Save text without altering document geometry',await page.evaluate(()=>document.querySelector('.titlebar [data-action=save]').textContent.trim()==='שמור'&&styk.editor.object.root_x===325.125));
+  check('Hebrew uses the reviewed Unicode Save caption without altering document geometry',await page.evaluate(()=>document.querySelector('.titlebar [data-action=save]').textContent.trim()==='שמירה'&&styk.editor.object.root_x===325.125));
   await page.locator('[data-setting=locale]').selectOption('zh-Hans');
   check('Chinese project Save/Open use animation captions rather than Builder asset captions',await page.evaluate(()=>document.querySelector('.titlebar [data-action=save]').textContent.trim()==='保存动画'&&styk.localization.t('menu.openProject')==='打开动画'));
   await page.setViewportSize({width:760,height:700});
@@ -59,7 +60,7 @@ try {
   await page.locator('[data-setting=locale]').selectOption('en');
   await page.evaluate(()=>styk.settingsUI.flush());
   check('Native language flow has no uncaught browser errors',errors.length===0);
-  await writeFile(path.join(output,'report.json'),JSON.stringify({checks,errors,scope:'Actual root editor Settings and chrome with all 27 supplied language IDs; exact model/history preservation, Arabic browser reload, native Unicode captions and compact Chinese layout. Partial app text and LTR shell. Native desktop locale restart is separate.'},null,2));
+  await writeFile(path.join(output,'report.json'),JSON.stringify({checks,errors,scope:'Actual root editor Settings and chrome with all 27 supplied language IDs; exact model/history preservation, Arabic browser reload, Unicode captions and compact Chinese layout. Native desktop locale restart is separate.'},null,2));
 } catch(error) {
   await page.screenshot({path:path.join(output,'failure.png')});
   await writeFile(path.join(output,'report.json'),JSON.stringify({checks,errors,failure:error.message},null,2));

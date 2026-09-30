@@ -3,7 +3,7 @@
 English is the default. Settings → Interface → Language persists through the
 existing editor preference service. The browser, touch interface and Electron
 menus use the same catalog and fallback rules. Existing translations are preserved;
-new English extraction does not claim complete translations of any language.
+Arabic, German, French, Hebrew and Italian now contain every English message and required plural form. The remaining packs are being completed in reviewed batches; current coverage and review status are recorded in [LOCALIZATION-REVIEW.md](LOCALIZATION-REVIEW.md).
 
 ## Ownership and lookup
 
@@ -26,7 +26,8 @@ workflow and integration ownership.
 Lookup selects the requested key and, for plurals, the locale's CLDR category.
 Absent messages or categories use English and English plural rules; unknown keys
 remain visible as keys. Deliberate English fallback is reported in validation and
-explained in Settings. Exact BCP-47 IDs and explicit aliases take precedence.
+explained in Settings when the selected pack has missing messages or plural forms.
+Complete packs do not show the partial-language notice. Exact BCP-47 IDs and explicit aliases take precedence.
 Generic language packs can serve regions, script packs serve only that script,
 and regional packs require deliberate aliases. `zh-Hant`, `pt-PT` and `nn` do not
 silently become Simplified Chinese, Brazilian Portuguese or Bokmål.

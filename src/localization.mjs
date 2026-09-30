@@ -45,6 +45,18 @@ export class Localization {
 
   get direction() { return this.pseudo === 'rtl' ? 'rtl' : SUPPORTED_LOCALES.find(item => item.id === this.locale).direction; }
 
+  /** Coverage describes missing messages/forms, not translation quality. */
+  get hasFallback() {
+    if (this.locale === DEFAULT_LOCALE) return false;
+    const catalog = catalogs[this.locale];
+    const categories = this.formatter('plural').resolvedOptions().pluralCategories;
+    for (const key in english) {
+      if (!owns(catalog, key)) return true;
+      if (typeof english[key] !== 'string' && categories.some(category => !owns(catalog[key], category))) return true;
+    }
+    return false;
+  }
+
   /** Development-only layout stress, never a persisted production language. */
   setPseudo(pseudo = null) {
     if (![null, 'long', 'rtl'].includes(pseudo)) throw new RangeError('Unknown pseudolocalization mode.');

@@ -16,7 +16,6 @@ test('all 27 native languages resolve, are distinct and preserve readable source
     assert.equal(locale.locale,item.id);
     assert.equal(locale.direction,['ar','he'].includes(item.id)?'rtl':'ltr');
     assert.ok(locale.t('common.save').length);
-    assert.equal(locale.t('diagnostics.renderer'),'Renderer');
     assert.ok(Object.isFrozen(catalogs[item.id]));
     for (const [key,value] of Object.entries(catalogs[item.id])) {
       assert.ok(Object.hasOwn(english,key),`${item.id}:${key}`);
@@ -35,8 +34,8 @@ test('regional language normalization preserves supplied variants without claimi
   for (const input of ['zh-Hant','zh-TW','zh-HK','zh-Latn','pt-PT','nn-NO','ja']) assert.equal(normalizeLocale(input),'en',input);
 });
 
-test('known native translation defects fall back instead of showing a false command', () => {
-  assert.equal(new Localization({locale:'pt-BR'}).t('common.cancel'),'Cancel');
+test('known native translation defects are excluded from imported provenance', () => {
+  assert.equal(Object.hasOwn(catalogs['pt-BR'], 'common.cancel'), false);
   assert.equal(new Localization({locale:'it'}).t('common.cancel'),'Annulla');
   assert.equal(new Localization({locale:'zh-Hans'}).t('chrome.open'),'打开动画');
 });

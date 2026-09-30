@@ -193,7 +193,7 @@ export function createExportFlow(ctx) {
     if (saved) {
       status(interfaceText("exportFlow.exported2", {format: format}));
       toast(
-        interfaceText("exportFlow.yourWasExportedAs", {value: ["stk", "stkz", "stykmov"].includes(format) ? "figure" : "animation", format: format}),
+        interfaceText(["stk", "stkz", "stykmov"].includes(format) ? "exportFlow.figureExportedAs" : "exportFlow.animationExportedAs", {format}),
       );
     }
     sheet?.close();

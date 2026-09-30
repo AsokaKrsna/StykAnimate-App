@@ -1,4 +1,8 @@
 export default Object.freeze({
+  "vfxPresetUi.animatedSummary": {
+    "one": "{summary} · animated",
+    "other": "{summary} · animated"
+  },
   "vfxPresetUi.presetActions": "{name} preset actions",
   "vfxPresetUi.saveAnEffectYouLikeWith": "Save an effect you like with",
   "vfxPresetUi.saveAsPreset": "Save as preset",

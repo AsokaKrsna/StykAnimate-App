@@ -480,7 +480,7 @@ function sceneBackground() {
   const frame = editor.frame, background = editor.report.backgrounds?.find((item) => item.background_id === frame?.background_id);
   const override = frame?._stykBackgroundColor;
   const paint = backgroundPaint(override === undefined ? background : { kind: 2, color: override });
-  return { css: paintCSS(paint), label: paint.type === "solid" ? hexColor(paint.stops[0].color).toUpperCase() : interfaceText('app.valueValue1Gradient', {value: paint.type[0].toUpperCase(), value1: paint.type.slice(1)}) };
+  return { css: paintCSS(paint), label: paint.type === "solid" ? hexColor(paint.stops[0].color).toUpperCase() : interfaceText('app.valueValue1Gradient', {value: {messageKey: 'colorPicker.' + paint.type}, value1: ''}) };
 }
 /** The stage header (experience.md §4.2-4.4): the crumb or scope path, the workspace's view toggles and their states, a mode's message. */
 function syncStageHead() {

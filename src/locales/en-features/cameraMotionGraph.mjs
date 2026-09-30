@@ -1,4 +1,5 @@
 export default Object.freeze({
+  "cameraMotionGraph.inFramesToMuted": "{label} in {unit}, frames {value} to {value2}, muted",
   "cameraMotionGraph.move": "Move",
   "cameraMotionGraph.roll": "Roll",
   "cameraMotionGraph.zoom": "Zoom",

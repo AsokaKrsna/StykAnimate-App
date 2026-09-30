@@ -7,8 +7,8 @@ import {sampleFollow} from './camera-follow.mjs';
 import {evaluationGeneration} from './pivot/geometry.mjs';
 import {icon} from './icons.mjs';
 
-const VIEWS={move:{label:interfaceText("cameraMotionGraph.move"), labelKey: "cameraMotionGraph.move",unit:'px',keys:['x','y']},roll:{label:interfaceText("cameraMotionGraph.roll"), labelKey: "cameraMotionGraph.roll",unit:'°',keys:['roll']},zoom:{label:interfaceText("cameraMotionGraph.zoom"), labelKey: "cameraMotionGraph.zoom",unit:'%',keys:['zoom']}};
-const LABELS={x:'X',y:'Y',roll:interfaceText("cameraMotionGraph.roll"),zoom:interfaceText("cameraMotionGraph.zoom")};
+const VIEWS={move:{labelKey: "cameraMotionGraph.move",unit:'px',keys:['x','y']},roll:{labelKey: "cameraMotionGraph.roll",unit:'°',keys:['roll']},zoom:{labelKey: "cameraMotionGraph.zoom",unit:'%',keys:['zoom']}};
+const LABELS={x:'X',y:'Y',roll:'cameraMotionGraph.roll',zoom:'cameraMotionGraph.zoom'};
 const CHANNELS=Object.keys(LABELS);
 const LEFT=36,RIGHT=252,TOP=10,BOTTOM=100,ZERO=(TOP+BOTTOM)/2;
 const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
@@ -41,7 +41,7 @@ export function motionGraphScale(peak){
   return [1,2,2.5,5,10].find(n=>n>=fraction)*base;
 }
 export function motionGraphView(){
-  return `<div class="motion-graph" data-motion-graph data-inspector-owned="camera-motion-graph"><div class="motion-graph-toolbar"><div class="motion-graph-tabs ui-segmented" data-size="sm" role="group" aria-label="Motion curve channel" data-i18n-aria-label="cameraMotionGraph.motionCurveChannel">${Object.entries(VIEWS).map(([key,v])=>`<button type="button" class="ui-segmented-item" data-motion-graph-channel="${key}" aria-pressed="false"${descriptorAttributes(v, "label")}>${v.label}</button>`).join('')}</div><button type="button" class="ui-icon-button" data-size="sm" data-motion-graph-fit title="Fit curve" aria-label="Fit curve" data-i18n-title="cameraMotionGraph.fitCurve" data-i18n-aria-label="cameraMotionGraph.fitCurve">${icon('center')}</button></div><svg class="motion-graph-plot" viewBox="0 0 260 124" role="img" aria-label="Camera motion by frame"></svg><div class="motion-graph-readout"></div></div>`;
+  return `<div class="motion-graph" data-motion-graph data-inspector-owned="camera-motion-graph"><div class="motion-graph-toolbar"><div class="motion-graph-tabs ui-segmented" data-size="sm" role="group" aria-label="Motion curve channel" data-i18n-aria-label="cameraMotionGraph.motionCurveChannel">${Object.entries(VIEWS).map(([key,v])=>`<button type="button" class="ui-segmented-item" data-motion-graph-channel="${key}" aria-pressed="false"${descriptorAttributes(v, "label")}>${interfaceText(v.labelKey)}</button>`).join('')}</div><button type="button" class="ui-icon-button" data-size="sm" data-motion-graph-fit title="Fit curve" aria-label="Fit curve" data-i18n-title="cameraMotionGraph.fitCurve" data-i18n-aria-label="cameraMotionGraph.fitCurve">${icon('center')}</button></div><svg class="motion-graph-plot" viewBox="0 0 260 124" role="img" aria-label="Camera motion by frame"></svg><div class="motion-graph-readout"></div></div>`;
 }
 
 /** The graph patches its own SVG; inspector inputs and their pointer capture stay
@@ -104,11 +104,11 @@ export class CameraMotionGraph{
     for(const button of node.querySelectorAll('[data-motion-graph-channel]'))button.setAttribute('aria-pressed',String(button.dataset.motionGraphChannel===channel));
     const duration=Math.max(1,plot.span),fadeIn=xAt(Math.min(1,clip.params.fadeIn/duration)),fadeOut=xAt(clamp((clip.duration-clip.params.fadeOut)/duration,0,1));
     const svg=node.querySelector('svg.motion-graph-plot');
-    localizedAttribute(svg, 'aria-label', "cameraMotionGraph.inFramesTo", {label: view.label, unit: view.unit, value: clip.start+1, value2: clip.start+clip.duration, value3: clip.enabled?'':', muted'});
+    localizedAttribute(svg, 'aria-label', clip.enabled?'cameraMotionGraph.inFramesTo':'cameraMotionGraph.inFramesToMuted', {label:{messageKey:view.labelKey},unit:view.unit,value:clip.start+1,value2:clip.start+clip.duration,value3:''});
     svg.dataset.scale=String(scale);
     const lines=view.keys.map(key=>`<polyline data-motion-curve="${key}" class="motion-graph-line motion-series-${key}" points="${plot.channels[key].map((value,i)=>`${number(xAt(i/plot.count))},${number(yAt(value,scale))}`).join(' ')}"/>`).join('');
     localizedMarkup(svg, `<g class="motion-graph-fades"><rect x="${LEFT}" y="${TOP}" width="${fadeIn-LEFT}" height="${BOTTOM-TOP}"><title>${messageHTML("cameraMotionGraph.fadeInFrames", {fadeIn: clip.params.fadeIn})}</title></rect><rect x="${fadeOut}" y="${TOP}" width="${RIGHT-fadeOut}" height="${BOTTOM-TOP}"><title>${messageHTML("cameraMotionGraph.fadeOutFrames", {fadeOut: clip.params.fadeOut})}</title></rect></g><path class="motion-graph-grid" d="M${LEFT} ${TOP}H${RIGHT}M${LEFT} ${BOTTOM}H${RIGHT}M${xAt(.5)} ${TOP}V${BOTTOM}"/><path class="motion-graph-zero" d="M${LEFT} ${ZERO}H${RIGHT}"/><g class="motion-graph-axis"><text x="30" y="${TOP+3}" text-anchor="end">${axisLabel(scale)}</text><text x="30" y="${ZERO+3}" text-anchor="end">0</text><text x="30" y="${BOTTOM+3}" text-anchor="end">${axisLabel(-scale)}</text><text x="${LEFT}" y="118">${clip.start+1}</text><text x="${xAt(.5)}" y="118" text-anchor="middle">${number(clip.start+1+plot.span/2)}</text><text x="${RIGHT}" y="118" text-anchor="end">${clip.start+clip.duration}</text></g>${lines}<g data-motion-graph-cursor><path class="motion-graph-cursor-line"/><g>${view.keys.map(key=>`<circle class="motion-graph-dot motion-series-${key}" data-motion-dot="${key}" r="3"/>`).join('')}</g></g>`);
-    localizedMarkup(node.querySelector('.motion-graph-readout'), `<span data-motion-graph-frame></span>${view.keys.map(key=>`<span class="motion-graph-value motion-series-${key}"><i></i>${LABELS[key]} <output data-motion-value="${key}"></output></span>`).join('')}${!clip.enabled?`<span class="motion-graph-muted" data-i18n="cameraMotionGraph.muted">${messageHTML("cameraMotionGraph.muted", {})}</span>`:''}`);
+    localizedMarkup(node.querySelector('.motion-graph-readout'), `<span data-motion-graph-frame></span>${view.keys.map(key=>`<span class="motion-graph-value motion-series-${key}"><i></i>${key==='x'||key==='y'?LABELS[key]:messageHTML(LABELS[key])} <output data-motion-value="${key}"></output></span>`).join('')}${!clip.enabled?`<span class="motion-graph-muted" data-i18n="cameraMotionGraph.muted">${messageHTML("cameraMotionGraph.muted", {})}</span>`:''}`);
     this.cursor=node.querySelector('[data-motion-graph-cursor]');
     this.cursorSignature=null;
   }

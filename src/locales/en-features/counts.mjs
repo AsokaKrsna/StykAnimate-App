@@ -1,4 +1,8 @@
 export default Object.freeze({
+  "counts.effects": {
+    "one": "{count} effect",
+    "other": "{count} effects"
+  },
   "counts.frames": {
     "one": "{count} frame",
     "other": "{count} frames"

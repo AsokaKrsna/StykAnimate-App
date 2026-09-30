@@ -1419,7 +1419,7 @@
     "locations": [
       "src/app.mjs:483"
     ],
-    "context": "return { css: paintCSS(paint), label: paint.type === \"solid\" ? hexColor(paint.stops[0].color).toUpperCase() : interfaceText('app.valueValue1Gradient', {value: p"
+    "context": "return { css: paintCSS(paint), label: paint.type === \"solid\" ? hexColor(paint.stops[0].color).toUpperCase() : interfaceText('app.valueValue1Gradient', {value: {"
   },
   "app.wand": {
     "locations": [
@@ -2211,7 +2211,7 @@
     "locations": [
       "src/audio-timeline.mjs:174"
     ],
-    "context": "if (this.launcher) { this.launcher.dataset.hasAudio = String(state.tracks.some(track => track.clips.length)); localizedAttribute(this.launcher, \"title\", \"audioT"
+    "context": "if (this.launcher) { this.launcher.dataset.hasAudio = String(state.tracks.some(track => track.clips.length)); localizedAttribute(this.launcher, 'title', state.t"
   },
   "audioTimeline.audio2": {
     "locations": [
@@ -2284,6 +2284,12 @@
       "src/audio-timeline.mjs:234"
     ],
     "context": "label = el('div', this.labelColumn, 'audio-track'); label.events = new AbortController(); label.dataset.track = track.id; const name = el('input', label, 'audio"
+  },
+  "audioTimeline.audioWithTracks": {
+    "locations": [
+      "src/audio-timeline.mjs:174"
+    ],
+    "context": "if (this.launcher) { this.launcher.dataset.hasAudio = String(state.tracks.some(track => track.clips.length)); localizedAttribute(this.launcher, 'title', state.t"
   },
   "audioTimeline.cancel": {
     "locations": [
@@ -2475,7 +2481,7 @@
     "locations": [
       "src/audio-timeline.mjs:174"
     ],
-    "context": "if (this.launcher) { this.launcher.dataset.hasAudio = String(state.tracks.some(track => track.clips.length)); localizedAttribute(this.launcher, \"title\", \"audioT"
+    "context": "if (this.launcher) { this.launcher.dataset.hasAudio = String(state.tracks.some(track => track.clips.length)); localizedAttribute(this.launcher, 'title', state.t"
   },
   "audioTimeline.importAudio": {
     "locations": [
@@ -2614,7 +2620,7 @@
     "locations": [
       "src/audio-timeline.mjs:174"
     ],
-    "context": "if (this.launcher) { this.launcher.dataset.hasAudio = String(state.tracks.some(track => track.clips.length)); localizedAttribute(this.launcher, \"title\", \"audioT"
+    "context": "if (this.launcher) { this.launcher.dataset.hasAudio = String(state.tracks.some(track => track.clips.length)); localizedAttribute(this.launcher, 'title', state.t"
   },
   "audioTimeline.solo": {
     "locations": [
@@ -3307,19 +3313,19 @@
     "locations": [
       "src/builder-outliner.mjs:43"
     ],
-    "context": "const KIND_LABEL = {line: interfaceText(\"builderOutliner.line\"), squareLine: interfaceText(\"builderOutliner.squareLine\"), circle: interfaceText(\"builderOutliner"
+    "context": "const KIND_LABEL = {line: 'builderOutliner.line', squareLine: 'builderOutliner.squareLine', circle: 'builderOutliner.circle', circleFill: 'builderOutliner.circl"
   },
   "builderOutliner.circleFill": {
     "locations": [
       "src/builder-outliner.mjs:43"
     ],
-    "context": "const KIND_LABEL = {line: interfaceText(\"builderOutliner.line\"), squareLine: interfaceText(\"builderOutliner.squareLine\"), circle: interfaceText(\"builderOutliner"
+    "context": "const KIND_LABEL = {line: 'builderOutliner.line', squareLine: 'builderOutliner.squareLine', circle: 'builderOutliner.circle', circleFill: 'builderOutliner.circl"
   },
   "builderOutliner.circleOutline": {
     "locations": [
       "src/builder-outliner.mjs:43"
     ],
-    "context": "const KIND_LABEL = {line: interfaceText(\"builderOutliner.line\"), squareLine: interfaceText(\"builderOutliner.squareLine\"), circle: interfaceText(\"builderOutliner"
+    "context": "const KIND_LABEL = {line: 'builderOutliner.line', squareLine: 'builderOutliner.squareLine', circle: 'builderOutliner.circle', circleFill: 'builderOutliner.circl"
   },
   "builderOutliner.connectorSlidingAttachmentJoint": {
     "locations": [
@@ -3380,13 +3386,13 @@
     "locations": [
       "src/builder-outliner.mjs:43"
     ],
-    "context": "const KIND_LABEL = {line: interfaceText(\"builderOutliner.line\"), squareLine: interfaceText(\"builderOutliner.squareLine\"), circle: interfaceText(\"builderOutliner"
+    "context": "const KIND_LABEL = {line: 'builderOutliner.line', squareLine: 'builderOutliner.squareLine', circle: 'builderOutliner.circle', circleFill: 'builderOutliner.circl"
   },
   "builderOutliner.line": {
     "locations": [
       "src/builder-outliner.mjs:43"
     ],
-    "context": "const KIND_LABEL = {line: interfaceText(\"builderOutliner.line\"), squareLine: interfaceText(\"builderOutliner.squareLine\"), circle: interfaceText(\"builderOutliner"
+    "context": "const KIND_LABEL = {line: 'builderOutliner.line', squareLine: 'builderOutliner.squareLine', circle: 'builderOutliner.circle', circleFill: 'builderOutliner.circl"
   },
   "builderOutliner.newFigure": {
     "locations": [
@@ -3422,7 +3428,7 @@
     "locations": [
       "src/builder-outliner.mjs:51"
     ],
-    "context": "export const partName = segment => segment.name || `${KIND_LABEL[segmentKind(segment)] ?? interfaceText(\"builderOutliner.segment\")} ${segment.segment_id}`;"
+    "context": "export const partName = segment => segment.name || `${interfaceText(KIND_LABEL[segmentKind(segment)] ?? 'builderOutliner.segment')} ${segment.segment_id}`;"
   },
   "builderOutliner.showAnimationTimeline": {
     "locations": [
@@ -3458,7 +3464,7 @@
     "locations": [
       "src/builder-outliner.mjs:43"
     ],
-    "context": "const KIND_LABEL = {line: interfaceText(\"builderOutliner.line\"), squareLine: interfaceText(\"builderOutliner.squareLine\"), circle: interfaceText(\"builderOutliner"
+    "context": "const KIND_LABEL = {line: 'builderOutliner.line', squareLine: 'builderOutliner.squareLine', circle: 'builderOutliner.circle', circleFill: 'builderOutliner.circl"
   },
   "builderOutliner.staticJoint": {
     "locations": [
@@ -3476,13 +3482,7 @@
     "locations": [
       "src/builder-outliner.mjs:43"
     ],
-    "context": "const KIND_LABEL = {line: interfaceText(\"builderOutliner.line\"), squareLine: interfaceText(\"builderOutliner.squareLine\"), circle: interfaceText(\"builderOutliner"
-  },
-  "builderOutliner.text2": {
-    "locations": [
-      "src/builder-outliner.mjs:44"
-    ],
-    "context": "const KIND_ICON = {line: 'line', squareLine: 'square', circle: 'circle', circleFill: 'circle', circleClear: 'circle', image: 'image', text: interfaceText('build"
+    "context": "const KIND_LABEL = {line: 'builderOutliner.line', squareLine: 'builderOutliner.squareLine', circle: 'builderOutliner.circle', circleFill: 'builderOutliner.circl"
   },
   "builderOutliner.timeline": {
     "locations": [
@@ -3646,7 +3646,13 @@
     "locations": [
       "src/camera-motion-graph.mjs:107"
     ],
-    "context": "localizedAttribute(svg, 'aria-label', \"cameraMotionGraph.inFramesTo\", {label: view.label, unit: view.unit, value: clip.start+1, value2: clip.start+clip.duration"
+    "context": "localizedAttribute(svg, 'aria-label', clip.enabled?'cameraMotionGraph.inFramesTo':'cameraMotionGraph.inFramesToMuted', {label:{messageKey:view.labelKey},unit:vi"
+  },
+  "cameraMotionGraph.inFramesToMuted": {
+    "locations": [
+      "src/camera-motion-graph.mjs:107"
+    ],
+    "context": "localizedAttribute(svg, 'aria-label', clip.enabled?'cameraMotionGraph.inFramesTo':'cameraMotionGraph.inFramesToMuted', {label:{messageKey:view.labelKey},unit:vi"
   },
   "cameraMotionGraph.motionCurveChannel": {
     "locations": [
@@ -3658,7 +3664,7 @@
     "locations": [
       "src/camera-motion-graph.mjs:10"
     ],
-    "context": "const VIEWS={move:{label:interfaceText(\"cameraMotionGraph.move\"), labelKey: \"cameraMotionGraph.move\",unit:'px',keys:['x','y']},roll:{label:interfaceText(\"camera"
+    "context": "const VIEWS={move:{labelKey: \"cameraMotionGraph.move\",unit:'px',keys:['x','y']},roll:{labelKey: \"cameraMotionGraph.roll\",unit:'°',keys:['roll']},zoom:{labelKey:"
   },
   "cameraMotionGraph.muted": {
     "locations": [
@@ -3669,16 +3675,17 @@
   "cameraMotionGraph.roll": {
     "locations": [
       "src/camera-motion-graph.mjs:10",
-      "src/camera-motion-graph.mjs:11"
+      "src/camera-motion-graph.mjs:11",
+      "src/camera-motion-localization.mjs:7"
     ],
-    "context": "const VIEWS={move:{label:interfaceText(\"cameraMotionGraph.move\"), labelKey: \"cameraMotionGraph.move\",unit:'px',keys:['x','y']},roll:{label:interfaceText(\"camera"
+    "context": "const VIEWS={move:{labelKey: \"cameraMotionGraph.move\",unit:'px',keys:['x','y']},roll:{labelKey: \"cameraMotionGraph.roll\",unit:'°',keys:['roll']},zoom:{labelKey:"
   },
   "cameraMotionGraph.zoom": {
     "locations": [
       "src/camera-motion-graph.mjs:10",
       "src/camera-motion-graph.mjs:11"
     ],
-    "context": "const VIEWS={move:{label:interfaceText(\"cameraMotionGraph.move\"), labelKey: \"cameraMotionGraph.move\",unit:'px',keys:['x','y']},roll:{label:interfaceText(\"camera"
+    "context": "const VIEWS={move:{labelKey: \"cameraMotionGraph.move\",unit:'px',keys:['x','y']},roll:{labelKey: \"cameraMotionGraph.roll\",unit:'°',keys:['roll']},zoom:{labelKey:"
   },
   "cameraMotionUi.across": {
     "locations": [
@@ -3712,9 +3719,9 @@
   },
   "cameraMotionUi.aGentleLivingDrift": {
     "locations": [
-      "src/camera-motion-ui.mjs:15"
+      "src/camera-motion-localization.mjs:16"
     ],
-    "context": "export const MOTION_DESCRIPTIONS=Object.freeze({follow:interfaceText(\"cameraMotionUi.keepsTheSelectedFiguresInFrame\"),shake:interfaceText(\"cameraMotionUi.aSudde"
+    "context": "handheld:'cameraMotionUi.aGentleLivingDrift',wobble:'cameraMotionUi.aSteadyRhythmicSway',"
   },
   "cameraMotionUi.allFrames": {
     "locations": [
@@ -3724,34 +3731,36 @@
   },
   "cameraMotionUi.amount": {
     "locations": [
+      "src/camera-motion-localization.mjs:7",
       "src/camera-motion-ui.mjs:50",
       "src/camera-motion-ui.mjs:65"
     ],
-    "context": "slider(clip,'strength',interfaceText(\"cameraMotionUi.amount\"),100,locked,interfaceText(\"cameraMotionUi.howStronglyTheCameraFollows\"), {label: {key: \"cameraMotio"
+    "context": "strength:'cameraMotionUi.amount',moveX:'cameraMotionUi.moveX',moveY:'cameraMotionUi.moveY',roll:'cameraMotionGraph.roll',"
   },
   "cameraMotionUi.aQuickPunchInAndOut": {
     "locations": [
-      "src/camera-motion-ui.mjs:15"
+      "src/camera-motion-localization.mjs:17"
     ],
-    "context": "export const MOTION_DESCRIPTIONS=Object.freeze({follow:interfaceText(\"cameraMotionUi.keepsTheSelectedFiguresInFrame\"),shake:interfaceText(\"cameraMotionUi.aSudde"
+    "context": "impact:'cameraMotionUi.oneHardHitThatSettles',pulse:'cameraMotionUi.aQuickPunchInAndOut',"
   },
   "cameraMotionUi.aSteadyRhythmicSway": {
     "locations": [
-      "src/camera-motion-ui.mjs:15"
+      "src/camera-motion-localization.mjs:16"
     ],
-    "context": "export const MOTION_DESCRIPTIONS=Object.freeze({follow:interfaceText(\"cameraMotionUi.keepsTheSelectedFiguresInFrame\"),shake:interfaceText(\"cameraMotionUi.aSudde"
+    "context": "handheld:'cameraMotionUi.aGentleLivingDrift',wobble:'cameraMotionUi.aSteadyRhythmicSway',"
   },
   "cameraMotionUi.aSuddenJitteryRattle": {
     "locations": [
-      "src/camera-motion-ui.mjs:15"
+      "src/camera-motion-localization.mjs:15"
     ],
-    "context": "export const MOTION_DESCRIPTIONS=Object.freeze({follow:interfaceText(\"cameraMotionUi.keepsTheSelectedFiguresInFrame\"),shake:interfaceText(\"cameraMotionUi.aSudde"
+    "context": "follow:'cameraMotionUi.keepsTheSelectedFiguresInFrame',shake:'cameraMotionUi.aSuddenJitteryRattle',"
   },
   "cameraMotionUi.autoZoom": {
     "locations": [
+      "src/camera-motion-localization.mjs:12",
       "src/camera-motion-ui.mjs:56"
     ],
-    "context": "slider(clip,'zoomFit',interfaceText(\"cameraMotionUi.autoZoom\"),100,locked,interfaceText(\"cameraMotionUi.zoomsToKeepEveryFollowedFigureInView\"), {label: {key: \"c"
+    "context": "lookAhead:'cameraMotionUi.lookAhead',zoomFit:'cameraMotionUi.autoZoom',padding:'cameraMotionUi.margin',maxZoom:'cameraMotionUi.zoomLimit',"
   },
   "cameraMotionUi.background": {
     "locations": [
@@ -3816,15 +3825,23 @@
   },
   "cameraMotionUi.deadZone": {
     "locations": [
+      "src/camera-motion-localization.mjs:11",
       "src/camera-motion-ui.mjs:52"
     ],
-    "context": "slider(clip,'deadZone',interfaceText(\"cameraMotionUi.deadZone\"),60,locked,interfaceText(\"cameraMotionUi.roomTheFigureCanMoveBeforeTheCamera\"), {label: {key: \"ca"
+    "context": "offsetX:'cameraMotionUi.offsetX',offsetY:'cameraMotionUi.offsetY',lag:'cameraMotionUi.smoothness',deadZone:'cameraMotionUi.deadZone',"
   },
   "cameraMotionUi.direction": {
     "locations": [
+      "src/camera-motion-localization.mjs:8",
       "src/camera-motion-ui.mjs:54"
     ],
-    "context": "`<div class=\"ui-slider-row motion-slider-row\"><span class=\"ui-slider-label\" data-i18n=\"cameraMotionUi.direction\">Direction</span><div class=\"ui-segmented motion"
+    "context": "zoom:'cameraMotionUi.zoom',frequency:'cameraMotionUi.speed',roughness:'cameraMotionUi.roughness',direction:'cameraMotionUi.direction',"
+  },
+  "cameraMotionUi.disableMove": {
+    "locations": [
+      "src/camera-motion-ui.mjs:77"
+    ],
+    "context": "`<button class=\"icon-button motion-enable\" data-motion-toggle=\"${esc(c.id)}\" ${messageAttributes(c.enabled?'cameraMotionUi.disableMove':'cameraMotionUi.enableMo"
   },
   "cameraMotionUi.distant": {
     "locations": [
@@ -3840,21 +3857,23 @@
   },
   "cameraMotionUi.easeIn": {
     "locations": [
+      "src/camera-motion-localization.mjs:9",
       "src/camera-motion-ui.mjs:81"
     ],
-    "context": "`<div class=\"motion-group\"><div class=\"motion-group-head\"><span data-i18n=\"cameraMotionUi.timing\">Timing</span></div><div class=\"field-grid motion-timing\">${fie"
+    "context": "recovery:'cameraMotionUi.recovery',phase:'cameraMotionUi.phase',fadeIn:'cameraMotionUi.easeIn',fadeOut:'cameraMotionUi.easeOut',"
   },
   "cameraMotionUi.easeOut": {
     "locations": [
+      "src/camera-motion-localization.mjs:9",
       "src/camera-motion-ui.mjs:81"
     ],
-    "context": "`<div class=\"motion-group\"><div class=\"motion-group-head\"><span data-i18n=\"cameraMotionUi.timing\">Timing</span></div><div class=\"field-grid motion-timing\">${fie"
+    "context": "recovery:'cameraMotionUi.recovery',phase:'cameraMotionUi.phase',fadeIn:'cameraMotionUi.easeIn',fadeOut:'cameraMotionUi.easeOut',"
   },
-  "cameraMotionUi.enable": {
+  "cameraMotionUi.enableMove": {
     "locations": [
       "src/camera-motion-ui.mjs:77"
     ],
-    "context": "`<button class=\"icon-button motion-enable\" data-motion-toggle=\"${esc(c.id)}\" aria-label=\"${c.enabled?interfaceText(\"cameraMotionUi.mute\"):interfaceText(\"cameraM"
+    "context": "`<button class=\"icon-button motion-enable\" data-motion-toggle=\"${esc(c.id)}\" ${messageAttributes(c.enabled?'cameraMotionUi.disableMove':'cameraMotionUi.enableMo"
   },
   "cameraMotionUi.enableParallax": {
     "locations": [
@@ -3898,11 +3917,17 @@
     ],
     "context": "`<div class=\"motion-group\"><div class=\"motion-group-head\"><span data-i18n=\"cameraMotionUi.framing\">Framing</span></div>`+"
   },
+  "cameraMotionUi.horizontal": {
+    "locations": [
+      "src/camera-motion-localization.mjs:10"
+    ],
+    "context": "seed:'vfxCatalog.parameter.particles.seed.label',followX:'cameraMotionUi.horizontal',followY:'cameraMotionUi.vertical',"
+  },
   "cameraMotionUi.howFarAutoZoomMayGoInOr": {
     "locations": [
       "src/camera-motion-ui.mjs:57"
     ],
-    "context": "(p.zoomFit>0?slider(clip,'padding',interfaceText(\"cameraMotionUi.margin\"),40,locked,'Space around the figures when zooming', {label: {key: \"cameraMotionUi.margi"
+    "context": "(p.zoomFit>0?slider(clip,'padding',interfaceText(\"cameraMotionUi.margin\"),40,locked,interfaceText('cameraMotionUi.spaceAroundFigures'), {label: {key: \"cameraMot"
   },
   "cameraMotionUi.howLongTheCameraTakesToCatchUp": {
     "locations": [
@@ -3936,9 +3961,9 @@
   },
   "cameraMotionUi.keepsTheSelectedFiguresInFrame": {
     "locations": [
-      "src/camera-motion-ui.mjs:15"
+      "src/camera-motion-localization.mjs:15"
     ],
-    "context": "export const MOTION_DESCRIPTIONS=Object.freeze({follow:interfaceText(\"cameraMotionUi.keepsTheSelectedFiguresInFrame\"),shake:interfaceText(\"cameraMotionUi.aSudde"
+    "context": "follow:'cameraMotionUi.keepsTheSelectedFiguresInFrame',shake:'cameraMotionUi.aSuddenJitteryRattle',"
   },
   "cameraMotionUi.keepTheFigureWhereItIsInThe": {
     "locations": [
@@ -3966,20 +3991,24 @@
   },
   "cameraMotionUi.lookAhead": {
     "locations": [
+      "src/camera-motion-localization.mjs:12",
       "src/camera-motion-ui.mjs:53"
     ],
-    "context": "slider(clip,'lookAhead',interfaceText(\"cameraMotionUi.lookAhead\"),24,locked,interfaceText(\"cameraMotionUi.leadsTheShotTowardWhereTheFigureIs\"), {label: {key: \"c"
+    "context": "lookAhead:'cameraMotionUi.lookAhead',zoomFit:'cameraMotionUi.autoZoom',padding:'cameraMotionUi.margin',maxZoom:'cameraMotionUi.zoomLimit',"
   },
   "cameraMotionUi.margin": {
     "locations": [
+      "src/camera-motion-localization.mjs:12",
       "src/camera-motion-ui.mjs:57"
     ],
-    "context": "(p.zoomFit>0?slider(clip,'padding',interfaceText(\"cameraMotionUi.margin\"),40,locked,'Space around the figures when zooming', {label: {key: \"cameraMotionUi.margi"
+    "context": "lookAhead:'cameraMotionUi.lookAhead',zoomFit:'cameraMotionUi.autoZoom',padding:'cameraMotionUi.margin',maxZoom:'cameraMotionUi.zoomLimit',"
   },
   "cameraMotionUi.missingFigure": {
     "locations": [
       "src/camera-motion-ui.mjs:37",
-      "src/camera-motion-ui.mjs:43"
+      "src/camera-motion-ui.mjs:43",
+      "src/camera-motion-ui.mjs:45",
+      "src/camera-motion-ui.mjs:46"
     ],
     "context": "const followSummary=(editor,clip)=>clip.targets.map(t=>figureName(editor,t.uid)??interfaceText(\"cameraMotionUi.missingFigure\")).join(', ');"
   },
@@ -3989,11 +4018,17 @@
     ],
     "context": "`<div class=\"motion-list\" role=\"list\" aria-label=\"Motion clips\" data-i18n-aria-label=\"cameraMotionUi.motionClips\">${clips.map(c=>`<div class=\"motion-list-row ${"
   },
-  "cameraMotionUi.mute": {
+  "cameraMotionUi.moveX": {
     "locations": [
-      "src/camera-motion-ui.mjs:77"
+      "src/camera-motion-localization.mjs:7"
     ],
-    "context": "`<button class=\"icon-button motion-enable\" data-motion-toggle=\"${esc(c.id)}\" aria-label=\"${c.enabled?interfaceText(\"cameraMotionUi.mute\"):interfaceText(\"cameraM"
+    "context": "strength:'cameraMotionUi.amount',moveX:'cameraMotionUi.moveX',moveY:'cameraMotionUi.moveY',roll:'cameraMotionGraph.roll',"
+  },
+  "cameraMotionUi.moveY": {
+    "locations": [
+      "src/camera-motion-localization.mjs:7"
+    ],
+    "context": "strength:'cameraMotionUi.amount',moveX:'cameraMotionUi.moveX',moveY:'cameraMotionUi.moveY',roll:'cameraMotionGraph.roll',"
   },
   "cameraMotionUi.newVariation": {
     "locations": [
@@ -4009,21 +4044,23 @@
   },
   "cameraMotionUi.offsetX": {
     "locations": [
+      "src/camera-motion-localization.mjs:11",
       "src/camera-motion-ui.mjs:58"
     ],
-    "context": "`<div class=\"field-grid motion-offset\">${parameter(clip,'offsetX',locked,interfaceText(\"cameraMotionUi.offsetX\"))}${parameter(clip,'offsetY',locked,interfaceTex"
+    "context": "offsetX:'cameraMotionUi.offsetX',offsetY:'cameraMotionUi.offsetY',lag:'cameraMotionUi.smoothness',deadZone:'cameraMotionUi.deadZone',"
   },
   "cameraMotionUi.offsetY": {
     "locations": [
+      "src/camera-motion-localization.mjs:11",
       "src/camera-motion-ui.mjs:58"
     ],
-    "context": "`<div class=\"field-grid motion-offset\">${parameter(clip,'offsetX',locked,interfaceText(\"cameraMotionUi.offsetX\"))}${parameter(clip,'offsetY',locked,interfaceTex"
+    "context": "offsetX:'cameraMotionUi.offsetX',offsetY:'cameraMotionUi.offsetY',lag:'cameraMotionUi.smoothness',deadZone:'cameraMotionUi.deadZone',"
   },
   "cameraMotionUi.oneHardHitThatSettles": {
     "locations": [
-      "src/camera-motion-ui.mjs:15"
+      "src/camera-motion-localization.mjs:17"
     ],
-    "context": "export const MOTION_DESCRIPTIONS=Object.freeze({follow:interfaceText(\"cameraMotionUi.keepsTheSelectedFiguresInFrame\"),shake:interfaceText(\"cameraMotionUi.aSudde"
+    "context": "impact:'cameraMotionUi.oneHardHitThatSettles',pulse:'cameraMotionUi.aQuickPunchInAndOut',"
   },
   "cameraMotionUi.overallStrengthOfThisMove": {
     "locations": [
@@ -4067,6 +4104,48 @@
     ],
     "context": "return `<details class=\"parallax-panel inspector-section\" data-section=\"parallax\" data-parallax-layer=\"${esc(id)}\" ${p.enabled?'open':''}><summary class=\"parall"
   },
+  "cameraMotionUi.phase": {
+    "locations": [
+      "src/camera-motion-localization.mjs:9"
+    ],
+    "context": "recovery:'cameraMotionUi.recovery',phase:'cameraMotionUi.phase',fadeIn:'cameraMotionUi.easeIn',fadeOut:'cameraMotionUi.easeOut',"
+  },
+  "cameraMotionUi.presetFollow": {
+    "locations": [
+      "src/camera-motion-localization.mjs:3"
+    ],
+    "context": "follow:'cameraMotionUi.presetFollow',shake:'cameraMotionUi.presetShake',handheld:'cameraMotionUi.presetHandheld',"
+  },
+  "cameraMotionUi.presetHandheld": {
+    "locations": [
+      "src/camera-motion-localization.mjs:3"
+    ],
+    "context": "follow:'cameraMotionUi.presetFollow',shake:'cameraMotionUi.presetShake',handheld:'cameraMotionUi.presetHandheld',"
+  },
+  "cameraMotionUi.presetImpact": {
+    "locations": [
+      "src/camera-motion-localization.mjs:4"
+    ],
+    "context": "wobble:'cameraMotionUi.presetWobble',impact:'cameraMotionUi.presetImpact',pulse:'cameraMotionUi.presetPulse',"
+  },
+  "cameraMotionUi.presetPulse": {
+    "locations": [
+      "src/camera-motion-localization.mjs:4"
+    ],
+    "context": "wobble:'cameraMotionUi.presetWobble',impact:'cameraMotionUi.presetImpact',pulse:'cameraMotionUi.presetPulse',"
+  },
+  "cameraMotionUi.presetShake": {
+    "locations": [
+      "src/camera-motion-localization.mjs:3"
+    ],
+    "context": "follow:'cameraMotionUi.presetFollow',shake:'cameraMotionUi.presetShake',handheld:'cameraMotionUi.presetHandheld',"
+  },
+  "cameraMotionUi.presetWobble": {
+    "locations": [
+      "src/camera-motion-localization.mjs:4"
+    ],
+    "context": "wobble:'cameraMotionUi.presetWobble',impact:'cameraMotionUi.presetImpact',pulse:'cameraMotionUi.presetPulse',"
+  },
   "cameraMotionUi.preview": {
     "locations": [
       "src/camera-motion-ui.mjs:90"
@@ -4085,6 +4164,12 @@
     ],
     "context": "`<section class=\"motion-card\" data-section=\"${esc(clip.id)}\" data-motion-id=\"${esc(clip.id)}\" data-kind=\"${clip.type}\"><div class=\"motion-card-heading\"><span cl"
   },
+  "cameraMotionUi.recovery": {
+    "locations": [
+      "src/camera-motion-localization.mjs:9"
+    ],
+    "context": "recovery:'cameraMotionUi.recovery',phase:'cameraMotionUi.phase',fadeIn:'cameraMotionUi.easeIn',fadeOut:'cameraMotionUi.easeOut',"
+  },
   "cameraMotionUi.roomTheFigureCanMoveBeforeTheCamera": {
     "locations": [
       "src/camera-motion-ui.mjs:52"
@@ -4096,6 +4181,12 @@
       "src/camera-motion-ui.mjs:63"
     ],
     "context": "const main=type==='pulse'?[messageTuple(['zoom',interfaceText(\"cameraMotionUi.zoom\"),30], {1: {key: \"cameraMotionUi.zoom\", params: {}}})]:[messageTuple(['move',"
+  },
+  "cameraMotionUi.roughness": {
+    "locations": [
+      "src/camera-motion-localization.mjs:8"
+    ],
+    "context": "zoom:'cameraMotionUi.zoom',frequency:'cameraMotionUi.speed',roughness:'cameraMotionUi.roughness',direction:'cameraMotionUi.direction',"
   },
   "cameraMotionUi.selectFiguresOnTheCanvasToAddThem": {
     "locations": [
@@ -4117,15 +4208,23 @@
   },
   "cameraMotionUi.smoothness": {
     "locations": [
+      "src/camera-motion-localization.mjs:11",
       "src/camera-motion-ui.mjs:51"
     ],
-    "context": "slider(clip,'lag',interfaceText(\"cameraMotionUi.smoothness\"),30,locked,interfaceText(\"cameraMotionUi.howLongTheCameraTakesToCatchUp\"), {label: {key: \"cameraMoti"
+    "context": "offsetX:'cameraMotionUi.offsetX',offsetY:'cameraMotionUi.offsetY',lag:'cameraMotionUi.smoothness',deadZone:'cameraMotionUi.deadZone',"
+  },
+  "cameraMotionUi.spaceAroundFigures": {
+    "locations": [
+      "src/camera-motion-ui.mjs:57"
+    ],
+    "context": "(p.zoomFit>0?slider(clip,'padding',interfaceText(\"cameraMotionUi.margin\"),40,locked,interfaceText('cameraMotionUi.spaceAroundFigures'), {label: {key: \"cameraMot"
   },
   "cameraMotionUi.speed": {
     "locations": [
+      "src/camera-motion-localization.mjs:8",
       "src/camera-motion-ui.mjs:63"
     ],
-    "context": "const main=type==='pulse'?[messageTuple(['zoom',interfaceText(\"cameraMotionUi.zoom\"),30], {1: {key: \"cameraMotionUi.zoom\", params: {}}})]:[messageTuple(['move',"
+    "context": "zoom:'cameraMotionUi.zoom',frequency:'cameraMotionUi.speed',roughness:'cameraMotionUi.roughness',direction:'cameraMotionUi.direction',"
   },
   "cameraMotionUi.start": {
     "locations": [
@@ -4137,13 +4236,13 @@
     "locations": [
       "src/camera-motion-ui.mjs:46"
     ],
-    "context": "`<button type=\"button\" class=\"ui-icon-button\" data-size=\"sm\" data-follow-remove=\"${t.uid}\" aria-label=\"Stop following ${esc(name??'missing figure')}\" title=\"Sto"
+    "context": "`<button type=\"button\" class=\"ui-icon-button\" data-size=\"sm\" data-follow-remove=\"${t.uid}\" aria-label=\"Stop following ${esc(name??{messageKey:'cameraMotionUi.mi"
   },
   "cameraMotionUi.stopFollowing2": {
     "locations": [
       "src/camera-motion-ui.mjs:46"
     ],
-    "context": "`<button type=\"button\" class=\"ui-icon-button\" data-size=\"sm\" data-follow-remove=\"${t.uid}\" aria-label=\"Stop following ${esc(name??'missing figure')}\" title=\"Sto"
+    "context": "`<button type=\"button\" class=\"ui-icon-button\" data-size=\"sm\" data-follow-remove=\"${t.uid}\" aria-label=\"Stop following ${esc(name??{messageKey:'cameraMotionUi.mi"
   },
   "cameraMotionUi.thisFigureIsNotInTheAnimationAny": {
     "locations": [
@@ -4181,6 +4280,12 @@
     ],
     "context": "`<label class=\"motion-slider-value\"><input type=\"number\" data-motion-field=\"${key}\" min=\"${lower}\" max=\"${max*factor}\" step=\"${whole?1:'any'}\" value=\"${Number(v"
   },
+  "cameraMotionUi.vertical": {
+    "locations": [
+      "src/camera-motion-localization.mjs:10"
+    ],
+    "context": "seed:'vfxCatalog.parameter.particles.seed.label',followX:'cameraMotionUi.horizontal',followY:'cameraMotionUi.vertical',"
+  },
   "cameraMotionUi.weightOf": {
     "locations": [
       "src/camera-motion-ui.mjs:45"
@@ -4189,15 +4294,17 @@
   },
   "cameraMotionUi.zoom": {
     "locations": [
+      "src/camera-motion-localization.mjs:8",
       "src/camera-motion-ui.mjs:63"
     ],
-    "context": "const main=type==='pulse'?[messageTuple(['zoom',interfaceText(\"cameraMotionUi.zoom\"),30], {1: {key: \"cameraMotionUi.zoom\", params: {}}})]:[messageTuple(['move',"
+    "context": "zoom:'cameraMotionUi.zoom',frequency:'cameraMotionUi.speed',roughness:'cameraMotionUi.roughness',direction:'cameraMotionUi.direction',"
   },
   "cameraMotionUi.zoomLimit": {
     "locations": [
+      "src/camera-motion-localization.mjs:12",
       "src/camera-motion-ui.mjs:57"
     ],
-    "context": "(p.zoomFit>0?slider(clip,'padding',interfaceText(\"cameraMotionUi.margin\"),40,locked,'Space around the figures when zooming', {label: {key: \"cameraMotionUi.margi"
+    "context": "lookAhead:'cameraMotionUi.lookAhead',zoomFit:'cameraMotionUi.autoZoom',padding:'cameraMotionUi.margin',maxZoom:'cameraMotionUi.zoomLimit',"
   },
   "cameraMotionUi.zoomsToKeepEveryFollowedFigureInView": {
     "locations": [
@@ -4365,7 +4472,8 @@
   },
   "chrome.advanced": {
     "locations": [
-      "index.html:235"
+      "index.html:235",
+      "src/timeline-header.mjs:272"
     ],
     "context": "<div id=\"timeline-workflow\" class=\"segmented timeline-mode-switch\" role=\"group\" aria-label=\"Timeline mode\" data-i18n-aria-label=\"chrome.timelineMode\"><button ty"
   },
@@ -5154,7 +5262,8 @@
   },
   "chrome.simple": {
     "locations": [
-      "index.html:235"
+      "index.html:235",
+      "src/timeline-header.mjs:272"
     ],
     "context": "<div id=\"timeline-workflow\" class=\"segmented timeline-mode-switch\" role=\"group\" aria-label=\"Timeline mode\" data-i18n-aria-label=\"chrome.timelineMode\"><button ty"
   },
@@ -7023,6 +7132,7 @@
   "common.delete": {
     "locations": [
       "desktop/main.cjs:172",
+      "src/camera-motion-ui.mjs:78",
       "src/color-picker.mjs:157",
       "src/localization-bindings.mjs:207",
       "src/shell/layout-popover.mjs:212",
@@ -7090,8 +7200,8 @@
       "src/inspector-view.mjs:300",
       "src/shell/layout-popover.mjs:230",
       "src/shell/layout-popover.mjs:239",
-      "src/vfx-preset-ui.mjs:46",
-      "src/vfx-preset-ui.mjs:67"
+      "src/vfx-preset-ui.mjs:47",
+      "src/vfx-preset-ui.mjs:68"
     ],
     "context": "<div class=\"text-options\"><label>${messageHTML(\"common.name\", {})}<input id=\"background-name\" maxlength=\"160\" aria-label=\"Background name\" data-i18n-aria-label="
   },
@@ -7205,6 +7315,13 @@
       "src/user-library.mjs:206"
     ],
     "context": "localizedText(this.container.querySelector('.library-count'), pub ? 'counts.assets' : 'counts.items', {count});"
+  },
+  "counts.effects": {
+    "locations": [
+      "src/vfx-inspector.mjs:222",
+      "src/vfx-preset-ui.mjs:26"
+    ],
+    "context": "return `<div class=\"ui-empty vfx-empty\"><h3 class=\"ui-empty-title\">${esc(title)}</h3>${elsewhere?'':`<p class=\"ui-empty-text\" data-i18n=\"vfxInspector.startWithO"
   },
   "counts.exposure": {
     "locations": [
@@ -9272,11 +9389,17 @@
     ],
     "context": ": panels.includes('properties') ? interfaceText(\"dockHost.resizePropertiesPanel\") : `Resize ${panels.map(title).join(' and ')} panel`;"
   },
-  "dockHost.resizeStackedPanels": {
+  "dockHost.resizeStackedLeftPanels": {
     "locations": [
       "src/shell/dock-host.mjs:814"
     ],
-    "context": "localizedAttribute(el, 'aria-label', \"dockHost.resizeStackedPanels\", {side: side});"
+    "context": "localizedAttribute(el, 'aria-label', side === 'left' ? 'dockHost.resizeStackedLeftPanels' : 'dockHost.resizeStackedRightPanels', {});"
+  },
+  "dockHost.resizeStackedRightPanels": {
+    "locations": [
+      "src/shell/dock-host.mjs:814"
+    ],
+    "context": "localizedAttribute(el, 'aria-label', side === 'left' ? 'dockHost.resizeStackedLeftPanels' : 'dockHost.resizeStackedRightPanels', {});"
   },
   "dockHost.resizeTimeline": {
     "locations": [
@@ -9358,7 +9481,7 @@
   },
   "dockTabs.float": {
     "locations": [
-      "src/shell/dock-tabs.mjs:60"
+      "src/shell/dock-tabs.mjs:61"
     ],
     "context": "if (host.canPlace(id, 'float') && presentation !== 'float') items.push({label: interfaceText(\"dockTabs.float\"), labelKey: \"dockTabs.float\", icon: 'layout', run:"
   },
@@ -9370,19 +9493,19 @@
   },
   "dockTabs.foldToStrip": {
     "locations": [
-      "src/shell/dock-tabs.mjs:62"
+      "src/shell/dock-tabs.mjs:63"
     ],
     "context": "else if (host.canPlace(id, 'strip')) items.push({label: interfaceText(\"dockTabs.foldToStrip\"), labelKey: \"dockTabs.foldToStrip\", icon: 'minimize', run: () => mo"
   },
   "dockTabs.hide": {
     "locations": [
-      "src/shell/dock-tabs.mjs:63"
+      "src/shell/dock-tabs.mjs:64"
     ],
     "context": "if (host.canPlace(id, 'hidden')) items.push(null, {label: interfaceText(\"dockTabs.hide\"), labelKey: \"dockTabs.hide\", icon: 'eye-off', run: () => move(id, 'hidde"
   },
   "dockTabs.moveCancelled": {
     "locations": [
-      "src/shell/dock-tabs.mjs:237"
+      "src/shell/dock-tabs.mjs:238"
     ],
     "context": "if (!commit || !target) { if (!commit) announce(interfaceText(\"dockTabs.moveCancelled\")); return; }"
   },
@@ -9406,13 +9529,13 @@
   },
   "dockTabs.panel": {
     "locations": [
-      "src/shell/dock-tabs.mjs:88"
+      "src/shell/dock-tabs.mjs:89"
     ],
     "context": "openMenu(menuItems(id), point, {label: interfaceText(\"dockTabs.panel\", {value: title(id)}), labelKey: \"dockTabs.panel\", labelParams: {value: title(id)}});"
   },
   "dockTabs.show": {
     "locations": [
-      "src/shell/dock-tabs.mjs:61"
+      "src/shell/dock-tabs.mjs:62"
     ],
     "context": "if (presentation === 'strip') items.push({label: interfaceText(\"dockTabs.show\"), labelKey: \"dockTabs.show\", icon: 'maximize', run: () => host.showPanel(id)});"
   },
@@ -21181,9 +21304,10 @@
   },
   "errors.vfxUserPresets.aPresetNamedAlreadyExists": {
     "locations": [
+      "src/vfx-preset-ui.mjs:68",
       "src/vfx-user-presets.mjs:80"
     ],
-    "context": "const other=this.named(title);if(other&&other.id!==id)throw messageError(new Error(''), \"errors.vfxUserPresets.aPresetNamedAlreadyExists\", {name: other.name});"
+    "context": "[{label:interfaceText(\"vfxPresetUi.rename\"), labelKey: \"vfxPresetUi.rename\",symbol:'text',action:run(async()=>{const name=await prompt({title:interfaceText(\"vfx"
   },
   "errors.vfxUserPresets.invalidEffectPreset": {
     "locations": [
@@ -21695,6 +21819,12 @@
     ],
     "context": "{id: 'wmv', label: interfaceText(\"exportCapabilities.windowsMediaVideo\"), labelKey: \"exportCapabilities.windowsMediaVideo\", extension: 'wmv', mimeType: 'video/x"
   },
+  "exportFlow.animationExportedAs": {
+    "locations": [
+      "src/export-flow.mjs:196"
+    ],
+    "context": "interfaceText([\"stk\", \"stkz\", \"stykmov\"].includes(format) ? \"exportFlow.figureExportedAs\" : \"exportFlow.animationExportedAs\", {format}),"
+  },
   "exportFlow.exportCancelled": {
     "locations": [
       "src/export-flow.mjs:188",
@@ -21733,17 +21863,17 @@
     ],
     "context": "{ title: interfaceText(\"exportFlow.exportingVectorFrame\"), titleKey: \"exportFlow.exportingVectorFrame\", format: 'svg', start: editor.tick },"
   },
+  "exportFlow.figureExportedAs": {
+    "locations": [
+      "src/export-flow.mjs:196"
+    ],
+    "context": "interfaceText([\"stk\", \"stkz\", \"stykmov\"].includes(format) ? \"exportFlow.figureExportedAs\" : \"exportFlow.animationExportedAs\", {format}),"
+  },
   "exportFlow.writing": {
     "locations": [
       "src/export-flow.mjs:180"
     ],
     "context": "status(interfaceText(\"exportFlow.writing\", {format: format}), false, true);"
-  },
-  "exportFlow.yourWasExportedAs": {
-    "locations": [
-      "src/export-flow.mjs:196"
-    ],
-    "context": "interfaceText(\"exportFlow.yourWasExportedAs\", {value: [\"stk\", \"stkz\", \"stykmov\"].includes(format) ? \"figure\" : \"animation\", format: format}),"
   },
   "exportPresets.accessibleLabel": {
     "locations": [
@@ -23745,15 +23875,17 @@
   },
   "inspectorLegacy.dragToAdjustShiftFineAltExtraFine": {
     "locations": [
+      "src/camera-motion-ui.mjs:17",
       "src/inspector-legacy.mjs:31"
     ],
-    "context": "return `<div class=\"property-row${animated ? ' is-animatable' : options.wide ? ' is-wide' : ''}\" data-property-row=\"${key}\"><label class=\"field\"><span class=\"pr"
+    "context": "const scrubLabel=(label,enabled=true,disabled=false,message)=>`<span ${enabled?`class=\"property-scrub\" data-property-scrub tabindex=\"${disabled?-1:0}\" role=\"but"
   },
   "inspectorLegacy.scrub": {
     "locations": [
+      "src/camera-motion-ui.mjs:17",
       "src/inspector-legacy.mjs:31"
     ],
-    "context": "return `<div class=\"property-row${animated ? ' is-animatable' : options.wide ? ' is-wide' : ''}\" data-property-row=\"${key}\"><label class=\"field\"><span class=\"pr"
+    "context": "const scrubLabel=(label,enabled=true,disabled=false,message)=>`<span ${enabled?`class=\"property-scrub\" data-property-scrub tabindex=\"${disabled?-1:0}\" role=\"but"
   },
   "inspectorView.addFrame": {
     "locations": [
@@ -24733,7 +24865,7 @@
     "locations": [
       "src/inspector-view.mjs:469"
     ],
-    "context": "paint: paintCSS(paint), caption: solid ? undefined : interfaceText('inspectorView.valueValue1Gradient', {value: paint.type[0].toUpperCase(), value1: paint.type."
+    "context": "paint: paintCSS(paint), caption: solid ? undefined : interfaceText('inspectorView.valueValue1Gradient', {value: {messageKey: 'colorPicker.' + paint.type}, value"
   },
   "inspectorView.white": {
     "locations": [
@@ -25010,7 +25142,7 @@
     "locations": [
       "src/layer-timeline.mjs:437"
     ],
-    "context": "const name = layer.kind === 'camera' ? {messageKey: 'layerTimeline.camera'} : layer.kind === 'scene' ? {messageKey: 'layerTimeline.scene'} : layer.name;"
+    "context": "const name = layer.kind === 'camera' ? {messageKey: 'layerTimeline.camera'} : layer.kind === 'scene' ? {messageKey: 'layerTimeline.scene'} : layer.kind === 'mot"
   },
   "layerTimeline.cameraMotions": {
     "locations": [
@@ -25299,7 +25431,7 @@
     "locations": [
       "src/layer-timeline.mjs:437"
     ],
-    "context": "const name = layer.kind === 'camera' ? {messageKey: 'layerTimeline.camera'} : layer.kind === 'scene' ? {messageKey: 'layerTimeline.scene'} : layer.name;"
+    "context": "const name = layer.kind === 'camera' ? {messageKey: 'layerTimeline.camera'} : layer.kind === 'scene' ? {messageKey: 'layerTimeline.scene'} : layer.kind === 'mot"
   },
   "layerTimeline.selectCamera": {
     "locations": [
@@ -25980,7 +26112,8 @@
   "motionPathControls.frames": {
     "locations": [
       "src/motion-path-controls.mjs:43",
-      "src/motion-path-controls.mjs:46"
+      "src/motion-path-controls.mjs:46",
+      "src/onion-controls.mjs:81"
     ],
     "context": "<label class=\"ui-row path-row\"><span class=\"ui-row-label\" data-i18n=\"motionPathControls.aroundPlayhead\">Around playhead</span><span class=\"path-number\"><input t"
   },
@@ -26459,7 +26592,8 @@
   },
   "movieclipUi.scene2": {
     "locations": [
-      "src/movieclip-ui.mjs:57"
+      "src/movieclip-ui.mjs:57",
+      "src/shell/stage-head.mjs:175"
     ],
     "context": "' · ',{text:interfaceText(\"movieclipUi.scene2\", {scene: scene}), textKey: \"movieclipUi.scene2\", textParams: {scene: scene},className:'movieclip-scene-frame',dat"
   },
@@ -26639,7 +26773,8 @@
   },
   "onionControls.poses": {
     "locations": [
-      "src/onion-controls.mjs:24"
+      "src/onion-controls.mjs:24",
+      "src/onion-controls.mjs:81"
     ],
     "context": "<details class=\"onion-more\"><summary data-i18n=\"onionControls.more\">${messageHTML(\"onionControls.more\", {})}</summary><div class=\"onion-more-body\"><div class=\"u"
   },
@@ -27630,56 +27765,56 @@
     "locations": [
       "src/shell/rail.mjs:41"
     ],
-    "context": "animate: {add: interfaceText(\"rail.add\"), select: interfaceText(\"rail.selectAndPose\")},"
+    "context": "animate: {add: \"rail.add\", select: \"rail.selectAndPose\"},"
   },
   "rail.addToTheScene": {
     "locations": [
       "src/shell/rail.mjs:49"
     ],
-    "context": "const TICK_NAMES = Object.freeze({add: interfaceText(\"rail.addToTheScene\"), lasso: interfaceText(\"rail.chooseSelectionShape\"), shape: interfaceText(\"rail.choose"
+    "context": "const TICK_NAMES = Object.freeze({add: \"rail.addToTheScene\", lasso: \"rail.chooseSelectionShape\", shape: \"rail.chooseShape\"});"
   },
   "rail.chooseSelectionShape": {
     "locations": [
       "src/shell/rail.mjs:49"
     ],
-    "context": "const TICK_NAMES = Object.freeze({add: interfaceText(\"rail.addToTheScene\"), lasso: interfaceText(\"rail.chooseSelectionShape\"), shape: interfaceText(\"rail.choose"
+    "context": "const TICK_NAMES = Object.freeze({add: \"rail.addToTheScene\", lasso: \"rail.chooseSelectionShape\", shape: \"rail.chooseShape\"});"
   },
   "rail.chooseShape": {
     "locations": [
       "src/shell/rail.mjs:49"
     ],
-    "context": "const TICK_NAMES = Object.freeze({add: interfaceText(\"rail.addToTheScene\"), lasso: interfaceText(\"rail.chooseSelectionShape\"), shape: interfaceText(\"rail.choose"
+    "context": "const TICK_NAMES = Object.freeze({add: \"rail.addToTheScene\", lasso: \"rail.chooseSelectionShape\", shape: \"rail.chooseShape\"});"
   },
   "rail.editJoints": {
     "locations": [
       "src/shell/rail.mjs:43"
     ],
-    "context": "rig: {rig: interfaceText(\"rail.editJoints\"), select: interfaceText(\"rail.selectFigure\")},"
+    "context": "rig: {rig: \"rail.editJoints\", select: \"rail.selectFigure\"},"
   },
   "rail.more": {
     "locations": [
       "src/shell/rail.mjs:76",
       "src/shell/rail.mjs:78"
     ],
-    "context": "tick.setAttribute('aria-label', TICK_NAMES[button.dataset.railMenu] ?? interfaceText(\"rail.more\"));"
+    "context": "localizedAttribute(tick,'aria-label',TICK_NAMES[button.dataset.railMenu]??'rail.more');"
   },
   "rail.newDrawingLayer": {
     "locations": [
       "src/shell/rail.mjs:42"
     ],
-    "context": "draw: {add: interfaceText(\"rail.newDrawingLayer\")},"
+    "context": "draw: {add: \"rail.newDrawingLayer\"},"
   },
   "rail.selectAndPose": {
     "locations": [
       "src/shell/rail.mjs:41"
     ],
-    "context": "animate: {add: interfaceText(\"rail.add\"), select: interfaceText(\"rail.selectAndPose\")},"
+    "context": "animate: {add: \"rail.add\", select: \"rail.selectAndPose\"},"
   },
   "rail.selectFigure": {
     "locations": [
       "src/shell/rail.mjs:43"
     ],
-    "context": "rig: {rig: interfaceText(\"rail.editJoints\"), select: interfaceText(\"rail.selectFigure\")},"
+    "context": "rig: {rig: \"rail.editJoints\", select: \"rail.selectFigure\"},"
   },
   "rendererStatus.deviceDisconnected": {
     "locations": [
@@ -28903,7 +29038,7 @@
     "locations": [
       "src/settings.mjs:594"
     ],
-    "context": "const coverage = value.locale !== 'en' ? `<p class=\"styk-settings-note\">${icon('alert')}<span data-locale-coverage ${messageAttributes('settings.partialLanguage"
+    "context": "const coverage = this.localization.hasFallback ? `<p class=\"styk-settings-note\">${icon('alert')}<span data-locale-coverage ${messageAttributes('settings.partial"
   },
   "settings.pastedFigureDepth": {
     "locations": [
@@ -29298,7 +29433,7 @@
     "locations": [
       "src/spatial-controls.mjs:95"
     ],
-    "context": "const depthHint=key=>key?`Hold ${key.split(' / ')[0]} while dragging to move a part toward or away from you (add Shift to go behind).`:interfaceText(\"spatialCon"
+    "context": "const depthHintMessage=key=>key?{messageKey:'spatialControls.depthHint',messageParams:{key:key.split(' / ')[0]}}:{messageKey:'spatialControls.assignHoldToPose3d"
   },
   "spatialControls.bend": {
     "locations": [
@@ -29332,8 +29467,7 @@
   },
   "spatialControls.chest": {
     "locations": [
-      "src/spatial-controls.mjs:47",
-      "src/spatial-controls.mjs:71"
+      "src/spatial-controls.mjs:47"
     ],
     "context": "const trunk=[['Pelvis',interfaceText(\"spatialControls.hips\")],['Lower torso',interfaceText(\"spatialControls.torso\")],['Waist',interfaceText(\"spatialControls.wai"
   },
@@ -29361,6 +29495,12 @@
     ],
     "context": ":`<div class=\"spatial-limb\" data-section=\"spatial-limb\"><div class=\"property-toggle-grid\">${propertyToggle('spatial-ik','IK',true,'link',{title:interfaceText(\"s"
   },
+  "spatialControls.depthHint": {
+    "locations": [
+      "src/spatial-controls.mjs:95"
+    ],
+    "context": "const depthHintMessage=key=>key?{messageKey:'spatialControls.depthHint',messageParams:{key:key.split(' / ')[0]}}:{messageKey:'spatialControls.assignHoldToPose3d"
+  },
   "spatialControls.distance": {
     "locations": [
       "src/spatial-controls.mjs:56"
@@ -29377,7 +29517,7 @@
     "locations": [
       "src/spatial-controls.mjs:80"
     ],
-    "context": "{kind:'meta',text:mode==='pose'?interfaceText('spatialControls.dragJointsToPoseThemFlatOnScreenValue', {value: depthHint(hotkeyLabel?.('depth-hold'))}):interfac"
+    "context": "{kind:'meta',text:mode==='pose'?interfaceText('spatialControls.dragJointsToPoseThemFlatOnScreenValue', {value: depthHintMessage(hotkeyLabel?.('depth-hold'))}):i"
   },
   "spatialControls.dragTheHandleAlongItsTrackOrSet": {
     "locations": [
@@ -29430,8 +29570,7 @@
   },
   "spatialControls.head": {
     "locations": [
-      "src/spatial-controls.mjs:47",
-      "src/spatial-controls.mjs:71"
+      "src/spatial-controls.mjs:47"
     ],
     "context": "const trunk=[['Pelvis',interfaceText(\"spatialControls.hips\")],['Lower torso',interfaceText(\"spatialControls.torso\")],['Waist',interfaceText(\"spatialControls.wai"
   },
@@ -29452,6 +29591,18 @@
       "src/spatial-controls.mjs:47"
     ],
     "context": "const trunk=[['Pelvis',interfaceText(\"spatialControls.hips\")],['Lower torso',interfaceText(\"spatialControls.torso\")],['Waist',interfaceText(\"spatialControls.wai"
+  },
+  "spatialControls.ikDisabledFoot": {
+    "locations": [
+      "src/spatial-controls.mjs:64"
+    ],
+    "context": "const limbTools=!ik?'':!ik.enabled?`<div class=\"spatial-limb\" data-section=\"spatial-limb\"><div class=\"property-toggle-grid\">${propertyToggle('spatial-ik','IK',f"
+  },
+  "spatialControls.ikDisabledHand": {
+    "locations": [
+      "src/spatial-controls.mjs:64"
+    ],
+    "context": "const limbTools=!ik?'':!ik.enabled?`<div class=\"spatial-limb\" data-section=\"spatial-limb\"><div class=\"property-toggle-grid\">${propertyToggle('spatial-ik','IK',f"
   },
   "spatialControls.joint": {
     "locations": [
@@ -29489,12 +29640,6 @@
     ],
     "context": "ik&&rig(`<div class=\"spatial-targets\" role=\"group\" aria-label=\"Limb rotations\" data-i18n-aria-label=\"spatialControls.limbRotations\">${rotations}</div>`),"
   },
-  "spatialControls.lowerTorso": {
-    "locations": [
-      "src/spatial-controls.mjs:71"
-    ],
-    "context": "const trunkNames=new Set(['Pelvis',interfaceText(\"spatialControls.lowerTorso\"),interfaceText(\"spatialControls.waist\"),interfaceText(\"spatialControls.chest\"),int"
-  },
   "spatialControls.mechanism": {
     "locations": [
       "src/spatial-controls.mjs:88"
@@ -29518,12 +29663,6 @@
       "src/spatial-controls.mjs:76"
     ],
     "context": "options:[{value:-1,label:interfaceText(\"spatialControls.moveWholeCharacter\"), labelKey: \"spatialControls.moveWholeCharacter\"},...bones.map(({s,i})=>({value:i,la"
-  },
-  "spatialControls.neck": {
-    "locations": [
-      "src/spatial-controls.mjs:71"
-    ],
-    "context": "const trunkNames=new Set(['Pelvis',interfaceText(\"spatialControls.lowerTorso\"),interfaceText(\"spatialControls.waist\"),interfaceText(\"spatialControls.chest\"),int"
   },
   "spatialControls.parts": {
     "locations": [
@@ -29639,7 +29778,7 @@
     "locations": [
       "src/spatial-controls.mjs:80"
     ],
-    "context": "{kind:'meta',text:mode==='pose'?interfaceText('spatialControls.dragJointsToPoseThemFlatOnScreenValue', {value: depthHint(hotkeyLabel?.('depth-hold'))}):interfac"
+    "context": "{kind:'meta',text:mode==='pose'?interfaceText('spatialControls.dragJointsToPoseThemFlatOnScreenValue', {value: depthHintMessage(hotkeyLabel?.('depth-hold'))}):i"
   },
   "spatialControls.rotateFigure": {
     "locations": [
@@ -29757,8 +29896,7 @@
   },
   "spatialControls.waist": {
     "locations": [
-      "src/spatial-controls.mjs:47",
-      "src/spatial-controls.mjs:71"
+      "src/spatial-controls.mjs:47"
     ],
     "context": "const trunk=[['Pelvis',interfaceText(\"spatialControls.hips\")],['Lower torso',interfaceText(\"spatialControls.torso\")],['Waist',interfaceText(\"spatialControls.wai"
   },
@@ -30020,7 +30158,7 @@
     "locations": [
       "src/shell/stage-head.mjs:175"
     ],
-    "context": "setAttr(scene, 'aria-label', session ? interfaceText(\"stageHead.sceneBackToTheScene\") : `Scene ${state.size ?? ''}`.trim());"
+    "context": "localizedAttribute(scene,'aria-label',session?'stageHead.sceneBackToTheScene':'movieclipUi.scene2',session?{}:{scene:state.size??''});"
   },
   "stageHead.sceneProperties": {
     "locations": [
@@ -35812,9 +35950,10 @@
   },
   "vfxCatalog.parameter.particles.seed.label": {
     "locations": [
+      "src/camera-motion-localization.mjs:10",
       "src/vfx-localization.mjs:720"
     ],
-    "context": "\"labelKey\": \"vfxCatalog.parameter.particles.seed.label\""
+    "context": "seed:'vfxCatalog.parameter.particles.seed.label',followX:'cameraMotionUi.horizontal',followY:'cameraMotionUi.vertical',"
   },
   "vfxCatalog.parameter.particles.shading.label": {
     "locations": [
@@ -37247,7 +37386,7 @@
     "locations": [
       "src/vfx-inspector.mjs:218"
     ],
-    "context": "const effect=type=>{const d=VFX_REGISTRY[type];return tile('add',type,d.name,d.icon,d.category,d.category==='Generate'?interfaceText(\"vfxInspector.generated\"):d"
+    "context": "const effect=type=>{const d=VFX_REGISTRY[type];return tile('add',type,d.name,d.icon,d.category,d.category==='Generate'?interfaceText('vfxInspector.generated'):i"
   },
   "vfxInspector.gradient": {
     "locations": [
@@ -37255,12 +37394,11 @@
     ],
     "context": "const caption=solid?`${hex}${stop.opacity<1?` · ${Math.round(stop.opacity*100)}%`:''}`:interfaceText(\"vfxInspector.gradient\");"
   },
-  "vfxInspector.looks": {
+  "vfxInspector.lookSummary": {
     "locations": [
-      "src/vfx-inspector.mjs:219",
       "src/vfx-inspector.mjs:222"
     ],
-    "context": "const mine=usablePresets(scene).slice(0,3).map(p=>tile('presets',MINE+p.id,p.name,p.effects.length===1?VFX_REGISTRY[p.effects[0].type]?.icon??'effects':'effects"
+    "context": "return `<div class=\"ui-empty vfx-empty\"><h3 class=\"ui-empty-title\">${esc(title)}</h3>${elsewhere?'':`<p class=\"ui-empty-text\" data-i18n=\"vfxInspector.startWithO"
   },
   "vfxInspector.more": {
     "locations": [
@@ -37286,23 +37424,35 @@
     ],
     "context": "[{label:interfaceText(\"vfxInspector.moveUp\"), labelKey: \"vfxInspector.moveUp\",symbol:'chevron-up',disabled:locked||index<=0,action:run('up')},{label:interfaceTe"
   },
+  "vfxInspector.myPresetSummary": {
+    "locations": [
+      "src/vfx-inspector.mjs:219"
+    ],
+    "context": "const mine=usablePresets(scene).slice(0,3).map(p=>tile('presets',MINE+p.id,p.name,p.effects.length===1?VFX_REGISTRY[p.effects[0].type]?.icon??'effects':'effects"
+  },
   "vfxInspector.noEffectsAtThisFrame": {
     "locations": [
       "src/vfx-inspector.mjs:221"
     ],
-    "context": "const title=elsewhere?interfaceText(\"vfxInspector.noEffectsAtThisFrame\"):scene?interfaceText(\"vfxInspector.noEffectsOnTheScene\"):targets.length===1?`No effects "
+    "context": "const title=elsewhere?interfaceText(\"vfxInspector.noEffectsAtThisFrame\"):scene?interfaceText(\"vfxInspector.noEffectsOnTheScene\"):targets.length===1?interfaceTex"
+  },
+  "vfxInspector.noEffectsOnFigure": {
+    "locations": [
+      "src/vfx-inspector.mjs:221"
+    ],
+    "context": "const title=elsewhere?interfaceText(\"vfxInspector.noEffectsAtThisFrame\"):scene?interfaceText(\"vfxInspector.noEffectsOnTheScene\"):targets.length===1?interfaceTex"
   },
   "vfxInspector.noEffectsOnTheScene": {
     "locations": [
       "src/vfx-inspector.mjs:221"
     ],
-    "context": "const title=elsewhere?interfaceText(\"vfxInspector.noEffectsAtThisFrame\"):scene?interfaceText(\"vfxInspector.noEffectsOnTheScene\"):targets.length===1?`No effects "
+    "context": "const title=elsewhere?interfaceText(\"vfxInspector.noEffectsAtThisFrame\"):scene?interfaceText(\"vfxInspector.noEffectsOnTheScene\"):targets.length===1?interfaceTex"
   },
   "vfxInspector.noEffectsYet": {
     "locations": [
       "src/vfx-inspector.mjs:221"
     ],
-    "context": "const title=elsewhere?interfaceText(\"vfxInspector.noEffectsAtThisFrame\"):scene?interfaceText(\"vfxInspector.noEffectsOnTheScene\"):targets.length===1?`No effects "
+    "context": "const title=elsewhere?interfaceText(\"vfxInspector.noEffectsAtThisFrame\"):scene?interfaceText(\"vfxInspector.noEffectsOnTheScene\"):targets.length===1?interfaceTex"
   },
   "vfxInspector.onlySelected": {
     "locations": [
@@ -37499,137 +37649,137 @@
     ],
     "context": "menu.className='vfx-channel-menu';menu.popover='auto';menu.setAttribute('role','dialog');localizedAttribute(menu, 'aria-label', 'vfxKeyChannelMenu.visibleEffect"
   },
+  "vfxPresetUi.animatedSummary": {
+    "locations": [
+      "src/vfx-preset-ui.mjs:26"
+    ],
+    "context": "export const presetSummary=preset=>{const count=preset.effects.length,animated=Object.keys(preset.keys).length>0;const summary=count===1?{messageKey:effectMessa"
+  },
   "vfxPresetUi.delete": {
     "locations": [
-      "src/vfx-preset-ui.mjs:68"
+      "src/vfx-preset-ui.mjs:69"
     ],
     "context": "[{label:interfaceText(\"vfxPresetUi.delete\"), labelKey: \"vfxPresetUi.delete\",symbol:'trash',danger:true,action:run(async()=>{if(await confirm({title:interfaceTex"
   },
   "vfxPresetUi.delete2": {
     "locations": [
-      "src/vfx-preset-ui.mjs:68"
+      "src/vfx-preset-ui.mjs:69"
     ],
     "context": "[{label:interfaceText(\"vfxPresetUi.delete\"), labelKey: \"vfxPresetUi.delete\",symbol:'trash',danger:true,action:run(async()=>{if(await confirm({title:interfaceTex"
   },
   "vfxPresetUi.delete3": {
     "locations": [
-      "src/vfx-preset-ui.mjs:68"
+      "src/vfx-preset-ui.mjs:69"
     ],
     "context": "[{label:interfaceText(\"vfxPresetUi.delete\"), labelKey: \"vfxPresetUi.delete\",symbol:'trash',danger:true,action:run(async()=>{if(await confirm({title:interfaceTex"
   },
   "vfxPresetUi.effect": {
     "locations": [
-      "src/vfx-preset-ui.mjs:25"
+      "src/vfx-preset-ui.mjs:26"
     ],
-    "context": "export const presetSummary=preset=>{const count=preset.effects.length,animated=Object.keys(preset.keys).length>0;return `${count===1?VFX_REGISTRY[preset.effects"
+    "context": "export const presetSummary=preset=>{const count=preset.effects.length,animated=Object.keys(preset.keys).length>0;const summary=count===1?{messageKey:effectMessa"
   },
   "vfxPresetUi.effects": {
     "locations": [
-      "src/vfx-preset-ui.mjs:46"
+      "src/vfx-preset-ui.mjs:47"
     ],
     "context": "const name=await prompt({title:interfaceText(\"vfxPresetUi.saveAsPreset\"), titleKey: \"vfxPresetUi.saveAsPreset\",label:interfaceText(\"common.name\"), labelKey: \"co"
   },
   "vfxPresetUi.effectsAlreadyAddedFromItStayAsThey": {
     "locations": [
-      "src/vfx-preset-ui.mjs:68"
+      "src/vfx-preset-ui.mjs:69"
     ],
     "context": "[{label:interfaceText(\"vfxPresetUi.delete\"), labelKey: \"vfxPresetUi.delete\",symbol:'trash',danger:true,action:run(async()=>{if(await confirm({title:interfaceTex"
   },
   "vfxPresetUi.keepsItsEffectsSettingsTimingAndKeysReady": {
     "locations": [
-      "src/vfx-preset-ui.mjs:47"
+      "src/vfx-preset-ui.mjs:48"
     ],
     "context": "description:interfaceText(\"vfxPresetUi.keepsItsEffectsSettingsTimingAndKeysReady\"), descriptionKey: \"vfxPresetUi.keepsItsEffectsSettingsTimingAndKeysReady\",vali"
   },
-  "vfxPresetUi.looks": {
-    "locations": [
-      "src/vfx-preset-ui.mjs:23"
-    ],
-    "context": "export const presetTile=(preset,className)=>{const d=preset.effects.length===1&&VFX_REGISTRY[preset.effects[0].type];return d?vfxTile(d.icon,d.category,classNam"
-  },
   "vfxPresetUi.myPresets": {
     "locations": [
-      "src/vfx-preset-ui.mjs:36"
+      "src/vfx-preset-ui.mjs:37"
     ],
     "context": "return `<section class=\"vfx-my-presets-section\"><h3 data-i18n=\"vfxPresetUi.myPresets\">${messageHTML(\"vfxPresetUi.myPresets\", {})}</h3>${body}</section>`;"
   },
   "vfxPresetUi.nameThePreset": {
     "locations": [
-      "src/vfx-preset-ui.mjs:47",
-      "src/vfx-preset-ui.mjs:67"
+      "src/vfx-preset-ui.mjs:48",
+      "src/vfx-preset-ui.mjs:68"
     ],
     "context": "description:interfaceText(\"vfxPresetUi.keepsItsEffectsSettingsTimingAndKeysReady\"), descriptionKey: \"vfxPresetUi.keepsItsEffectsSettingsTimingAndKeysReady\",vali"
   },
   "vfxPresetUi.presetActions": {
     "locations": [
-      "src/vfx-preset-ui.mjs:34"
+      "src/vfx-preset-ui.mjs:35"
     ],
     "context": "?`<div class=\"vfx-catalog-grid vfx-my-presets\">${presets.map(p=>`<div class=\"vfx-my-preset\"><button type=\"button\" class=\"vfx-catalog-card\" data-choice=\"${MINE}$"
   },
   "vfxPresetUi.rename": {
     "locations": [
-      "src/vfx-preset-ui.mjs:67"
+      "src/vfx-preset-ui.mjs:68"
     ],
     "context": "[{label:interfaceText(\"vfxPresetUi.rename\"), labelKey: \"vfxPresetUi.rename\",symbol:'text',action:run(async()=>{const name=await prompt({title:interfaceText(\"vfx"
   },
   "vfxPresetUi.rename2": {
     "locations": [
-      "src/vfx-preset-ui.mjs:67"
+      "src/vfx-preset-ui.mjs:68"
     ],
     "context": "[{label:interfaceText(\"vfxPresetUi.rename\"), labelKey: \"vfxPresetUi.rename\",symbol:'text',action:run(async()=>{const name=await prompt({title:interfaceText(\"vfx"
   },
   "vfxPresetUi.renamePreset": {
     "locations": [
-      "src/vfx-preset-ui.mjs:67"
+      "src/vfx-preset-ui.mjs:68"
     ],
     "context": "[{label:interfaceText(\"vfxPresetUi.rename\"), labelKey: \"vfxPresetUi.rename\",symbol:'text',action:run(async()=>{const name=await prompt({title:interfaceText(\"vfx"
   },
   "vfxPresetUi.replace": {
     "locations": [
-      "src/vfx-preset-ui.mjs:50"
+      "src/vfx-preset-ui.mjs:51"
     ],
     "context": "if(existing&&!await confirm({title:interfaceText(\"vfxPresetUi.replace\", {name: existing.name}), titleKey: \"vfxPresetUi.replace\", titleParams: {name: existing.na"
   },
   "vfxPresetUi.replace2": {
     "locations": [
-      "src/vfx-preset-ui.mjs:50"
+      "src/vfx-preset-ui.mjs:51"
     ],
     "context": "if(existing&&!await confirm({title:interfaceText(\"vfxPresetUi.replace\", {name: existing.name}), titleKey: \"vfxPresetUi.replace\", titleParams: {name: existing.na"
   },
   "vfxPresetUi.save": {
     "locations": [
-      "src/vfx-preset-ui.mjs:46"
+      "src/vfx-preset-ui.mjs:47"
     ],
     "context": "const name=await prompt({title:interfaceText(\"vfxPresetUi.saveAsPreset\"), titleKey: \"vfxPresetUi.saveAsPreset\",label:interfaceText(\"common.name\"), labelKey: \"co"
   },
   "vfxPresetUi.saveAnEffectYouLikeWith": {
     "locations": [
-      "src/vfx-preset-ui.mjs:35"
+      "src/vfx-preset-ui.mjs:36"
     ],
     "context": ":`<p class=\"vfx-my-presets-empty\">${icon('library')}<span>${messageHTML(\"vfxPresetUi.saveAnEffectYouLikeWith\", {})}<b data-i18n=\"vfxPresetUi.saveAsPreset\">${mes"
   },
   "vfxPresetUi.saveAsPreset": {
     "locations": [
-      "src/vfx-preset-ui.mjs:35",
-      "src/vfx-preset-ui.mjs:46"
+      "src/vfx-preset-ui.mjs:36",
+      "src/vfx-preset-ui.mjs:47"
     ],
     "context": ":`<p class=\"vfx-my-presets-empty\">${icon('library')}<span>${messageHTML(\"vfxPresetUi.saveAnEffectYouLikeWith\", {})}<b data-i18n=\"vfxPresetUi.saveAsPreset\">${mes"
   },
   "vfxPresetUi.savedToMyPresets": {
     "locations": [
-      "src/vfx-preset-ui.mjs:52"
+      "src/vfx-preset-ui.mjs:53"
     ],
     "context": "if(button?.isConnected)flash(button,interfaceText(\"vfxPresetUi.savedToMyPresets\"));"
   },
   "vfxPresetUi.thatPresetTakesThisEffectSSettingsFigures": {
     "locations": [
-      "src/vfx-preset-ui.mjs:50"
+      "src/vfx-preset-ui.mjs:51"
     ],
     "context": "if(existing&&!await confirm({title:interfaceText(\"vfxPresetUi.replace\", {name: existing.name}), titleKey: \"vfxPresetUi.replace\", titleParams: {name: existing.na"
   },
   "vfxPresetUi.underItsSettingsAndItWaitsHereFor": {
     "locations": [
-      "src/vfx-preset-ui.mjs:35"
+      "src/vfx-preset-ui.mjs:36"
     ],
     "context": ":`<p class=\"vfx-my-presets-empty\">${icon('library')}<span>${messageHTML(\"vfxPresetUi.saveAnEffectYouLikeWith\", {})}<b data-i18n=\"vfxPresetUi.saveAsPreset\">${mes"
   },

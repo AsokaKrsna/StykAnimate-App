@@ -13,8 +13,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import hostModule from '../desktop/web-host.cjs';
 import english from '../src/locales/en.mjs';
-import italian from '../src/locales/it.mjs';
-import nativeCatalogs, {NATIVE_LOCALES} from '../src/locales/native-catalogs.mjs';
+import packs from '../src/locales/locale-packs.mjs';
 import {parseCss} from '../scripts/check-css.mjs';
 import {canvasFont, onFontsReady} from '../src/ui/font-loading.mjs';
 
@@ -80,10 +79,11 @@ test('index.html preloads the Inter latin face and nothing else', () => {
 });
 
 test('the fonts cover every shipped language that Inter supports', () => {
-  const catalogs = {...nativeCatalogs, en: english, it: italian};
-  assert.equal(NATIVE_LOCALES.length, 27);
-  for (const locale of NATIVE_LOCALES) {
-    const text = [locale.nativeName, ...Object.values(catalogs[locale.id] ?? {})].join('');
+  assert.equal(packs.length, 27);
+  for (const {locale, messages} of packs) {
+    const captions = Object.values(locale.id === 'en' ? english : messages)
+      .flatMap(value => typeof value === 'string' ? [value] : Object.values(value));
+    const text = [locale.nativeName, ...captions].join('');
     const letters = [...new Set(text.match(/[\p{L}\p{M}]/gu))];
     for (const family of Object.keys(FILES)) {
       const missing = letters.filter(character => !covers(family, character));

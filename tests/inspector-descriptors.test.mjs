@@ -28,12 +28,33 @@ import {movieclipInspector} from '../src/movieclip-ui.mjs';
 import {INSPECTOR_BUDGET, MAX_TITLE_ACTIONS, ROW_KINDS, inspectorBudgetProblems, renderInspector} from '../src/inspector-kit.mjs';
 import {QUICK_ACTIONS, QUICK_CONTEXTS, quickDefaults} from '../src/ui/quick-actions.mjs';
 import {legacyIkControlsView, legacyInspectorView, legacyMovieclipInspector} from './fixtures/inspector-legacy.mjs';
+import {interfaceLocalization} from '../src/localization.mjs';
 import {
   assertNoKeyState, assertNoTitles, assertNumberParity, assertOptions, assertParity, assertSwitchParity, find, nameOf, options, tag, tags,
 } from './helpers/inspector-markup.mjs';
 
 // ---------------------------------------------------------------------------
 // Nothing lost
+
+test('gradient captions localize their type without changing the figure paint', () => {
+  const editor = new Editor();
+  editor.select(editor.selectedUid, 0);
+  interfaceLocalization.setPseudo('long');
+  try {
+    for (const type of ['linear', 'radial', 'angular', 'diamond']) {
+      editor.figure.segments[0].paint = {type, angle:0, stops:[
+        {offset:0, color:[0,0,0], opacity:1}, {offset:1, color:[255,255,255], opacity:1},
+      ]};
+      const bytes = JSON.stringify(editor.report);
+      const descriptor = inspectorDescriptor({editor});
+      const flatten = rows => rows.flatMap(row => [row, ...flatten(row?.rows ?? [])]);
+      const rows = flatten(descriptor.sections.filter(Boolean));
+      const colour = rows.find(row => row?.id === 'segment-color');
+      assert.ok(colour?.caption.includes(interfaceLocalization.t('colorPicker.' + type)), type);
+      assert.equal(JSON.stringify(editor.report), bytes);
+    }
+  } finally { interfaceLocalization.setPseudo(null); }
+});
 
 /** Attributes that name a control rather than describe its state or look. */
 const PRESENTATION = /^data-(?:property-(?:value|precision|display-precision|step|row|scrub)|tooltip|hotkey-.*|section|mixed|precision|unit|value-.*|kit-step|size|variant|glue|bare|select|color|switch-field|steps|text|count-one|fill|ratio|stack-narrow|open|collapsible|auto|layer-id)$/;

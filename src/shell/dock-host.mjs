@@ -811,7 +811,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
       if (name.endsWith('-islands')) {
         const side = name.split('-')[0], groups = s.regions[side].groups;
         el.style.insetBlockStart = px(groups[0].rect.height + metrics.gutter / 2);
-        localizedAttribute(el, 'aria-label', "dockHost.resizeStackedPanels", {side: side});
+        localizedAttribute(el, 'aria-label', side === 'left' ? 'dockHost.resizeStackedLeftPanels' : 'dockHost.resizeStackedRightPanels', {});
         el.setAttribute('aria-controls', groups.flatMap(group => group.tabs.map(id => rootOf(id)?.id)).filter(Boolean).join(' '));
         continue;
       }

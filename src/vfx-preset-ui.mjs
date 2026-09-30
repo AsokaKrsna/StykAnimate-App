@@ -10,6 +10,7 @@ import {messageAttributes, messageHTML} from './localization-bindings.mjs';
 import {vfxPresetStore,presetName,USER_PRESET_NAME_LENGTH} from './vfx-user-presets.mjs';
 import {VFX_REGISTRY} from './vfx.mjs';
 import {effectAvailable} from './vfx-registry.mjs';
+import {effectMessages} from './vfx-localization.mjs';
 import {vfxTile} from './vfx-icons.mjs';
 import {icon} from './icons.mjs';
 import {prompt,confirm} from './ui/ui-dialog.mjs';
@@ -20,9 +21,9 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;
 export const MINE='mine:';
 
 /** A preset's glyph: its one effect's, or the group glyph. */
-export const presetTile=(preset,className)=>{const d=preset.effects.length===1&&VFX_REGISTRY[preset.effects[0].type];return d?vfxTile(d.icon,d.category,className):vfxTile('effects',interfaceText("vfxPresetUi.looks"),className);};
+export const presetTile=(preset,className)=>{const d=preset.effects.length===1&&VFX_REGISTRY[preset.effects[0].type];return d?vfxTile(d.icon,d.category,className):vfxTile('effects','Looks',className);};
 /** What a preset holds, in a few words: "Glow", "3 effects", with "animated" when it has keys. */
-export const presetSummary=preset=>{const count=preset.effects.length,animated=Object.keys(preset.keys).length>0;return `${count===1?VFX_REGISTRY[preset.effects[0].type]?.name??interfaceText("vfxPresetUi.effect"):`${count} effects`}${animated?' · animated':''}`;};
+export const presetSummary=preset=>{const count=preset.effects.length,animated=Object.keys(preset.keys).length>0;const summary=count===1?{messageKey:effectMessages[preset.effects[0].type]?.nameKey??'vfxPresetUi.effect'}:{messageKey:'counts.effects',messageParams:{count}};return animated?interfaceText('vfxPresetUi.animatedSummary',{summary,count}):interfaceText(summary.messageKey,summary.messageParams);};
 /** The presets that can go on this kind of target (scene-only effects need the scene). */
 export const usablePresets=scene=>vfxPresetStore.presets.filter(preset=>preset.effects.every(effect=>effectAvailable(effect.type,scene)));
 
@@ -43,7 +44,7 @@ export function myPresetsSection(scene,query,{disabled=false}={}){
 export async function savePresetFromClip(host,id,button){
  const clip=host.editor.getVfxClips().find(c=>c.id===id);if(!clip)return;
  await vfxPresetStore.load();
- const name=await prompt({title:interfaceText("vfxPresetUi.saveAsPreset"), titleKey: "vfxPresetUi.saveAsPreset",label:interfaceText("common.name"), labelKey: "common.name",value:clip.name||VFX_REGISTRY[clip.effects[0]?.type]?.name||interfaceText("vfxPresetUi.effects"),maxLength:USER_PRESET_NAME_LENGTH,confirmLabel:interfaceText("vfxPresetUi.save"), confirmLabelKey: "vfxPresetUi.save", confirmLabelParams: {},
+ const name=await prompt({title:interfaceText("vfxPresetUi.saveAsPreset"), titleKey: "vfxPresetUi.saveAsPreset",label:interfaceText("common.name"), labelKey: "common.name",value:clip.name||interfaceText(effectMessages[clip.effects[0]?.type]?.nameKey??'vfxPresetUi.effects'),maxLength:USER_PRESET_NAME_LENGTH,confirmLabel:interfaceText("vfxPresetUi.save"), confirmLabelKey: "vfxPresetUi.save", confirmLabelParams: {},
   description:interfaceText("vfxPresetUi.keepsItsEffectsSettingsTimingAndKeysReady"), descriptionKey: "vfxPresetUi.keepsItsEffectsSettingsTimingAndKeysReady",validate:text=>presetName(text)?null:interfaceText("vfxPresetUi.nameThePreset")});
  if(name==null)return;
  const existing=vfxPresetStore.named(name);
@@ -64,7 +65,7 @@ export function openPresetMenu(host,id,event,{onDone=()=>{}}={}){
  if(!menu){menu=host.presetMenu={editor:host.editor,_run:fn=>host.run(fn)};host.abort.signal.addEventListener('abort',()=>{menu.menuEvents?.abort();menu.menu?.remove();},{once:true});}
  const run=fn=>()=>{host.closePopup();void fn().catch(error=>host.onError(error)).finally(onDone);};
  showTimelineMenu(menu,event,[
-  [{label:interfaceText("vfxPresetUi.rename"), labelKey: "vfxPresetUi.rename",symbol:'text',action:run(async()=>{const name=await prompt({title:interfaceText("vfxPresetUi.renamePreset"), titleKey: "vfxPresetUi.renamePreset",label:interfaceText("common.name"), labelKey: "common.name",value:preset.name,maxLength:USER_PRESET_NAME_LENGTH,confirmLabel:interfaceText("vfxPresetUi.rename2"), confirmLabelKey: "vfxPresetUi.rename2", confirmLabelParams: {},validate:text=>{const title=presetName(text),other=title&&vfxPresetStore.named(title);return !title?interfaceText("vfxPresetUi.nameThePreset"):other&&other.id!==id?`A preset named “${other.name}” already exists.`:null;}});if(name!=null)await vfxPresetStore.rename(id,name);})}],
+  [{label:interfaceText("vfxPresetUi.rename"), labelKey: "vfxPresetUi.rename",symbol:'text',action:run(async()=>{const name=await prompt({title:interfaceText("vfxPresetUi.renamePreset"), titleKey: "vfxPresetUi.renamePreset",label:interfaceText("common.name"), labelKey: "common.name",value:preset.name,maxLength:USER_PRESET_NAME_LENGTH,confirmLabel:interfaceText("vfxPresetUi.rename2"), confirmLabelKey: "vfxPresetUi.rename2", confirmLabelParams: {},validate:text=>{const title=presetName(text),other=title&&vfxPresetStore.named(title);return !title?interfaceText("vfxPresetUi.nameThePreset"):other&&other.id!==id?interfaceText('errors.vfxUserPresets.aPresetNamedAlreadyExists',{name:other.name}):null;}});if(name!=null)await vfxPresetStore.rename(id,name);})}],
   [{label:interfaceText("vfxPresetUi.delete"), labelKey: "vfxPresetUi.delete",symbol:'trash',danger:true,action:run(async()=>{if(await confirm({title:interfaceText("vfxPresetUi.delete2", {name: preset.name}), titleKey: "vfxPresetUi.delete2", titleParams: {name: preset.name},description:interfaceText("vfxPresetUi.effectsAlreadyAddedFromItStayAsThey"), descriptionKey: "vfxPresetUi.effectsAlreadyAddedFromItStayAsThey",confirmLabel:interfaceText('vfxPresetUi.delete3'), confirmLabelKey: 'vfxPresetUi.delete3', confirmLabelParams: {},danger:true}))await vfxPresetStore.remove(id);})}],
  ]);
 }

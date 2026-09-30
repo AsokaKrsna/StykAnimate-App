@@ -434,7 +434,7 @@ export class Timeline{
       const clip=layer.kind==='vfx'&&layer.clips.find(c=>c.id===this.editor._selectedVfxClip);node._channels.hidden=!clip||!Object.values(clip.keys).some(keys=>keys.length);if(clip){const label=vfxChannelLabel(this.editor,clip);const caption=vfxChannelMessage(this.editor,clip);localizedText(node._channels.lastChild,caption.messageKey,caption.messageParams);localizedAttribute(node._channels, "title", "layerTimeline.visibleEffectKeys2", {label: caption});}
       node._disclosure.hidden=layer.kind!=='camera'||!this.editor.getCameraMotions().length;
       node._disclosure.setAttribute('aria-expanded',String(!this.cameraMotionsCollapsed));localizedAttribute(node._disclosure, "title", "layerTimeline.cameraMotions", {value: this.cameraMotionsCollapsed?{messageKey: "layerTimeline.expand"}:{messageKey: "layerTimeline.collapse"}});node._disclosure.setAttribute('aria-label',node._disclosure.title);
-      const name = layer.kind === 'camera' ? {messageKey: 'layerTimeline.camera'} : layer.kind === 'scene' ? {messageKey: 'layerTimeline.scene'} : layer.name;
+      const name = layer.kind === 'camera' ? {messageKey: 'layerTimeline.camera'} : layer.kind === 'scene' ? {messageKey: 'layerTimeline.scene'} : layer.kind === 'motion' ? {messageKey: layer.nameKey} : layer.name;
       const suffix = layer.kind === 'camera' && this.cameraMotionsCollapsed ? {messageKey: 'layerTimeline.motionCount', messageParams: {count: this.editor.getCameraMotions().length}}
         : layer.parallax?.enabled ? {messageKey: 'layerTimeline.parallaxPercent', messageParams: {percent: Math.round(layer.parallax.x * 100)}} : '';
       localizedText(node._text, 'layerTimeline.rowName', {name, suffix});

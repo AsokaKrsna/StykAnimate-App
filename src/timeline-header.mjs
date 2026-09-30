@@ -23,9 +23,9 @@ import {t as interfaceText, messageText as sayTimeline} from './localization.mjs
  *
  * The clusters never touch: the grid keeps a gap between them and slides the
  * transport right into free space; when the header is still too narrow the
- * zoom slider folds, then the words, in this order: Edit together's, Next
- * copy's, and last Add frame's (never at the minimal tier, where the buttons
- * are glyphs anyway).
+ * zoom slider folds, followed by labels and then controls as listed in
+ * HEADER_FOLDS. Commands remain available in Timeline ⋯ when their controls
+ * fold; the minimal tier starts with glyphs.
  * The fold measures the header only when its width or its words change,
  * never while playing. At the minimal tier First frame, Loop, Audio and Edit
  * together fold into Timeline ⋯, and Edit together never shows in Draw or
@@ -52,12 +52,12 @@ import {bandBottom} from './shell/topbar.mjs';
 
 /**
  * What folds, in order (experience.md §1.8, revision 4.3): the zoom slider (Ctrl + wheel and Fit still zoom), Edit
- * together's word, Next copy's word, Add frame's word, and last, where even the glyphs do not fit (a drawing layer
- * in a window about 500px wide), the Next copy split itself, whose commands then lead Timeline ⋯ (they are the
- * drawing rows' frame menu too).
+ * together's word, Next copy's word, Auto key's word and Add frame's word. When glyphs still do not fit,
+ * Auto key, Next copy and finally the timeline mode switch move into Timeline ⋯. The same commands and
+ * radio values remain available there, including with expanded translated captions.
  */
-export const HEADER_FOLDS = Object.freeze(['zoom', 'together', 'cel', 'add', 'celmenu']);
-const WORDS = 4;
+export const HEADER_FOLDS = Object.freeze(['zoom', 'together', 'cel', 'autokey', 'autokeymenu', 'add', 'celmenu', 'modemenu']);
+const WORDS = 6;
 
 /** Which folds a header applies: the first `count` of HEADER_FOLDS; at the minimal tier every word from the start. */
 export function headerFolds(count, {tier = 'wide'} = {}) {
@@ -266,15 +266,15 @@ export function createTimelineHeader(ctx, host) {
     const items = [];
     // A phone's touch interface folds Simple │ Advanced and Onion's settings into this menu (features/touch.css).
     const root = document.documentElement.dataset;
-    if (root.input === 'touch' && root.form === 'phone') {
+    if ((root.input === 'touch' && root.form === 'phone') || (toolbar.dataset.fold ?? '').split(' ').includes('modemenu')) {
       const current = modes.querySelector('[aria-pressed="true"]')?.dataset.timelineMode;
       for (const item of modes.querySelectorAll('[data-timeline-mode]'))
-        items.push({label: item.textContent.trim(), icon: item.dataset.timelineMode === 'simple' ? 'frame' : 'timeline', radio: true, group: 'timeline-mode',
+        items.push({label: say(item.dataset.timelineMode === 'simple' ? 'chrome.simple' : 'chrome.advanced'), labelKey: item.dataset.timelineMode === 'simple' ? 'chrome.simple' : 'chrome.advanced', icon: item.dataset.timelineMode === 'simple' ? 'frame' : 'timeline', radio: true, group: 'timeline-mode',
           checked: item.dataset.timelineMode === current, run: () => item.click()});
       items.push(null, {label: say("timeline.onionSettings"), labelKey: "timeline.onionSettings", labelParams: {}, icon: 'onion', run: () => $('onion-settings-button').click()}, null);
     }
     // The touch timeline's action bar needs the header's room: Auto key is a row here (features/touch.css).
-    if (root.input === 'touch' && !simple) {
+    if (!simple && (root.input === 'touch' || (toolbar.dataset.fold ?? '').split(' ').includes('autokeymenu'))) {
       items.push({label: say("timeline.autoKey"), labelKey: "timeline.autoKey", labelParams: {}, icon: 'circle', checked: autoKey.getAttribute('aria-pressed') === 'true', run: action('toggle-auto-key')}, null);
     }
     const phone = root.input === 'touch' && root.form === 'phone';

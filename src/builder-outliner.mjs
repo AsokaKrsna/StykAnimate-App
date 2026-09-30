@@ -40,15 +40,15 @@ const STYLE = `
 .builder-outliner-empty{position:absolute;top:12px;left:12px;right:12px;color:var(--theme-muted,#858585);line-height:1.5;font-size:11px;pointer-events:none}
 `;
 const esc = value => String(value).replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
-const KIND_LABEL = {line: interfaceText("builderOutliner.line"), squareLine: interfaceText("builderOutliner.squareLine"), circle: interfaceText("builderOutliner.circle"), circleFill: interfaceText("builderOutliner.circleFill"), circleClear: interfaceText("builderOutliner.circleOutline"), image: interfaceText("builderOutliner.image"), text: interfaceText("builderOutliner.text"), textKey: "builderOutliner.text"};
-const KIND_ICON = {line: 'line', squareLine: 'square', circle: 'circle', circleFill: 'circle', circleClear: 'circle', image: 'image', text: interfaceText('builderOutliner.text2'), textKey: 'builderOutliner.text2', textParams: {}};
+const KIND_LABEL = {line: 'builderOutliner.line', squareLine: 'builderOutliner.squareLine', circle: 'builderOutliner.circle', circleFill: 'builderOutliner.circleFill', circleClear: 'builderOutliner.circleOutline', image: 'builderOutliner.image', text: 'builderOutliner.text'};
+const KIND_ICON = {line: 'line', squareLine: 'square', circle: 'circle', circleFill: 'circle', circleClear: 'circle', image: 'image', text: 'text'};
 const SEGMENT_KIND = ['line', 'circle', 'image', 'circleFill', 'circleClear', 'text', 'squareLine'];
 const segmentKind = segment => {
   const kind = segment.segment_kind ?? segment.segment_type ?? SEGMENT_KIND[segment.primitive_code] ?? 'line';
   return KIND_LABEL[kind] ? kind : 'line';
 };
 /** A part's name as Structure and Properties show it in Build: its own name, else its kind and id ("Line 4"). */
-export const partName = segment => segment.name || `${KIND_LABEL[segmentKind(segment)] ?? interfaceText("builderOutliner.segment")} ${segment.segment_id}`;
+export const partName = segment => segment.name || `${interfaceText(KIND_LABEL[segmentKind(segment)] ?? 'builderOutliner.segment')} ${segment.segment_id}`;
 /** A part's glyph in Structure and Properties (line, circle, image, text, square). */
 export const partGlyph = segment => KIND_ICON[segmentKind(segment)] ?? 'line';
 

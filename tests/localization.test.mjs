@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, Localization, normalizeLocale, isSupportedLocale } from '../src/localization.mjs';
 import english from '../src/locales/en.mjs';
-import italian from '../src/locales/it.mjs';
+import packs from '../src/locales/locale-packs.mjs';
+
+const italian = packs.find(pack => pack.locale.id === 'it').messages;
 
 test('English is the default and invalid persisted locales fall back without guessing from the machine', () => {
   assert.equal(DEFAULT_LOCALE, 'en');
@@ -28,9 +30,8 @@ test('supported regional language tags normalize while unsupported locales canno
   assert.equal(locale.locale, 'en');
 });
 
-test('missing translations fall back to English and missing keys remain diagnosable', () => {
+test('unknown keys remain diagnosable without inherited object values', () => {
   const locale = new Localization({ locale: 'it' });
-  assert.equal(locale.t('diagnostics.renderer'), 'Renderer');
   assert.equal(locale.t('untranslated.newControl'), 'untranslated.newControl');
   for (const key of ['constructor', 'toString', '__proto__']) assert.equal(locale.t(key), key);
   assert.throws(() => locale.t(null), /translation key/);
@@ -93,7 +94,7 @@ test('formatter work is cached, bounded and invalidated only when language chang
   assert.equal(locale.formatters.size, 0);
 });
 
-test('partial catalogs are immutable and preserve every translated placeholder', () => {
+test('catalogs are immutable and preserve every translated placeholder', () => {
   assert.ok(Object.isFrozen(SUPPORTED_LOCALES));
   assert.equal(SUPPORTED_LOCALES.length, 27);
   assert.ok(SUPPORTED_LOCALES.every(item => ['common-controls','native-captions'].includes(item.coverage) && Object.isFrozen(item)));
@@ -105,7 +106,7 @@ test('partial catalogs are immutable and preserve every translated placeholder',
     if (typeof source === 'string') assert.deepEqual(placeholders(translated), placeholders(source), key);
     else for (const [category, text] of Object.entries(translated)) {
       assert.ok(Object.isFrozen(translated), key);
-      assert.deepEqual(placeholders(text), placeholders(source[category]), `${key}.${category}`);
+      assert.deepEqual(placeholders(text), placeholders(source.other), `${key}.${category}`);
     }
   }
 });

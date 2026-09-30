@@ -78,7 +78,7 @@ export class OnionControls {
       else if(force||document.activeElement!==input)setProp(input,'value',String(input.dataset.onion==='onionOpacity'?Math.round(value*100):value));
     }
     setVar(this.panel.querySelector('.onion-slider'),'--_p',`${Math.round(settings.onionOpacity*100)}%`);
-    const unit=settings.onionMode==='frames'?'frames':'poses';
+    const unit={messageKey:settings.onionMode==='frames'?'motionPathControls.frames':'onionControls.poses'};
     // The count follows the playhead; it is read only while the popover shows, and opening it syncs first.
     if(force||this.panel.matches(':popover-open'))setAttr(this.panel,'title',interfaceText('onionControls.countEarlierAndCount2LaterUnitShownAtThis', {count: range.before.count, count2: range.after.count, unit: unit}));
     for(const button of this.panel.querySelectorAll('[data-onion-scope]'))setAttr(button,'aria-pressed',String(button.dataset.onionScope===settings.onionScope));

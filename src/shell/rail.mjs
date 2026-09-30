@@ -1,5 +1,5 @@
 import {t as interfaceText} from '../localization.mjs';
-import {appendLocalized, localizedMarkup} from '../localization-bindings.mjs';
+import {appendLocalized, localizedMarkup, localizedAttribute} from '../localization-bindings.mjs';
 /**
  * The tool rail (experience.md §3.2, components.md "Tool button and Rail"):
  * only the current workspace's tools, in the same column and anchored to its
@@ -38,15 +38,15 @@ export const RAIL_TOOLS = Object.freeze({
 
 /** Names that differ by workspace; others keep the name in the markup. */
 const WORKSPACE_NAMES = Object.freeze({
-  animate: {add: interfaceText("rail.add"), select: interfaceText("rail.selectAndPose")},
-  draw: {add: interfaceText("rail.newDrawingLayer")},
-  rig: {rig: interfaceText("rail.editJoints"), select: interfaceText("rail.selectFigure")},
+  animate: {add: "rail.add", select: "rail.selectAndPose"},
+  draw: {add: "rail.newDrawingLayer"},
+  rig: {rig: "rail.editJoints", select: "rail.selectFigure"},
 });
 
 /** The Tweener names itself after its current type (tweener-controls.mjs); every other tool's name is the rail's. */
 const SELF_NAMED = new Set(['tweener']);
 /** What each corner tick lists, by [data-rail-menu] value: its accessible name. */
-const TICK_NAMES = Object.freeze({add: interfaceText("rail.addToTheScene"), lasso: interfaceText("rail.chooseSelectionShape"), shape: interfaceText("rail.chooseShape")});
+const TICK_NAMES = Object.freeze({add: "rail.addToTheScene", lasso: "rail.chooseSelectionShape", shape: "rail.chooseShape"});
 const LONG_PRESS_MS = 450;
 const LONG_PRESS_SLOP = 6;
 
@@ -73,9 +73,9 @@ export function installRail(rail, {openMenu, signal} = {}) {
     tick.type = 'button';
     tick.className = 'rail-tick ui-tool-tick-button';
     tick.tabIndex = -1;
-    tick.setAttribute('aria-label', TICK_NAMES[button.dataset.railMenu] ?? interfaceText("rail.more"));
+    localizedAttribute(tick,'aria-label',TICK_NAMES[button.dataset.railMenu]??'rail.more');
     tick.setAttribute('aria-haspopup', 'menu');
-    tick.dataset.tooltip = TICK_NAMES[button.dataset.railMenu] ?? interfaceText("rail.more");
+    localizedAttribute(tick,'data-tooltip',TICK_NAMES[button.dataset.railMenu]??'rail.more');
     localizedMarkup(tick, '<span class="ui-tool-tick" aria-hidden="true"></span>');
     appendLocalized(slot, tick);
     tick.addEventListener('click', event => { event.stopPropagation(); open(button); }, options);
@@ -126,10 +126,19 @@ export function syncRail(rail, {mode = 'animate', tool = null} = {}) {
     if (host !== button && button.hidden) button.hidden = false;
     if (!SELF_NAMED.has(key)) {
       // The name the tooltip shows too (the registry adds the key); the markup's name unless this workspace renames it.
-      if (button.dataset.railName === undefined) button.dataset.railName = button.getAttribute('aria-label') ?? '';
-      const name = names[key] ?? button.dataset.railName;
-      if (name && button.getAttribute('aria-label') !== name) button.setAttribute('aria-label', name);
-      if (name && button.dataset.tooltip !== name) button.dataset.tooltip = name;
+      if (button.dataset.railName === undefined) {
+        button.dataset.railName = button.getAttribute('aria-label') ?? '';
+        button.dataset.railNameKey = button.getAttribute('data-i18n-aria-label') ?? '';
+      }
+      const messageKey = names[key] ?? button.dataset.railNameKey;
+      if (messageKey) {
+        localizedAttribute(button,'aria-label',messageKey);
+        localizedAttribute(button,'data-tooltip',messageKey);
+      } else {
+        const name = button.dataset.railName;
+        if (name && button.getAttribute('aria-label') !== name) button.setAttribute('aria-label', name);
+        if (name && button.dataset.tooltip !== name) button.dataset.tooltip = name;
+      }
     }
     if (key === 'add') {
       // Animate's + opens the Add menu; Draw's makes a drawing layer (its corner tick has the menu).

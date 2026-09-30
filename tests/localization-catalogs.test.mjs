@@ -20,13 +20,54 @@ test('intentional fallback reports missing messages and language-specific plural
   assert.deepEqual(report.errors, []);
   assert.ok(report.missing.includes('common.save'));
   assert.deepEqual(report.incompletePlurals, [{key:'timeline.selectedFrames', forms:['zero','one','two','few','many']}]);
-  assert.equal(new Localization({locale: 'ar'}).t('timeline.selectedFrames', {count: 1}), `${new Intl.NumberFormat('ar').format(1)} selected frame`);
+});
+test('fallback lookup and coverage stay accurate for incomplete and complete catalogs', async () => {
+  // Exercise the real service with a deliberately partial registry, independently
+  // of the supplied packs becoming complete or changing their wording.
+  const messages = {'common.save': 'حفظ', 'timeline.selectedFrames': {other: '{count} إطار محدد'}};
+  const forms = new Intl.PluralRules('ar').resolvedOptions().pluralCategories;
+  const complete = Object.fromEntries(Object.entries(english).map(([key, value]) => [key,
+    typeof value === 'string' ? value : Object.fromEntries(forms.map(form => [form, value.other]))]));
+  const missingForm = structuredClone(complete);
+  delete missingForm['timeline.selectedFrames'].few;
+  const fixturePacks = [
+    {locale: {id:'en', name:'English', nativeName:'English', direction:'ltr'}, messages:{}},
+    {locale, messages},
+    {locale: {...locale, id:'ar-EG'}, messages:complete},
+    {locale: {...locale, id:'ar-SA'}, messages:missingForm},
+  ];
+  const source = (await readFile(new URL('../src/localization.mjs', import.meta.url), 'utf8'))
+    .replace("'./locales/en.mjs'", JSON.stringify(new URL('../src/locales/en.mjs', import.meta.url).href))
+    .replace(/import packs from '[^']+';/, `const packs = ${JSON.stringify(fixturePacks)};`);
+  const {Localization: FixtureLocalization} = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+  const service = new FixtureLocalization({locale:'ar'});
+  assert.equal(service.hasFallback, true);
+  assert.equal(service.t('common.save'), 'حفظ');
+  assert.equal(service.t('common.open'), english['common.open']);
+  assert.equal(service.t('timeline.selectedFrames', {count:1}), `${new Intl.NumberFormat('ar').format(1)} selected frame`);
+  assert.equal(service.t('timeline.selectedFrames', {count:3}), `${new Intl.NumberFormat('ar').format(3)} selected frames`);
+  assert.equal(service.t('timeline.selectedFrames', {count:101}), `${new Intl.NumberFormat('ar').format(101)} إطار محدد`);
+  service.setLocale('ar-EG');
+  assert.equal(service.hasFallback, false);
+  service.setLocale('ar-SA');
+  assert.equal(service.hasFallback, true, 'a missing plural category also needs the notice');
+  assert.equal(service.t('timeline.selectedFrames', {count:3}), `${new Intl.NumberFormat('ar-SA').format(3)} selected frames`);
+  service.setLocale('en');
+  assert.equal(service.hasFallback, false);
 });
 test('all independent packs validate against one authoritative English catalog', async () => {
   assert.deepEqual(validateCatalog({locale: {...locale, id:'en'}, messages: english}, english).errors, []);
   for (const file of await readdir('src/locales/packs')) {
     const pack = JSON.parse(await readFile(`src/locales/packs/${file}`, 'utf8'));
     assert.deepEqual(validateCatalog(pack, english).errors, [], file);
+    for (const key of [
+      'appDialogs.uiDialogDescPerformanceNote', 'settings.settingsFeedbackNote',
+      'settings.message1pxSolid000', 'settings.message0pxSolidTransparent',
+      'stageHead.handlesButton', 'stageHead.pathsButton', 'stageHead.vfxPreview',
+      'stageHead.dataActionBuilderStaticHandles', 'stageHead.dataActionBuilderHighlight',
+      'stageHead.dataActionToggleIsolate',
+      'builderOutliner.text2',
+    ]) if (Object.hasOwn(pack.messages, key)) assert.equal(pack.messages[key], english[key], `${file}:${key} is a machine value`);
   }
   assert.equal(messageText(null, 'settings.touchInterface'), 'Touch interface');
   assert.equal(messageText(null, 'inspector.mixed'), 'Mixed');

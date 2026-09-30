@@ -87,13 +87,17 @@
   .tl-head:where([data-fold~="zoom"]) .tl-ruler-tools > .tl-zoom { display: none; }
   .tl-head:where([data-fold~="together"]) .tl-together > :is(.ui-label, .range-edit-count),
   .tl-head:where([data-fold~="cel"]) .tl-cel-main > .ui-label,
-  .tl-head:where([data-fold~="add"]) .tl-add > .ui-label {
+  .tl-head:where([data-fold~="add"]) .tl-add > .ui-label,
+  .tl-head:where([data-fold~="autokey"]) .tl-autokey > .ui-label {
     position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
   }
   .tl-head:where([data-fold~="together"]) .tl-together,
-  .tl-head:where([data-fold~="add"]) .tl-add { --_px: 0; inline-size: var(--control-md); }
+  .tl-head:where([data-fold~="add"]) .tl-add,
+  .tl-head:where([data-fold~="autokey"]) .tl-autokey { --_px: 0; inline-size: var(--control-md); }
   /* Last, where even the glyphs do not fit, Next copy's commands lead Timeline ⋯. */
-  .tl-head:where([data-fold~="celmenu"]) .tl-cel { display: none; }
+  .tl-head:where([data-fold~="celmenu"]) .tl-cel,
+  .tl-head:where([data-fold~="autokeymenu"]) .tl-autokey,
+  .tl-head:where([data-fold~="modemenu"]) .tl-mode { display: none; }
 
   /* The frame rate folds at compact width (into the Scene's Rate), restated over this sheet's display. */
   :where(:root[data-tier="compact"], :root[data-tier="minimal"]) .tl-head .tl-fps { display: none; }

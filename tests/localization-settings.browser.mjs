@@ -58,7 +58,8 @@ try {
   check('Selecting Italian updates settings headings, descriptions and mode controls', await page.locator('.styk-settings').evaluate(dialog => dialog.lang === 'it' && dialog.querySelector('h2').textContent === 'Impostazioni' && dialog.textContent.includes('Miniature e intercalazioni') && dialog.textContent.includes('Avanzata')));
   check('Language is a normalized settings patch and not a document operation', await page.evaluate(() => JSON.stringify(localePatches.at(-1).patch) === '{"locale":"it"}'));
   check('Language selector keeps focus through its localized redraw', await page.evaluate(() => document.activeElement.dataset.setting === 'locale' && document.activeElement.value === 'it'));
-  check('Partial language coverage is stated in the chosen language', await page.locator('[data-locale-coverage]').textContent() === 'Alcuni comandi sono ancora visualizzati in inglese.');
+  check('Settings shows the coverage notice only for incomplete messages or plurals', await page.evaluate(() =>
+    Boolean(document.querySelector('[data-locale-coverage]')) === localeApp.localization.hasFallback));
   check('Static chrome captions and accessible placeholders update without changing inputs', await page.evaluate(() => document.documentElement.lang === 'it' && document.querySelector('[data-action=open]').textContent === 'Apri' && document.querySelector('#layer-search').placeholder === 'Cerca livelli' && document.querySelector('#project-name').value === 'My animation' && document.querySelector('#draft-value').value === '12.375'));
   check('Translated buttons preserve original icons and other child elements', await page.evaluate(() => document.querySelector('#open-icon') === originalIcon && document.querySelector('[data-action=export] .chevron').textContent === '⌄'));
   await page.screenshot({path:path.join(output,'italian-settings.png')});

@@ -171,7 +171,7 @@ export class AudioTimeline {
     const state = audioState(this.editor.report), {clip, asset, track: owner} = this.found(), time = this.editor.tick / this.fps;
     this.root.hidden = !this.open;
     this.launcher?.setAttribute('aria-expanded', String(this.open)); this.launcher?.setAttribute('aria-pressed', String(this.open));
-    if (this.launcher) { this.launcher.dataset.hasAudio = String(state.tracks.some(track => track.clips.length)); localizedAttribute(this.launcher, "title", "audioTimeline.audio", {value: this.open ? {messageKey: "audioTimeline.hide"} : {messageKey: "audioTimeline.show"}, value2: state.tracks.length ? ` · ${state.tracks.length} tracks` : ''}); }
+    if (this.launcher) { this.launcher.dataset.hasAudio = String(state.tracks.some(track => track.clips.length)); localizedAttribute(this.launcher, 'title', state.tracks.length?'audioTimeline.audioWithTracks':'audioTimeline.audio', {value:this.open?{messageKey:'audioTimeline.hide'}:{messageKey:'audioTimeline.show'},count:state.tracks.length,value2:''}); }
     this.container.classList.toggle('audio-tab-open', this.open && !this.integrated);
     if (this.integrated) { this.host.headerTools.classList.toggle('audio-selection', this.open && Boolean(clip)); this.host.root.classList.toggle('audio-visible', this.open); }
     this.clipToolsButton.disabled=!clip;

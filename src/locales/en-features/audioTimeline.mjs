@@ -1,4 +1,8 @@
 export default Object.freeze({
+  "audioTimeline.audioWithTracks": {
+    "one": "{value} audio · {count} track",
+    "other": "{value} audio · {count} tracks"
+  },
   "audioTimeline.audioTimeline": "Audio timeline",
   "audioTimeline.audioOptions": "Audio options",
   "audioTimeline.chooseAudioRecording": "Choose audio recording",

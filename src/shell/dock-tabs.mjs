@@ -1,5 +1,5 @@
 import {t as interfaceText} from '../localization.mjs';
-import {localizedAttribute, appendLocalized} from '../localization-bindings.mjs';
+import {localizedAttribute, appendLocalized, connectTranslations} from '../localization-bindings.mjs';
 /**
  * Tabs as the panels' handles (architecture §3.11.5, experience §1.5):
  *
@@ -41,6 +41,7 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
   localizedAttribute(railHandle, 'aria-label', "dockTabs.moveTools", {});
   localizedAttribute(railHandle, "title", "dockTabs.dragToEitherSideLeftAndRightArrows", {});
   host.regions().rail?.prepend(railHandle);
+  connectTranslations(railHandle);
   let press = null, drag = null, suppressClick = false;
 
   // -------------------------------------------------------------------

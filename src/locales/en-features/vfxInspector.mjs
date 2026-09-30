@@ -1,4 +1,7 @@
 export default Object.freeze({
+  "vfxInspector.myPresetSummary": "My preset · {summary}",
+  "vfxInspector.lookSummary": "Look · {summary}",
+  "vfxInspector.noEffectsOnFigure": "No effects on {name}",
   "vfxInspector.effectsCurrentlyApplyToThisPartOnly": "{conflict} Effects currently apply to this part only.",
   "vfxInspector.poseEffects": "Pose effects",
   "vfxInspector.moreOnOtherFrames": "{value} more on other frames",

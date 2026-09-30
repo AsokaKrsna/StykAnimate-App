@@ -172,7 +172,7 @@ export function createStageHead({root, toasts = () => null, toolOptions = {}, op
     setAttr(scene, 'data-action', session?.done ?? 'scene-settings');
     localizedAttribute(scene, 'data-tooltip', (session ? "stageHead.backToTheSceneDone" : "stageHead.sceneProperties"), (session ? {} : {}));
     // Its words may fold away in a narrow header (the size first, then the name): the accessible name keeps them.
-    setAttr(scene, 'aria-label', session ? interfaceText("stageHead.sceneBackToTheScene") : `Scene ${state.size ?? ''}`.trim());
+    localizedAttribute(scene,'aria-label',session?'stageHead.sceneBackToTheScene':'movieclipUi.scene2',session?{}:{scene:state.size??''});
     setHidden(separator, !session);
     setHidden(here, !session);
     setText(hereName, session?.name ?? '');

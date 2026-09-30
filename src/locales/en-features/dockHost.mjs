@@ -1,4 +1,6 @@
 export default Object.freeze({
+  "dockHost.resizeStackedLeftPanels": "Resize stacked left panels",
+  "dockHost.resizeStackedRightPanels": "Resize stacked right panels",
   "dockHost.folded": "{value}, folded",
   "dockHost.dragToMovePanelRightClickForLayout": "Drag to move panel; right-click for layout options",
   "dockHost.resizeStackedPanels": "Resize stacked {side} panels",

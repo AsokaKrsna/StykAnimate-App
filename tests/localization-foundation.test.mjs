@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import english from '../src/locales/en.mjs';
+import packs from '../src/locales/locale-packs.mjs';
 import {parseLanguagePack, validateCatalog, mergeEnglishMessages} from '../src/locales/catalog-validation.mjs';
 import {inspectMessageReferences, inspectApplicationMessages} from '../scripts/localization-source.mjs';
 import {messageError, restoreMessageError, errorMessageData} from '../src/localized-error.mjs';
@@ -54,9 +55,22 @@ test('sandboxed preload uses the same generated diagnostic constructor without N
 test('presentation references and precise numbers resolve in the selected language', () => {
   const localization = new Localization({locale:'it'});
   assert.equal(localization.t('quick.unavailable', {label:{messageKey:'common.save'},reason:'Example'}), 'Salva (Example)');
-  const source = english['app.savedAt'];
+  const source = packs.find(pack => pack.locale.id === 'it').messages['app.savedAt'] ?? english['app.savedAt'];
   const result = localization.t('app.savedAt', {time:{format:'date',value:Date.UTC(2026,0,1,12,5),options:{hour:'numeric',minute:'2-digit',timeZone:'UTC'}}});
   assert.equal(result, source.replace('{time}', new Intl.DateTimeFormat('it',{hour:'numeric',minute:'2-digit',timeZone:'UTC'}).format(Date.UTC(2026,0,1,12,5))));
+});
+
+test('Build part captions follow language changes while icon IDs and authored names stay intact', async () => {
+  interfaceLocalization.setPseudo('long');
+  try {
+    const {partName, partGlyph} = await import('../src/builder-outliner.mjs?locale-review');
+    const segment = {primitive_code:5, segment_id:12};
+    assert.equal(partGlyph(segment), 'text', 'localized text is never an icon identifier');
+    assert.equal(partName(segment), `${interfaceLocalization.t('builderOutliner.text')} 12`);
+    interfaceLocalization.setPseudo(null);
+    assert.equal(partName(segment), 'Text 12', 'the caption resolves again after a language change');
+    assert.equal(partName({...segment, name:'My authored text'}), 'My authored text');
+  } finally { interfaceLocalization.setPseudo(null); }
 });
 
 test('tuple bindings do not change arrays or serialized action and shortcut values', () => {

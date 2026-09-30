@@ -1,5 +1,6 @@
-import {CAMERA_MOTION_TYPES} from './camera-motion.mjs';
-export function motionRows(editor){return editor.getCameraMotions().map(clip=>({id:clip.id,kind:'motion',name:CAMERA_MOTION_TYPES[clip.type],clip,visible:clip.enabled,locked:editor.getLayer('camera').locked}));}
+import {t as interfaceText} from './localization.mjs';
+import {motionTypeMessages} from './camera-motion-localization.mjs';
+export function motionRows(editor){return editor.getCameraMotions().map(clip=>({id:clip.id,kind:'motion',name:interfaceText(motionTypeMessages[clip.type]),nameKey:motionTypeMessages[clip.type],clip,visible:clip.enabled,locked:editor.getLayer('camera').locked}));}
 /** A camera motion lane (`size` px tall, timeline-rows.mjs): the clip as a neutral block with its name; the selected
  * one outlined in the accent with its two trim edges marked. */
 export function paintMotionRow(host,ctx,layer,y,size=32){
@@ -9,7 +10,7 @@ export function paintMotionRow(host,ctx,layer,y,size=32){
   const left=start*host.pxPerTick-host._offsetX(),width=duration*host.pxPerTick,top=y+5,height=size-10;
   ctx.globalAlpha=clip.enabled?1:.4;ctx.beginPath();ctx.roundRect(left+1.5,top,Math.max(2,width-3),height,5);
   ctx.fillStyle=selected?c['accent-soft']??c.selected:c.cel??c['camera-tint'];ctx.fill();ctx.lineWidth=selected?1.5:1;ctx.strokeStyle=selected?c['accent-line']??c.accent:c['cel-line']??c.accent;ctx.stroke();
-  ctx.save();ctx.beginPath();ctx.rect(left+5,top,Math.max(0,width-10),height);ctx.clip();ctx.font=`500 11px ${host.font}`;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillStyle=c.ink;ctx.fillText(CAMERA_MOTION_TYPES[clip.type],left+9,y+size/2+.5);ctx.restore();ctx.globalAlpha=1;
+  ctx.save();ctx.beginPath();ctx.rect(left+5,top,Math.max(0,width-10),height);ctx.clip();ctx.font=`500 11px ${host.font}`;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillStyle=c.ink;ctx.fillText(interfaceText(motionTypeMessages[clip.type]),left+9,y+size/2+.5);ctx.restore();ctx.globalAlpha=1;
   if(selected){ctx.fillStyle=c['accent-line']??c.accent;ctx.fillRect(left+3,y+size/2-4,2,8);ctx.fillRect(left+width-5,y+size/2-4,2,8);}
 }
 export const cameraMotionTimelineMethods={
