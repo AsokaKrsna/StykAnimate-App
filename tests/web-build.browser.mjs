@@ -78,6 +78,16 @@ try {
   check('The runtime is downloaded once and reused', !runtimeLoaded(since(mark)));
   check('Re-exporting an unchanged Pivot import is byte-identical', Buffer.compare(await readFile(first), await readFile(second)) === 0);
 
+  // The readout once updated inside a hidden status bar. Check its rendered
+  // placement during playback, not merely that the element or text exists.
+  await page.locator('#play-button').click();
+  await page.locator('#viewport > #playback-fps').waitFor({ state: 'visible' });
+  await page.waitForFunction(() => /^\d+(?:\.\d+)? fps$/.test(document.querySelector('#playback-fps')?.textContent ?? ''));
+  check('Playback shows the live FPS counter on the canvas', await page.locator('#viewport > #playback-fps').isVisible());
+  await page.locator('#play-button').click();
+  await page.locator('#playback-fps').waitFor({ state: 'hidden' });
+  check('The FPS counter hides when playback stops', await page.locator('#playback-fps').isHidden());
+
   // Everything else the browser can do without the codec or a desktop encoder.
   const signatures = [
     ['export-png', 'frame.png', Buffer.from([0x89, 0x50, 0x4e, 0x47]), 'A PNG frame'],
