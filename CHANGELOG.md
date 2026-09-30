@@ -8,6 +8,7 @@ What's new in each version of StykAnimate.
 
 ### Added
 
+- A separate pack of 15 Pivot-style 3D guns with movable reload parts, ammunition and editable example animations.
 - Command palette: press Ctrl+P or F1 to find any command, setting, layer, figure or frame.
 - Custom layouts: dock, stack, group or float panels wherever you like, and switch between layouts such as Timing, Focus and Review from View → Layout (Ctrl+Alt+L).
 - Keyboard navigation: F6 moves between areas of the editor, Ctrl+\ switches to Focus mode, and Ctrl+1 to Ctrl+4 show or hide the main panels.
