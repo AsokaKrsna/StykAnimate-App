@@ -36,11 +36,11 @@ export const editorRigMethods = {
   /** In reposition mode only the dragged joint moves; connected endpoints stay fixed. */
   beginRigDrag({reposition = true, bend = false, label = bend ? 'Bend rig joint' : 'Edit rig'} = {}) {
     const segment = this.figure?.segments[this.selectedJoint];
-    if (bend && (!segment || segment._stykRig?.spatial || segment._stykRig?.connector ||
+    if (bend && (!segment || segment._stykRig?.spatial ||
         ![0, 6].includes(segment.primitive_code ?? (segment.flags ?? 0) & 255))) return false;
     if(this.figure?.segments[this.selectedJoint]?._stykRig?.spatial)throw new Error('Use Pose or Rotate to articulate this joint. Its rest position belongs to the spatial skin binding.');
     if(this.figure?.segments[this.selectedJoint]?._stykRig?.anglePath||this.figure?.segments[this.selectedJoint]?._stykRig?.weighted)return false;
-    if (this.figure?.segments[this.selectedJoint]?._stykRig?.connector) return this.beginDrag('Slide connector');
+    if (!bend && this.figure?.segments[this.selectedJoint]?._stykRig?.connector) return this.beginDrag('Slide connector');
     if (!this.figure?.segments[this.selectedJoint]) return false;
     if (Math.abs(this.object.scale) < EPS) throw new Error('Increase figure scale before editing its rig.');
     if (!this.beginDrag(label)) return false;

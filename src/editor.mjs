@@ -1160,6 +1160,7 @@ export class Editor extends EventTarget {
     const rigBend = this._drag?.rig?.bend;
     if (!segment || (isStatic(segment) && !rigBend) || ![0, 6].includes(segment.primitive_code ?? (segment.flags ?? 0) & 255)) return false;
     const shape = this.geometry.objects.get(this.selectedSlot)?.segments[this.selectedJoint]; if (!shape) return false;
+    if (shape.connector) return this._bendConnector(x, y, shape);
     const distance = Math.hypot(x - shape.start.x, y - shape.start.y);
     let bend = distance < 1e-8 ? shape.bend : 2 * shortest(Math.atan2(y - shape.start.y, x - shape.start.x) - shape.angle);
     return this._objectEdit('Bend joint', object => {
@@ -1183,6 +1184,24 @@ export class Editor extends EventTarget {
         if (!isolate) for (const i of this._drag.rig.branch)
           if (i !== this.selectedJoint) object.angles[i] += bend - shape.bend;
       } else this._rotateJoint(bend - shape.bend, false, {isolate});
+      if (!object.bend_flag) object.bends = this.figure.segments.map(s => s.bend_rad ?? 0);
+      object.bend_flag = 1; object.bends[this.selectedJoint] = bend;
+    }, {posed: true});
+  }
+  /** Anchors fix a connector's chord and its evaluated angle depends on its
+   * bend, so the arc is fitted through the pointer instead of from the start
+   * tangent. Attached parts follow the curve; the slide position is unchanged. */
+  _bendConnector(x, y, shape) {
+    const factor = Math.abs(shape.bend) < 1e-7 ? 1 : 2 * Math.sin(shape.bend / 2) / shape.bend;
+    const chord = shape.angle + shape.bend / 2, span = shape.length * factor, a = shape.start;
+    const b = {x: a.x + span * Math.cos(chord), y: a.y + span * Math.sin(chord)};
+    const ux = a.x - x, uy = a.y - y, vx = b.x - x, vy = b.y - y;
+    if (Math.hypot(ux, uy) < 1e-6 || Math.hypot(vx, vy) < 1e-6 || Math.abs(span) < 1e-6) return false;
+    // The tangent-chord angle is the supplement of the inscribed angle APB.
+    const inscribed = Math.atan2(Math.abs(ux * vy - uy * vx), ux * vx + uy * vy);
+    const side = (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x);
+    const bend = Math.max(-Math.PI * 1.99, Math.min(Math.PI * 1.99, 2 * (Math.PI - inscribed) * (side < 0 ? 1 : -1)));
+    return this._objectEdit('Bend joint', object => {
       if (!object.bend_flag) object.bends = this.figure.segments.map(s => s.bend_rad ?? 0);
       object.bend_flag = 1; object.bends[this.selectedJoint] = bend;
     }, {posed: true});
