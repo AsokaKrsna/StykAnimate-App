@@ -120,7 +120,12 @@ export function descriptorText(descriptor, property = 'label') {
 
 function caption(element, text) {
   const slot = [...element.children].find(child => child.hasAttribute('data-i18n-slot') || child.classList.contains('ui-label') || child.hasAttribute('data-i18n'));
-  if (slot) { clearTranslation(slot); if (slot.textContent !== text) slot.textContent = text; return; }
+  if (slot) {
+    // The parent owns this caption. Retain its slot after removing the child's
+    // redundant binding so the next language change updates the same node.
+    bindingAttribute(slot, 'data-i18n-slot', '');
+    clearTranslation(slot); if (slot.textContent !== text) slot.textContent = text; return;
+  }
   const nodes = [...element.childNodes].filter(node => node.nodeType === 3 && node.textContent.trim());
   if (nodes.length) {
     if (nodes[0].textContent !== text) nodes[0].textContent = text;

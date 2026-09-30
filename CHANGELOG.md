@@ -29,6 +29,7 @@ What's new in each version of StykAnimate.
 
 ### Fixed
 
+- Fixed repeated captions in controls and panels when changing the interface language.
 - Fixed Settings running off the edge of very narrow windows.
 - Browser downloads now keep your work recoverable until a file save is confirmed.
 - Browser recovery keeps each tab's unsaved project separately and pauses playback when the tab is hidden.

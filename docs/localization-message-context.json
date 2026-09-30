@@ -4510,7 +4510,7 @@
   },
   "chrome.assets": {
     "locations": [
-      "src/localization-bindings.mjs:185"
+      "src/localization-bindings.mjs:190"
     ],
     "context": "['.left-panel .panel-tabs [data-tab=\"assets\"]', { text: 'chrome.assets' }],"
   },
@@ -4577,7 +4577,7 @@
   "chrome.canvasZoom": {
     "locations": [
       "index.html:190",
-      "src/localization-bindings.mjs:195"
+      "src/localization-bindings.mjs:200"
     ],
     "context": "<button type=\"button\" class=\"ui-button stage-zoom\" id=\"zoom-label\" data-variant=\"ghost\" data-size=\"sm\" data-action=\"zoom-menu\" aria-haspopup=\"menu\" aria-label=\""
   },
@@ -4602,7 +4602,7 @@
   "chrome.close": {
     "locations": [
       "index.html:107",
-      "src/localization-bindings.mjs:183"
+      "src/localization-bindings.mjs:188"
     ],
     "context": "data-i18n-aria-label=\"chrome.close\"></button>"
   },
@@ -4638,7 +4638,7 @@
   },
   "chrome.design": {
     "locations": [
-      "src/localization-bindings.mjs:186"
+      "src/localization-bindings.mjs:191"
     ],
     "context": "['.right-panel .panel-tabs [data-inspector=\"design\"]', { text: 'chrome.design' }],"
   },
@@ -4750,7 +4750,7 @@
   "chrome.export": {
     "locations": [
       "index.html:81",
-      "src/localization-bindings.mjs:179"
+      "src/localization-bindings.mjs:184"
     ],
     "context": "data-i18n-title=\"chrome.export\"><span class=\"band-label\" data-i18n-slot data-i18n=\"chrome.export\">Export</span></button>"
   },
@@ -4780,7 +4780,7 @@
   },
   "chrome.findLayer": {
     "locations": [
-      "src/localization-bindings.mjs:191"
+      "src/localization-bindings.mjs:196"
     ],
     "context": "['#layer-search', { placeholder: 'chrome.searchLayers', 'aria-label': 'chrome.findLayer' }],"
   },
@@ -4919,7 +4919,7 @@
   },
   "chrome.importFigures": {
     "locations": [
-      "src/localization-bindings.mjs:188"
+      "src/localization-bindings.mjs:193"
     ],
     "context": "['.panel-bottom [data-action=\"import\"]', { text: 'chrome.importFigures' }],"
   },
@@ -4981,21 +4981,21 @@
   "chrome.mainMenu": {
     "locations": [
       "index.html:25",
-      "src/localization-bindings.mjs:180"
+      "src/localization-bindings.mjs:185"
     ],
     "context": "<button class=\"brand shell-mark\" data-action=\"menu\" aria-label=\"Main menu\" aria-haspopup=\"menu\" aria-expanded=\"false\" data-i18n-aria-label=\"chrome.mainMenu\">"
   },
   "chrome.maximize": {
     "locations": [
       "index.html:102",
-      "src/localization-bindings.mjs:182"
+      "src/localization-bindings.mjs:187"
     ],
     "context": "data-i18n-aria-label=\"chrome.maximize\"></button"
   },
   "chrome.minimize": {
     "locations": [
       "index.html:97",
-      "src/localization-bindings.mjs:181"
+      "src/localization-bindings.mjs:186"
     ],
     "context": "data-i18n-aria-label=\"chrome.minimize\"></button"
   },
@@ -5031,7 +5031,7 @@
   },
   "chrome.open": {
     "locations": [
-      "src/localization-bindings.mjs:177"
+      "src/localization-bindings.mjs:182"
     ],
     "context": "['.titlebar [data-action=\"open\"]', { text: 'chrome.open', title: 'chrome.openHint' }],"
   },
@@ -5043,7 +5043,7 @@
   },
   "chrome.openHint": {
     "locations": [
-      "src/localization-bindings.mjs:177"
+      "src/localization-bindings.mjs:182"
     ],
     "context": "['.titlebar [data-action=\"open\"]', { text: 'chrome.open', title: 'chrome.openHint' }],"
   },
@@ -5172,7 +5172,7 @@
   },
   "chrome.saveHint": {
     "locations": [
-      "src/localization-bindings.mjs:178"
+      "src/localization-bindings.mjs:183"
     ],
     "context": "['.titlebar [data-action=\"save\"]', { text: 'common.save', title: 'chrome.saveHint' }],"
   },
@@ -5196,7 +5196,7 @@
   },
   "chrome.sceneLayers": {
     "locations": [
-      "src/localization-bindings.mjs:192"
+      "src/localization-bindings.mjs:197"
     ],
     "context": "['#layer-list', { 'aria-label': 'chrome.sceneLayers' }],"
   },
@@ -5208,7 +5208,7 @@
   },
   "chrome.searchLayers": {
     "locations": [
-      "src/localization-bindings.mjs:191"
+      "src/localization-bindings.mjs:196"
     ],
     "context": "['#layer-search', { placeholder: 'chrome.searchLayers', 'aria-label': 'chrome.findLayer' }],"
   },
@@ -5345,7 +5345,7 @@
   "chrome.timelineZoom": {
     "locations": [
       "index.html:302",
-      "src/localization-bindings.mjs:194"
+      "src/localization-bindings.mjs:199"
     ],
     "context": "data-i18n-aria-label=\"chrome.timelineZoom\" />"
   },
@@ -5425,7 +5425,7 @@
   "chrome.zoomOptions": {
     "locations": [
       "index.html:190",
-      "src/localization-bindings.mjs:195"
+      "src/localization-bindings.mjs:200"
     ],
     "context": "<button type=\"button\" class=\"ui-button stage-zoom\" id=\"zoom-label\" data-variant=\"ghost\" data-size=\"sm\" data-action=\"zoom-menu\" aria-haspopup=\"menu\" aria-label=\""
   },
@@ -7113,7 +7113,7 @@
       "desktop/main.cjs:171",
       "src/app.mjs:4166",
       "src/application-menu.mjs:32",
-      "src/localization-bindings.mjs:206",
+      "src/localization-bindings.mjs:211",
       "src/touch/timeline-scrubber.mjs:52",
       "src/ui/command-catalog.mjs:97",
       "src/ui/quick-actions.mjs:92"
@@ -7123,7 +7123,7 @@
   "common.cut": {
     "locations": [
       "desktop/main.cjs:171",
-      "src/localization-bindings.mjs:206",
+      "src/localization-bindings.mjs:211",
       "src/touch/timeline-scrubber.mjs:53",
       "src/ui/command-catalog.mjs:96"
     ],
@@ -7134,7 +7134,7 @@
       "desktop/main.cjs:172",
       "src/camera-motion-ui.mjs:78",
       "src/color-picker.mjs:157",
-      "src/localization-bindings.mjs:207",
+      "src/localization-bindings.mjs:212",
       "src/shell/layout-popover.mjs:212",
       "src/studio-shell.mjs:126",
       "src/ui/command-catalog.mjs:103",
@@ -7163,7 +7163,7 @@
       "desktop/main.cjs:172",
       "src/app.mjs:4169",
       "src/application-menu.mjs:56",
-      "src/localization-bindings.mjs:207",
+      "src/localization-bindings.mjs:212",
       "src/studio-shell.mjs:107",
       "src/ui/command-catalog.mjs:102",
       "src/ui/quick-actions.mjs:92",
@@ -7177,7 +7177,7 @@
       "desktop/main.cjs:164",
       "src/app.mjs:4010",
       "src/application-menu.mjs:28",
-      "src/localization-bindings.mjs:205",
+      "src/localization-bindings.mjs:210",
       "src/ui/command-catalog.mjs:74"
     ],
     "context": "item(t('common.export'), 'export'),"
@@ -7224,7 +7224,7 @@
       "src/app.mjs:4157",
       "src/app.mjs:4167",
       "src/application-menu.mjs:32",
-      "src/localization-bindings.mjs:207",
+      "src/localization-bindings.mjs:212",
       "src/touch/timeline-scrubber.mjs:54",
       "src/ui/command-catalog.mjs:98",
       "src/ui/quick-actions.mjs:92"
@@ -7236,7 +7236,7 @@
       "desktop/main.cjs:169",
       "src/app.mjs:4004",
       "src/application-menu.mjs:31",
-      "src/localization-bindings.mjs:202",
+      "src/localization-bindings.mjs:207",
       "src/ui/command-catalog.mjs:95"
     ],
     "context": "item(t('common.undo'), 'undo'), item(t('common.redo'), 'redo'),"
@@ -7277,8 +7277,8 @@
       "src/app-dialogs.mjs:98",
       "src/app.mjs:4000",
       "src/application-menu.mjs:18",
-      "src/localization-bindings.mjs:178",
-      "src/localization-bindings.mjs:202",
+      "src/localization-bindings.mjs:183",
+      "src/localization-bindings.mjs:207",
       "src/ui/command-catalog.mjs:64"
     ],
     "context": "item(t('common.save'), 'save'),"
@@ -7288,7 +7288,7 @@
       "desktop/main.cjs:162",
       "src/app.mjs:4001",
       "src/application-menu.mjs:19",
-      "src/localization-bindings.mjs:202",
+      "src/localization-bindings.mjs:207",
       "src/ui/command-catalog.mjs:65"
     ],
     "context": "item(t('common.saveAs'), 'save-as'),"
@@ -7305,7 +7305,7 @@
       "desktop/main.cjs:169",
       "src/app.mjs:4003",
       "src/application-menu.mjs:31",
-      "src/localization-bindings.mjs:202",
+      "src/localization-bindings.mjs:207",
       "src/ui/command-catalog.mjs:94"
     ],
     "context": "item(t('common.undo'), 'undo'), item(t('common.redo'), 'redo'),"
@@ -25643,7 +25643,7 @@
   },
   "layers.title": {
     "locations": [
-      "src/localization-bindings.mjs:184",
+      "src/localization-bindings.mjs:189",
       "src/timeline-layers-popover.mjs:54"
     ],
     "context": "['.left-panel .panel-tabs [data-tab=\"layers\"]', { text: 'layers.title' }],"
@@ -26323,7 +26323,7 @@
   },
   "menu.createText": {
     "locations": [
-      "src/localization-bindings.mjs:204",
+      "src/localization-bindings.mjs:209",
       "src/ui/command-catalog.mjs:185"
     ],
     "context": "'import-background': 'menu.importBackground', 'add-text': 'menu.createText',"
@@ -26348,21 +26348,21 @@
   },
   "menu.importBackground": {
     "locations": [
-      "src/localization-bindings.mjs:204",
+      "src/localization-bindings.mjs:209",
       "src/ui/command-catalog.mjs:69"
     ],
     "context": "'import-background': 'menu.importBackground', 'add-text': 'menu.createText',"
   },
   "menu.importFigures": {
     "locations": [
-      "src/localization-bindings.mjs:203",
+      "src/localization-bindings.mjs:208",
       "src/ui/command-catalog.mjs:67"
     ],
     "context": "import: 'menu.importFigures', 'import-sprite': 'menu.importSprite',"
   },
   "menu.importSprite": {
     "locations": [
-      "src/localization-bindings.mjs:203",
+      "src/localization-bindings.mjs:208",
       "src/ui/command-catalog.mjs:68"
     ],
     "context": "import: 'menu.importFigures', 'import-sprite': 'menu.importSprite',"
@@ -26370,7 +26370,7 @@
   "menu.newAnimation": {
     "locations": [
       "desktop/main.cjs:157",
-      "src/localization-bindings.mjs:201",
+      "src/localization-bindings.mjs:206",
       "src/ui/command-catalog.mjs:60"
     ],
     "context": "item(t('menu.newAnimation'), 'new'),"
@@ -26378,28 +26378,28 @@
   "menu.openProject": {
     "locations": [
       "desktop/main.cjs:159",
-      "src/localization-bindings.mjs:201",
+      "src/localization-bindings.mjs:206",
       "src/ui/command-catalog.mjs:62"
     ],
     "context": "item(t('menu.openProject'), 'open'),"
   },
   "menu.openRecent": {
     "locations": [
-      "src/localization-bindings.mjs:201",
+      "src/localization-bindings.mjs:206",
       "src/ui/command-catalog.mjs:63"
     ],
     "context": "new: 'menu.newAnimation', open: 'menu.openProject', 'open-recent': 'menu.openRecent',"
   },
   "menu.performance": {
     "locations": [
-      "src/localization-bindings.mjs:206",
+      "src/localization-bindings.mjs:211",
       "src/ui/command-catalog.mjs:320"
     ],
     "context": "performance: 'menu.performance', copy: 'common.copy', cut: 'common.cut',"
   },
   "menu.settings": {
     "locations": [
-      "src/localization-bindings.mjs:205",
+      "src/localization-bindings.mjs:210",
       "src/ui/command-catalog.mjs:329"
     ],
     "context": "export: 'common.export', settings: 'menu.settings', help: 'menu.shortcuts',"
@@ -26407,8 +26407,8 @@
   "menu.shortcuts": {
     "locations": [
       "desktop/main.cjs:185",
-      "src/localization-bindings.mjs:189",
-      "src/localization-bindings.mjs:205",
+      "src/localization-bindings.mjs:194",
+      "src/localization-bindings.mjs:210",
       "src/ui/command-catalog.mjs:314"
     ],
     "context": "{ label: t('desktop.main.help'), submenu: [item(t('menu.shortcuts'), 'help'), item(t('desktop.main.checkForUpdates'), 'check-updates'), item(t('desktop.main.wha"
@@ -27603,37 +27603,37 @@
   },
   "playback.frameRate": {
     "locations": [
-      "src/localization-bindings.mjs:193"
+      "src/localization-bindings.mjs:198"
     ],
     "context": "['#fps', { 'aria-label': 'playback.frameRate' }],"
   },
   "playback.loop": {
     "locations": [
-      "src/localization-bindings.mjs:197"
+      "src/localization-bindings.mjs:202"
     ],
     "context": "['#loop-button', { title: 'playback.loop' }],"
   },
   "playback.pause": {
     "locations": [
-      "src/localization-bindings.mjs:303"
+      "src/localization-bindings.mjs:308"
     ],
     "context": "const key = previewing ? 'playback.stop' : playing ? 'playback.pause' : 'playback.play';"
   },
   "playback.play": {
     "locations": [
-      "src/localization-bindings.mjs:303"
+      "src/localization-bindings.mjs:308"
     ],
     "context": "const key = previewing ? 'playback.stop' : playing ? 'playback.pause' : 'playback.play';"
   },
   "playback.playPauseHint": {
     "locations": [
-      "src/localization-bindings.mjs:196"
+      "src/localization-bindings.mjs:201"
     ],
     "context": "['#play-button', { title: 'playback.playPauseHint' }],"
   },
   "playback.stop": {
     "locations": [
-      "src/localization-bindings.mjs:303"
+      "src/localization-bindings.mjs:308"
     ],
     "context": "const key = previewing ? 'playback.stop' : playing ? 'playback.pause' : 'playback.play';"
   },
@@ -29203,7 +29203,7 @@
   },
   "settings.animation": {
     "locations": [
-      "src/localization-bindings.mjs:187"
+      "src/localization-bindings.mjs:192"
     ],
     "context": "['.right-panel .panel-tabs [data-inspector=\"animation\"]', { text: 'settings.animation' }],"
   },
@@ -33489,7 +33489,7 @@
   },
   "timeline.title": {
     "locations": [
-      "src/localization-bindings.mjs:190",
+      "src/localization-bindings.mjs:195",
       "src/settings.mjs:607"
     ],
     "context": "['.timeline-title', { text: 'timeline.title' }],"

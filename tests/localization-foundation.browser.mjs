@@ -35,6 +35,7 @@ try {
     &&document.querySelector('.tweener-hud').firstElementChild.textContent===styk.localization.t('tweenerControls.breakdown')
     &&document.querySelector('[data-tween-type=breakdown] path').getAttribute('d')==='M12 3 20 12 12 21 4 12Z'));
   check('Retained activity, delayed task captions and progress accessibility follow the language',await page.evaluate(()=>retainedStatus===document.querySelector('#status')&&retainedStatus.textContent.includes('［')&&document.querySelector('.ui-toast-text b').textContent.includes('［')&&document.querySelector('.ui-toast-progress').getAttribute('aria-label').includes('［')));
+  await page.evaluate(()=>{window.onionCaption=document.querySelector('#onion-popover [data-i18n="onionControls.opacity"]');window.onionCaptionNode=onionCaption.firstElementChild;});
   await page.evaluate(async()=>{
     const {OnionFrameField}=await import('/src/onion-frame-field.mjs');
     const {appendLocalized}=await import('/src/localization-bindings.mjs');
@@ -57,6 +58,28 @@ try {
       &&marker.getAttribute('aria-valuetext')===t('counts.frames',{count})
       &&marker.title===t('onionTimelineRange.dragToChange',{spanLabel:{messageKey:'counts.frames',params:{count}}});
   }));
+  check('Nested retained captions update their original slot without leaving English or adding duplicate text',await page.evaluate(()=>{
+    const p=document.querySelector('#onion-popover'),keys=['opacity','allFigures','selected','more','sample','poses','everyFrame','every'];
+    return onionCaption.firstElementChild===onionCaptionNode&&onionCaption.children.length===1
+      &&keys.every(name=>p.querySelector(`[data-i18n="onionControls.${name}"]`).textContent===styk.localization.t(`onionControls.${name}`));
+  }));
+  await page.evaluate(async()=>{
+    const {localizedMarkup,appendLocalized}=await import('/src/localization-bindings.mjs');
+    window.captionProbe=document.createElement('button');
+    localizedMarkup(captionProbe, '<svg aria-hidden="true"><path d="M1 1h2"></path></svg><span data-i18n="chrome.vfx">VFX</span><kbd>Ctrl+V</kbd>');
+    captionProbe.dataset.i18n='chrome.vfx';appendLocalized(document.body,captionProbe);
+    window.captionNodes=[...captionProbe.children];
+    for(let cycle=0;cycle<4;cycle++)for(const locale of ['en','ar','he','de']){
+      styk.localization.localization.setPseudo(null);styk.localization.setLocale(locale);
+      styk.localization.apply(captionProbe);styk.localization.apply(document.querySelector('#onion-popover'));
+      if(captionProbe.textContent!==styk.localization.t('chrome.vfx')+'Ctrl+V'
+        ||document.querySelector('.onion-more summary').textContent!==styk.localization.t('onionControls.more'))throw new Error('Repeated caption after '+locale);
+    }
+  });
+  check('Repeated language changes and subtree registration keep one VFX and More caption with original icon and shortcut nodes',await page.evaluate(()=>
+    captionProbe.children.length===captionNodes.length&&captionNodes.every((node,index)=>captionProbe.children[index]===node)
+    &&captionProbe.querySelector('kbd').textContent==='Ctrl+V'));
+  await page.evaluate(()=>{captionProbe.remove();styk.localization.setLocale('en');});
   await page.evaluate(()=>onionProbe.destroy());
   await page.evaluate(()=>{localizedTask.done();taskToasts.destroy();styk.localization.localization.setPseudo(null);});
   await page.locator('.brand[data-action=menu]').click();

@@ -42,7 +42,10 @@ input parsing, document units and encoder values retain their existing contracts
 ## Connected interface and errors
 
 `src/localization-bindings.mjs` attaches explicit text and attribute bindings at
-the owning feature. It supports captions, tooltips, accessibility descriptions,
+the owning feature. A parent that adopts an explicitly bound child caption retains
+that child as its caption slot, so registration and language changes update the
+same node without duplicating text or replacing icons and shortcut badges.
+It supports captions, tooltips, accessibility descriptions,
 placeholders and per-binding parameters. Factories carry presentation metadata;
 tuple metadata lives outside arrays so saved IDs and command values remain intact.
 Owners explicitly connect mounted subtrees. Locale changes update connected nodes
