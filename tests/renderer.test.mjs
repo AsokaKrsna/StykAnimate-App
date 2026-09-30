@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { compileVectorObject, adoptPreparedVectors, shapeRecord, SHAPE_FLOATS, SHAPE, worldToScreen, screenToWorld, requiresCompatibilityTexture, objectBounds } from '../src/renderer-geometry.mjs';
+import { compileVectorObject, compileVectorObjectSteps, adoptPreparedVectors, shapeRecord, SHAPE_FLOATS, SHAPE, worldToScreen, screenToWorld, requiresCompatibilityTexture, objectBounds } from '../src/renderer-geometry.mjs';
 import { compilePlaybackPacket } from '../src/playback-worker.mjs';
+import { isolationStroke, isolationStrokeFits } from '../src/renderer-vector-raster.mjs';
 import { buildGeometry } from '../src/pivot/geometry.mjs';
 import { defaultFigure, createObject, createFrame } from '../src/demo.mjs';
 
@@ -91,4 +92,30 @@ test('isolated transparency and media use bounded compatibility textures', () =>
   // Outlines beyond the vector budget keep the raster fallback.
   const zigzag = Array.from({ length: 260 }, (_, i) => ({ x: i % 2 ? 24 : 0, y: i / 10 }));
   assert.equal(requiresCompatibilityTexture([{ ...bowTie, points: zigzag }]), true);
+});
+
+test('synchronous vector compilation reuses scratch without leaking earlier records', () => {
+  const geometry = buildGeometry(report, frame), g = geometry.objects.get(0);
+  const fresh = items => { const steps = compileVectorObjectSteps(items, g.root, 3); for (;;) { const step = steps.next(); if (step.done) return step.value; } };
+  // A large figure grows the shared buffer; a smaller one compiled next must
+  // not inherit its tail fields, and neither result may alias the scratch.
+  const large = Array.from({length: 40}, () => g.drawables).flat(), small = g.drawables.slice(0, 2);
+  const a = compileVectorObject(large, g.root, 3), b = compileVectorObject(small, g.root, 3);
+  assert.deepEqual(a, fresh(large)); assert.deepEqual(b, fresh(small));
+  for (let i = 22; i < b.length; i += SHAPE_FLOATS) { assert.equal(b[i], 0); assert.equal(b[i + 1], 0); }
+  const copy = a.slice(); compileVectorObject(g.drawables, g.root, 5); assert.deepEqual(a, copy);
+  assert.notEqual(a.buffer, b.buffer);
+});
+
+test('isolation stroke classification matches the per-primitive rule at every resolution', () => {
+  const line = thickness => ({type: 'line', thickness, seg: {segment_kind: 'line'}});
+  const circle = (length, thickness, kind = 'circle') => ({type: 'circle', length, thickness, seg: {segment_kind: kind}});
+  const sets = [[], [line(0)], [line(-1)], [line(1)], [line(3), line(0.25)], [circle(4, 1)], [circle(-4, 6, 'circleFill')], [circle(0.5, 9, 'circleFill'), line(2)],
+    [line(NaN)], [line(undefined)], [circle(NaN, 1)], [{type: 'poly', points: []}, line(2)]];
+  for (const items of sets) for (const resolution of [1 / 4096, 0.25, 0.5, 1, 1.9, 2, 3.5, 8, 64]) {
+    // The rule supportsVectorIsolation() applied to every primitive.
+    const expected = items.every(s => s.type === 'line' ? s.thickness <= 0 || s.thickness * resolution >= 2
+      : s.type === 'circle' ? Math.min(Math.abs(s.length), s.seg.segment_kind === 'circleFill' ? Infinity : s.thickness) * resolution >= 2 : true);
+    assert.equal(isolationStrokeFits(isolationStroke(items), resolution), expected, JSON.stringify(items) + ' at ' + resolution);
+  }
 });

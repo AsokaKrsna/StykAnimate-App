@@ -59,7 +59,21 @@ export class ContentHasher {
     // Finish a partial block, then mix whole blocks straight from the array.
     while (this.pending && i < n) this.word(view[i++]);
     const start = i, end = i + ((n - i) & ~3);
-    for (; i < end; i += 4) this._block(view[i], view[i + 1], view[i + 2], view[i + 3]);
+    // The same block mix as _block(), with the state held in locals: dense
+    // artwork signatures hash thousands of blocks per playback frame.
+    let h1 = this.h1, h2 = this.h2, h3 = this.h3, h4 = this.h4;
+    for (; i < end; i += 4) {
+      let k1 = view[i], k2 = view[i + 1], k3 = view[i + 2], k4 = view[i + 3];
+      k1 = Math.imul(k1, C1); k1 = (k1 << 15) | (k1 >>> 17); k1 = Math.imul(k1, C2); h1 ^= k1;
+      h1 = (h1 << 19) | (h1 >>> 13); h1 = (h1 + h2) | 0; h1 = (Math.imul(h1, 5) + 0x561ccd1b) | 0;
+      k2 = Math.imul(k2, C2); k2 = (k2 << 16) | (k2 >>> 16); k2 = Math.imul(k2, C3); h2 ^= k2;
+      h2 = (h2 << 17) | (h2 >>> 15); h2 = (h2 + h3) | 0; h2 = (Math.imul(h2, 5) + 0x0bcaa747) | 0;
+      k3 = Math.imul(k3, C3); k3 = (k3 << 17) | (k3 >>> 15); k3 = Math.imul(k3, C4); h3 ^= k3;
+      h3 = (h3 << 15) | (h3 >>> 17); h3 = (h3 + h4) | 0; h3 = (Math.imul(h3, 5) + 0x96cd1c35) | 0;
+      k4 = Math.imul(k4, C4); k4 = (k4 << 18) | (k4 >>> 14); k4 = Math.imul(k4, C1); h4 ^= k4;
+      h4 = (h4 << 13) | (h4 >>> 19); h4 = (h4 + h1) | 0; h4 = (Math.imul(h4, 5) + 0x32ac3b17) | 0;
+    }
+    this.h1 = h1; this.h2 = h2; this.h3 = h3; this.h4 = h4;
     this.length += end - start;
     for (; i < n; i++) this.word(view[i]);
     return this;
@@ -71,9 +85,20 @@ export class ContentHasher {
     let i = 0;
     while (this.pending && i + 1 < n) { this.word(text.charCodeAt(i) | (text.charCodeAt(i + 1) << 16)); i += 2; }
     const start = i, end = i + ((n - i) & ~7);
-    for (; i < end; i += 8) this._block(
-      text.charCodeAt(i) | (text.charCodeAt(i + 1) << 16), text.charCodeAt(i + 2) | (text.charCodeAt(i + 3) << 16),
-      text.charCodeAt(i + 4) | (text.charCodeAt(i + 5) << 16), text.charCodeAt(i + 6) | (text.charCodeAt(i + 7) << 16));
+    let h1 = this.h1, h2 = this.h2, h3 = this.h3, h4 = this.h4;
+    for (; i < end; i += 8) {
+      let k1 = text.charCodeAt(i) | (text.charCodeAt(i + 1) << 16), k2 = text.charCodeAt(i + 2) | (text.charCodeAt(i + 3) << 16),
+        k3 = text.charCodeAt(i + 4) | (text.charCodeAt(i + 5) << 16), k4 = text.charCodeAt(i + 6) | (text.charCodeAt(i + 7) << 16);
+      k1 = Math.imul(k1, C1); k1 = (k1 << 15) | (k1 >>> 17); k1 = Math.imul(k1, C2); h1 ^= k1;
+      h1 = (h1 << 19) | (h1 >>> 13); h1 = (h1 + h2) | 0; h1 = (Math.imul(h1, 5) + 0x561ccd1b) | 0;
+      k2 = Math.imul(k2, C2); k2 = (k2 << 16) | (k2 >>> 16); k2 = Math.imul(k2, C3); h2 ^= k2;
+      h2 = (h2 << 17) | (h2 >>> 15); h2 = (h2 + h3) | 0; h2 = (Math.imul(h2, 5) + 0x0bcaa747) | 0;
+      k3 = Math.imul(k3, C3); k3 = (k3 << 17) | (k3 >>> 15); k3 = Math.imul(k3, C4); h3 ^= k3;
+      h3 = (h3 << 15) | (h3 >>> 17); h3 = (h3 + h4) | 0; h3 = (Math.imul(h3, 5) + 0x96cd1c35) | 0;
+      k4 = Math.imul(k4, C4); k4 = (k4 << 18) | (k4 >>> 14); k4 = Math.imul(k4, C1); h4 ^= k4;
+      h4 = (h4 << 13) | (h4 >>> 19); h4 = (h4 + h1) | 0; h4 = (Math.imul(h4, 5) + 0x32ac3b17) | 0;
+    }
+    this.h1 = h1; this.h2 = h2; this.h3 = h3; this.h4 = h4;
     this.length += (end - start) >> 1;
     for (; i + 1 < n; i += 2) this.word(text.charCodeAt(i) | (text.charCodeAt(i + 1) << 16));
     if (i < n) this.word(text.charCodeAt(i));

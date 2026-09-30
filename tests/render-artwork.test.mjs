@@ -144,3 +144,21 @@ test('content keys are synchronous, content-addressed and independent of WebCryp
     assert.notEqual(first.contentKey(first.get(changed,changed.drawables)),key);
   }finally{Object.defineProperty(globalThis,'crypto',saved);}
 });
+
+test('pose inputs identify artwork through their evaluated drawables only',()=>{
+  // Joint angles, lengths and bends are recorded exactly by the drawables; the
+  // same drawn pose with different pose arrays is the same artwork.
+  const {g,moved}=pair(),cache=new ArtworkRegistry(),first=cache.get(g,g.drawables);
+  moved.obj.angles=(moved.obj.angles||[]).map(angle=>angle+Math.PI*2);moved.obj.lengths=[1,2,3];moved.obj.bends=[.5];moved.obj.len_flag=1;moved.obj.bend_flag=1;
+  assert.equal(cache.get(moved,moved.drawables),first);
+  const bent={...moved,drawables:moved.drawables.map((item,i)=>i?item:{...item,bend:(item.bend||0)+1e-6})};
+  assert.notEqual(cache.get(bent,bent.drawables),first);
+});
+test('unknown drawable fields distinguish artwork after a known layout was verified',()=>{
+  const {g,moved}=pair(),cache=new ArtworkRegistry(),first=cache.get(g,g.drawables);
+  const unknown={...moved,drawables:moved.drawables.map((item,i)=>i?item:{...item,futureStroke:'dashed'})};
+  assert.notEqual(cache.get(unknown,unknown.drawables),first);
+  const other={...moved,drawables:moved.drawables.map((item,i)=>i?item:{...item,futureStroke:'dotted'})};
+  assert.notEqual(cache.get(other,other.drawables),cache.get(unknown,unknown.drawables));
+  assert.equal(cache.get(moved,moved.drawables),first,'the verified layout still shares exact artwork');
+});

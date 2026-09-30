@@ -2,7 +2,7 @@ import {vectorVfxSource} from './renderer-vfx-vector.mjs';
 import {vfxRasterScale,hasDrawableVfx} from './vfx-canvas.mjs';
 import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {cameraAtTime} from './camera-motion.mjs';
-import {supportsVectorIsolation} from './renderer-vector-raster.mjs';
+import {isolationStroke,isolationStrokeFits} from './renderer-vector-raster.mjs';
 import {meshOnlyItems,meshRasterSource,meshRasterBytes,meshRasterBuffers} from './renderer-mesh-raster.mjs';
 import {drawParallaxGeometry} from './parallax-draw.mjs';
 import {parallaxResolver} from './layer-parallax.mjs';
@@ -198,8 +198,14 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
     const visibleBounds=sceneVisibleBounds?{...sceneVisibleBounds,x:sceneVisibleBounds.x-depth.x,y:sceneVisibleBounds.y-depth.y}:null;
     const group = { firstInstance: shapeCount, instanceCount: 0, transformIndex, uid, slot: priorSlot };
     let data;
+    // Immutable geometry: classify each artwork source once, not every tick.
     let descriptor=resources?.geometryDescriptors?.get(source);
-    if(!descriptor){descriptor={compatibility:artworkView.isolated||requiresCompatibilityTexture(items),hasImages:items.some(item=>item.type==='image')};resources?.geometryDescriptors?.set(source,descriptor);}
+    if(!descriptor){
+      const requiresTexture=requiresCompatibilityTexture(items);
+      descriptor={compatibility:artworkView.isolated||requiresTexture,requiresTexture,stroke:isolationStroke(items),hasImages:items.some(item=>item.type==='image')};
+      resources?.geometryDescriptors?.set(source,descriptor);
+    }
+    const vectorIsolates=scale=>!descriptor.requiresTexture&&isolationStrokeFits(descriptor.stroke,scale);
     let glyph = sharedArtwork && typeof OffscreenCanvas !== 'undefined' && glyphTextureDescriptor(items,resolution,maxTextureDimension);
     if (glyph) {
       if (!glyph.color[3] || !glyphVisible(glyph,visibleBounds)) {clipping.culledObjects++; return;}
@@ -229,12 +235,12 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
       descriptor.bounds??=objectBounds(items,resources);
       const rasterResolution=vfxRasterScale(items,descriptor.bounds,resolution,maxTextureDimension);
       reducedImages ||= rasterResolution<resolution;
-      let vectorIsolation = gpuIsolation && artworkView.isolated && supportsVectorIsolation(items, resolution), isolationBounds;
+      let vectorIsolation = gpuIsolation && artworkView.isolated && vectorIsolates(resolution), isolationBounds;
       if (vectorIsolation) {
         descriptor.bounds ??= objectBounds(items, resources);
         isolationBounds = playbackRasterBounds(descriptor.bounds, visibleBounds, rasterResolution, maxTextureDimension);
         if (!isolationBounds) {clipping.culledObjects++; return;}
-        vectorIsolation = supportsVectorIsolation(items, isolationBounds.pixelScale);
+        vectorIsolation = vectorIsolates(isolationBounds.pixelScale);
       }
       let vectorVfx=gpuIsolation?vectorVfxSource(items,resolution):null;
       if(vectorVfx){descriptor.bounds??=objectBounds(items,resources);const full=playbackRasterBounds(descriptor.bounds,null,rasterResolution,maxTextureDimension);
@@ -310,8 +316,10 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
         data = new Float32Array(shapeRecord({ mode: SHAPE.TEXTURE, color: [1, 1, 1, 1], transform: transformIndex }));
       }
     } else {
-      const compile=()=>compileVectorObject(items,g.root,transformIndex);
-      data=resources?.vectors?resources.vectors.get(g,transformIndex,compile):compile();
+      // Cached records stay transform-neutral; assembly stamps the painter slot,
+      // so a figure that moves between slots never copies its records.
+      const compile=()=>compileVectorObject(items,g.root,0);
+      data=resources?.vectors?resources.vectors.get(g,0,compile):compile();
     }
     group.instanceCount = data.length / SHAPE_FLOATS; shapeCount += group.instanceCount;
     requireBudget(bitmapBytes + shapeCount * SHAPE_FLOATS * 4 + (groups.length + 1) * 84);
@@ -324,7 +332,12 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
     }
     await append();
     const shapes = new Float32Array(shapeCount * SHAPE_FLOATS); let offset = 0;
-    for (const chunk of chunks) { shapes.set(chunk, offset); offset += chunk.length; }
+    for (let c = 0; c < chunks.length; c++) {
+      const chunk = chunks[c], transformIndex = groups[c].transformIndex;
+      shapes.set(chunk, offset);
+      for (let i = offset + 21, end = offset + chunk.length; i < end; i += SHAPE_FLOATS) shapes[i] = transformIndex;
+      offset += chunk.length;
+    }
     const transformData = new Float32Array(transforms), uidData = new Uint32Array(uids);
     const fallbackEntries = compatibility.filter(entry => entry.items);
     const fallbackBytes = fallbackEntries.length ? JSON.stringify(fallbackEntries).length * 2 : 0;

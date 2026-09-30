@@ -942,14 +942,20 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
       yield {phase: 'geometry', stage: 'drawables', completed: ++collected, total: order.length};
       continue;
     }
-    const local = g.drawables ?? [
-      ...g.polys.filter(p=>!p.culled),
-      ...(g.meshDrawables ?? []),
-      ...g.segments
-        .filter((s) => s.seg.visible !== false)
-        .flatMap((s) => sticknodesDrawables(s) ?? [s]),
-    ];
-    if (!g.drawables) { local.sort((a, b) => a.z - b.z); g.drawables = local; }
+    let local = g.drawables;
+    if (!local) {
+      // One pass in the same order as polys, meshes, then visible segments with
+      // their Stick Nodes expansions; no intermediate array per primitive.
+      local = [];
+      for (const p of g.polys) if (!p.culled) local.push(p);
+      if (g.meshDrawables) for (const m of g.meshDrawables) local.push(m);
+      for (const s of g.segments) {
+        if (s.seg.visible === false) continue;
+        const expanded = sticknodesDrawables(s);
+        if (expanded) for (const e of expanded) local.push(e); else local.push(s);
+      }
+      local.sort((a, b) => a.z - b.z); g.drawables = local;
+    }
     if (local.length) orderedObjects.push(g);
     yield {phase: 'geometry', stage: 'drawables', completed: ++collected, total: order.length};
   }

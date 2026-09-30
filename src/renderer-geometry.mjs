@@ -185,21 +185,31 @@ export function adoptPreparedVectors(packet, geometry, vectorCache, compatibilit
   return {objects, bytes};
 }
 
+// Synchronous compilation runs to completion without interleaving, so it can
+// assemble every figure in one growable buffer and allocate only the exact
+// result. Dense playback compiles hundreds of figures per frame.
+const vectorScratch = {buffer: new Float32Array(64 * SHAPE_FLOATS)}, MAX_VECTOR_SCRATCH = 1 << 20;
 /** Tessellate one figure into GPU-native primitives, in the decoder's painter order. */
 export function compileVectorObject(items, root = { x: 0, y: 0 }, transform = 0) {
-  const steps = compileVectorObjectSteps(items, root, transform);
-  for (;;) { const step = steps.next(); if (step.done) return step.value; }
+  const steps = compileVectorObjectSteps(items, root, transform, vectorScratch);
+  try { for (;;) { const step = steps.next(); if (step.done) return step.value; } }
+  finally { if (vectorScratch.buffer.length > MAX_VECTOR_SCRATCH) vectorScratch.buffer = new Float32Array(64 * SHAPE_FLOATS); }
 }
-export function* compileVectorObjectSteps(items, root = { x: 0, y: 0 }, transform = 0) {
-  let result = new Float32Array(Math.max(1, items.length * 2) * SHAPE_FLOATS), used = 0, paint;
+export function* compileVectorObjectSteps(items, root = { x: 0, y: 0 }, transform = 0, scratch = null) {
+  let result = scratch?.buffer ?? new Float32Array(Math.max(1, items.length * 2) * SHAPE_FLOATS), used = 0, paint;
   const opacity = singleVectorPrimitive(items) ? clamp(items[0].opacity ?? 1) : 1;
   const add = (mode, ax, ay, bx, by, cx = 0, cy = 0, radius = 0, inner = 0, white = false) => {
-    if (used + SHAPE_FLOATS > result.length) { const grown = new Float32Array(result.length * 2); grown.set(result); result = grown; }
+    if (used + SHAPE_FLOATS > result.length) {
+      const grown = new Float32Array(result.length * 2); grown.set(result.subarray(0, used)); result = grown;
+      if (scratch) scratch.buffer = grown;
+    }
     result[used] = ax; result[used + 1] = ay; result[used + 2] = bx; result[used + 3] = by;
     result[used + 4] = cx; result[used + 5] = cy; result[used + 6] = radius; result[used + 7] = inner;
     if (white) { result.fill(1, used + 8, used + 15); result[used + 11] = paint.color[3]; result[used + 15] = paint.color[3]; }
     else { result.set(paint.color, used + 8); result.set(paint.color2, used + 12); }
     result.set(paint.gradient, used + 16); result[used + 20] = mode; result[used + 21] = transform;
+    // A reused buffer holds earlier records: clear the unused tail fields.
+    result[used + 22] = 0; result[used + 23] = 0;
     used += SHAPE_FLOATS;
   };
   let completed = 0;

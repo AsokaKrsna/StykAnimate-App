@@ -105,3 +105,22 @@ test('many unrelated inputs produce no duplicate digests', () => {
     seen.add(key);
   }
 });
+
+test('digests stay identical to the published block mix across block boundaries', () => {
+  // Content keys cross workers and packets, so the unrolled word and string
+  // loops must reproduce exactly the digests of the per-word implementation.
+  const seeded = n => { const out = new Uint32Array(n); let s = 7; for (let i = 0; i < n; i++) { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; out[i] = s; } return out; };
+  const text = n => Array.from({length: n}, (_, i) => String.fromCharCode(32 + (i * 7919) % 0xd7ff)).join('');
+  const cases = [
+    ['words 0', h => h.words(seeded(0)), '0d612e4d49e0ce8637eeeca6c3e9b57e'],
+    ['words 3', h => h.words(seeded(3)), '3020b83085cc4bfc60ede0614ad6fecc'],
+    ['words 4', h => h.words(seeded(4)), '2115faef378176216413a53c78bf070b'],
+    ['words 37', h => h.words(seeded(37)), '610565feae46e0c3f6ed7aa295283cab'],
+    ['string 0', h => h.string(''), '0d612e4d49e0ce8637eeeca6c3e9b57e'],
+    ['string 9', h => h.string(text(9)), '5f40695a1f592b517d2875e051301bcc'],
+    ['string 64', h => h.string(text(64)), 'aba519315bdfc58a7074f3cecd823213'],
+  ];
+  for (const [name, feed, expected] of cases) assert.equal(feed(new ContentHasher()).digest(), expected, name);
+  const mixed = new ContentHasher(0x5a17).word(5).string(text(13)).words(seeded(21)).word(0xffffffff).string(text(3));
+  assert.equal(mixed.digest(), '0e9d698031f7d4b6c71b1c1686a032e8', 'partial blocks between parts');
+});

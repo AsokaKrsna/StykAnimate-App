@@ -4,11 +4,27 @@
  * within one worker. Identities that cross workers use a 128-bit content hash. */
 import {spatialMeshSignature} from './spatial-mesh.mjs';
 import {ContentHasher} from './content-hash.mjs';
-const ignoredObjectKeys=new Set(['unique_id','object_slot','root_x','root_y','join','record_offset','record_end','runtime_segments']);
+// Pose inputs (joint angles, lengths, bends and their flags) are fully expressed
+// by the evaluated drawables recorded exactly below; painters never read them.
+// Stringifying them again per figure per frame dominated dense-scene signatures.
+const ignoredObjectKeys=new Set(['unique_id','object_slot','root_x','root_y','join','record_offset','record_end','runtime_segments',
+  'angles','lengths','bends','len_flag','bend_flag']);
 const numericFields=['index','version','angle','bend','length','z','thickness','alpha','opacity'];
 const knownFields=new Set(['obj','fig','slot','start','end','points','seg','poly','asset','type','rgb','static','depthValues','culled','spatialMesh','triangles','materials','count',...numericFields]);
 const types=['line','circle','image','text','poly','mesh'];
 const textHash=value=>{let n=2166136261;for(let i=0;i<value.length;i++)n=Math.imul(n^value.charCodeAt(i),16777619);return n>>>0;};
+// Drawable layouts already verified to contain only known fields. Records from
+// one builder share a layout, so most signatures compare one key list instead of
+// checking every field name of every primitive.
+const knownLayouts=[];
+const sameKeys=(a,b)=>{if(a.length!==b.length)return false;for(let i=0;i<a.length;i++)if(a[i]!==b[i])return false;return true;};
+function unknownFields(item,index,extra){
+  const keys=Object.keys(item);
+  for(let i=0;i<knownLayouts.length;i++)if(sameKeys(knownLayouts[i],keys))return;
+  let unknown=false;
+  for(const key of keys)if(!knownFields.has(key)){extra.push([index,key,item[key]]);unknown=true;}
+  if(!unknown&&knownLayouts.length<32)knownLayouts.push(keys);
+}
 const equal=(a,b)=>{if(a.length!==b.length)return false;for(let i=0;i<a.length;i++)if(!Object.is(a[i],b[i]))return false;return true;};
 let registrySerial=0;
 // A worker has its own module counters. Local fallback keys cross that boundary
@@ -112,17 +128,20 @@ export class ArtworkRegistry {
       2*(Number(Boolean(item.start))+Number(Boolean(item.end))+(item.points?.length??0));
     const data=new Float64Array(count),extra=[],payloads=[],childFigures=new Map(),childDefinitions=[],effectOwners=new Set();let cursor=0;
     const point=p=>{data[cursor++]=p.x-g.root.x;data[cursor++]=p.y-g.root.y;};
+    // numericFields, in order. Non-finite and non-numeric values keep an exact
+    // textual record that Float64 conversion would otherwise erase.
+    const numeric=(i,field,value)=>{
+      data[cursor++]=value===undefined?NaN:value===null?Infinity:value;
+      if(value!==undefined&&value!==null&&(typeof value!=='number'||!Number.isFinite(value)))extra.push([i,field,typeof value,String(value)]);
+    };
     for(let i=0;i<items.length;i++){
       if(i && (i & 127)===0)yield {phase:'artwork signature',completed:i,total:items.length};
       const item=items[i],{start,end,points,seg,poly,asset}=item,type=types.indexOf(item.type);
       if(item.obj!==g.obj&&item.obj?._stykVfx&&!effectOwners.has(item.obj)){effectOwners.add(item.obj);extra.push([i,'childEffects',item.obj._stykVfx]);}
       data[cursor++]=type;data[cursor++]=Number(Boolean(start));data[cursor++]=Number(Boolean(end));
       data[cursor++]=points?.length??-1;data[cursor++]=Number(Boolean(item.static));
-      for(const field of numericFields){
-        const value=item[field];data[cursor++]=value===undefined?NaN:value===null?Infinity:value;
-        // Preserve distinctions that Float64 conversion would otherwise erase.
-        if(value!==undefined&&value!==null&&(typeof value!=='number'||!Number.isFinite(value)))extra.push([i,field,typeof value,String(value)]);
-      }
+      numeric(i,'index',item.index);numeric(i,'version',item.version);numeric(i,'angle',item.angle);numeric(i,'bend',item.bend);numeric(i,'length',item.length);
+      numeric(i,'z',item.z);numeric(i,'thickness',item.thickness);numeric(i,'alpha',item.alpha);numeric(i,'opacity',item.opacity);
       const rgb=item.rgb;data[cursor++]=rgb?.length??-1;if(rgb)for(const n of rgb)data[cursor++]=n;
       const depth=item.depthValues;data[cursor++]=depth?.length??-1;if(depth)for(const n of depth)data[cursor++]=n;
       data[cursor++]=item.culled===undefined?0:item.culled===false?1:item.culled===true?2:3;
@@ -144,9 +163,9 @@ export class ArtworkRegistry {
           else childDefinitions.push(JSON.stringify(drawingDefinition(item.fig,payloads)));}
         extra.push([i,'figure',index]);
       }
-      for(const key in item)if(Object.hasOwn(item,key)&&!knownFields.has(key))extra.push([i,key,item[key]]);
+      unknownFields(item,i,extra);
     }
-    const object=Object.fromEntries(Object.entries(g.obj).filter(([key])=>!ignoredObjectKeys.has(key)));
+    const object=Object.create(null);for(const key of Object.keys(g.obj))if(!ignoredObjectKeys.has(key))object[key]=g.obj[key];
     const metadata=JSON.stringify(childDefinitions.length?[object,extra,childDefinitions]:[object,extra]);
     const key=this.hashArtwork(definition,metadata,payloads,data);
     const bucket=this.buckets.get(key)||[];

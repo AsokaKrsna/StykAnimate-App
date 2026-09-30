@@ -3,12 +3,20 @@ import {SHAPE_BYTES, SHAPE_FLOATS, requiresCompatibilityTexture} from './rendere
 /** Subpixel strokes retain native Canvas coverage. Repeated translucent hairlines
  * amplify even small antialiasing differences in a composited effect. */
 export function supportsVectorIsolation(items, resolution) {
-  return !requiresCompatibilityTexture(items) && items.every(s => {
-    if (s.type === 'line') return s.thickness <= 0 || s.thickness * resolution >= 2;
-    if (s.type === 'circle') return Math.min(Math.abs(s.length), s.seg.segment_kind === 'circleFill' ? Infinity : s.thickness) * resolution >= 2;
-    return true;
-  });
+  return !requiresCompatibilityTexture(items) && isolationStrokeFits(isolationStroke(items), resolution);
 }
+/** The narrowest stroke or disc that decides supportsVectorIsolation(): every
+ * primitive fits at a resolution exactly when this one does. It depends only on
+ * the immutable drawables, so callers can compute it once per artwork. */
+export function isolationStroke(items) {
+  let narrowest = Infinity;
+  for (const s of items) {
+    if (s.type === 'line') { if (!(s.thickness <= 0)) narrowest = Math.min(narrowest, s.thickness); }
+    else if (s.type === 'circle') narrowest = Math.min(narrowest, Math.abs(s.length), s.seg.segment_kind === 'circleFill' ? Infinity : s.thickness);
+  }
+  return narrowest;
+}
+export const isolationStrokeFits = (narrowest, resolution) => narrowest === Infinity || narrowest * resolution >= 2;
 
 /** Lines, square-ended lines and circles compute their own antialiased
  * coverage in the fragment shader, and their quads extend past that coverage.
