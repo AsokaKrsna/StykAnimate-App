@@ -227,6 +227,12 @@ export class PreparedFrameCache {
       required.set(bitmapKey(packet,entry),preparedEntryBytes(entry));
     }
     const buffers=Math.max(SHAPE_BYTES,packet.shapes.byteLength+backgrounds.reduce((n,b)=>n+b.data.byteLength,0))+packet.transforms.byteLength;
+    // Most speculative uploads fit without eviction; simulate reference counts
+    // only when a frame actually has to be released.
+    let missing=0;for(const [key,size] of required)if(!this.textures.has(key))missing+=size;
+    if(this.frames.size<this.maxFrames&&this.bytes+buffers+missing<=this.maxBytes){
+      const warm={packet,options,steps:this.prepareSteps(packet,options)};this.warming=warm;return warm;
+    }
     const refs=new Map([...this.textures].map(([key,resource])=>[key,resource.refs]));
     let bytes=this.bytes,count=this.frames.size;const evict=[];
     const fits=()=>count<this.maxFrames&&bytes+buffers+[...required].reduce((n,[key,size])=>n+(refs.has(key)?0:size),0)<=this.maxBytes;
