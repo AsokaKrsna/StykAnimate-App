@@ -178,17 +178,25 @@ The contextual regression is `node tests/timeline-context.browser.mjs`.
 
 Before/After are fixed output-frame distances from the playhead. Seeking,
 pending scrubs, panning, zooming and document boundaries never change these
-preferences. The ruler handles sit at `playhead - before` and `playhead + after`
-and move with it. Their positions are not pinned to authored keys or document
-edges. Only the visible projection clips at the timeline viewport. No additional
-onion toolbar or row is inserted above the ruler.
+preferences. The ruler markers are brackets at the outer edges of the frames
+`playhead - before` and `playhead + after`, with a tinted band over the frames
+in each range, and move with the playhead. Their positions are not pinned to
+authored keys or document edges. Only the visible projection clips at the timeline
+viewport. No additional onion toolbar or row is inserted above the ruler.
 
-Handles can be dragged outward to increase a distance or inward to decrease it.
+A marker never covers the playhead's tab: at short distances it sits beside the
+tab (`onion-timeline-range.mjs` follows the tab's width with a ResizeObserver
+instead of reading layout while painting). Dragging a marker changes its distance
+by one frame per timeline frame under the pointer, so it follows the pointer at
+every zoom; pressing a marker never seeks. Its count shows while hovered, focused
+or dragged. Markers support arrow keys, Home (zero) and Escape during a drag. The
+**Timeline markers** switch in onion settings (`onionTimelineMarkers`, on by
+default) hides them without turning onion skin off.
+
 The settings panel provides numeric fields, single-frame minus/plus buttons and
-label scrubbing, including when a handle is outside the viewport. Both use eight
-pointer pixels per output frame, or 32 with Shift held when the gesture starts.
-Movement below one step does nothing. Timeline zoom and authored key spacing
-never change sensitivity. Handles support arrow keys and Home (zero).
+label scrubbing, including when a marker is outside the viewport. Label scrubbing
+uses eight pointer pixels per output frame, or 32 with Shift held when the gesture
+starts; movement below one step does nothing.
 
 Sampling selects output frames or authored keys inside the requested range,
 respecting sample spacing and available document poses. It never rounds outward
@@ -197,9 +205,9 @@ stored values, displayed values and visual offsets stay fixed. Ranges have no
 ten-frame cap. Simple mode uses the same settings panel without a ruler overlay.
 
 `onion-range.mjs` owns the cached document index and range/sample calculations.
-`onion-controller.mjs` owns the sole transient preference session. Ruler handles
-and `onion-frame-field.mjs` share `onion-range-drag.mjs`: displacement is measured
-from a fixed start, previews do not persist, and release commits once. Escape,
+`onion-controller.mjs` owns the sole transient preference session. Ruler markers
+and `onion-frame-field.mjs` (through `onion-range-drag.mjs`) measure displacement
+from a fixed start; previews do not persist, and release commits once. Escape,
 pointer cancellation, blur, seeking, document edits and view disposal clear the
 session. A superseded view cannot commit another view's preview. Onion edits
 never enter document history. Native slider cancellation also suppresses its

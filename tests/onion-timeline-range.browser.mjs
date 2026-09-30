@@ -70,8 +70,8 @@ try{
   await page.evaluate(()=>{styk.settingsUI.commit({onionRangeBefore:20,onionRangeAfter:30});styk.timeline.setZoom(4);styk.timeline._scrollToX(2000);});await settle();
   const projection=()=>page.evaluate(()=>{
     const host=styk.timeline,range=styk.onionController.snapshot(host.pendingScrub??undefined),overlay=document.querySelector('.onion-range-overlay');
-    const x=tick=>host.labelWidth+(tick+.5)*host.pxPerTick-host._offsetX();
-    return {before:Number.parseFloat(overlay.querySelector('.before.onion-range-end').style.left),after:Number.parseFloat(overlay.querySelector('.after.onion-range-end').style.left),expectedBefore:x(range.tick-20),expectedAfter:x(range.tick+30),spanBefore:range.before.span,spanAfter:range.after.span};
+    const edge=tick=>host.labelWidth+tick*host.pxPerTick-host._offsetX();
+    return {before:Number.parseFloat(overlay.querySelector('.before.onion-range-end').style.left),after:Number.parseFloat(overlay.querySelector('.after.onion-range-end').style.left),expectedBefore:edge(range.tick-20),expectedAfter:edge(range.tick+31),spanBefore:range.before.span,spanAfter:range.after.span};
   });
   for(const tick of [600,601,609,0,1199]){
     await page.evaluate(tick=>styk.editor.seek(tick),tick);await settle();
@@ -87,13 +87,14 @@ try{
         const endpoint=600+(direction==='before'?-20:20);styk.timeline._scrollToX((endpoint+.5)*zoom-300);
       },{zoom,direction});await settle();
       const handle=page.getByRole('slider',{name:`Onion frames ${direction}`,exact:true}),sign=direction==='before'?-1:1;
-      // A press that stays under the drag threshold is a click on the ruler: it seeks and leaves the range alone.
-      await drag(handle,sign*3);assert.equal((await value())[direction],20);
-      assert.notEqual((await value()).tick,600,'a click on an onion end seeks like the ruler');
-      await page.evaluate(()=>styk.editor.seek(600));await settle();
-      await drag(handle,sign*8,{release:false});assert.equal((await value())[direction],21);assert.equal(await page.evaluate(direction=>styk.state.settings[direction==='before'?'onionRangeBefore':'onionRangeAfter'],direction),20);
-      await page.mouse.up();await settle();assert.equal((await value())[direction],21);assert.equal((await value()).tick,600,'handle editing never seeks');
-      await drag(handle,sign*40,{release:false});await page.keyboard.press('Escape');await page.mouse.up();await settle();assert.equal((await value())[direction],21);
+      // A press on a marker never seeks, and less than half a frame of travel changes nothing.
+      await drag(handle,sign*Math.min(3,zoom*.4));assert.equal((await value())[direction],20);
+      assert.equal((await value()).tick,600,'pressing an onion marker never seeks');
+      // The marker follows the pointer one frame per timeline frame at every zoom.
+      await drag(handle,sign*zoom*3,{release:false});assert.equal((await value())[direction],23);assert.equal(await page.evaluate(direction=>styk.state.settings[direction==='before'?'onionRangeBefore':'onionRangeAfter'],direction),20);
+      await page.mouse.up();await settle();assert.equal((await value())[direction],23);assert.equal((await value()).tick,600,'marker editing never seeks');
+      await drag(handle,-sign*zoom*2);assert.equal((await value())[direction],21,'dragging back toward the playhead shortens the range');
+      await drag(handle,sign*zoom*10,{release:false});await page.keyboard.press('Escape');await page.mouse.up();await settle();assert.equal((await value())[direction],21);
     }
   }
   await page.evaluate(()=>{styk.settingsUI.commit({onionRangeBefore:20,onionRangeAfter:20});styk.timeline.setZoom(4);styk.timeline._scrollToX(2050);});await settle();
@@ -103,9 +104,23 @@ try{
   await page.evaluate(()=>styk.settingsUI.commit({theme:'light'}));await settle();await page.screenshot({path:out+'/ruler-light.png'});
   await page.evaluate(()=>styk.settingsUI.commit({theme:'dark'}));await settle();await page.screenshot({path:out+'/ruler-dark.png'});
   await page.evaluate(()=>{styk.settingsUI.commit({onionRangeBefore:0,onionRangeAfter:0});styk.timeline.setZoom(1);styk.timeline._scrollToX(530);});await settle();
+  // At zero frames the markers flank the playhead's tab without covering it, so the tab still scrubs.
+  const tab=await page.locator('.layer-timeline .sheet-playhead > span').boundingBox();
+  for(const direction of ['before','after']){
+    const box=await page.getByRole('slider',{name:`Onion frames ${direction}`,exact:true}).boundingBox();
+    assert.ok(direction==='before'?box.x+box.width<=tab.x:box.x>=tab.x+tab.width,`${direction} marker stays beside the playhead tab`);
+  }
+  assert.equal(await page.evaluate(({x,y})=>Boolean(document.elementFromPoint(x,y)?.closest('.onion-range-end')),{x:tab.x+tab.width/2,y:tab.y+tab.height/2}),false,'the playhead tab is not covered by a marker');
   for(const direction of ['before','after']){
     const zeroHandle=page.getByRole('slider',{name:`Onion frames ${direction}`,exact:true});
-    await drag(zeroHandle,direction==='before'?-8:8);assert.equal((await value())[direction],1,'zero-distance handles remain separately reachable');
+    await drag(zeroHandle,direction==='before'?-2:2);assert.equal((await value())[direction],2,'zero-distance markers remain separately reachable');
   }
+  // Onion settings can hide the markers while onion skin stays on.
+  await page.evaluate(()=>styk.settingsUI.commit({onionTimelineMarkers:false}));await settle();
+  assert.equal(await page.locator('.onion-range-overlay').isHidden(),true);assert.equal(await page.evaluate(()=>styk.state.onion),true);
+  await page.getByRole('button',{name:'Onion skin settings',exact:true}).click();await settle();
+  await panel.getByLabel('Timeline markers',{exact:true}).check();await settle();
+  assert.equal(await page.evaluate(()=>styk.state.settings.onionTimelineMarkers),true);assert.equal(await page.locator('.onion-range-overlay').isVisible(),true);
+  await panel.getByRole('button',{name:'Close onion settings'}).click();
   assert.deepEqual(errors,[]);console.log('PASS onion rebuild: tiny/precise drags at four zoom levels, atomic preview, range sampling, boundaries, panning, lifecycle, both themes');
 }finally{await browser.close();}

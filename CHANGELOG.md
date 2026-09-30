@@ -47,6 +47,7 @@ What's new in each version of StykAnimate.
 - A clearer What's new screen that matches the website.
 - New projects start with Blue, a simple 2D stick figure with balanced proportions and hand/foot IK for easy posing.
 - While joining figures, movable nodes are shown in red and static nodes in white.
+- Redesigned onion skin markers on the timeline: drag them straight to the frame you want, without catching the playhead. You can hide them in onion skin settings.
 
 ### Fixed
 

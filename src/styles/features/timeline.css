@@ -349,23 +349,39 @@
     padding: 0 var(--space-1); border-radius: 6px; background: var(--sheet-playhead-tab); color: var(--sheet-playhead-ink);
     font: var(--weight-semibold) 11px/20px var(--font-ui); font-variant-numeric: tabular-nums;
   }
-  /* Onion ranges on the ruler while onion is on: a 2px band in each colour and a small end mark, whose 24px target
-   * stays inside the ruler (a click on it goes to that frame; only a drag moves the end). */
+  /* Onion range markers on the ruler (onion-timeline-range.mjs): a tinted band over the frames in each range and
+   * a bracket at its outer end. A marker's 14px target spans the ruler beside the frame it marks and never covers
+   * the playhead's tab; its count shows while it is hovered, focused or dragged. */
   .layer-timeline .onion-range-overlay { block-size: var(--sheet-ruler, var(--timeline-header)); }
-  .layer-timeline .onion-range-band { inset-block-start: calc(var(--sheet-ruler, var(--timeline-header)) - 4px); block-size: 2px; border-radius: 1px; opacity: 0.55; }
-  /* Each end's target lies on its own side of the frame it marks, so both stay reachable when they meet at the playhead. */
+  .layer-timeline .onion-range-band {
+    inset-block: auto 0; block-size: 6px; border-radius: 3px 3px 0 0; opacity: 1;
+    background: color-mix(in srgb, var(--_onion) 26%, transparent); box-shadow: inset 0 -2px 0 var(--_onion);
+  }
+  .layer-timeline .onion-range-band.before { --_onion: var(--onion-before); }
+  .layer-timeline .onion-range-band.after { --_onion: var(--onion-after); }
   .layer-timeline .onion-range-end {
-    inset-block-start: calc(var(--sheet-ruler, var(--timeline-header)) - 24px); inline-size: 24px; block-size: 24px;
-    transform: none; border-radius: var(--radius-sm);
+    inset-block: 0; inline-size: 14px; block-size: auto; border-radius: var(--radius-sm); transform: none;
+    background: transparent; transition: background-color var(--duration-fast, 120ms) ease;
   }
-  .layer-timeline .onion-range-end.before { translate: -100% 0; }
-  .layer-timeline .onion-range-end.after { translate: 0 0; }
+  .layer-timeline .onion-range-end.before { translate: -100% 0; --_mark: var(--onion-before); }
+  .layer-timeline .onion-range-end.after { --_mark: var(--onion-after); }
+  .layer-timeline .onion-range-end:where(:hover, [data-dragging]) { background: color-mix(in srgb, currentColor 14%, transparent); }
+  /* The bracket opens toward the playhead: "[" before it, "]" after it. */
   .layer-timeline .onion-range-end::after {
-    inline-size: 3px; block-size: 9px; border: 0; border-radius: 1.5px; background: currentColor;
+    inset-block: 5px 0; inline-size: 6px; block-size: auto; border: 2.5px solid currentColor; border-radius: 2px; background: none;
   }
-  .layer-timeline .onion-range-end.before::after { inset: auto 0 1px auto; }
-  .layer-timeline .onion-range-end.after::after { inset: auto auto 1px 0; }
+  .layer-timeline .onion-range-end.before::after { inset-inline: auto 2px; border-inline-end: 0; border-radius: 2px 0 0 2px; }
+  .layer-timeline .onion-range-end.after::after { inset-inline: 2px auto; border-inline-start: 0; border-radius: 0 2px 2px 0; }
+  .layer-timeline .onion-range-end:where(:hover, [data-dragging])::after { border-width: 3px; }
   .layer-timeline .onion-range-end:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+  .layer-timeline .onion-range-count {
+    position: absolute; inset-block-start: 2px; min-inline-size: 18px; padding: 0 4px; border-radius: 8px;
+    background: var(--_mark); color: var(--sheet-playhead-ink); font: var(--weight-semibold) 10px/14px var(--font-ui); font-variant-numeric: tabular-nums;
+    text-align: center; pointer-events: none; opacity: 0; transition: opacity var(--duration-fast, 120ms) ease;
+  }
+  .layer-timeline :where(.onion-range-end.before) .onion-range-count { inset-inline-end: 16px; }
+  .layer-timeline :where(.onion-range-end.after) .onion-range-count { inset-inline-start: 16px; }
+  .layer-timeline .onion-range-end:where(:hover, :focus-visible, [data-dragging]) .onion-range-count { opacity: 1; }
   /* The grid scrolls with thin scrollbars; while rows are below it, "N more" waits at the foot of the tools' column
    * (a click scrolls to them) and a soft fade shows the rows go on. */
   /* The grid's scrollbars keep a 14px target (scrubbing a long animation by its bar) but draw a slim, quiet thumb:
