@@ -6,6 +6,8 @@ import {easedProgress,validateKeyEasing} from './keyframe-easing.mjs';
 export const VFX_CLIP_LIMIT=4096;
 const empty=Object.freeze([]),indices=new WeakMap(),validated=new WeakSet(),rendered=new WeakSet(),frames=new WeakMap();
 export const vfxClips=report=>report?._styk?.vfxClips?.clips??empty;
+/** Timeline effect clips owned by figures or their nodes, carried by figure clipboards. */
+export const figureVfxClips=(report,uids)=>{const set=new Set(uids);return vfxClips(report).filter(c=>c.target.kind!=='scene'&&set.has(c.target.uid));};
 export const sameVfxTarget=(a,b)=>a.kind===b.kind&&a.uid===b.uid&&a.handleId===b.handleId&&a.figureTypeId===b.figureTypeId;
 export const clipContains=(clip,tick)=>clip.duration===null||tick>=clip.start&&tick<clip.start+clip.duration;
 export const clipTime=(clip,tick)=>Math.max(0,tick-clip.start+clip.offset);

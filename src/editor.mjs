@@ -5,7 +5,7 @@ import {UserActionError} from './user-action-error.mjs';
 import {editorRigConstraintMethods} from './editor-rig-constraints.mjs';
 import {editorColorMethods, applyPaletteCommand} from './editor-colors.mjs';
 import {editorVfxClipMethods} from './editor-vfx-clips.mjs';
-import {invalidateVfxRenderFrame} from './vfx-clips.mjs';
+import {invalidateVfxRenderFrame, figureVfxClips} from './vfx-clips.mjs';
 import {editorCameraMotionMethods} from './editor-camera-motion.mjs';
 import {authoredRigTarget,hasRigConstraints} from './rig-constraints.mjs';
 import {editorTweenerMethods} from './editor-tweener.mjs';
@@ -908,7 +908,7 @@ export class Editor extends EventTarget {
       }
       delete out.runtime_segments; return out;
     });
-    this._selectionClipboard = {objects, figures, movieclipSamples: Object.fromEntries(selected.filter(object=>figures.some(figure=>figure.figure_type_id===object.figure_type_id&&isMovieclip(figure))&&Number.isFinite(object._movieclipSample)).map(object=>[object.unique_id,object._movieclipSample])), layers: new Map(selected.map(object => [object.unique_id, this.layerForUid(object.unique_id)])), order: frameOrder(this.selectionFrame).filter(id => ids.has(id)), documentToken: this._documentToken, sourceVersion: this.report.version, offset: 24, pastes: 0};
+    this._selectionClipboard = {objects, figures, movieclipSamples: Object.fromEntries(selected.filter(object=>figures.some(figure=>figure.figure_type_id===object.figure_type_id&&isMovieclip(figure))&&Number.isFinite(object._movieclipSample)).map(object=>[object.unique_id,object._movieclipSample])), layers: new Map(selected.map(object => [object.unique_id, this.layerForUid(object.unique_id)])), order: frameOrder(this.selectionFrame).filter(id => ids.has(id)), vfxClips: figureVfxClips(this.report, ids), copyTick: Math.round(this.tick), documentToken: this._documentToken, sourceVersion: this.report.version, offset: 24, pastes: 0};
     this._figureClipboard = null; return objects.length;
   }
   cutSelection() {

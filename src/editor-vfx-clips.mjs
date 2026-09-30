@@ -56,6 +56,24 @@ export const editorVfxClipMethods={
  pasteVfxClip(target,{animation=true,start=Math.floor(this.tick)}={}){const source=this._vfxClipClipboard;if(!source)throw new Error('Copy an effect clip first.');const map=new Map(source.effects.map(e=>[e.id,id()])),clip={...structuredClone(source),id:id(),target:normalizeAnimationTarget(target),effects:(animation?source.effects:this._vfxClipClipboardValues??source.effects).map(e=>({...e,id:map.get(e.id)})),keys:{}};
   if(animation)for(const [property,keys] of Object.entries(source.keys)){const d=vfxDescriptor(property);clip.keys[vfxProperty(d.effectType,map.get(d.id),d.param)]=structuredClone(keys);}
   if(clip.duration!==null)clip.start=start;publish(this,[...vfxClips(this.report),clip],animation?'Paste effect animation':'Paste effect values');return clip.id;},
+ /** Re-targets copied figure clips to pasted identities with fresh clip/effect IDs, shifting timed clips by `shift` frames. */
+ _pasteFigureVfxClips(clips,uidMap,typeMap,shift=0){
+  const added=[];
+  for(const source of clips){
+   const uid=uidMap.get(source.target.uid);if(uid===undefined||uid===source.target.uid)continue;
+   const effectIds=new Map(source.effects.map(e=>[e.id,id()])),target={...source.target,uid},keys={};
+   if(target.figureTypeId!==undefined)target.figureTypeId=typeMap?.get(target.figureTypeId)??target.figureTypeId;
+   for(const [property,channel] of Object.entries(source.keys)){const d=vfxDescriptor(property);keys[vfxProperty(d.effectType,effectIds.get(d.id),d.param)]=channel;}
+   const clip={...source,id:id(),target,effects:source.effects.map(e=>({...e,id:effectIds.get(e.id)})),keys};
+   if(clip.duration!==null){
+    // A clip moved before the first frame keeps its phase and end, trimming its start.
+    const start=clip.start+shift,cut=Math.max(0,-start);if(cut>=clip.duration||start+clip.duration>10000000)continue;
+    Object.assign(clip,{start:start+cut,offset:clip.offset+cut,duration:clip.duration-cut,fadeIn:Math.max(0,clip.fadeIn-cut)});
+   }
+   added.push(clip);
+  }
+  return added.length?publish(this,[...vfxClips(this.report),...added],'Paste figure effects'):false;
+ },
  duplicateVfxClip(id){this.copyVfxClip(id);const c=find(this,id);return this.pasteVfxClip(c.target,{start:c.duration===null?0:c.start+c.duration});},
  addVfxGroupEffect(id,type){const c=find(this,id),effect=seeded(createVfx(type,crypto.randomUUID()));this.setVfxClip(id,{effects:[...c.effects,effect]});return effect.id;},
  reorderVfxGroupEffect(id,effectId,index){const c=find(this,id),from=c.effects.findIndex(e=>e.id===effectId);if(from<0||!Number.isInteger(index)||index<0||index>=c.effects.length)throw new Error('Choose an effect order.');if(from===index)return false;const effects=[...c.effects];effects.splice(index,0,effects.splice(from,1)[0]);return this.setVfxClip(id,{effects});},

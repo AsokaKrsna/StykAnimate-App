@@ -1,6 +1,7 @@
 import {clipboardWireChunks, createClipboardWireDecoder} from './clipboard-wire.mjs';
 import {createFrame} from './demo.mjs';
 import {validateCameraMotion} from './camera-motion.mjs';
+import {validateVfxClips} from './vfx-clips.mjs';
 import {validatePixelClipboard} from './drawing-clipboard.mjs';
 import {drawingBarrier} from './drawing-resources.mjs';
 
@@ -29,6 +30,7 @@ export async function restoreClipboard(editor, packet, checkCurrent = () => {}) 
   checkCurrent();
   if (kind === 'figures') {
     if (!Array.isArray(data.objects) || !data.objects.length || !Array.isArray(data.figures) || !Array.isArray(data.order) || !Number.isFinite(data.offset)) throw new Error('Invalid figure clipboard.');
+    if (data.vfxClips !== undefined) validateVfxClips({version: 1, clips: data.vfxClips});
     const value = {...data, layers: new Map(data.layers), freshTypes: new Set(data.freshTypes), documentToken: null, pastes: 0};
     editor._selectionClipboard = value; editor._figureClipboard = null;
   } else if (kind === 'sheet') {

@@ -15,6 +15,7 @@ import {presencePlayback} from './movieclip-presence.mjs';
 import {snapshotFigureDefinition} from './movieclips.mjs';
 import {modernizeLegacyObjectColor} from './clipboard-assets.mjs';
 import {translateIKTargets, remapIKFollowers} from './ik.mjs';
+import {figureVfxClips} from './vfx-clips.mjs';
 
 const clone = value => structuredClone(value);
 const equal = (a, b) => a === b || JSON.stringify(a) === JSON.stringify(b);
@@ -143,7 +144,8 @@ function insertionPlan(editor, operation, targetFrames) {
     const parent = originals.get(sourceObjects[i].join.target_unique_id);
     if (!parent || !types.get(parent.figure_type_id).handles.has(objects[i].join.target_handle_id)) objects[i].join = null;
   }
-  return {objects, order: (clipboard.order ?? sourceObjects.map(object => object.unique_id)).map(uid => uidMap.get(uid)), definitions, hints, nextUid};
+  return {objects, order: (clipboard.order ?? sourceObjects.map(object => object.unique_id)).map(uid => uidMap.get(uid)), definitions, hints, nextUid,
+    uidMap, typeMap: new Map([...types].map(([id, {figure}]) => [id, figure.figure_type_id]))};
 }
 function insert(frame, payload) {
   const added = payload.objects.map(clone), replacements = new Map(added.map(object => [object.unique_id, object]));
@@ -198,6 +200,10 @@ export const editorRangeCommandMethods = {
   /** A result reports actual changes; missing figure identities are skipped. */
   applyFigureRange(operation, options = {}) {
     if (!operation || !labels[operation.kind]) throw new Error('Choose a supported figure range operation.');
+    // Pasted and duplicated figures keep their timeline effects in the same undo step.
+    const clipboard = operation.kind === 'paste' ? operation.clipboard ?? this._selectionClipboard ?? this._figureClipboard : null;
+    const vfxSource = clipboard ? clipboard.vfxClips : operation.kind === 'duplicate' ? figureVfxClips(this.report, options.uids ?? this.selectedUids) : null;
+    if (vfxSource?.length && !this._movieclipBatch) return this.movieclipBatch(options.label ?? labels[operation.kind], () => this.applyFigureRange(operation, options));
     if (operation.kind === 'mirror' && this.selectedJoint >= 0 && (this.selectedObjects.length === 1 || this.branchSelected))
       operation = {...operation, segmentSelection: {uid: this.selectedUid, handles: [...this.selectedSegmentIds], branch: this.branchSelected}};
     if (this._drag) this.commitDrag(); if (this._animationEdit) this.commitAnimationEdit();
@@ -214,7 +220,7 @@ export const editorRangeCommandMethods = {
         uidMap.set(uid, nextUid); hints.set(nextUid++, this.layerForUid(uid));
       }
       if (!uidMap.size) return zero();
-      operation = {...operation, uidMap}; payload = {definitions: [], hints, order: [...uidMap.values()], nextUid};
+      operation = {...operation, uidMap}; payload = {definitions: [], hints, order: [...uidMap.values()], nextUid, uidMap};
     }
     if (operation.kind === 'paste' && !payload) return zero();
     if (!payload && !uids.length) return zero();
@@ -261,6 +267,8 @@ export const editorRangeCommandMethods = {
         beforeSelection: selection, afterSelection: this._selectionState(), structural: plans.some(plan => plan.structural), timing: false, retainGeometry});
       this._emit('edit', {label, structural: plans.some(plan => plan.structural), changedUids: [...new Set(plans.flatMap(plan => plan.changedUids))], frameIndices: plans.map(plan => plan.index)});
     }
+    if (vfxSource?.length) this._pasteFigureVfxClips(vfxSource, payload.uidMap, payload.typeMap,
+      clipboard && Number.isInteger(clipboard.copyTick) ? Math.round(this.tick) - clipboard.copyTick : 0);
     return {changedFrames: plans.length, changedTicks: plans.map(plan => plan.tick), insertedUids};
   },
   _applyFigureRangeCommand(command, direction) {

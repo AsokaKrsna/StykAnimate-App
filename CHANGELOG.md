@@ -53,6 +53,7 @@ What's new in each version of StykAnimate.
 - Fixed selecting figures on the canvas while using the Tweener.
 - Double-clicking a static node now selects its branch, just like other nodes.
 - Clicking a frame in the Simple timeline keeps your current selection instead of selecting every figure.
+- Copying, pasting or duplicating a figure now keeps its effects.
 - Fixed onion skins looking patchy where parts of a figure overlap.
 - Fixed Feedback sometimes opening on the wrong report type.
 - Fixed the timeline and effect list jumping while selecting several frames.
