@@ -1,18 +1,18 @@
 # Language completion review
 
-This development review covers the current 6,346 English message keys and 38 plural messages. Each language has one exclusive translator and a different reviewer who reads English/translated pairs and current owning UI or diagnostic context. These are AI language reviews, not native-speaker certification. Catalog completeness does not measure translation quality.
+This development review covers the current 6,433 English message keys and 38 plural messages. The first nine packs completed review of the original 6,346 keys; 87 subsequently extracted diagnostic messages and labels require a follow-up translation and independent review. Each language has one exclusive translator and a different reviewer who reads English/translated pairs and current owning UI or diagnostic context. These are AI language reviews, not native-speaker certification. Catalog completeness does not measure translation quality.
 
 | Language | Locale | Coverage | Plural categories | Independent context review | Terminology to revisit with a native reviewer |
 | --- | --- | --- | --- | --- | --- |
-| Arabic | ar | 6,346/6,346 | zero, one, two, few, many, other | Complete | Skin: كسوة; Tweener: أداة التحريك البيني |
-| German | de | 6,346/6,346 | one, other | Complete | Bildhaltezeit, Oberflächenbindungen, Animationsabhängigkeiten |
-| French | fr | 6,346/6,346 | one, many, other | Complete | Peau, accélération and Pose intermédiaire retained after context review |
-| Hebrew | he | 6,346/6,346 | one, two, other | Complete | התמרה and כלי תנוחות ביניים |
-| Italian | it | 6,346/6,346 | one, many, other | Complete | Intercalazione principale, Allungamento intelligente and articolazioni di deformazione |
-| Spanish | es | 6,346/6,346 | one, many, other | Complete | Articulated spatial joints, skin and warp terminology |
-| Latin American Spanish | es-419 | 6,346/6,346 | one, many, other | Complete | Drawing cels, deformation bindings and specialist camera/VFX terms |
-| Brazilian Portuguese | pt-BR | 6,346/6,346 | one, many, other | Complete | Quadro, estrutura de controle and specialist technical loans |
-| Dutch | nl | 6,346/6,346 | one, other | Complete | Professional loans: mesh, skin, rig, easing and onion skin |
+| Arabic | ar | 6,346/6,433 | zero, one, two, few, many, other | Original catalog complete; 87 additions pending | Skin: كسوة; Tweener: أداة التحريك البيني |
+| German | de | 6,346/6,433 | one, other | Original catalog complete; 87 additions pending | Bildhaltezeit, Oberflächenbindungen, Animationsabhängigkeiten |
+| French | fr | 6,346/6,433 | one, many, other | Original catalog complete; 87 additions pending | Peau, accélération and Pose intermédiaire retained after context review |
+| Hebrew | he | 6,346/6,433 | one, two, other | Original catalog complete; 87 additions pending | התמרה and כלי תנוחות ביניים |
+| Italian | it | 6,346/6,433 | one, many, other | Original catalog complete; 87 additions pending | Intercalazione principale, Allungamento intelligente and articolazioni di deformazione |
+| Spanish | es | 6,346/6,433 | one, many, other | Original catalog complete; 87 additions pending | Articulated spatial joints, skin and warp terminology |
+| Latin American Spanish | es-419 | 6,346/6,433 | one, many, other | Original catalog complete; 87 additions pending | Drawing cels, deformation bindings and specialist camera/VFX terms |
+| Brazilian Portuguese | pt-BR | 6,346/6,433 | one, many, other | Original catalog complete; 87 additions pending | Quadro, estrutura de controle and specialist technical loans |
+| Dutch | nl | 6,346/6,433 | one, other | Original catalog complete; 87 additions pending | Professional loans: mesh, skin, rig, easing and onion skin |
 
 The original 6,312-message packs received a complete second pass. Reviewers added 30 missing preset/count, camera, spatial, export and dock messages and four final diagnostic-label messages; the integration agent independently inspected the additions and their enclosing sentences against the owning context. Camera strength-envelope captions were checked separately from speed easing. Reviews included all 447 computed VFX messages, mathematical diagnostics, animation timing, parameter grammar, preserved machine values and unintentional English copy. Existing accurate translations were retained; context errors were corrected.
 
@@ -23,5 +23,7 @@ The localization settings, application, native-menu, foundation, camera-follow, 
 The second batch received complete independent English/translated context reviews, including all 38 plurals, 447 computed VFX entries and diagnostic composition. Corrections covered effect meanings, camera strength fades, frame timing, compositional action names, numeric constraints and saving terminology. Each translator and reviewer passed the pinned read-only strict validator with zero fallback. The integration agent independently checked the four final diagnostic labels and their enclosing sentences. Shared generation and `npm run check` passed in a coherent nine-pack snapshot; each of the four new packs passed all Settings tabs, export and timeline fit checks at 760px. Dutch editor and Settings captions were also visually inspected at 390px. Bokmål's complete authoring is awaiting completion of its independent review; it is not counted as reviewed here.
 
 The onion controls now resolve translated before/after labels and frame plurals instead of inserting English fragments. Focused controller/range tests passed all 12 cases; the existing onion range and retained-caption browser suites passed, including preference values, drafts, gestures, sampling, cancellation and RTL updates.
+
+The follow-up extraction covers animation-origin support validation, clipboard transfer decoding and sparse paste validation. Full diagnostic sentences and human parameter labels now have keys; original English error text, field tokens, topology validation, publication and cancellation remain unchanged. All 50 focused localization/model/clipboard tests passed. The new regression fails against the original origin validator, which supplied an opaque English fragment instead of the complete message and label references. The table above describes the reviewed original catalog; additions will be included before final completion.
 
 The other 17 non-English packs are still in progress. No release, push, native-speaker review, or Windows/macOS packaged rendering is claimed.

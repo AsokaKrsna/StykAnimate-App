@@ -15,8 +15,41 @@ import {VFX_REGISTRY,vfxProperty,validateVfxValue} from '../src/vfx.mjs';
 import {errorMessageData,restoreMessageError,messageError} from '../src/localized-error.mjs';
 import {errorText} from '../src/error-presentation.mjs';
 import {PlaybackPlanner} from '../src/playback-planning.mjs';
+import {validateOriginSupport,validateOriginObject} from '../src/animation-origin-validation.mjs';
+import {createClipboardWireDecoder} from '../src/clipboard-wire.mjs';
+import {prepareSparseClipboardPaste} from '../src/editor-clipboard-sparse.mjs';
 
 const fixture=()=>new Editor({demo:false}).load(emptyDocument());
+
+test('origin and clipboard failures translate complete diagnostics while preserving original text and unpublished state',async()=>{
+ const editor=fixture(),bytes=JSON.stringify(editor.serialize()),history=editor._undo.length,failures=[];
+ const capture=(key,message)=>error=>{
+  assert.equal(error.messageKey,key);assert.equal(error.message,message);failures.push(error);return true;
+ };
+ const originKey='errors.animationOriginValidation.details.';
+ assert.throws(()=>validateOriginSupport({segments:[{segment_id:0}],_styk:{animationOrigin:{}}}),capture(originKey+'mustBeAnIntegerFromTo','Animation origin native handle must be an integer from 1 to 65535.'));
+ const orphan=ghosts=>({_stykAnimationOrigin:{x:0,y:0,ghosts}});
+ assert.throws(()=>validateOriginObject(orphan({'0':{angle_rad:NaN,bend_rad:0,length:1}}),{segments:[]}),capture(originKey+'mustBeFinite','Animation origin ghost angle must be finite.'));
+ assert.throws(()=>validateOriginObject(orphan({'0':null}),{segments:[]}),capture(originKey+'mustBeAPoseRecord','Animation origin ghost must be a pose record.'));
+ assert.throws(()=>validateOriginObject({_stykAnimationOrigin:{x:1e39,y:0}},{segments:[]}),capture(originKey+'exceedsNativeFloat32Range','Animation origin x exceeds the native float32 range.'));
+ assert.throws(()=>validateOriginObject({_stykAnimationOrigin:null},{segments:[]}),capture(originKey+'poseMustBeARecord','Animation origin pose must be a record.'));
+ const decoder=createClipboardWireDecoder();
+ await assert.rejects(decoder.push(Uint8Array.of(83,84,89,75,67,66,87,49,99).buffer),capture('errors.clipboardWire.details.unknownToken','Invalid clipboard wire: unknown token.'));
+ assert.throws(()=>createClipboardWireDecoder().finish(),capture('errors.clipboardWire.details.truncatedStream','Invalid clipboard wire: truncated stream.'));
+ await assert.rejects(prepareSparseClipboardPaste(editor,null),capture('errors.editorClipboardSparse.details.insertion','Invalid pasted frames: insertion.'));
+ interfaceLocalization.setPseudo('long');
+ try{
+  for(const error of failures){
+   const restored=restoreMessageError(new Error(),structuredClone(errorMessageData(error)));
+   assert.equal(restored.message,error.message);assert.equal(errorText(restored),interfaceLocalization.t(error.messageKey,error.messageParams));
+   assert.ok(errorText(restored).includes('［'));
+   const label=restored.messageParams.label;
+   if(label?.messageKey)assert.ok(errorText(restored).includes(interfaceLocalization.t(label.messageKey)));
+   assert.equal(Object.hasOwn(restored.messageParams,'message'),false,'Owned details are not opaque English parameters');
+  }
+ }finally{interfaceLocalization.setPseudo(null);}
+ assert.equal(JSON.stringify(editor.serialize()),bytes);assert.equal(editor._undo.length,history);
+});
 
 test('camera fields and planning operation names retain scalar diagnostics while their display references survive transport',async()=>{
  const editor=fixture(),before=JSON.stringify(editor.serialize()),history=editor._undo.length,failures=[];

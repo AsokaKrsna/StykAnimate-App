@@ -11,7 +11,7 @@ import {MAX_ALLOCATED_UID} from './object-identity.mjs';
 const preparedStates=new WeakMap(),commandCopies=new WeakMap();
 const own=(value,key)=>Object.prototype.hasOwnProperty.call(value,key);
 const abort=()=>messageError(new DOMException('', 'AbortError'), "errors.editorClipboardSparse.theAnimationChangedWhilePastedFramesWerePrepared", {});
-const invalid=message=>{throw messageError(new Error(''), "errors.editorClipboardSparse.invalidPastedFrames", {message: message});};
+const invalid=key=>{throw messageError(new Error(''), key);};
 const record=value=>value&&typeof value==='object'&&!Array.isArray(value);
 const integer=(value,min,max)=>Number.isSafeInteger(value)&&value>=min&&value<=max;
 const timingFields=()=>({elapsedMs:0,cpuMs:0,maxTaskMs:0,slices:0,yields:0});
@@ -45,11 +45,11 @@ function* copySteps(input,account){
   const copy=value=>{
     if(value===null||typeof value!=='object'){
       account.bytes+=typeof value==='string'?value.length*2+16:16;
-      if(typeof value==='function'||typeof value==='symbol'||typeof value==='bigint')invalid('unsupported property');
+      if(typeof value==='function'||typeof value==='symbol'||typeof value==='bigint')invalid('errors.editorClipboardSparse.details.unsupportedProperty');
       return value;
     }
     if(seen.has(value))return seen.get(value);
-    if(!Array.isArray(value)&&Object.getPrototypeOf(value)!==Object.prototype&&Object.getPrototypeOf(value)!==null)invalid('unsupported record');
+    if(!Array.isArray(value)&&Object.getPrototypeOf(value)!==Object.prototype&&Object.getPrototypeOf(value)!==null)invalid('errors.editorClipboardSparse.details.unsupportedRecord');
     const out=Array.isArray(value)?new Array(value.length):Object.create(Object.getPrototypeOf(value));
     seen.set(value,out);pending.push(Array.isArray(value)?{iterator:arraySteps(value,out)}:{value,out,keys:Object.keys(value),index:0});account.bytes+=48;
     return out;
@@ -83,10 +83,10 @@ async function drain(iterator,check,options,timings,phase){
 function assetLayerState(state,patch){
   if(!record(patch)||!Array.isArray(patch.additions)||!Array.isArray(patch.assignments)||
     patch.beforeNextId!==state.nextId||patch.orderIndex!==state.order.length||
-    !integer(patch.afterNextId,state.nextId,Number.MAX_SAFE_INTEGER))invalid('layer patch');
+    !integer(patch.afterNextId,state.nextId,Number.MAX_SAFE_INTEGER))invalid('errors.editorClipboardSparse.details.layerPatch');
   const seen=new Set();
   for(const entry of patch.additions){
-    if(!record(entry)||typeof entry.id!=='string'||own(state.byId,entry.id)||seen.has(entry.id))invalid('new layer identity');
+    if(!record(entry)||typeof entry.id!=='string'||own(state.byId,entry.id)||seen.has(entry.id))invalid('errors.editorClipboardSparse.details.newLayerIdentity');
     seen.add(entry.id);state.byId[entry.id]=entry.value;state.order.push(entry.id);
   }
   state.nextId=patch.afterNextId;seen.clear();
@@ -94,7 +94,7 @@ function assetLayerState(state,patch){
     const uid=Number(entry?.uid);
     if(!record(entry)||!integer(uid,0,0xffffffff)||String(uid)!==String(entry.uid)||seen.has(uid)||!record(entry.before)||
       typeof entry.before.exists!=='boolean'||entry.before.exists!==own(state.assignments,entry.uid)||
-      entry.before.exists&&entry.before.value!==state.assignments[entry.uid]||!own(state.byId,entry.after))invalid('layer assignment');
+      entry.before.exists&&entry.before.value!==state.assignments[entry.uid]||!own(state.byId,entry.after))invalid('errors.editorClipboardSparse.details.layerAssignment');
     seen.add(uid);state.assignments[entry.uid]=entry.after;
   }
   return state;
@@ -129,12 +129,12 @@ async function preparePlan(editor,wire,options,owned,timings){
     if(options.checkCurrent?.()===false)throw abort();
   };
   check();
-  if(editor.animationChannels.length||report._styk?.simpleFrameDraft)invalid('native paste requires an ordinary stored frame');
+  if(editor.animationChannels.length||report._styk?.simpleFrameDraft)invalid('errors.editorClipboardSparse.details.nativePasteRequiresAnOrdinaryStoredFrame');
   if(!record(wire)||!integer(wire.index,0,report.keyframes.length)||!Array.isArray(wire.frames)||!wire.frames.length||
-    report.keyframes.length+wire.frames.length>100000||!record(wire.assets))invalid('insertion');
+    report.keyframes.length+wire.frames.length>100000||!record(wire.assets))invalid('errors.editorClipboardSparse.details.insertion');
   const account={bytes:1024},history=owned?wire:await drain(copySteps(wire,account),check,options,timings,'history'),assets=history.assets;
   if(!Array.isArray(assets.figures)||!Array.isArray(assets.backgrounds)||assets.figureIndex!==report.figure_types.length||
-    assets.backgroundIndex!==(report.backgrounds?.length??0)||report.figure_types.length+assets.figures.length>65535)invalid('asset positions');
+    assets.backgroundIndex!==(report.backgrounds?.length??0)||report.figure_types.length+assets.figures.length>65535)invalid('errors.editorClipboardSparse.details.assetPositions');
   const state=await drain(copySteps(report._styk.layers,{bytes:0}),check,options,timings,'layers');
   const layerMeter=phaseMeter(timings,'layers');try{assetLayerState(state,assets.layers);}finally{layerMeter.finish();}
   await drain(validateLayerStateSteps(state),check,options,timings,'layers');
@@ -142,23 +142,23 @@ async function preparePlan(editor,wire,options,owned,timings){
   let required,counts;
   try{
   const definitions=new Map(report.figure_types.map(figure=>[figure.figure_type_id,figure]));required=new Map();
-  for(const figure of assets.figures){if(!record(figure)||definitions.has(figure.figure_type_id))invalid('duplicate figure identity');definitions.set(figure.figure_type_id,figure);required.set(figure.figure_type_id,figure);}
+  for(const figure of assets.figures){if(!record(figure)||definitions.has(figure.figure_type_id))invalid('errors.editorClipboardSparse.details.duplicateFigureIdentity');definitions.set(figure.figure_type_id,figure);required.set(figure.figure_type_id,figure);}
   const occupied=new Set([...report.keyframes.map(frame=>frame._styk?.frameId),...Object.keys(report._styk.frameSources??{})]);
   counts=new Map();let maximumUid=nextUid-1,objects=0,work=0,lastYield=performance.now();
   for(const frame of history.frames){
     const id=frame?._styk?.frameId,n=Number(id?.slice(6));
-    if(!/^frame-[1-9]\d*$/.test(id)||!Number.isSafeInteger(n)||n<nextIdentity||n>=history.nextFrameIdentity||occupied.has(id))invalid('frame identity');
+    if(!/^frame-[1-9]\d*$/.test(id)||!Number.isSafeInteger(n)||n<nextIdentity||n>=history.nextFrameIdentity||occupied.has(id))invalid('errors.editorClipboardSparse.details.frameIdentity');
     occupied.add(id);
-    if(!Array.isArray(frame.objects))invalid('pose table');
+    if(!Array.isArray(frame.objects))invalid('errors.editorClipboardSparse.details.poseTable');
     for(const object of frame.objects){
-      const figure=definitions.get(object.figure_type_id);if(!figure)invalid('unknown figure definition');
+      const figure=definitions.get(object.figure_type_id);if(!figure)invalid('errors.editorClipboardSparse.details.unknownFigureDefinition');
       required.set(figure.figure_type_id,figure);counts.set(object.unique_id,(counts.get(object.unique_id)??0)+1);if(object.unique_id<=MAX_ALLOCATED_UID)maximumUid=Math.max(maximumUid,object.unique_id);objects++;
       if(++work%256===0){check();if(performance.now()-lastYield>=4){options.onProgress?.({phase:'staging',completed:work});indexMeter.pause();await(options.yieldControl??yieldLoadTask)();indexMeter.resume();check();lastYield=performance.now();}}
     }
   }
-  if(objects+report.keyframes.reduce((total,frame)=>total+frame.objects.length,0)>2000000)invalid('object capacity');
-  if(history.nextFrameIdentity!==nextIdentity+history.frames.length||!integer(history.nextUid,nextUid,0x100000000)||history.nextUid<=maximumUid)invalid('identity counters');
-  for(const entry of assets.layers.assignments)if(!counts.has(Number(entry.uid)))invalid('assignment changes an existing figure');
+  if(objects+report.keyframes.reduce((total,frame)=>total+frame.objects.length,0)>2000000)invalid('errors.editorClipboardSparse.details.objectCapacity');
+  if(history.nextFrameIdentity!==nextIdentity+history.frames.length||!integer(history.nextUid,nextUid,0x100000000)||history.nextUid<=maximumUid)invalid('errors.editorClipboardSparse.details.identityCounters');
+  for(const entry of assets.layers.assignments)if(!counts.has(Number(entry.uid)))invalid('errors.editorClipboardSparse.details.assignmentChangesAnExistingFigure');
   }finally{indexMeter.finish();}
   const validation={...report,figure_types:[...required.values()],backgrounds:[...(report.backgrounds??[]),...assets.backgrounds],keyframes:history.frames};
   await drain(validateSceneSteps(validation),check,options,timings,'validation');
@@ -169,7 +169,7 @@ async function preparePlan(editor,wire,options,owned,timings){
   const rows=nativeTimeline({...report,keyframes}),selection=history.afterSelection;
   if(!record(selection)||selection.frameIndex!==history.index||selection.tick!==rows[history.index]?.start||selection.uid!==null||
     !Array.isArray(selection.uids)||selection.uids.length||selection.joint!==-1||
-    (!own(state.byId,selection.activeLayerId)&&!FIXED_LAYER_IDS.includes(selection.activeLayerId)))invalid('selection');
+    (!own(state.byId,selection.activeLayerId)&&!FIXED_LAYER_IDS.includes(selection.activeLayerId)))invalid('errors.editorClipboardSparse.details.selection');
   check();const prepared={count:history.frames.length};
   preparedStates.set(prepared,{check,history,live,keyframes,rows,counts,bytes:account.bytes*(owned?2:1)});return prepared;
   }finally{selectionMeter.finish();}
@@ -207,7 +207,7 @@ export function applySparseClipboardAssets(editor,command,direction){
   applyAssets(editor,command.clipboardAssets,direction==='after',copies);return true;
 }
 export function commitSparseClipboardPaste(editor,prepared){
-  const entry=preparedStates.get(prepared);if(!entry)invalid('prepared command');entry.check();
+  const entry=preparedStates.get(prepared);if(!entry)invalid('errors.editorClipboardSparse.details.preparedCommand');entry.check();
   const {history,live,keyframes,rows,counts,bytes}=entry;
   const command={kind:'splice',label:'Paste keyframes',index:history.index,before:[],after:history.frames,
     beforeSelection:editor._selectionState(),afterSelection:history.afterSelection,structural:true,timing:true,

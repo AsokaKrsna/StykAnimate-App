@@ -172,10 +172,10 @@ export function createClipboardWireDecoder(options = {}) {
     throw messageError(new RangeError(''), "errors.clipboardWire.clipboardByteAndResidentBudgetsMustBePositive", {});
   const stats = {encodedBytes:0, residentBytes:0, logicalBytes:0, maxSliceMs:0, workMs:0, chunks:0, slices:0, completed:false};
   const stack = [], keys = []; let root, hasRoot = false, started = false, finished = false, disposed = false, pushing = false, string = null, keyMode = null, keyBytes = 0;
-  const bad = message => messageError(new Error(''), "errors.clipboardWire.invalidClipboardWire", {message: message});
+  const bad = key => messageError(new Error(''), key);
   const check = () => {if (disposed) throw abort(); checkCurrent(options);};
   const reserve = bytes => {
-    if (!Number.isSafeInteger(bytes) || bytes < 0 || stats.residentBytes + bytes > maxResidentBytes) throw bad('resident data budget exceeded');
+    if (!Number.isSafeInteger(bytes) || bytes < 0 || stats.residentBytes + bytes > maxResidentBytes) throw bad('errors.clipboardWire.details.residentDataBudgetExceeded');
     stats.residentBytes += bytes; stats.logicalBytes = stats.residentBytes;
   };
   const expectingKey = frame => frame && (frame.array ? frame.index === frame.length : true) && frame.key === null;
@@ -185,21 +185,21 @@ export function createClipboardWireDecoder(options = {}) {
   };
   const append = value => {
     const frame = stack.at(-1);
-    if (!frame) {if (hasRoot) throw bad('multiple roots'); root = value; hasRoot = true; return;}
+    if (!frame) {if (hasRoot) throw bad('errors.clipboardWire.details.multipleRoots'); root = value; hasRoot = true; return;}
     if (frame.array && frame.index < frame.length) {frame.value[frame.index++] = value; return;}
-    if (frame.key === null) throw bad('value without property key');
+    if (frame.key === null) throw bad('errors.clipboardWire.details.valueWithoutPropertyKey');
     set(frame.value, frame.key, value); frame.key = null;
   };
   const property = key => {
     const frame = stack.at(-1);
-    if (!expectingKey(frame) || own(frame.value, key) || (frame.array && (key === 'length' || isIndex(key)))) throw bad('duplicate or misplaced property key');
+    if (!expectingKey(frame) || own(frame.value, key) || (frame.array && (key === 'length' || isIndex(key)))) throw bad('errors.clipboardWire.details.duplicateOrMisplacedPropertyKey');
     reserve(24); frame.key = key;
   };
   const completeString = () => {
     const value = string.value; string = null;
     if (keyMode) {
       if (keyMode.define) {
-        if (keys.length >= MAX_KEYS || keyBytes + value.length * 2 > MAX_KEY_BYTES) throw bad('key dictionary budget exceeded');
+        if (keys.length >= MAX_KEYS || keyBytes + value.length * 2 > MAX_KEY_BYTES) throw bad('errors.clipboardWire.details.keyDictionaryBudgetExceeded');
         keys.push(value); keyBytes += value.length * 2;
       }
       keyMode = null; property(value);
@@ -208,70 +208,70 @@ export function createClipboardWireDecoder(options = {}) {
   const dispose = () => {disposed = true; root = undefined; stack.length = 0; keys.length = 0; string = keyMode = null;};
   return {stats, dispose,
     async push(buffer) {
-      check(); if (pushing) throw bad('concurrent packet decoding');
+      check(); if (pushing) throw bad('errors.clipboardWire.details.concurrentPacketDecoding');
       if (!(buffer instanceof ArrayBuffer) || buffer.byteLength < 1 || buffer.byteLength > CLIPBOARD_WIRE_CHUNK_BYTES || finished)
-        throw bad('packet size or trailing packet');
-      if (stats.encodedBytes + buffer.byteLength > maxBytes) throw bad('encoded byte budget exceeded');
+        throw bad('errors.clipboardWire.details.packetSizeOrTrailingPacket');
+      if (stats.encodedBytes + buffer.byteLength > maxBytes) throw bad('errors.clipboardWire.details.encodedByteBudgetExceeded');
       pushing = true; const view = new DataView(buffer); let pos = 0, sliceStart = performance.now(), units = 0;
-      const ensure = count => {if (pos + count > view.byteLength) throw bad('truncated packet token');};
+      const ensure = count => {if (pos + count > view.byteLength) throw bad('errors.clipboardWire.details.truncatedPacketToken');};
       const u16 = () => {ensure(2); const n = view.getUint16(pos, true); pos += 2; return n;};
       const u32 = () => {ensure(4); const n = view.getUint32(pos, true); pos += 4; return n;};
       const elapsed = () => {const ms = performance.now() - sliceStart; stats.workMs += ms; stats.maxSliceMs = Math.max(stats.maxSliceMs, ms); stats.slices++;};
       try {
         stats.encodedBytes += buffer.byteLength; stats.chunks++;
-        if (!started) {ensure(8); for (const byte of MAGIC) if (view.getUint8(pos++) !== byte) throw bad('signature or version'); started = true;}
+        if (!started) {ensure(8); for (const byte of MAGIC) if (view.getUint8(pos++) !== byte) throw bad('errors.clipboardWire.details.signatureOrVersion'); started = true;}
         while (pos < view.byteLength) {
           const tag = view.getUint8(pos++), frame = stack.at(-1);
-          if (finished) throw bad('trailing data');
+          if (finished) throw bad('errors.clipboardWire.details.trailingData');
           if (string) {
-            if (tag !== T.LATIN && tag !== T.UTF16) throw bad('expected string code units');
+            if (tag !== T.LATIN && tag !== T.UTF16) throw bad('errors.clipboardWire.details.expectedStringCodeUnits');
             const length = u16(), width = tag === T.LATIN ? 1 : 2;
-            if (!length || length > RUN || string.received + length > string.length) throw bad('string run length');
+            if (!length || length > RUN || string.received + length > string.length) throw bad('errors.clipboardWire.details.stringRunLength');
             ensure(length * width); const chars = new Uint16Array(length);
             for (let i = 0; i < length; i++) chars[i] = width === 1 ? view.getUint8(pos++) : (pos += 2, view.getUint16(pos - 2, true));
             string.value += String.fromCharCode(...chars); string.received += length;
             if (string.received === string.length) completeString();
             units += length;
-          } else if (keyMode && tag !== T.STRING) throw bad('expected property name');
+          } else if (keyMode && tag !== T.STRING) throw bad('errors.clipboardWire.details.expectedPropertyName');
           else if (tag === T.STRING) {
             const length = u32();
-            if (length > maxBytes) throw bad('string length exceeds transfer budget');
-            if (keyMode?.define && (keys.length >= MAX_KEYS || keyBytes + length * 2 > MAX_KEY_BYTES)) throw bad('key dictionary budget exceeded');
+            if (length > maxBytes) throw bad('errors.clipboardWire.details.stringLengthExceedsTransferBudget');
+            if (keyMode?.define && (keys.length >= MAX_KEYS || keyBytes + length * 2 > MAX_KEY_BYTES)) throw bad('errors.clipboardWire.details.keyDictionaryBudgetExceeded');
             reserve(keyMode ? length * 2 : 16 + length * 2); string = {length, received:0, value:''};
             if (!length) completeString();
           } else if (tag === T.KEY || tag === T.KEY_DEF || tag === T.KEY_LITERAL) {
-            if (!expectingKey(frame)) throw bad('misplaced property key');
-            if (tag === T.KEY) {const id = u16(); if (id >= keys.length) throw bad('unknown property key'); property(keys[id]);}
+            if (!expectingKey(frame)) throw bad('errors.clipboardWire.details.misplacedPropertyKey');
+            if (tag === T.KEY) {const id = u16(); if (id >= keys.length) throw bad('errors.clipboardWire.details.unknownPropertyKey'); property(keys[id]);}
             else {
-              if (tag === T.KEY_DEF && (u16() !== keys.length || keys.length >= MAX_KEYS)) throw bad('property dictionary order or limit');
+              if (tag === T.KEY_DEF && (u16() !== keys.length || keys.length >= MAX_KEYS)) throw bad('errors.clipboardWire.details.propertyDictionaryOrderOrLimit');
               keyMode = {define:tag === T.KEY_DEF};
             }
           } else if (tag === T.END) {
-            if (!expectingKey(frame)) throw bad('unfinished container');
+            if (!expectingKey(frame)) throw bad('errors.clipboardWire.details.unfinishedContainer');
             if (frame.array) frame.value.length = frame.length; stack.pop();
           } else if (tag === T.FINISH) {
-            if (!hasRoot || stack.length) throw bad('unfinished root'); finished = true;
+            if (!hasRoot || stack.length) throw bad('errors.clipboardWire.details.unfinishedRoot'); finished = true;
           } else if (tag === T.NUMBERS || tag === T.HOLES) {
             const length = u16();
-            if (!frame?.array || !length || length > RUN || frame.index + length > frame.length) throw bad('array run length or position');
+            if (!frame?.array || !length || length > RUN || frame.index + length > frame.length) throw bad('errors.clipboardWire.details.arrayRunLengthOrPosition');
             if (tag === T.NUMBERS) {
               ensure(length * 8); reserve(length * 8);
               for (let i = 0; i < length; i++) {frame.value[frame.index++] = view.getFloat64(pos, true); pos += 8;}
             } else frame.index += length;
             units += length;
           } else {
-            if (expectingKey(frame)) throw bad('expected a property key');
+            if (expectingKey(frame)) throw bad('errors.clipboardWire.details.expectedAPropertyKey');
             if (tag === T.NULL || tag === T.UNDEFINED || tag === T.FALSE || tag === T.TRUE) {
               reserve(8); append(tag === T.NULL ? null : tag === T.UNDEFINED ? undefined : tag === T.TRUE);
             } else if (tag === T.NUMBER) {ensure(8); reserve(8); append(view.getFloat64(pos, true)); pos += 8;}
             else if (tag === T.ARRAY || tag === T.OBJECT || tag === T.NULL_OBJECT) {
-              if (stack.length >= MAX_DEPTH) throw bad('nesting exceeds 256 levels');
+              if (stack.length >= MAX_DEPTH) throw bad('errors.clipboardWire.details.nestingExceeds256Levels');
               const array = tag === T.ARRAY, length = array ? u32() : 0;
-              if (array && length > maxBytes) throw bad('array length exceeds transfer budget');
+              if (array && length > maxBytes) throw bad('errors.clipboardWire.details.arrayLengthExceedsTransferBudget');
               reserve(array ? 32 + length * 8 : 64);
               const value = array ? [] : tag === T.NULL_OBJECT ? Object.create(null) : {};
               append(value); stack.push({value, array, length, index:0, key:null});
-            } else throw bad('unknown token');
+            } else throw bad('errors.clipboardWire.details.unknownToken');
           }
           if (++units >= 128 || timeBudgetMs === 0) {
             units = 0; check();
@@ -282,6 +282,6 @@ export function createClipboardWireDecoder(options = {}) {
       } catch (error) {dispose(); throw error;}
       finally {elapsed(); pushing = false;}
     },
-    finish() {check(); if (pushing || !started || !finished || string || keyMode || stack.length) throw bad('truncated stream'); stats.completed = true; return root;},
+    finish() {check(); if (pushing || !started || !finished || string || keyMode || stack.length) throw bad('errors.clipboardWire.details.truncatedStream'); stats.completed = true; return root;},
   };
 }
