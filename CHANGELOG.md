@@ -36,6 +36,7 @@ What's new in each version of StykAnimate.
 - Clicking a frame in the Simple timeline keeps your current selection instead of selecting every figure.
 - Copying, pasting or duplicating a figure now keeps its effects.
 - Bending a connector now follows your pointer smoothly, and also works with Move joint in Build.
+- Changing a frame's easing works again when the app is set to a language other than English.
 
 ### Performance
 

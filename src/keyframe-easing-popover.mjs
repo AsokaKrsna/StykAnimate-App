@@ -83,7 +83,7 @@ export function showKeyframeEasingPopover() {
     onSelect: mode => { if (mode !== 'bezier') save(); },
   });
   popover.querySelector('form').addEventListener('submit', event => {event.preventDefault(); save();}, options);
-  popover.querySelector('[aria-label="Close easing"]').addEventListener('click', () => close(), options);
+  popover.querySelector('.styk-easing-header button').addEventListener('click', () => close(), options);
   popover.addEventListener('keydown', event => {event.stopPropagation(); if (event.key === 'Escape') {event.preventDefault(); close();}}, options);
   popover.addEventListener('toggle', event => {if (event.newState === 'closed') close(false);}, options);
   window.addEventListener('resize', () => close(false), options);
