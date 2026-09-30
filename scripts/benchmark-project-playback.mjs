@@ -52,7 +52,10 @@ try{
     }
     if(body)await route.fulfill({status:200,contentType:'text/javascript',body});else await route.continue();
   });
-  await app.evaluate(({BrowserWindow},{width,height})=>{const w=BrowserWindow.getAllWindows()[0];w.setContentSize(width,height);w.webContents.setBackgroundThrottling(false);w.setIgnoreMouseEvents(true);w.setFocusable(false);w.showInactive();},result.environment);
+  // STYK_PROBE_FOREGROUND=1 focuses the window on top, as when someone is using the app; Windows
+  // schedules an unfocused, occluded window's threads less favourably.
+  result.environment.foreground=process.env.STYK_PROBE_FOREGROUND==='1';
+  await app.evaluate(({BrowserWindow},{width,height,foreground})=>{const w=BrowserWindow.getAllWindows()[0];w.setContentSize(width,height);w.webContents.setBackgroundThrottling(false);w.setIgnoreMouseEvents(true);if(foreground){w.setAlwaysOnTop(true);w.show();w.focus();}else{w.setFocusable(false);w.showInactive();}},result.environment);
   await page.waitForFunction(()=>window.styk?.ready);
   const client=await page.context().newCDPSession(page);
   await client.send('Emulation.setDeviceMetricsOverride',{width:result.environment.width,height:result.environment.height,deviceScaleFactor:result.environment.dpr,mobile:false});
