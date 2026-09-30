@@ -80,9 +80,14 @@ try {
   check('Restoring brings the project back exactly as it was left', await first.page.evaluate(() => window.styk.editor.dirty === true));
 
   // --- Saving replaces the copy, so it is not offered again.
-  const download = first.page.waitForEvent('download', { timeout: 60000 });
-  await first.page.evaluate(() => window.styk.actions.save());
-  await download;
+  // A picker destination acknowledges close; a download cannot acknowledge saving.
+  await first.page.evaluate(() => {
+    window.showSaveFilePicker = async () => ({createWritable:async()=>({write:async()=>{},close:async()=>{},abort:async()=>{}})});
+    const save = styk.actions.save;
+    styk.actions.save = () => window.__saved = save();
+  });
+  await first.page.locator('[data-action="save"]').first().click();
+  assert.equal(await first.page.evaluate(() => window.__saved), true);
   await until('the recovery copy to be cleared by the save', async () => !(await recovery(first.page)));
   check('A saved project leaves no recovery copy behind', true);
   await first.page.reload({ waitUntil: 'load' });
@@ -95,12 +100,15 @@ try {
   await dragFigure(first.page, 40);
   await first.page.waitForTimeout(2500);
   check('With a long autosave interval nothing is written yet', !(await recovery(first.page)));
+  await first.page.evaluate(() => { styk.state.loop = true; styk.actions.play(); });
+  await first.page.waitForFunction(() => styk.state.playing);
   await first.page.evaluate(() => {
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
     document.dispatchEvent(new Event('visibilitychange'));
   });
   check('Hiding the tab writes the copy immediately', !!(await until('the copy written on hide', () => recovery(first.page), 15000)));
+  check('Hiding during playback pauses transport before the recovery write', await first.page.evaluate(() => !styk.state.playing));
   await first.page.close();
 
   // --- A browser that blocks storage: the editor works, and says so once.

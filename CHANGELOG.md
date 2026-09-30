@@ -55,6 +55,8 @@ What's new in each version of StykAnimate.
 
 ### Fixed
 
+- Browser downloads now keep your work recoverable until a file save is confirmed.
+- Browser recovery keeps each tab's unsaved project separately and pauses playback when the tab is hidden.
 - Fixed selecting figures on the canvas while using the Tweener.
 - Double-clicking a static node now selects its branch, just like other nodes.
 - Clicking a frame in the Simple timeline keeps your current selection instead of selecting every figure.

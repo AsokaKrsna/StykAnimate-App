@@ -47,7 +47,7 @@ import {previewQualityLevels, previewMsaaLevels, updatePreviewQuality, playbackQ
 import { DesktopTelemetryClient } from './telemetry-core.mjs';
 import { workload, documentComplexity } from './telemetry-workload.mjs';
 import { sizeBucket,complexityBucket,fpsBucket } from './telemetry-schema.mjs';
-import { writeBrowserRecovery, readBrowserRecovery, clearBrowserRecovery } from './browser-recovery.mjs';
+import { BrowserRecoverySession, readBrowserRecovery } from './browser-recovery.mjs';
 import { PrivacyUI } from './privacy-ui.mjs';
 import { FeedbackUI } from './feedback-ui.mjs';
 import { UpdateUI } from './update-ui.mjs';
@@ -177,6 +177,7 @@ const editor = new Editor({ demo: false, propertyChannels: true, layerTimeline: 
   clipboardWorker = new ClipboardWorkerClient(),
   preparedScenes = new WeakMap(),
   exportJobs = new Set();
+const browserRecovery = desktop ? null : new BrowserRecoverySession();
 let documentActivation = Promise.resolve();
 const audioEngine = new AudioEngine({desktop, onError: error => { pause(); fail(error); }});
 let audioPreparation, audioScrubController, audioScrubAt = 0;
@@ -191,10 +192,9 @@ function interruptRecovery() {
   clearTimeout(state.recoveryTimer);
   if (editor.dirty) scheduleRecovery();
 }
-async function runDocumentExport(format, consume, { recovery = false } = {}) {
+async function runDocumentExport(format, consume, { recovery = false, controller = new AbortController() } = {}) {
   if (!recovery){finishCurrentEdit();await drawingController?.barrier();}
-  const controller = new AbortController(),
-    job = { controller, recovery };
+  const job = { controller, recovery };
   exportJobs.add(job);
   const metric = recovery ? 'recovery' : format === 'styk' ? 'save' : 'export';
   const started = performance.now();
@@ -3682,66 +3682,95 @@ async function openSample(path) {
   try { await acceptImport(await importer.openSample(path)); } catch (error) { throw persistentFailure(error); }
 }
 async function saveNative({ saveAs = false } = {}) {
-  finishCurrentEdit();await drawingController?.barrier();
-  while(editor._movieclipScopes?.length){await drawingBarrier(editor.report);editor.leaveMovieclip();}
-  interruptRecovery();
-  status("Saving project…", false, true);
-  const revision = editor.revision,
-    draftRevision = editor.frameDraftRevision,
-    report = editor.report,
-    documentToken = state.documentToken,
-    name = editor.name;
-  let saved;
-  savingDocument = true;
-  updateTitle();
+  finishCurrentEdit();
+  const targetReport = editor.report, targetToken = state.documentToken;
+  const controller = new AbortController();
+  // Invoke the browser picker in the input task, before publication/serialization
+  // can consume its transient user activation. Desktop keeps its native writer.
+  const destination = !desktop ? exportFlow.openExportSink({
+    filename: `${editor.name || "Untitled"}.styk`, mimeType: "application/octet-stream", signal: controller.signal,
+    fileSystem: navigator.userActivation?.isActive !== false,
+  }) : null;
+  let sink, downloaded = false;
   try {
-    saved = await runDocumentExport("styk", (blob, signal) =>
-      desktop?.beginProjectWrite
-        ? writeNativeBlob(desktop, blob, {
-            signal,
-            documentToken,
-            saveAs,
-            defaultPath: `${name || "Untitled"}.styk`,
-            filters: [{ name: "StykAnimate project", extensions: ["styk"] }],
-          })
-        : exportFlow.saveBlob(blob, `${name || "Untitled"}.styk`, signal),
-    );
-  } catch (error) {
-    if (error.name === "AbortError") {
-      status("Save cancelled");
-      return false;
-    }
-    throw error;
-  } finally {
-    savingDocument = false;
+    sink = await destination;
+    if (!desktop && !sink) { status("Save cancelled"); return false; }
+    if (targetReport !== editor.report || targetToken !== state.documentToken) { status("Save cancelled · the project changed"); return false; }
+    await drawingController?.barrier();
+    while(editor._movieclipScopes?.length){await drawingBarrier(editor.report);editor.leaveMovieclip();}
+    interruptRecovery();
+    status("Saving project…", false, true);
+    const revision = editor.revision,
+      draftRevision = editor.frameDraftRevision,
+      report = editor.report,
+      documentToken = state.documentToken,
+      name = editor.name;
+    let saved;
+    savingDocument = true;
     updateTitle();
-  }
-  if (saved) {
-    if (editor.report === report && state.documentToken === documentToken) {
-      if (
-        editor.revision === revision &&
-        editor.frameDraftRevision === draftRevision
-      ) {
-        editor.markSaved();
-        const time = new Intl.DateTimeFormat(document.documentElement.lang || undefined, { hour: "numeric", minute: "2-digit" });
-        lastSave = { report, words: `Saved ${time.format(new Date())}` };
-        if (desktop?.deleteRecovery) await desktop.deleteRecovery();
-        // A saved project has nothing left to recover; a stale copy would be offered on the next visit.
-        else if (!desktop) await clearBrowserRecovery();
+    try {
+      saved = await runDocumentExport("styk", async (blob, signal) => {
+        if (desktop?.beginProjectWrite) return writeNativeBlob(desktop, blob, {
+              signal,
+              documentToken,
+              saveAs,
+              defaultPath: `${name || "Untitled"}.styk`,
+              filters: [{ name: "StykAnimate project", extensions: ["styk"] }],
+            });
+        if (desktop) return exportFlow.saveBlob(blob, `${name || "Untitled"}.styk`, signal);
+        if (sink.streamed) {
+          await sink.write(blob);
+          return Boolean((await sink.finish()).saved);
+        }
+        // An anchor download has no completion acknowledgement. Keep both the
+        // unsaved state and a recovery copy, including when timed autosave is off.
+        try { await browserRecovery.write(blob, name, signal); }
+        catch (error) { if (error.name === "AbortError") throw error; status(`Recovery copy could not be written: ${error.message}`, true); }
+        if (signal.aborted) throw new DOMException("Save cancelled", "AbortError");
+        await exportFlow.saveBlob(blob, `${name || "Untitled"}.styk`, signal);
+        downloaded = true;
+        return false;
+      }, {controller});
+    } catch (error) {
+      if (error.name === "AbortError") {
+        status("Save cancelled");
+        return false;
       }
+      throw error;
+    } finally {
+      savingDocument = false;
+      updateTitle();
     }
-    updateTitle();
-    if (editor.dirty) notify("Saved a copy · newer changes are still unsaved");
-    else status("Project saved");
-  } else status("Save cancelled");
-  return Boolean(
-    saved &&
-      editor.report === report &&
-      state.documentToken === documentToken &&
-      editor.revision === revision &&
-      editor.frameDraftRevision === draftRevision &&
-      !editor.dirty,
-  );
+    if (saved) {
+      if (editor.report === report && state.documentToken === documentToken) {
+        if (
+          editor.revision === revision &&
+          editor.frameDraftRevision === draftRevision
+        ) {
+          editor.markSaved();
+          const time = new Intl.DateTimeFormat(document.documentElement.lang || undefined, { hour: "numeric", minute: "2-digit" });
+          lastSave = { report, words: `Saved ${time.format(new Date())}` };
+          if (desktop?.deleteRecovery) await desktop.deleteRecovery();
+          // A saved project has nothing left to recover; a stale copy would be offered on the next visit.
+          else if (!desktop) await browserRecovery.clear();
+        }
+      }
+      updateTitle();
+      if (editor.dirty) notify("Saved a copy · newer changes are still unsaved");
+      else status("Project saved");
+    } else status(downloaded ? "Download started · the project stays edited until a file save is confirmed" : "Save cancelled");
+    return Boolean(
+      saved &&
+        editor.report === report &&
+        state.documentToken === documentToken &&
+        editor.revision === revision &&
+        editor.frameDraftRevision === draftRevision &&
+        !editor.dirty,
+    );
+  } finally {
+    // Aborts swap files on snapshot failure/cancellation; a committed sink is inert.
+    await sink?.abort();
+  }
 }
 /**
  * Shows `body` (trusted markup built here) in the shared #dialog under a
@@ -5349,7 +5378,10 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     hotkeys.releaseAll();
     // A hidden tab may be frozen or discarded at any moment (always on a phone), so the recovery copy is not left to its timer.
-    if (!desktop && editor.dirty) scheduleRecovery(0);
+    if (!desktop) {
+      pause();
+      if (editor.dirty) scheduleRecovery(0);
+    }
     // A hidden page cannot present anything; park speculative preparation the
     // same way a long canvas drag does. Exports keep their own workers.
     playback.setInteractionActive(true);
@@ -5562,7 +5594,7 @@ function scheduleRecovery(delay = state.settings.autosaveSeconds * 1000 * (state
               signal,
             });
           }
-          return writeBrowserRecovery(await blob.arrayBuffer(), name, signal);
+          return browserRecovery.write(blob, name, signal);
         },
         { recovery: true },
       );
@@ -5593,63 +5625,84 @@ function offerRecovery() {
       );
     return;
   }
-  void readBrowserRecovery().then(showRecovery);
+  void browserRecovery.list().then(records => {
+    if (records.length === 1) showRecovery(records[0]);
+    else if (records.length > 1) showRecovery(null, records);
+  }).catch(error => status(`Recovery could not be read: ${error.message}`, true));
 }
 /** The recovery offer: the stage header's recovery message (experience.md §4.3), with the snapshot's file name and time. */
-function showRecovery(record) {
-  if (!record) return;
-  const time = Number.isFinite(record.savedAt) ? new Date(record.savedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+function showRecovery(record, records = [record]) {
+  if (!records.length || !records[0]) return;
+  const time = Number.isFinite(record?.savedAt) ? new Date(record.savedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
   const offer = toasts.show({
     slot: "recovery", icon: "clock", title: "Restore unsaved work", key: "recovery",
-    message: `${[record.name && `in ${record.name}`, time && `from ${time}`].filter(Boolean).join(" ")}?`,
+    message: record ? `${[record.name && `in ${record.name}`, time && `from ${time}`].filter(Boolean).join(" ")}?` : `${records.length} recovery copies are available.`,
     timeout: 0, dismissible: false,
     actions: [
       { label: "Not now", id: "dismiss-recovery" },
+      ...(browserRecovery ? [{ label: "Manage copies", id: "manage-recovery", dismiss: false, run: guarded(() => restore({choose: true})) }] : []),
       { label: "Restore", id: "restore-recovery", variant: "outline", dismiss: false, run: guarded(() => restore()) },
     ],
   });
-  const restore = async () => {
+  const restore = async ({choose = false} = {}) => {
+    if (browserRecovery && (choose || records.length > 1)) {
+      record = await dialogs.chooseRecovery(records, copy => browserRecovery.discard(copy));
+      if (!records.length) offer.dismiss();
+      if (!record) return;
+    }
     if (await dialogs.confirmReplace()) {
-      const replaceApproved = {
-        report: editor.report,
-        revision: editor.revision,
-        draftRevision: editor.frameDraftRevision,
-      };
-      if (record.native) {
-        const native = await readNativeRecovery(desktop);
-        if (!native)
-          throw new Error("The recovery file is no longer available.");
-        record = { ...record, ...native };
-      }
-      if (record.blob) {
-        const restored = await importer.importNative(
-          new File([record.blob], `${record.name}.styk`),
-        );
-        await acceptImport(restored, record.name, {
-          replaceApproved,
-        });
-      } else {
-        if (
-          (replaceApproved.report !== editor.report ||
-            replaceApproved.revision !== editor.revision ||
-            replaceApproved.draftRevision !== editor.frameDraftRevision ||
-            editor._drag ||
-            editor._animationEdit) &&
-          !(await dialogs.confirmReplace())
-        )
-          return;
-        await editor.loadAsync(record.document, record.name);
-        if (desktop?.activateDocument)
-          state.documentToken = (
-            await desktop.activateDocument({})
-          ).documentToken;
-        state.sourceId = null;
-      }
-      editor.dirty = true;
-      fit();
-      updateUI();
-      telemetry.count('recovery_restored');
-      offer.dismiss();
+      const reservation = browserRecovery ? await browserRecovery.reserve(record) : null;
+      if (browserRecovery && !reservation) throw new Error("This recovery copy is open in another tab.");
+      let adopted = false;
+      try {
+        const replaceApproved = {
+          report: editor.report,
+          revision: editor.revision,
+          draftRevision: editor.frameDraftRevision,
+        };
+        if (record.native) {
+          const native = await readNativeRecovery(desktop);
+          if (!native)
+            throw new Error("The recovery file is no longer available.");
+          record = { ...record, ...native };
+        }
+        if (browserRecovery) {
+          const current = await readBrowserRecovery(undefined, {id: record.id});
+          if (!current || current.savedAt !== record.savedAt || current.token !== record.token) throw new Error("The recovery copy changed. Reopen StykAnimate to see the latest copy.");
+          record = current;
+        }
+        if (record.blob) {
+          const restored = await importer.importNative(
+            new File([record.blob], `${record.name}.styk`),
+          );
+          if (!await acceptImport(restored, record.name, {
+            replaceApproved,
+          })) return;
+        } else {
+          if (
+            (replaceApproved.report !== editor.report ||
+              replaceApproved.revision !== editor.revision ||
+              replaceApproved.draftRevision !== editor.frameDraftRevision ||
+              editor._drag ||
+              editor._animationEdit) &&
+            !(await dialogs.confirmReplace())
+          )
+            return;
+          await editor.loadAsync(record.document, record.name);
+          if (desktop?.activateDocument)
+            state.documentToken = (
+              await desktop.activateDocument({})
+            ).documentToken;
+          state.sourceId = null;
+        }
+        editor.dirty = true;
+        await reservation?.commit();
+        adopted = true;
+        fit();
+        updateUI();
+        telemetry.count('recovery_restored');
+        offer.dismiss();
+      } finally { if (!adopted) reservation?.release(); }
     }
   };
 }
@@ -5683,6 +5736,7 @@ if (desktop) {
   desktop.onBackendError?.(fail);
 }
 window.addEventListener("pagehide", () => clipboardWorker.dispose());
+window.addEventListener("pagehide", event => { if (!event.persisted) browserRecovery?.dispose(); });
 window.addEventListener("beforeunload", (e) => {
   if (editor.dirty && !desktop) {
     e.preventDefault();
@@ -5690,6 +5744,7 @@ window.addEventListener("beforeunload", (e) => {
   }
 });
 window.styk = {
+  recovery: browserRecovery,
   audioEngine,
   editor,
   state,

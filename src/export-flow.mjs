@@ -503,5 +503,5 @@ export function createExportFlow(ctx) {
     "export-png-sequence": () => exportImages("png-sequence"),
     "export-jpeg-sequence": () => exportImages("jpeg-sequence"),
   });
-  return { showExport, exportPivot, saveBlob, finishExport };
+  return { showExport, exportPivot, saveBlob, finishExport, openExportSink };
 }

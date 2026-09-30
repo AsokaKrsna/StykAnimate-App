@@ -110,3 +110,12 @@ test('picker cancellation returns null and unsupported environments fall back to
   assert.equal(sink.streamed, false);
   t.after(() => { if (picker) Object.defineProperty(globalThis, 'showSaveFilePicker', picker); });
 });
+
+test('a save without user activation can explicitly use the download fallback', async t => {
+  const picker = Object.getOwnPropertyDescriptor(globalThis, 'showSaveFilePicker');
+  globalThis.showSaveFilePicker = () => { throw new Error('A background save must not open a picker.'); };
+  t.after(() => { if (picker) Object.defineProperty(globalThis, 'showSaveFilePicker', picker); else delete globalThis.showSaveFilePicker; });
+  const sink = await openExportSink({filename:'project.styk',desktop:null,fileSystem:false});
+  assert.equal(sink.streamed,false);
+  await sink.abort();
+});

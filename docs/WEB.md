@@ -109,12 +109,26 @@ site. Not verified: install and offline use in Safari or Firefox, and installing
 
 **Autosave.** A moment after each edit (2.5 s by default, Settings → Recovery), and at once when the
 tab is hidden (a phone may discard a background tab without warning), the project is written to
-IndexedDB as one record, the last unsaved work. The next visit offers "Restore unsaved work"; a
-save clears it, so a stale copy is never offered. It is a copy of the last work, not a project
-list: there is one, and saving a project still downloads a file. If storage is blocked or full,
+IndexedDB as one copy per tab. Browser playback pauses before the hidden-tab snapshot;
+active edits, resource publication and cancellation still use the usual export barriers.
+The next visit offers "Restore unsaved work"; an acknowledged file save clears only that
+tab's copy. Project Save uses a file picker where the browser offers
+one; otherwise it starts a download, keeps the project edited and retains recovery because
+downloads cannot report that a file was written. A manual download also keeps recovery when
+timed autosave is disabled. If storage is blocked or full,
 the editor keeps working, says so once, and retries less often
 (`src/browser-recovery.mjs`, `scheduleRecovery` in `app.mjs`). The document is stored as an
 ArrayBuffer, not a Blob, because WebKit cannot keep a Blob in IndexedDB reliably.
+
+The v2 recovery database stores bytes and display metadata separately, migrating the old
+singleton in place. Recovery lists read only metadata; choosing Restore reads one project.
+Page-lifetime Web Locks exclude live tabs' copies and reserve a copy until restoration
+finishes. A restored copy adopts its abandoned key, so saving it clears the correct copy.
+Without Web Locks, tabs still have unique keys; restoring keeps the source copy until it is
+explicitly discarded. Manage copies in the recovery offer selects or discards abandoned
+copies. Storage is bounded to eight copies and 512 MiB; a full store rejects a new write
+without evicting existing work, while updating one's own copy remains possible within the
+byte budget. Close older tabs if they block the database upgrade.
 
 **My library** (`src/web-library.mjs`) is the desktop library's interface (`desktop/library-store.cjs`)
 over IndexedDB, so the Library panel is one implementation for both: the same folders, names,

@@ -182,15 +182,18 @@ test('missing or malformed workload data remains unknown and optional measuremen
   }
 });
 
-function recoveryDatabase({ putError = null, transactionError = null, openError = null } = {}) {
+function recoveryDatabase({ putError = null, transactionError = null, openError = null, records = [] } = {}) {
   const calls = { opened: 0, closed: 0, aborted: 0, put: [] }, request = {};
   const tx = { error: null, abort() { calls.aborted++; queueMicrotask(() => tx.onabort?.()); }, objectStore(name) {
-    assert.equal(name, 'documents'); return { put(value, key) { if (putError) throw putError; calls.put.push({ value, key }); } };
+    assert.ok(['documents','metadata'].includes(name)); return {
+      getAll(){const request={result:records};queueMicrotask(()=>request.onsuccess?.());return request;},
+      put(value, key) { if (putError) throw putError; if(name==='documents')calls.put.push({ value, key }); }
+    };
   } };
   const db = { close() { calls.closed++; }, createObjectStore() {}, transaction(name, mode) {
-    assert.equal(name, 'documents'); assert.equal(mode, 'readwrite'); if (transactionError) throw transactionError; return tx;
+    assert.deepEqual(name, ['documents','metadata']); assert.equal(mode, 'readwrite'); if (transactionError) throw transactionError; return tx;
   } };
-  const database = { open(name, version) { calls.opened++; assert.equal(name, 'stykanimate-recovery'); assert.equal(version, 1);
+  const database = { open(name, version) { calls.opened++; assert.equal(name, 'stykanimate-recovery'); assert.equal(version, 2);
     queueMicrotask(() => { if (openError) { request.error = openError; request.onerror?.(); } else { request.result = db; request.onsuccess?.(); } });
     return request;
   } };
@@ -201,7 +204,7 @@ test('browser recovery resolves true only after its transaction commits', async 
   const f = recoveryDatabase(), controller = new AbortController();
   let settled = false;
   const result = writeBrowserRecovery(new Blob(['document']), 'recovery-name', controller.signal, f.database).then(value => { settled = true; return value; });
-  await Promise.resolve(); await Promise.resolve();
+  await new Promise(setImmediate);
   assert.equal(f.calls.put.length, 1); assert.equal(settled, false, 'put submission is not a committed recovery');
   f.tx.oncomplete(); assert.equal(await result, true); assert.equal(f.calls.closed, 1);
   controller.abort(); assert.equal(f.calls.aborted, 0, 'commit removes abort listener');
@@ -213,7 +216,7 @@ test('browser recovery reports cancellation before open, before transaction and 
     if (moment === 'before-open') controller.abort();
     const result = writeBrowserRecovery(new Blob(), 'name', controller.signal, f.database);
     if (moment === 'before-transaction') controller.abort();
-    if (moment === 'during-write') { await Promise.resolve(); controller.abort(); }
+    if (moment === 'during-write') { await new Promise(setImmediate); controller.abort(); }
     assert.equal(await result, false);
     assert.equal(f.calls.opened, moment === 'before-open' ? 0 : 1);
     assert.equal(f.calls.closed, moment === 'before-open' ? 0 : 1);
@@ -227,10 +230,20 @@ test('browser recovery rejects storage failures instead of reporting success or 
     const result = writeBrowserRecovery(new Blob(), 'name', controller.signal, f.database);
     const rejected = assert.rejects(result, failure === 'unexpected-abort' ? /Recovery transaction aborted/ : error);
     if (failure === 'transaction-event' || failure === 'unexpected-abort') {
-      await Promise.resolve();
+      await new Promise(setImmediate);
       if (failure === 'transaction-event') { f.tx.error = error; f.tx.onerror(); } else f.tx.onabort();
     }
     await rejected;
     assert.ok(f.calls.closed > 0 || failure === 'openError');
+  }
+});
+
+test('browser recovery aborts count and byte capacity failures before submitting project bytes', async () => {
+  for(const records of [Array.from({length:8},(_,i)=>({id:String(i),size:1})),[{id:'other',size:512*1024*1024}]]){
+    const f=recoveryDatabase({records});
+    await assert.rejects(writeBrowserRecovery(new Blob(['new work']),'name',undefined,f.database),/Recovery storage is full/);
+    assert.equal(f.calls.put.length,0);
+    assert.equal(f.calls.aborted,1);
+    assert.equal(f.calls.closed,1);
   }
 });

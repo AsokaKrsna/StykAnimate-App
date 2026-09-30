@@ -301,5 +301,30 @@ export function createAppDialogs(ctx) {
     "open-recent": showRecentFiles,
     performance: showPerformance,
   });
-  return { confirmReplace, showImportNotes, chooseSticknodesEntry, confirmDiscardFrame, showPerformance };
+  async function chooseRecovery(records, discard) {
+    const body=document.createDocumentFragment(), label=document.createElement('label'), select=document.createElement('select'), wrap=document.createElement('span');
+    label.className='ui-form-row';label.textContent='Recovery copy';wrap.className='ui-select';wrap.innerHTML=icon('chevron-down');
+    select.setAttribute('aria-label','Recovery copy');
+    for(const record of records){const option=document.createElement('option');option.value=record.id;option.textContent=`${record.name || 'Untitled'} · ${new Date(record.savedAt).toLocaleString()}`;select.append(option);}
+    wrap.prepend(select);label.append(wrap);body.append(label,paragraph('Restore opens this copy as an edited project. Discard permanently removes this recovery copy.'));
+    const dialog=dialogOf({title:'Restore unsaved work',size:'sm',body,
+      actions:[{label:'Cancel',cancel:true},{label:'Discard copy',value:'discard',tone:'danger'},{label:'Restore',value:'restore',variant:'primary'}],
+      onSubmit:value=>{
+        const record=records.find(copy=>copy.id===select.value);
+        if(value==='restore')return {value:record};
+        if(value==='discard'){
+          dialog.setBusy(true);
+          void discard(record).then(deleted=>{
+            if(!deleted)throw new Error('The recovery copy changed or is open in another tab.');
+            records.splice(records.indexOf(record),1);
+            select.selectedOptions[0].remove();if(!select.options.length)dialog.close();
+          }).catch(error=>dialog.setError(error.message)).finally(()=>dialog.setBusy(false));
+          return false;
+        }
+        return false;
+      },
+    });
+    return dialog.showModal();
+  }
+  return { confirmReplace, showImportNotes, chooseSticknodesEntry, confirmDiscardFrame, showPerformance, chooseRecovery };
 }

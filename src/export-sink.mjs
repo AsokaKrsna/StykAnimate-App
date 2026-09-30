@@ -159,7 +159,7 @@ export class MemorySink {
  * @returns {Promise<DesktopSink|FileSystemSink|MemorySink|null>} null when the
  * user cancels the destination picker.
  */
-export async function openExportSink({ filename, mimeType, desktop = globalThis.stykDesktop, signal, onTiming } = {}) {
+export async function openExportSink({ filename, mimeType, desktop = globalThis.stykDesktop, signal, onTiming, fileSystem = true } = {}) {
   const extension = filename.includes(".") ? filename.split(".").at(-1) : "bin";
   if (typeof desktop?.beginFileWrite === "function" && desktop.streamingFileWrite === true) {
     const transfer = await desktop.beginFileWrite({
@@ -171,7 +171,7 @@ export async function openExportSink({ filename, mimeType, desktop = globalThis.
     if (!transfer) return null;
     return new DesktopSink(desktop, transfer, signal,onTiming);
   }
-  if (typeof globalThis.showSaveFilePicker === "function") {
+  if (fileSystem && typeof globalThis.showSaveFilePicker === "function") {
     let handle;
     try {
       handle = await globalThis.showSaveFilePicker({

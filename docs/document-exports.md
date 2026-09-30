@@ -75,6 +75,14 @@ turn a saved document into a failed save; it reports an app diagnostic and sets
 and preserve the previous destination. Diagnostic reporting cannot reverse a
 completed file write.
 
+Browser project Save selects a File System Access destination in the input task,
+before awaiting drawing publication or serialization. Its existing output sink
+commits through `close()`; cancellation and failure abort the swap file. Where a
+picker is unavailable (including a command without user activation), Save starts
+a download and retains an unsaved document plus a recovery snapshot. An anchor
+click is not a file-write acknowledgement and cannot clear recovery, mark the
+document Saved, or satisfy Save changes before replacing the document.
+
 The caller must abort on **every document mutation**, including the start of an
 uncommitted drag or another preview operation. Revision checks additionally
 reject snapshots changed between batches or while the service is exporting.
