@@ -58,29 +58,9 @@ import {formatPropertyValue} from '../property-controls.mjs';
 
 export const OPTION_KINDS = Object.freeze(['toggle', 'toggles', 'button', 'split', 'select', 'field', 'stepper', 'colors', 'recent', 'segmented']);
 
-const TEXT = Object.freeze({
-  'toolOptions.more': 'More options',
-  'toolOptions.moreTip': 'More options (the window is narrow)',
-  'toolOptions.settings': '{name} settings',
-  'toolOptions.decrease': 'Decrease {name}',
-  'toolOptions.increase': 'Increase {name}',
-  'toolOptions.colors': '{name}: {stroke} and {fill}',
-  'toolOptions.recent': 'Recent colors',
-  'toolOptions.color': 'Color {value}',
-  'toolOptions.swap': 'Swap colors',
-});
 
-const fill = (text, params) => text.replace(/\{([A-Za-z]\w*)\}/g, (token, name) => (Object.hasOwn(params, name) ? String(params[name]) : token));
-/** The text for `key`: t(key, params) when it knows it, else English. */
-export function toolOptionsText(t, key, params = {}) {
-  if (typeof t === 'function') {
-    try {
-      const text = t(key, params);
-      if (typeof text === 'string' && text && text !== key) return text;
-    } catch { /* a missing translation falls back to English */ }
-  }
-  return fill(TEXT[key] ?? key, params);
-}
+
+export { messageText as toolOptionsText } from '../localization.mjs';
 
 const ID = /^[A-Za-z][\w:.-]*$/;
 const ATTRIBUTE = /^(?:data|aria)-[a-z][a-z0-9-]*$/;

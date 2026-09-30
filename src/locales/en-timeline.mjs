@@ -100,15 +100,5 @@ const TEXT = Object.freeze({
 });
 export default TEXT;
 
-const fill = (text, params) => text.replace(/\{([A-Za-z]\w*)\}/g, (token, name) => (Object.hasOwn(params, name) ? String(params[name]) : token));
 
-/** The text for `key`: `t(key, params)` when it knows the key, else the English above. */
-export function sayTimeline(t, key, params = {}) {
-  if (typeof t === 'function') {
-    try {
-      const text = t(key, params);
-      if (typeof text === 'string' && text && text !== key) return fill(text, params);
-    } catch { /* a missing translation falls back to English */ }
-  }
-  return fill(TEXT[key] ?? key, params);
-}
+

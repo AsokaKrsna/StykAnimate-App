@@ -39,7 +39,7 @@ test('catalog metadata is well formed', () => {
     assert.ok(Object.isFrozen(entry), `${entry.id} is frozen`);
   }
   for (const category of COMMAND_CATEGORIES) assert.equal(catalogText[category.labelKey], category.label, `${category.id}: ${category.labelKey}`);
-  for (const key of Object.keys(overlayStrings)) assert.ok(!Object.hasOwn(english, key), `${key} is defined once, in en-overlays.mjs`);
+  for (const key of Object.keys(overlayStrings)) assert.equal(english[key], overlayStrings[key], `${key} is composed into the shared catalog`);
 });
 
 test('CATALOG_REQUIREMENTS lists every requirement name the catalog uses', () => {

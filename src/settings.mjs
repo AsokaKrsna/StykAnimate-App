@@ -8,7 +8,7 @@ import { applyEditorTheme, normalizeTheme } from './theme.mjs';
 import {normalizePlaybackQuality, playbackQualityOptions} from './preview-quality.mjs';
 import { normalizeSectionMemory } from './inspector-kit.mjs';
 import {normalizeExportPreferences} from './export-request.mjs';
-import { sayDialog } from './locales/en-dialogs.mjs';
+import { messageText as sayDialog } from './localization.mjs';
 import { normalizeFingerDraw, normalizeTouchSetting } from './touch/touch-mode.mjs';
 
 export const EDITOR_SETTINGS_KEY = "stykanimate.editor.settings.v1";

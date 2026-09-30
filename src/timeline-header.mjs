@@ -45,7 +45,7 @@ import {createPopover} from './ui/ui-popover.mjs';
 import {setAttr, setHidden, setProp, setText, setVar} from './ui/dom-write.mjs';
 import {setSharedSize} from './shell/layout-schema.mjs';
 import {bandBottom} from './shell/topbar.mjs';
-import {sayTimeline} from './locales/en-timeline.mjs';
+import {messageText as sayTimeline} from './localization.mjs';
 
 /**
  * What folds, in order (experience.md §1.8, revision 4.3): the zoom slider (Ctrl + wheel and Fit still zoom), Edit

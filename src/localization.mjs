@@ -1,10 +1,10 @@
 import english from './locales/en.mjs';
-import italian from './locales/it.mjs';
-import nativeCatalogs, { NATIVE_LOCALES } from './locales/native-catalogs.mjs';
+import packs from './locales/locale-packs.mjs';
 
 export const DEFAULT_LOCALE = 'en';
-export const SUPPORTED_LOCALES = NATIVE_LOCALES;
-const catalogs = Object.freeze({ ...nativeCatalogs, en: english, it: italian });
+export const SUPPORTED_LOCALES = Object.freeze(packs.map(pack => pack.locale).sort((a, b) => a.id === 'en' ? -1 : b.id === 'en' ? 1 : a.name.localeCompare(b.name, 'en')));
+const catalogs = Object.freeze(Object.fromEntries(packs.map(pack => [pack.locale.id, pack.locale.id === 'en' ? english : pack.messages])));
+const aliases = Object.freeze(Object.fromEntries(packs.flatMap(pack => (pack.locale.aliases ?? []).map(alias => [alias, pack.locale.id]))));
 const owns = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 const MAX_FORMATTERS = 16;
 
@@ -13,19 +13,16 @@ function supportedLocale(value) {
   try {
     const canonical = Intl.getCanonicalLocales(value)[0];
     if (owns(catalogs, canonical)) return canonical;
-    const parsed = new Intl.Locale(canonical);
-    const language = parsed.language;
-    // Only the supplied script/regional catalogs are supported. Regional
-    // Spanish remains distinct; Traditional Chinese never silently becomes
-    // Simplified Chinese. The native Norwegian vocabulary is Bokmål.
-    if (language === 'zh') {
-      if (parsed.script) return parsed.script === 'Hans' ? 'zh-Hans' : null;
-      return ['TW','HK','MO'].includes(parsed.region) ? null : 'zh-Hans';
+    const parsed = new Intl.Locale(canonical), base = parsed.baseName;
+    if (owns(catalogs, base)) return base;
+    if (owns(aliases, base)) return aliases[base];
+    // A script request never crosses scripts. A language-only pack may serve
+    // regional preferences; region-specific packs need explicit aliases.
+    if (parsed.script) {
+      const script = `${parsed.language}-${parsed.script}`;
+      return owns(catalogs, script) ? script : null;
     }
-    if (language === 'pt') return !parsed.region || parsed.region === 'BR' ? 'pt-BR' : null;
-    if (language === 'no') return 'nb';
-    if (language === 'es' && ['419','AR','BO','CL','CO','CR','CU','DO','EC','GT','HN','MX','NI','PA','PE','PR','PY','SV','US','UY','VE'].includes(parsed.region)) return 'es-419';
-    return owns(catalogs, language) ? language : null;
+    return owns(catalogs, parsed.language) ? parsed.language : null;
   } catch { return null; }
 }
 
@@ -39,13 +36,23 @@ export function isSupportedLocale(value) { return supportedLocale(value) !== nul
  * the user changes language. Rendered templates must still escape returned text.
  */
 export class Localization {
-  constructor({ locale = DEFAULT_LOCALE } = {}) {
+  constructor({ locale = DEFAULT_LOCALE, pseudo = null } = {}) {
     this.locale = normalizeLocale(locale);
     this.listeners = new Set();
     this.formatters = new Map();
+    this.pseudo = pseudo;
   }
 
-  get direction() { return SUPPORTED_LOCALES.find(item => item.id === this.locale).direction; }
+  get direction() { return this.pseudo === 'rtl' ? 'rtl' : SUPPORTED_LOCALES.find(item => item.id === this.locale).direction; }
+
+  /** Development-only layout stress, never a persisted production language. */
+  setPseudo(pseudo = null) {
+    if (![null, 'long', 'rtl'].includes(pseudo)) throw new RangeError('Unknown pseudolocalization mode.');
+    if (pseudo === this.pseudo) return false;
+    this.pseudo = pseudo;
+    for (const listener of this.listeners) listener(Object.freeze({locale: this.locale, previousLocale: this.locale, direction: this.direction}));
+    return true;
+  }
 
   setLocale(value) {
     const locale = supportedLocale(value);
@@ -94,12 +101,15 @@ export class Localization {
   t(key, params = {}) {
     if (typeof key !== 'string' || !key || key.length > 160) throw new TypeError('A translation key must be a short nonempty string.');
     const localized = catalogs[this.locale];
-    let message = owns(localized, key) ? localized[key] : owns(english, key) ? english[key] : key;
+    const translated = owns(localized, key);
+    let message = translated ? localized[key] : owns(english, key) ? english[key] : key;
     if (typeof message !== 'string') {
       const category = typeof params.count === 'number' && Number.isFinite(params.count)
-        ? this.formatter('plural').select(params.count) : 'other';
-      message = message[category] ?? message.other;
+        ? (translated ? this.formatter('plural') : ENGLISH_PLURALS).select(params.count) : 'other';
+      message = message[category] ?? (owns(english, key) && typeof english[key] === 'object'
+        ? english[key][ENGLISH_PLURALS.select(params.count)] ?? english[key].other : message.other);
     }
+    if (this.pseudo && owns(english, key)) message = pseudolocalize(message, this.pseudo);
     return message.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (token, name) => {
       if (!owns(params, name)) return token;
       const value = params[name];
@@ -108,4 +118,24 @@ export class Localization {
       return token;
     });
   }
+}
+
+const ENGLISH_PLURALS = new Intl.PluralRules('en');
+export function pseudolocalize(message, mode = 'long') {
+  const parts = message.split(/(\{[A-Za-z][A-Za-z0-9_]*\})/g);
+  return `［${parts.map(part => /^\{/.test(part) ? part : mode === 'rtl' ? `\u2067اختبار ${part}\u2069` : part.replace(/[aeiouAEIOU]/g, letter => ({a:'á',e:'ë',i:'ï',o:'ô',u:'ü',A:'Á',E:'Ë',I:'Ï',O:'Ô',U:'Ü'})[letter]) + ' '.repeat(part ? 1 : 0) + '—'.repeat(Math.ceil(part.length * .4))).join('')}］`;
+}
+
+/** One presentation service per JS realm. Workers keep English; app startup
+ * selects the saved preference before connecting chrome. */
+export const interfaceLocalization = new Localization();
+export const t = (key, params) => interfaceLocalization.t(key, params);
+export function messageText(translator, key, params = {}) {
+  if (typeof translator === 'function') {
+    try {
+      const text = translator(key, params);
+      if (typeof text === 'string' && text && text !== key) return text;
+    } catch { /* Optional component translators use the same English fallback. */ }
+  }
+  return t(key, params);
 }

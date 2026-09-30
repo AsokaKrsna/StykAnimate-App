@@ -1,3 +1,4 @@
+import { messageText } from '../localization.mjs';
 /**
  * Quick actions: the selection's most used commands, one quiet row of 28px
  * buttons under the inspector's name (components.md "Quick actions",
@@ -38,48 +39,10 @@ export const QUICK_LIMITS = Object.freeze({defaults: 5, slots: 6, groups: 3});
 /** The group pinned commands form, after the defaults. */
 export const PIN_GROUP = 'pins';
 
-const TEXT = Object.freeze({
-  'quick.shift': 'Shift: {action}',
-  'quick.oneStep': 'one step',
-  'quick.theBranch': 'the branch',
-  'quick.front': 'Front',
-  'quick.back': 'Back',
-  'quick.flipLimb': 'Flip limb',
-  'quick.editClip': 'Edit clip',
-  'quick.makeUnique': 'Make unique',
-  'quick.split': 'Split',
-  'quick.duplicatePart': 'Duplicate',
-  'quick.level': 'Level',
-  'quick.center': 'Center',
-  'quick.copyFrames': 'Copy frames',
-  'quick.pasteFrames': 'Paste frames',
-  'quick.removeKeys': 'Remove keys',
-  'quick.unavailable': '{label} ({reason})',
-  'quick.figure': 'Figure actions',
-  'quick.text': 'Text actions',
-  'quick.image': 'Image actions',
-  'quick.joint': 'Joint actions',
-  'quick.movieclip': 'Movieclip actions',
-  'quick.part': 'Part actions',
-  'quick.build': 'Figure actions',
-  'quick.imagePart': 'Image',
-  'quick.examples': 'Examples',
-  'quick.connect': 'Connect',
-  'quick.fit': 'Fit',
-  'quick.camera': 'Camera actions',
-  'quick.range': 'Frame actions',
-});
 
-const fill = (text, params) => text.replace(/\{([A-Za-z]\w*)\}/g, (token, name) => (Object.hasOwn(params, name) ? String(params[name]) : token));
-/** The text for `key`: t(key, params) when it knows it, else `fallback`, else the kit's English. */
+
 export function quickText(t, key, fallback = null, params = {}) {
-  if (key && typeof t === 'function') {
-    try {
-      const text = t(key, params);
-      if (typeof text === 'string' && text && text !== key) return text;
-    } catch { /* a missing translation falls back to English */ }
-  }
-  return fill(fallback ?? TEXT[key] ?? key ?? '', params);
+  return key ? messageText(t, key, params) : fallback ?? '';
 }
 
 /**

@@ -26,4 +26,7 @@ console.log(`${sources.length} JavaScript files checked; ${failures} syntax erro
 const css = spawnSync(process.execPath, ['scripts/check-css.mjs'], { cwd: appRoot, encoding: 'utf8', windowsHide: true });
 process.stdout.write(css.stdout ?? '');
 process.stderr.write(css.stderr || (css.error ? `${css.error.message}\n` : ''));
-process.exitCode = failures || css.status !== 0 ? 1 : 0;
+const locales = spawnSync(process.execPath, ['scripts/build-locales.mjs', '--check'], { cwd: appRoot, encoding: 'utf8', windowsHide: true });
+process.stdout.write(locales.stdout ?? '');
+process.stderr.write(locales.stderr ?? '');
+process.exitCode = failures || css.status !== 0 || locales.status !== 0 ? 1 : 0;

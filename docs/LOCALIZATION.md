@@ -1,6 +1,6 @@
 # Interface localization and coverage
 
-Updated 2026-09-08. English is the default. Settings → Interface → Language is
+Updated 2026-09-30. English is the default. Settings → Interface → Language is
 implemented and persists through the existing application preference service.
 The root editor shares one locale service with Settings and translates explicit
 chrome/menu bindings without replacing controls or changing document state.
@@ -37,7 +37,22 @@ simplified script. Traditional Chinese, Nynorsk and European Portuguese do not
 silently select a different supplied script/variant. Latin American regional
 Spanish maps to es-419; native es and es-419 remain distinct preferences.
 
-## Implementation
+## Translation packs and shared contract
+
+Current editable language packs live independently in `src/locales/packs/*.json`.
+`npm run locales:build` composes their metadata and messages into the generated
+registry. The original native import remains provenance, not the pack-editing
+workflow. `src/locales/en.mjs` composes English feature namespaces; component kits
+now delegate to the same lookup and fallback contract. No UI imports individual
+languages. See [the translator guide](TRANSLATING.md) for ownership and review.
+
+`npm run locales:check` (also part of `npm run check`) rejects unknown keys, malformed
+plain text and placeholder differences. It reports missing translations and plural
+forms while allowing intentional English fallback; `--strict` requires completion.
+English fallback uses English plural rules with numbers formatted for the selected
+locale. Region/script aliases are pack metadata, with exact IDs taking precedence.
+
+## Previous coverage baseline
 
 - `src/localization.mjs`: validated locale IDs, English default, plain-text lookup,
   cached Intl numbers/dates/plurals and synchronous language-change subscriptions.

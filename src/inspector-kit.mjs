@@ -1,3 +1,4 @@
+import { messageText } from './localization.mjs';
 /**
  * The inspector kit: a context describes its inspector as data (sections of
  * rows) and the kit renders it to an HTML string with the .ui-* classes
@@ -94,17 +95,7 @@ export const INSPECTOR_BUDGET = Object.freeze({controls: 30, openSections: 5, ti
 /** The one-time hint the message slot shows when a person first focuses a scrub-able field (English; installInspectorKit translates it). */
 export const SCRUB_HINT = TEXT['inspector.scrubHint'];
 
-const fill = (text, params) => text.replace(/\{([A-Za-z]\w*)\}/g, (token, name) => (Object.hasOwn(params, name) ? String(params[name]) : token));
-function say(env, key, params = {}) {
-  if (typeof env?.t === 'function') {
-    try {
-      // A translator may return its template unfilled; filling twice is harmless.
-      const text = env.t(key, params);
-      if (typeof text === 'string' && text && text !== key) return fill(text, params);
-    } catch { /* a missing translation falls back to English */ }
-  }
-  return fill(TEXT[key] ?? key, params);
-}
+function say(env, key, params = {}) { return messageText(env?.t, key, params); }
 
 const ESCAPES = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'};
 /** Text and attribute values are always escaped; the kit never interpolates raw markup except `html` on owned hosts and markup rows. */

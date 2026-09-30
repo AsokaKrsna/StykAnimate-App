@@ -18,7 +18,7 @@ import {showTimelineMenu} from './timeline-menu.mjs';
 import {AudioTimeline} from './audio-timeline.mjs';
 import {onFontsReady} from './ui/font-loading.mjs';
 import {openMenu,menuFor} from './ui/ui-menu.mjs';
-import {sayTimeline} from './locales/en-timeline.mjs';
+import {messageText as sayTimeline} from './localization.mjs';
 import {ROW,HEADER,sheetRowLayout,shortSheet} from './timeline-rows.mjs';
 import {TOUCH_ZOOM,timelineTouchMethods} from './touch/timeline-scrubber.mjs';
 

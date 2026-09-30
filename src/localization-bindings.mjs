@@ -1,11 +1,58 @@
-import { Localization } from './localization.mjs';
+import { interfaceLocalization } from './localization.mjs';
 
 const ATTRIBUTES = Object.freeze({
   title: 'data-i18n-title',
   'aria-label': 'data-i18n-aria-label',
   placeholder: 'data-i18n-placeholder',
+  alt: 'data-i18n-alt',
+  'aria-valuetext': 'data-i18n-aria-valuetext',
+  'data-tooltip': 'data-i18n-tooltip',
+  'data-hotkey-title': 'data-i18n-hotkey-title',
 });
-const SELECTOR = '[data-i18n],[data-i18n-title],[data-i18n-aria-label],[data-i18n-placeholder]';
+const SELECTOR = ['data-i18n', ...Object.values(ATTRIBUTES)].map(name => `[${name}]`).join(',');
+let application = null;
+const escape = value => String(value).replace(/[&<>"']/g, character => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'})[character]);
+
+/** Explicit bindings at text owners; parameters are presentation data only. */
+export function messageAttributes(key, params = {}, attribute = 'text') {
+  return `${attribute === 'text' ? 'data-i18n' : ATTRIBUTES[attribute]}="${escape(key)}" data-i18n-params="${escape(JSON.stringify(params))}"`;
+}
+export function messageHTML(key, params) {
+  return `<span ${messageAttributes(key, params)}>${escape(interfaceLocalization.t(key, params))}</span>`;
+}
+export function connectTranslations(root) {
+  if (!root?.querySelectorAll) return;
+  if (application && (root.isConnected || root.nodeType === 9)) application.apply(root);
+  else applyTranslations(root, interfaceLocalization);
+}
+export function localizedText(element, key, params = {}) {
+  if (!element) return;
+  element.setAttribute('data-i18n', key);
+  element.setAttribute('data-i18n-params', JSON.stringify(params));
+  translateElement(element, interfaceLocalization);
+  if (element.isConnected) application?.apply(element);
+}
+export function localizedAttribute(element, attribute, key, params = {}) {
+  if (!element) return;
+  element.setAttribute(ATTRIBUTES[attribute], key);
+  element.setAttribute('data-i18n-params', JSON.stringify(params));
+  translateElement(element, interfaceLocalization);
+  if (element.isConnected) application?.apply(element);
+}
+export function localizedMarkup(element, html) {
+  element.innerHTML = html;
+  connectTranslations(element);
+  return html;
+}
+export function appendLocalized(parent, ...nodes) {
+  parent.append(...nodes);
+  for (const node of nodes) if (typeof node !== 'string') connectTranslations(node);
+}
+export function appendChildLocalized(parent, node) {
+  const result = parent.appendChild(node);
+  connectTranslations(parent);
+  return result;
+}
 
 function caption(element, text) {
   const slot = [...element.children].find(child => child.hasAttribute('data-i18n-slot'));
@@ -35,12 +82,14 @@ export function applyTranslations(root, localization) {
 }
 
 function translateElement(element, localization) {
+  let params = {};
+  try { params = JSON.parse(element.getAttribute('data-i18n-params') || '{}'); } catch { /* invalid authored parameters remain diagnosable */ }
   const key = element.getAttribute('data-i18n');
-  if (key) caption(element, localization.t(key));
+  if (key) caption(element, localization.t(key, params));
   for (const [attribute, binding] of Object.entries(ATTRIBUTES)) {
     const key = element.getAttribute(binding);
     if (key) {
-      const text = localization.t(key);
+      const text = localization.t(key, params);
       if (attribute === 'title' && element.dataset.hotkeyHint !== undefined) {
         // A shortcut control (hotkey-hints.mjs): the tooltip shows this name and
         // the shortcut, so no native title. A name derived from it follows it.
@@ -103,7 +152,8 @@ export function menuLabelKey(action) {
  */
 export class AppLocalization {
   constructor({ locale = 'en', localization, document: documentRoot = globalThis.document } = {}) {
-    this.localization = localization || new Localization({locale});
+    this.localization = localization || interfaceLocalization;
+    this.localization.setLocale(locale);
     this.document = documentRoot;
     this.elements = new Set();
     this.stats = { applications: 0, registrations: 0, localeChanges: 0 };
@@ -116,12 +166,14 @@ export class AppLocalization {
       }
     });
     this.updateLanguage();
+    application = this;
   }
 
   updateLanguage() {
-    if (this.document?.documentElement) this.document.documentElement.lang = this.localization.locale;
-    // RTL catalog support requires a separate layout audit. Never mirror the
-    // document canvas/timeline or user-authored text as a side effect of language.
+    if (this.document?.documentElement) {
+      this.document.documentElement.lang = this.localization.locale;
+      this.document.documentElement.dir = this.localization.direction;
+    }
   }
 
   t(key, params) { return this.localization.t(key, params); }
@@ -177,5 +229,5 @@ export class AppLocalization {
     return this.apply(button);
   }
 
-  destroy() { this.unsubscribe(); this.elements.clear(); }
+  destroy() { this.unsubscribe(); this.elements.clear(); if (application === this) application = null; }
 }

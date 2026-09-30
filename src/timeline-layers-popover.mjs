@@ -13,7 +13,7 @@
 import {createPopover} from './ui/ui-popover.mjs';
 import {icon} from './icons.mjs';
 import {LAYER_COLORS} from './layers.mjs';
-import {sayTimeline} from './locales/en-timeline.mjs';
+import {messageText as sayTimeline} from './localization.mjs';
 
 const element = (tag, parent, className, text) => {
   const node = document.createElement(tag);

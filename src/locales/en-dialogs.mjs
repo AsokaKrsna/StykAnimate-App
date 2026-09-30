@@ -4,7 +4,6 @@
  * localization first (sayDialog) and fall back to these, then to en.mjs, so a
  * dialog reads the same with or without a catalog that knows the keys.
  */
-import english from './en.mjs';
 
 const TEXT = Object.freeze({
   'settings.search': 'Search settings',
@@ -122,18 +121,6 @@ const TEXT = Object.freeze({
   'about.support': 'Support development',
 });
 
-const fill = (text, params) => text.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (token, name) => (Object.hasOwn(params, name) ? String(params[name]) : token));
-
 export default TEXT;
 
-/** The text for `key`: t(key, params) when the localization knows it, else the English above or in en.mjs. */
-export function sayDialog(t, key, params = {}) {
-  if (typeof t === 'function') {
-    try {
-      const text = t(key, params);
-      if (typeof text === 'string' && text && text !== key) return text;
-    } catch { /* a missing or malformed translation falls back to English */ }
-  }
-  const fallback = Object.hasOwn(TEXT, key) ? TEXT[key] : Object.hasOwn(english, key) ? english[key] : key;
-  return typeof fallback === 'string' ? fill(fallback, params) : key;
-}
+

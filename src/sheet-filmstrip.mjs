@@ -9,7 +9,7 @@ import {showKeyframeEasingPopover} from './keyframe-easing-popover.mjs';
 import {showTimelineMenu} from './timeline-menu.mjs';
 import {AudioTimeline} from './audio-timeline.mjs';
 import {createLayersPopover} from './timeline-layers-popover.mjs';
-import {sayTimeline} from './locales/en-timeline.mjs';
+import {messageText as sayTimeline} from './localization.mjs';
 import {LAYER_COLORS} from './layers.mjs';
 import {bandBottom} from './shell/topbar.mjs';
 

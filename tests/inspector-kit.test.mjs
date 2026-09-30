@@ -429,7 +429,7 @@ test('value helpers: slider fill, units, accessible names, the fade and the scru
   assert.equal(formatValueWithUnit(8, {unit: 'px'}), '8 px'); assert.equal(formatValueWithUnit(24, {unit: 'fps'}), '24 fps');
   assert.equal(formatValueWithUnit(Infinity, {unit: 'px'}), '');
   assert.equal(describeField('X', 'px'), 'X (px)'); assert.equal(describeField('Angle', '°'), 'Angle (degrees)'); assert.equal(describeField('Order'), 'Order');
-  assert.equal(describeField('Angle', '°', {t: key => ({'inspector.unit.degrees': 'gradi', 'inspector.withUnit': '{label} ({unit})'})[key] ?? key}), 'Angle (gradi)');
+  assert.equal(describeField('Angle', '°', {t: (key, params) => key === 'inspector.unit.degrees' ? 'gradi' : key === 'inspector.withUnit' ? `${params.label} (${params.unit})` : key}), 'Angle (gradi)');
   assert.equal(hasMoreBelow({scrollTop: 0, clientHeight: 100, scrollHeight: 300}), true);
   assert.equal(hasMoreBelow({scrollTop: 200, clientHeight: 100, scrollHeight: 300.5}), false);
   assert.equal(SCRUB_HINT, 'Drag a label to scrub · Shift ×0.1 · Alt ×0.01');
@@ -438,11 +438,11 @@ test('value helpers: slider fill, units, accessible names, the fade and the scru
 test('the kit\'s own words live in their catalog fragment and translate', () => {
   for (const key of Object.keys(inspectorStrings)) {
     assert.ok(key.startsWith('inspector.'), `${key} is in the inspector namespace`);
-    assert.ok(!Object.hasOwn(english, key), `${key} is defined once, in en-inspector.mjs`);
+    assert.equal(english[key], inspectorStrings[key], `${key} is composed into the shared catalog`);
   }
   const source = readFileSync(new URL('../src/inspector-kit.mjs', import.meta.url), 'utf8');
   for (const [, key] of source.matchAll(/say\([^,]+, '([\w.]+)'/g)) assert.ok(Object.hasOwn(inspectorStrings, key), `${key} has an English text`);
-  const t = key => ({'inspector.stop': 'Ferma', 'inspector.mixed': 'Misto', 'inspector.scrubLabel': 'Trascina {name}'})[key] ?? key;
+  const t = (key, params) => key === 'inspector.scrubLabel' ? `Trascina ${params.name}` : ({'inspector.stop': 'Ferma', 'inspector.mixed': 'Misto'})[key] ?? key;
   assert.match(renderScope({label: 'x', stop: {command: 'c'}}, {t}), /<span class="ui-label">Ferma<\/span>/);
   assert.match(renderRow({kind: 'number', key: 'k', label: 'K', value: 1, mixed: true}, {t}), /aria-label="Trascina K"[\s\S]*placeholder="Misto"/);
 });

@@ -34,7 +34,7 @@ import {refreshHotkeyHints} from './hotkey-hints.mjs';
 import {icon} from './icons.mjs';
 import {setAttr, setMarkup, setProp, setText} from './ui/dom-write.mjs';
 import {createTimelineHeader} from './timeline-header.mjs';
-import {sayTimeline} from './locales/en-timeline.mjs';
+import {messageText as sayTimeline} from './localization.mjs';
 
 export function createTimelineHost(ctx) {
   const {editor, state, $, actions} = ctx;
