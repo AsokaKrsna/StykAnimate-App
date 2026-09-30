@@ -145,6 +145,10 @@ export class Timeline{
   rowSize(index){return this.layout.size(index);}
   /** Where the scrolling rows start in the grid (below the ruler and the pinned rows). */
   get bodyTop(){return this.layout?.contentTop??HEADER;}
+  /** The horizontal scroll offset, read from layout once until a scroll or resize
+   * clears it: playhead and marker updates run every played frame, after other
+   * widgets wrote to the DOM, where a fresh read forces a synchronous layout. */
+  offsetX(){return this._cachedOffsetX??=this._offsetX();}
   _offsetX(){const actual=Math.max(0,this.scroll.scrollWidth-this.scroll.clientWidth);return actual?this.scroll.scrollLeft/actual*Math.max(0,this.logicalWidth-this.scroll.clientWidth):0;}
   _offsetY(){return this.scroll.scrollTop;}
   _scrollToX(x){const max=this.logicalWidth-this.scroll.clientWidth;this.scroll.scrollLeft=max>0?clamp(x,0,max)/max*(this.scroll.scrollWidth-this.scroll.clientWidth):0;this.update();}
@@ -186,8 +190,7 @@ export class Timeline{
     // The offset changes only on scroll or when _extent resizes the content;
     // both clear this cache. Reading it after other widgets wrote to the DOM
     // would force a layout on every seek.
-    this._cachedOffsetX??=this._offsetX();
-    const tick=Math.floor(this.pendingScrub??this.editor.tick),x=(tick+.5)*this.pxPerTick-this._cachedOffsetX;this.playhead.style.transform=`translateX(${x}px)`;
+    const tick=Math.floor(this.pendingScrub??this.editor.tick),x=(tick+.5)*this.pxPerTick-this.offsetX();this.playhead.style.transform=`translateX(${x}px)`;
     setText(this.playheadLabel,String(tick+1));
 
   }

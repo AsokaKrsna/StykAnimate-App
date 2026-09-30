@@ -46,7 +46,7 @@ export class OnionTimelineRange {
     this.unsubscribe=this.controller?.subscribe(()=>this.update());this.update();
   }
   /** A frame cell's left edge in the timeline's coordinates. */
-  edge(tick){return this.host.labelWidth+tick*this.host.pxPerTick-this.host._offsetX();}
+  edge(tick){return this.host.labelWidth+tick*this.host.pxPerTick-this.host.offsetX();}
   get visible(){return Boolean(this.controller?.getEnabled())&&this.controller.settings.onionTimelineMarkers!==false;}
   _press(part,event){
     if(event.button!==0||!this.controller||part.drag)return;
