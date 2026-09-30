@@ -134,6 +134,21 @@ try{
   check('Recovery capacity rejection preserves every existing copy',storage.preserved&&storage.replacement);
   await context.close();
 
+  const switchedContext=await browser.newContext(),switched=await open(switchedContext);
+  await edit(switched);
+  await switched.evaluate(()=>{
+    window.__stale={writes:0,aborted:false};
+    window.showSaveFilePicker=()=>new Promise(resolve=>window.__destination=()=>resolve({createWritable:async()=>({
+      write:async()=>{__stale.writes++;},close:async()=>{},abort:async()=>{__stale.aborted=true;},
+    })}));
+    const save=styk.actions.save;styk.actions.save=()=>window.__saving=save();
+  });
+  await switched.locator('[data-action="save"]').first().click();
+  await switched.waitForFunction(()=>typeof window.__destination==='function');
+  await switched.evaluate(()=>{styk.editor.newDocument();__destination();});
+  check('Replacing the project during destination selection aborts the obsolete write',await switched.evaluate(async()=>await __saving===false&&__stale.writes===0&&__stale.aborted));
+  await switchedContext.close();
+
   // Migrate the prior singleton's bytes in place, then prove listing does not
   // deserialize projects (important when copies contain large drawings/media).
   const legacyContext=await browser.newContext(),legacy=await legacyContext.newPage();

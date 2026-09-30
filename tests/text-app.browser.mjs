@@ -1,3 +1,4 @@
+import {installProjectSavePicker} from './support/project-save-picker.mjs';
 import {readNativeDocument} from '../scripts/read-native-document.mjs';
 import {exportEditable} from './helpers/editable-export.mjs';
 /** Actual app integration: native import, contextual Edit text, undo, Save and native exports. */
@@ -60,6 +61,7 @@ const renderPixels = (target) =>
     drawGeometry(ctx, buildGeometry(doc, styk.editor.evaluatedFrame));
     return Array.from(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
   });
+await installProjectSavePicker(page);
 try {
   const url = process.env.STYK_URL || "http://127.0.0.1:47831";
   await page.goto(url);

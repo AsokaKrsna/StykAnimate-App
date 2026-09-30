@@ -1,3 +1,4 @@
+import {installProjectSavePicker} from './support/project-save-picker.mjs';
 import {readNativeDocument} from '../scripts/read-native-document.mjs';
 import {sheetKeyTimes,sampleSheet} from './helpers/sheet-samples.mjs';
 import {exportEditable} from './helpers/editable-export.mjs';
@@ -59,6 +60,7 @@ async function addText(text, {style = false} = {}) {
   }
   await page.locator('#create-text').click(); await page.waitForFunction(() => !document.querySelector('#dialog').open);
 }
+await installProjectSavePicker(page);
 try {
   await page.goto(url); await page.waitForFunction(() => window.styk?.ready);
   await page.evaluate(async()=>{window.creationSamples=await import("/tests/helpers/sheet-samples.mjs");});

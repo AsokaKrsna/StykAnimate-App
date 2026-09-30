@@ -3684,11 +3684,12 @@ async function openSample(path) {
 async function saveNative({ saveAs = false } = {}) {
   finishCurrentEdit();
   const targetReport = editor.report, targetToken = state.documentToken;
+  const targetName = editor._movieclipScopes?.[0]?.parent.name ?? editor.name;
   const controller = new AbortController();
   // Invoke the browser picker in the input task, before publication/serialization
   // can consume its transient user activation. Desktop keeps its native writer.
   const destination = !desktop ? exportFlow.openExportSink({
-    filename: `${editor.name || "Untitled"}.styk`, mimeType: "application/octet-stream", signal: controller.signal,
+    filename: `${targetName || "Untitled"}.styk`, mimeType: "application/octet-stream", signal: controller.signal,
     fileSystem: navigator.userActivation?.isActive !== false,
   }) : null;
   let sink, downloaded = false;
@@ -3697,6 +3698,7 @@ async function saveNative({ saveAs = false } = {}) {
     if (!desktop && !sink) { status("Save cancelled"); return false; }
     if (targetReport !== editor.report || targetToken !== state.documentToken) { status("Save cancelled · the project changed"); return false; }
     await drawingController?.barrier();
+    if (targetReport !== editor.report || targetToken !== state.documentToken) { status("Save cancelled · the project changed"); return false; }
     while(editor._movieclipScopes?.length){await drawingBarrier(editor.report);editor.leaveMovieclip();}
     interruptRecovery();
     status("Saving project…", false, true);

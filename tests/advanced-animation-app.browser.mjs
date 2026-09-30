@@ -1,3 +1,4 @@
+import {installProjectSavePicker} from './support/project-save-picker.mjs';
 /** Actual application timeline gestures, inspector keys, native save/export and pixels. */
 import {chromium} from './support/playwright.mjs';
 import {createRequire} from 'node:module';
@@ -25,6 +26,7 @@ const checks = [], errors = [], findings = [], check = (name, value = true) => {
 try {
   browser = await chromium.launch({channel: 'chrome', headless: true});
   const page = await browser.newPage({viewport: {width: 1500, height: 950}, acceptDownloads: true}); page.setDefaultTimeout(20000);
+  await installProjectSavePicker(page);
   page.on('pageerror', error => errors.push(error.stack || error.message));
   const settle = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   async function openProject(file) {

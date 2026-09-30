@@ -1,3 +1,4 @@
+import {installProjectSavePicker} from './support/project-save-picker.mjs';
 import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
@@ -12,6 +13,7 @@ page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
 const value=fn=>page.evaluate(fn);
 const check=(name,result=true)=>{assert.ok(result,name);checks.push({name,passed:true});console.log('PASS',name);};
 const wait=()=>page.waitForTimeout(100);
+await installProjectSavePicker(page);
 try {
  await page.goto(url);await page.waitForFunction(()=>window.styk?.ready);
  check('WebGPU initialized',await value(()=>window.styk.state.renderer.stats.backend==='WebGPU'));

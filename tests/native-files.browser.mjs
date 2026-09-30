@@ -1,3 +1,4 @@
+import {installProjectSavePicker} from './support/project-save-picker.mjs';
 import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
@@ -13,6 +14,7 @@ const browser = await chromium.launch({channel: 'chrome', headless: true});
 const page = await browser.newPage({viewport: {width: 1440, height: 1000}, acceptDownloads: true});
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
+await installProjectSavePicker(page);
 try {
   await page.goto(service.origin);
   await page.waitForFunction(() => window.styk?.ready);
@@ -43,21 +45,24 @@ try {
   assert.equal(figure.keyframes[0].objects.length, 1);
   assert.equal(figure.keyframes[0].objects[0]._stykStyle.outlineOpacity, .123456789);
   assert.equal(figure.figure_types[0].segments[0].paint.type, 'radial');
-  const before = await page.evaluate(() => ({name: styk.editor.name, count: styk.editor.frame.objects.length}));
+  // The displayed scene includes layer-sheet poses, which need not be baked
+  // into the native frame. Verify the user-visible import and saved round trip.
+  const before = await page.evaluate(() => ({name: styk.editor.name, count: styk.editor.evaluatedFrame.objects.length}));
   await page.locator('#file-input').setInputFiles(figureFile);
-  await page.waitForFunction(count => styk.editor.frame.objects.length === count + 1, before.count);
+  await page.waitForFunction(count => styk.editor.evaluatedFrame.objects.length === count + 1, before.count);
   assert.equal(await page.evaluate(() => styk.editor.name), before.name);
   assert.deepEqual(await page.evaluate(() => styk.editor.object.angles), figure.keyframes[0].objects[0].angles);
   const projectDownload = page.waitForEvent('download');
-  await page.evaluate(() => styk.actions.save());
+  await page.locator('[data-action="save"]').first().click();
   const projectFile = path.join(out, 'saved.styk');
   await (await projectDownload).saveAs(projectFile);
+  await page.waitForFunction(() => !styk.editor.dirty);
   const projectBytes = await readFile(projectFile), project = await readNativeDocument(projectFile);
   assert.equal(projectBytes.subarray(0, 4).toString(), 'STYK');
   assert.ok(projectBytes.length < Buffer.byteLength(JSON.stringify(project)) / 2);
   await page.locator('#file-input').setInputFiles(projectFile);
   await page.waitForFunction(() => styk.editor.name === 'saved');
-  assert.equal(await page.evaluate(() => styk.editor.report.keyframes[0].objects.length), before.count + 1);
+  assert.equal(await page.evaluate(() => styk.editor.evaluatedFrame.objects.length), before.count + 1);
   const corrupt = Buffer.from(projectBytes); corrupt[24] ^= 1;
   const rejection = await page.evaluate(async bytes => {
     const {ImportClient} = await import('/src/import-client.mjs'); const importer = new ImportClient();

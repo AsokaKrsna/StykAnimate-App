@@ -94,10 +94,10 @@ try{
   // Recovery: the same drawingBarrier + export + IndexedDB write the autosave
   // path performs, then a real import of the stored record.
   const recovery=await page.evaluate(async()=>{
-    const {writeBrowserRecovery}=await import('/src/browser-recovery.mjs');
+    const {writeBrowserRecovery,readBrowserRecovery}=await import('/src/browser-recovery.mjs');
     window.snaps=snapAll();const blob=await saveBlob();
     const written=await writeBrowserRecovery(blob,'drawing-recovery',new AbortController().signal);
-    const record=await new Promise(resolve=>{const req=indexedDB.open('stykanimate-recovery',1);req.onsuccess=()=>{const db=req.result,tx=db.transaction('documents'),get=tx.objectStore('documents').get('latest');let value=null;get.onsuccess=()=>value=get.result;tx.oncomplete=()=>{db.close();resolve(value);}};});
+    const record=await readBrowserRecovery(undefined,{id:'latest'});
     const result=record?.blob?await compareSaved(record.blob):{v2:0,results:[]};
     return {written,stored:Boolean(record?.blob),v2:result.v2,exact:result.results.every(r=>r.exact&&r.bounds)};
   });

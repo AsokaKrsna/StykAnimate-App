@@ -1,3 +1,4 @@
+import {installProjectSavePicker} from './support/project-save-picker.mjs';
 /** Real Camera action, worker/native PIV export, source assets and GPU pixels. */
 import { chromium } from "./support/playwright.mjs";
 import {exportEditable} from './helpers/editable-export.mjs';
@@ -26,6 +27,7 @@ async function download(action, name) {
   await file.saveAs(target);
   return target;
 }
+await installProjectSavePicker(page);
 try {
   await page.goto(process.env.STYK_URL || service.origin);
   await page.waitForFunction(() => window.styk?.ready);

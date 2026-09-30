@@ -1,3 +1,4 @@
+import {installProjectSavePicker} from './support/project-save-picker.mjs';
 import {readNativeDocument} from '../scripts/read-native-document.mjs';
 /** Bounded application authoring flows. Requires the local app at STYK_URL. */
 import {chromium} from './support/playwright.mjs';
@@ -24,6 +25,7 @@ async function saveDownload(action, filename) {
   await download.saveAs(target); return target;
 }
 let mediaProbe, recoveryProbe;
+await installProjectSavePicker(page);
 try {
   await page.goto(url); await page.waitForFunction(() => window.styk?.ready);
   check('Authoring application initializes WebGPU', await value(() => styk.state.renderer.stats.backend === 'WebGPU'));
@@ -131,26 +133,19 @@ try {
   // Read using evaluate, then poll in Node until the real IndexedDB transaction ends.
   let stored, deadline = Date.now() + 15000;
   do {
-    stored = await value(() => new Promise(resolve => {
-      const req = indexedDB.open('stykanimate-recovery', 1); req.onsuccess = () => {
-        const db = req.result, tx = db.transaction('documents'), get = tx.objectStore('documents').get('latest');
-        let result = null;
-        get.onsuccess = () => { result = {name: get.result?.name, blobSize: get.result?.blob?.size, isBlob: get.result?.blob instanceof Blob}; };
-        tx.oncomplete = () => { db.close(); resolve(result); }; tx.onerror = () => { db.close(); resolve(null); };
-      }; req.onerror = () => resolve(null);
-    }));
+    stored = await value(async () => {
+      const record = await (await import('/src/browser-recovery.mjs')).readBrowserRecovery(undefined, {id: styk.recovery.id});
+      return record && {name: record.name, blobSize: record.blob.size, isBlob: record.blob instanceof Blob};
+    });
     if (stored?.name === 'Authoring recovery' && stored?.isBlob) break;
     await page.waitForTimeout(100);
   } while (Date.now() < deadline);
   check('Autosave writes a persistent source-bearing native Blob', stored?.name === 'Authoring recovery' && stored?.isBlob && stored.blobSize > 0);
   await value(() => styk.editor.markSaved()); await page.reload(); await page.waitForFunction(() => styk?.ready);
-  recoveryProbe = await value(() => new Promise(resolve => {
-    const req = indexedDB.open('stykanimate-recovery', 1); req.onsuccess = () => {
-      const db = req.result, tx = db.transaction('documents'), get = tx.objectStore('documents').get('latest');
-      get.onsuccess = () => resolve({url: location.href, name: get.result?.name, blobSize: get.result?.blob?.size, banner: !!document.getElementById('restore-recovery')});
-      get.onerror = () => resolve({error: get.error?.message}); tx.oncomplete = () => db.close();
-    }; req.onerror = () => resolve({error: req.error?.message});
-  }));
+  recoveryProbe = await value(async () => {
+    const record = await (await import('/src/browser-recovery.mjs')).readBrowserRecovery();
+    return {url: location.href, name: record?.name, blobSize: record?.blob.size, banner: !!document.getElementById('restore-recovery')};
+  });
   console.log('Recovery after reload', JSON.stringify(recoveryProbe));
   await page.locator('#restore-recovery').click();
   await page.waitForFunction(() => styk.editor.name === 'Authoring recovery' && styk.editor.frame.objects.some(o => o.root_x === 93));
