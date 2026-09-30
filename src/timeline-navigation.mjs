@@ -1,4 +1,5 @@
 import {OnionTimelineRange} from './onion-timeline-range.mjs';
+import {installTimelineTouch} from './touch/timeline-touch.mjs';
 
 /** Shared view gestures; panning and zooming never enter document history. The zoom slider and
  * Fit timeline are the header's ruler tools (timeline-header.mjs), which the gesture leaves alone. */
@@ -22,4 +23,6 @@ export function mountTimelineNavigation(host) {
   on(host.container,'pointerup',event=>{if(!pan)return;event.preventDefault();event.stopImmediatePropagation();end();if(host.container.hasPointerCapture(event.pointerId))host.container.releasePointerCapture(event.pointerId);},{capture:true});
   on(host.container,'pointercancel',end);on(host.container,'lostpointercapture',end);
   on(host.container,'auxclick',event=>{if(event.button===1)event.preventDefault();});
+  // A finger scrolls, taps, holds and pinches the Advanced grid (docs/TOUCH.md); Simple's cards scroll natively.
+  if(host.scroll&&host.touch)host.touchNavigation=installTimelineTouch(host,{touch:host.touch,signal:host.events.signal});
 }

@@ -14,7 +14,7 @@
  *   - the recovery message's Restore is the element at its centre at 800×600,
  *     640×480 and 500×340, and it names the file (authoring.browser restores)
  *   - a pick mode shows its instruction while it lasts (Join) and a Cancel
- *     that ends it; the quiet "Slow" message offers Details
+ *     that ends it
  *   - the Grid split: the button shows or hides the grid, the chevron opens
  *     Grid and guides; the view toggles say their state
  *   - arrow keys on a focused stage-header button leave the pose unchanged,
@@ -147,7 +147,6 @@ try {
       error: () => styk.ui.toasts.fail(new Error('Could not open whoosh.wav, it is in use')),
       recovery: () => styk.ui.toasts.show({title: 'Restore unsaved work', message: 'in Kick combo from 12:04?', slot: 'recovery', timeout: 0, dismissible: false,
         actions: [{label: 'Not now'}, {label: 'Restore', variant: 'outline'}]}),
-      slow: () => styk.ui.stageHead.showSlow({fps: 14, target: 24}),
     };
     for (const [width, height] of [[1440, 900], [1180, 800], [1100, 700], [1024, 700], [960, 600], [900, 700], [801, 700], [640, 480], [500, 340]]) {
       await resize(width, height);
@@ -162,7 +161,7 @@ try {
         assert.equal(audit.cut, false, label);
         assert.ok(audit.hits.every(Boolean), label);
         if (!audit.drop) assert.equal(audit.lines, 1, `${label}: one line in the header`);
-        await page.evaluate(() => { styk.ui.toasts.clear(); styk.ui.stageHead.showSlow(null); });
+        await page.evaluate(() => { styk.ui.toasts.clear(); });
         await settle();
         assert.equal(await page.evaluate(() => ['data-msg-over', 'data-msg-over-view', 'data-msg-drop'].some(name => document.querySelector('.stage-head').hasAttribute(name))), false,
           `${label}: the header's start and view toggles return when it closes`);
@@ -232,15 +231,6 @@ try {
     await page.keyboard.press('Escape');
     await settle();
     assert.equal(await page.locator('#toast .ui-toast').count(), 0, 'Esc ends the mode and its message');
-    await page.evaluate(() => styk.ui.stageHead.showSlow({fps: 14, target: 24}));
-    await settle();
-    assert.equal(await page.locator('#toast .ui-toast[data-variant="quiet"] .ui-toast-text').textContent(), 'Slow · 14 of 24 fps');
-    assert.equal(await page.locator('#toast .ui-toast-action[data-action="performance"]').textContent(), 'Details');
-    await page.evaluate(() => styk.ui.stageHead.showSlow({fps: 12, target: 24}));
-    assert.equal(await page.locator('#toast .ui-toast-text').textContent(), 'Slow · 12 of 24 fps', 'the readout updates in place');
-    await page.evaluate(() => styk.ui.stageHead.showSlow(null));
-    await settle();
-    assert.equal(await page.locator('#toast .ui-toast').count(), 0);
     await page.evaluate(() => styk.editor.select(null));
   });
 

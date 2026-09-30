@@ -5,7 +5,7 @@ plus an in-browser Pivot codec; nothing about a project is sent to a server.
 
 ```bash
 npm ci
-npm run web:build       # build/web  (624 files, 25.5 MiB before compression)
+npm run web:build       # build/web; prints the current file count and size
 npm run web:verify      # checks the build before it is deployed
 npm run web:preview     # build, then serve build/web on http://127.0.0.1:47850
 npm run test:web        # end to end in a real browser, under the production headers
@@ -33,10 +33,18 @@ npx --prefix cloud wrangler rollback --config web/wrangler.jsonc   # go back to 
 the working tree: build from a clean checkout of the commit you mean to publish. Cloudflare
 applies `web/_headers` to every static response.
 
-**Until it launches** nothing on the public site links to it, and it asks not to be indexed:
-`_headers` sends `X-Robots-Tag: noindex, nofollow` (the Worker's answers do too) and
-`robots.txt` disallows everything. At launch remove that header line, the Worker's
-`x-robots-tag` and the `Disallow`, then add the link on the site.
+The active marketing site lives in the separate `StykAnimate-Site` repository
+(see `docs/website.md`). Its launch links point to the browser editor. Static app
+pages allow indexing; `/community/*` API responses remain `noindex` and excluded
+in `robots.txt`. Deploy the verified editor before deploying the site's launch links.
+
+The reusable `web-verify.yml` workflow builds and tests the production files on
+Windows and Linux. Windows must export real MP4/AAC sound; Linux verifies a clear
+AAC-unavailable result where necessary and real WebM/Opus sound. Firefox and WebKit
+run the storage, library and browser-support checks on Linux. The release workflow
+retains the exact deployable `browser-release` artifact for 30 days; it does not
+deploy it automatically. Record the deployed build hash from `build-info.json`
+and run the live checks after an authorized deployment.
 
 ## How it is built
 
@@ -170,21 +178,31 @@ goes through the counting route and is remembered in `localStorage`, later ones 
 
 ## Browsers
 
-Verified with real browsers (`STYK_BROWSER=chrome|firefox|webkit`, `tests/support/cross-browser.mjs`):
+The 1.2 candidate workflow runs real browsers through
+`tests/support/cross-browser.mjs`, using the locked Playwright version:
 
-| | Chrome 153 | Firefox 155 | WebKit 26.6 (Playwright, Windows) |
+| Check | Chromium on Windows/Linux | Firefox on Linux | WebKit on Linux |
 | --- | --- | --- | --- |
-| Editor starts | yes (WebGPU) | yes (Canvas 2D renderer: WebGPU is blocklisted there) | no: no `OffscreenCanvas` |
-| Autosave, restore, clear on save, flush on hide, blocked storage | yes | yes | storage read/write only |
-| My library and the community library, end to end | yes | yes | storage, streaming, SHA-256 and WebP decoding only |
-| Explains an unsupported browser | yes | yes | yes |
+| Editor starts and unsupported features are explained | yes | yes | yes |
+| Autosave, restore, clear on save, flush on hide, blocked storage | yes | yes | yes |
+| My library and community catalogue, verified downloads and previews | yes | yes | yes |
+| Native/Pivot round trips, images and video export | yes | not covered by this suite | not covered by this suite |
+| Offline startup, saving, export and safe version replacement | yes | not covered by this suite | not covered by this suite |
 
-That WebKit is not Safari and cannot start the editor, so **Safari itself is not verified**. What
-the editor needs, and what `src/web-support.js` checks before it loads: `OffscreenCanvas` (Safari
-16.4), WebAssembly, IndexedDB, Web Crypto (an https page), `createImageBitmap`, `structuredClone`,
-the dialog element, `Object.hasOwn`/`Array.at` and workers. A browser without one gets a page saying
-what is missing instead of a blank one. WebGPU is optional (the compatibility renderer is used
-without it).
+Windows must encode MP4 with real AAC sound. The Linux run checks an explicit
+AAC-unavailable result when the browser cannot encode it, and always verifies
+WebM with real Opus sound. It never counts a silent file as an audio-export pass.
+
+Playwright WebKit is not Safari, and this does not certify physical phones or
+Safari itself. The previous Windows WebKit build lacked `OffscreenCanvas`; the
+Linux build used for this release runs the full storage/editor suites. The app
+checks `OffscreenCanvas`, WebAssembly, IndexedDB, Web Crypto, `createImageBitmap`,
+`structuredClone`, dialogs and workers before loading. Missing features produce
+an explanation instead of a blank editor. WebGPU is optional.
+
+On a phone or a tablet the editor opens its touch interface ([docs/TOUCH.md](TOUCH.md)); `npm run
+test:touch` checks it in Chromium with touch emulation. Real phones and tablets, and Safari (the
+engine of every iOS browser), are not part of the automated checks.
 
 ## Security
 
@@ -252,6 +270,7 @@ Differences from the desktop codec, all deliberate:
 | Community library | Yes, through the editor's own origin |
 | System fonts | Where the browser offers local fonts (Chromium); otherwise open a font file |
 | Feedback, telemetry, updates | Not present |
+| Phones and tablets | The touch interface: layouts, gestures and sheets made for fingers and pens ([docs/TOUCH.md](TOUCH.md)) |
 
 `tests/web-build.browser.mjs` runs the built site in a real browser, including
 under Cloudflare's own runtime (`wrangler dev`), and covers boot and rendering,

@@ -124,6 +124,22 @@ export const SHELL_METRICS = deepFreeze({
   // both sides; at compact and minimal width it may cover them (inset only).
   message: {end: 200, gap: 12, inset: 8},
   collapse: {width: [['left', 'narrow'], ['left', 'strip'], ['right', 'strip'], ['right', 'sheet'], ['left', 'sheet']]},
+  // The touch interface (docs/TOUCH.md), by form factor: what folds whatever the width, the stage's minimum, and
+  // the floating tool bar's width with its touch-sized tools. A phone's side panels open as sheets (Structure keeps
+  // its strip in Build); a tablet docks the inspector while the stage keeps 560px.
+  touch: {
+    // An upright phone keeps the timeline's body docked (the artboard is as wide as the phone, so the stage has height
+    // to spare): its default is this share of the workspace, whatever the height tier.
+    phone: {fold: {left: 'strip', right: 'sheet', float: 'sheet'}, stageMin: {width: 240, height: 140}, rail: 56, railMargin: 8,
+      portraitTimeline: 0.47,
+      // Upright, width is what a phone lacks: the tools lie along the stage's bottom edge instead of down its side.
+      portraitRail: 'horizontal', ownBand: true, timelineHeader: 52,
+      // On its side the timeline stays docked too (docs/TOUCH.md): its header, the ruler and one row by default.
+      landscapeTimeline: 52 + 44 + 48},
+    tablet: {fold: {float: 'sheet'}, stageMin: {width: 560, height: 240}, rail: 60, railMargin: 12, portraitTimeline: 0.34, timelineHeader: 52,
+      // A folded inspector opens from the band's Properties button (a sheet), never as a 40px strip beside a finger.
+      collapse: [['left', 'narrow'], ['left', 'strip'], ['right', 'sheet'], ['left', 'sheet']]},
+  },
 });
 
 /**
@@ -273,7 +289,9 @@ function clampFloating(stored, descriptor, stage, head, metrics, index) {
  *   tier, height            width and height tiers (data-tier, data-height)
  *   chrome, padTop          roomy (from 801px tall) or compact: the band, the stage header and the field above the islands (data-chrome)
  *   band                    the band's fold steps (data-band), BAND_FOLDS order
- *   rail                    {side, orientation: 'vertical', compact, columns, width, rect}
+ *   touch                   the touch interface's form factor (phone, tablet) when env.touch is active, else null
+ *   rail                    {side, orientation: 'vertical' (or 'horizontal' along the stage's bottom on an upright
+ *                           phone), compact, columns, width, rect}
  *   regions.left|right      {state: docked|strip|sheet|hidden, size, strip, sizeKey, reason, rect, stripRect, groups, panels}
  *   regions.bottom          {state: docked|strip|hidden, size, span, body: docked|sheet|null, reason, rect, groups, panels}
  *                           groups: the docked islands, [{tabs, active, rect}], stacked on a side and
@@ -304,14 +322,20 @@ export function solveLayout(layout, env = {}) {
   const records = entry.panels.filter(record => byId.has(record.id) && panelInMode(byId.get(record.id), mode));
   const describe = record => byId.get(record.id);
 
-  const {tier, height: heightTier, band: bandFolds} = resolveTiers(width, height, {bandMin: env.bandMin, thresholds: env.tiers ?? TIER_THRESHOLDS, bandMargin: metrics.bandMargin});
+  // The touch interface lays its band out itself (touch.css), so the band's folds do not apply; its profile folds
+  // the side panels by form factor instead (docs/TOUCH.md).
+  const touch = env.touch?.active ? metrics.touch?.[env.touch.form] ?? null : null;
+  // A phone's band is laid out by the touch stylesheet (a wing, or a row with a tab bar); a tablet's folds as the desktop's.
+  const {tier, height: heightTier, band: bandFolds} = resolveTiers(width, height, {bandMin: touch?.ownBand ? 0 : env.bandMin, thresholds: env.tiers ?? TIER_THRESHOLDS, bandMargin: metrics.bandMargin});
   const across = metrics.width[tier], down = metrics.height[heightTier];
+  const folds = {...(across.fold ?? {}), ...(touch?.fold ?? {})};
+  const stageMin = touch?.stageMin ?? metrics.stageMin;
   // The islands keep the field's padding on every side: under the white band as along the window's edges.
   const chrome = chromeFor(height, metrics);
   const gap = across.columnGap, padEnd = Math.min(across.padEnd, Math.floor(width / 2)), padBottom = down.padBottom, padTop = Math.min(chrome.padTop, padBottom), rowGap = down.rowGap;
-  const railCompact = Boolean(across.compactRail || down.compactRail || chrome.name === 'compact');
+  const railCompact = !touch && Boolean(across.compactRail || down.compactRail || chrome.name === 'compact');
   // Two columns (env.railColumns, measured by the dock host) where one column of tools does not fit the viewport.
-  const railColumns = env.railColumns === 2 ? 2 : 1, railBase = railCompact ? metrics.rail.compact : metrics.rail.width;
+  const railColumns = env.railColumns === 2 ? 2 : 1, railBase = touch ? touch.rail : railCompact ? metrics.rail.compact : metrics.rail.width;
   const railWidth = Math.min(railColumns === 2 ? 2 * railBase - 8 : railBase, width);
   // The band's and the stage header's heights: measured in the app (env.measured), else the tier's or the default.
   const head = env.measured?.stageHead ?? chrome.stageHead;
@@ -323,7 +347,7 @@ export function solveLayout(layout, env = {}) {
     const strip = records.filter(record => record.dock === 'strip' && record.side === side);
     sides[side] = {docked, strip, sheet: [], state: docked.length ? 'docked' : strip.length ? 'strip' : 'hidden', reason: null};
   }
-  const requirement = () => Math.max(metrics.stageMin.width,
+  const requirement = () => Math.max(stageMin.width,
     ...['left', 'right'].flatMap(side => sides[side].state === 'docked' ? sides[side].docked.map(record => describe(record).stageMin ?? 0) : []));
   const fold = (side, to, reason) => {
     const s = sides[side];
@@ -341,7 +365,7 @@ export function solveLayout(layout, env = {}) {
     }
     return false;
   };
-  for (const [side, to] of Object.entries(across.fold ?? {})) if (sides[side]) fold(side, to, 'tier');
+  for (const [side, to] of Object.entries(folds)) if (sides[side]) fold(side, to, touch ? 'touch' : 'tier');
   for (const side of ['left', 'right']) {
     const s = sides[side];
     if (s.state !== 'docked') continue;
@@ -362,7 +386,7 @@ export function solveLayout(layout, env = {}) {
     const parts = [extent('left'), extent('right')].filter(part => part > 0);
     return Math.max(0, width - 2 * padEnd - parts.reduce((sum, part) => sum + part, 0) - parts.length * gap);
   }
-  for (const [side, to] of metrics.collapse?.width ?? []) {
+  for (const [side, to] of touch?.collapse ?? metrics.collapse?.width ?? []) {
     if (stageWidth() >= requirement()) break;
     fold(side, to, 'stage');
   }
@@ -370,19 +394,23 @@ export function solveLayout(layout, env = {}) {
   // Bottom dock: compress the rows, then fold to the header.
   const band = Math.min(env.measured?.band ?? chrome.band, height);
   const workspaceHeight = Math.max(0, height - band - dimension(env.footer));
-  const t = metrics.timeline;
+  // The touch interface's timeline header is a finger's height (features/touch.css --control-2xl).
+  const t = touch?.timelineHeader ? {...metrics.timeline, header: touch.timelineHeader} : metrics.timeline;
+  const rowMetrics = t === metrics.timeline ? metrics : {...metrics, timeline: t};
   const bottomDocked = records.filter(record => record.dock === 'bottom');
   const bottomStrip = records.filter(record => record.dock === 'strip' && record.side === 'bottom');
   const bottom = {state: bottomDocked.length ? 'docked' : bottomStrip.length ? 'strip' : 'hidden', size: 0, span: entry.bottomSpan, reason: null};
   let bottomLimits = null;
-  if (bottom.state === 'docked' && down.fold?.bottom === 'strip') Object.assign(bottom, {state: 'strip', reason: 'tier'});
+  const portraitTimeline = touch && env.touch.orient === 'portrait' ? touch.portraitTimeline ?? null : null;
+  const landscapeTimeline = touch && env.touch.orient === 'landscape' ? touch.landscapeTimeline ?? null : null;
+  if (bottom.state === 'docked' && down.fold?.bottom === 'strip' && !portraitTimeline && !landscapeTimeline) Object.assign(bottom, {state: 'strip', reason: 'tier'});
   if (bottom.state === 'docked') {
     // Never shorter than the pinned rows plus the minimum content rows at this tier.
-    const min = Math.max(timelineHeightFor(t.minSlots, heightTier, metrics), ...bottomDocked.map(record => describe(record).min ?? 0));
+    const min = landscapeTimeline ?? Math.max(timelineHeightFor(t.minSlots, heightTier, rowMetrics), ...bottomDocked.map(record => describe(record).min ?? 0));
     const fraction = Math.min(...bottomDocked.map(record => describe(record).maxFraction ?? 1));
-    const fallback = timelineDefaultHeight(height, heightTier, metrics);
-    const cap = down.timeline?.capAtDefault ? fallback : Infinity;
-    const room = workspaceHeight - padTop - padBottom - rowGap - head - metrics.stageMin.height;
+    const fallback = portraitTimeline ? Math.round(portraitTimeline * height) : landscapeTimeline ?? timelineDefaultHeight(height, heightTier, rowMetrics);
+    const cap = down.timeline?.capAtDefault && !portraitTimeline && !landscapeTimeline ? fallback : Infinity;
+    const room = workspaceHeight - padTop - padBottom - rowGap - head - stageMin.height;
     const max = Math.min(Math.floor(fraction * height), cap, room);
     let size = sizes.bottom ?? fallback;
     if (size > cap) { size = cap; bottom.reason = 'tier'; }
@@ -418,9 +446,12 @@ export function solveLayout(layout, env = {}) {
   const viewport = rect(stage.x, stage.y + Math.min(head, stage.height), stage.width, stage.height - head);
   // The floating tool bar: inside #viewport, `margin` from its edge on the rail's side, as tall as its tools need
   // (at most the viewport less its margins; the bar scrolls past that).
-  const railMargin = metrics.rail.margin ?? 0;
-  rects.rail = rect(railLeft ? viewport.x + railMargin : viewport.x + viewport.width - railMargin - railWidth,
-    viewport.y + railMargin, railWidth, Math.max(0, viewport.height - 2 * railMargin));
+  const railMargin = touch?.railMargin ?? metrics.rail.margin ?? 0;
+  const railHorizontal = Boolean(touch && env.touch.orient === 'portrait' && touch.portraitRail === 'horizontal');
+  rects.rail = railHorizontal
+    ? rect(viewport.x + railMargin, viewport.y + viewport.height - railMargin - railBase, Math.max(0, viewport.width - 2 * railMargin), railBase)
+    : rect(railLeft ? viewport.x + railMargin : viewport.x + viewport.width - railMargin - railWidth,
+      viewport.y + railMargin, railWidth, Math.max(0, viewport.height - 2 * railMargin));
   if (bottom.state !== 'hidden') {
     const spanned = bottom.span === 'stage' ? [stage] : columns.filter(column => column.key !== 'rail').map(column => rects[column.key]);
     const left = Math.min(...spanned.map(item => item.x)), right = Math.max(...spanned.map(item => item.x + item.width));
@@ -483,7 +514,7 @@ export function solveLayout(layout, env = {}) {
   if (bottomLimits) aria.bottom = {min: bottomLimits.min, max: bottomLimits.max, now: bottom.size};
 
   // Floating panels: kept inside #viewport (never over the band, the stage header or the transport).
-  const floatSheet = across.fold?.float === 'sheet';
+  const floatSheet = folds.float === 'sheet';
   const floating = floatSheet ? [] : records.filter(record => record.dock === 'float')
     .map((record, index) => ({panel: record.id, ...clampFloating(record.rect, describe(record), stage, Math.min(head, stage.height), metrics, index)}));
 
@@ -502,8 +533,8 @@ export function solveLayout(layout, env = {}) {
 
   const stageInsets = stageInsetsFor(width, height, {tier, metrics});
   // At fit the artboard keeps 8px clear of the floating tool bar.
-  const railSide = railLeft ? 'left' : 'right';
-  stageInsets[railSide] = Math.max(stageInsets[railSide], railWidth + railMargin + 8);
+  const railSide = railHorizontal ? 'bottom' : railLeft ? 'left' : 'right';
+  stageInsets[railSide] = Math.max(stageInsets[railSide], (railHorizontal ? railBase : railWidth) + railMargin + 8);
   const message = metrics.message, endWidth = env.endWidth ?? message.end;
   const messageSlot = {width: Math.max(0, across.message === 'inset'
     ? stage.width - 2 * message.inset
@@ -515,8 +546,9 @@ export function solveLayout(layout, env = {}) {
     return {pinned, content: Math.max(0, Math.floor((body - pinned * t.pinnedRow) / rows.row * 2) / 2)};
   };
   const solution = {
-    mode, tier, height: heightTier, chrome: chrome.name, padTop, band: bandFolds,
-    rail: {side: railLeft ? 'left' : 'right', orientation: 'vertical', compact: railCompact, columns: railColumns, width: railWidth, rect: rects.rail},
+    mode, tier, height: heightTier, chrome: chrome.name, padTop, band: bandFolds, touch: touch ? env.touch.form : null,
+    rail: {side: railLeft ? 'left' : 'right', orientation: railHorizontal ? 'horizontal' : 'vertical', compact: railCompact,
+      columns: railHorizontal ? 1 : railColumns, width: railHorizontal ? rects.rail.width : railWidth, rect: rects.rail},
     regions, floating, stage, stageHead: Math.min(head, stage.height), viewport, stageInsets,
     timelineRows: bottom.state === 'docked' ? bodyRows(bottom.size) : {pinned: 0, content: 0},
     messageSlot, aria, panels,

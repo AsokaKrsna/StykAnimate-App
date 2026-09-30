@@ -97,8 +97,10 @@ Drawing cels never become Build figures.
   without touching the clipboard. Timeline focus retains frame clipboard and
   frame deletion routing.
 - **V:** transform the whole cel using the existing pose controls. Pixel
-  selection and cel pose are distinct. **H / middle mouse / held Space:** pan. Touch pans by
-  default. Settings → Canvas → Draw with a finger lets one finger use the
+  selection and cel pose are distinct. **H / middle mouse / held Space:** pan. A
+  finger pans in the desktop layout and draws in the touch interface until a pen
+  is used. Settings › Interface › Draw with a finger chooses Until a pen is used,
+  Always (also in the desktop layout) or Never. A drawing finger uses the
   selected Draw tool through the same pixel transaction, undo and save paths as
   mouse or pen. Two fingers always navigate: a second finger cancels the first
   finger's provisional edit and pinches around their midpoint. Remaining fingers

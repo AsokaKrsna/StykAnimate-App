@@ -29,7 +29,7 @@
  * aria-keyshortcuts and a disabled item's reason its description. Items under
  * a group label sit in a role=group named by it.
  */
-import {placeFloating} from './anchor-position.mjs';
+import {placeFloating, presentsAsSheet} from './anchor-position.mjs';
 import {focusFirst, overlayMount, showPopoverFrom} from './overlay-manager.mjs';
 import {installRovingFocus, nextRovingIndex} from './roving-focus.mjs';
 
@@ -249,6 +249,19 @@ class Menu {
     this.entries = normalizeMenu(this.options.items, {resolve: root.resolve, shortcut: root.shortcut, t: root.t});
     this.buttons = [];
     element.replaceChildren();
+    // A submenu shown as a sheet covers its parent: its first row leads back (docs/TOUCH.md).
+    if (this.parent && presentsAsSheet(element)) {
+      const back = doc.createElement('button');
+      back.type = 'button';
+      back.className = 'ui-menu-back';
+      back.tabIndex = -1;
+      appendGlyph(back, root.icon?.('chevron-left'), 'ui-icon');
+      const label = doc.createElement('span');
+      label.textContent = this.options.label ?? '';
+      back.append(label);
+      back.addEventListener('click', event => { event.stopPropagation(); this.close('back', {restore: true}); });
+      element.append(back);
+    }
     // Items under a group label go into a role=group the label names, until the next separator or label.
     let parent = element;
     this.entries.forEach((entry, index) => {

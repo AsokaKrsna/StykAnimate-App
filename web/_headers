@@ -12,8 +12,6 @@
   Referrer-Policy: no-referrer
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
   X-Frame-Options: DENY
-  # Not public yet: keep search engines out until launch (remove this line and web/robots.txt's rule then).
-  X-Robots-Tag: noindex, nofollow
 
 # Modules and assets are not content-hashed, so browsers must revalidate them
 # (Cloudflare answers with 304 and an ETag). The runtime below is large; a 304

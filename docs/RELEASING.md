@@ -36,7 +36,7 @@ The initial 0.5.5 section comes from existing release metadata, with overlapping
 
 ## Build and ship
 
-Use `.github/workflows/desktop-release.yml` for the current runtime pins and Windows CI behavior. `docs/UPDATES.md` covers updates and public assets; `docs/DESKTOP-RELEASE.md` covers package verification and the local launcher marker. A feature implementation request does not imply publication authorization. An explicit release request authorizes its normal shipping steps; do not ask again without a concrete new blocker.
+Use `.github/workflows/desktop-release.yml` for the current runtime pins and coordinated Windows, Linux and browser verification. `docs/UPDATES.md` covers updates and public assets; `docs/DESKTOP-RELEASE.md` covers package verification and the local launcher marker. A feature implementation request does not imply publication authorization. An explicit release request authorizes its normal shipping steps; do not ask again without a concrete new blocker.
 
 For a local Windows release, install the locked dependencies and build prerequisites described in those documents, then run:
 
@@ -54,12 +54,19 @@ $env:STYK_PACKAGED_EXECUTABLE = Join-Path $PWD "release/$releaseVersion/win-unpa
 npm run verify:package
 npm run test:desktop:packaged
 npm run mark:release
-npm run release:verify
-npm run release:publish
+npm run release:verify -- "release/$releaseVersion" --platform=win32
 ```
 
-Check each command's exit status and stop on failure; PowerShell does not automatically stop after a failed native command. The final command uploads a draft to `filippocalippo/styk-animate-releases`. Review that exact draft and its artifacts, then use `npm run release:publish -- --publish` when publication is authorized. The publisher validates saved notes before any remote action and refuses to replace a public version. Do not publish private source, logs, or arbitrary attachments.
+Check each command's exit status and stop on failure; PowerShell does not automatically stop after a failed native command. Build and verify Linux on its own host as described in `docs/LINUX.md`. Combine its AppImage and `latest-linux.yml` with the four Windows assets in `release/<version>`, then run `npm run release:verify`. The default verification and publisher require both platforms.
 
-Alternatively, commit to the private source repository and dispatch the Windows workflow for a draft. A matching `v<version>` tag push or a manual run with Publish enabled publishes automatically. CI checks committed generated notes, verifies the versioned unpacked package against the source and staged runtimes, then boots that executable and exports and decodes MP4, WebM, AVI, WMV and GIF from its startup scene before uploading evidence or allowing publication. These smoke checks require no private samples. CI keeps the package hash manifest with private build evidence; it never synchronizes advancing source into the package. This gate does not establish that a real installed upgrade succeeded.
+For a coordinated candidate, push the prepared source and run:
 
-After publishing, confirm the public tag, notes, Setup and Portable executables, Setup blockmap, `latest.yml`, and `SHA256SUMS.txt`. Exercise the real update path described in `docs/UPDATES.md` and record evidence and any limits. Refresh the website catalogue through its documented workflow when site deployment is in scope. Leave the release section frozen and Unreleased ready for new work. Report the version, release URL, verification performed, and remaining platform limits. Never report a draft or a failed upload as a shipped release.
+```bash
+gh workflow run desktop-release.yml --ref main -f publish=false -f upload_draft=false
+```
+
+This retains private Windows/Linux assets, browser files and verification evidence for 30 days. It includes an actual installed Windows upgrade from the previous public release. No public draft or deployment is created. Before retaining anything, each platform verifies its versioned unpacked package against the source and staged runtimes, boots that executable, and exports and decodes videos from its startup scene; these checks need no private samples. The package hash manifest stays with the private evidence, and CI never synchronizes advancing source into the package. Review the successful run for that exact commit; old reports do not certify new bytes.
+
+When publication is authorized, dispatch with `upload_draft=true` for a verified draft or `publish=true` to publish. A matching `v<version>` tag push also publishes automatically. Locally, `npm run release:publish` uploads the verified combined directory as a draft, and adding `--publish` publishes it. The publisher checks saved notes before any remote action and refuses to replace a public version. Only the fixed asset allowlist is uploaded. Deploy the browser editor from the verified commit, run its live checks, then refresh and deploy the website catalogue as documented in `docs/WEB.md` and `docs/website.md`.
+
+After publishing, confirm the public tag, notes, Setup and Portable executables, Setup blockmap, `latest.yml`, Linux AppImage, `latest-linux.yml`, and `SHA256SUMS.txt`. Exercise the real update path described in `docs/UPDATES.md` and record evidence and any limits. Refresh the website catalogue through its documented workflow when site deployment is in scope. Leave the release section frozen and Unreleased ready for new work. Report the version, release URL, verification performed, and remaining platform limits. Never report a draft or a failed upload as a shipped release.

@@ -2,9 +2,10 @@
 
 ## Bending in Build
 
-Right-drag a line joint with Build's joint tool to bend it, including static
+Right-drag a line joint with Build's joint or creation tools to bend it, including static
 joints. The tangent, Ctrl/Command stretching, snapping and Isolate behavior
-match Animate. A stationary right-click still opens the context menu.
+match Animate. A stationary right-click still opens the context menu; dragging never opens it,
+including on platforms that send the menu event on mouse-down.
 
 The preview changes only the current pose; release publishes one reusable rig
 edit across the definition's instances and stored poses, applying the bend delta

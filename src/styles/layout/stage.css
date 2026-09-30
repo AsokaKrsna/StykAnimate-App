@@ -32,8 +32,11 @@
     border-radius: var(--radius-xl); background: var(--surface-raised); box-shadow: var(--elevation-2);
   }
 
-  /* The playback readouts wait in the status bar (the hidden activity log from M3b's status commit). */
-  .statusbar :where(.viewport-top, #playback-fps, #preview-quality) { position: static; inset: auto; margin: 0; }
-  .statusbar :where(#playback-fps, #preview-quality, .viewport-top:has(> #preview-badge:not([hidden]))) { margin-inline-end: var(--space-2); }
+  /* The playback rate is a passive readout in the canvas's top-right corner. */
+  :where(#viewport) > :where(#playback-fps) { z-index: var(--z-canvas-overlay); }
+
+  /* Remaining activity readouts stay in the hidden log. */
+  .statusbar :where(.viewport-top, #preview-quality) { position: static; inset: auto; margin: 0; }
+  .statusbar :where(#preview-quality, .viewport-top:has(> #preview-badge:not([hidden]))) { margin-inline-end: var(--space-2); }
   .statusbar :where(#preview-badge) { padding: 0 var(--space-1); border-radius: var(--radius-2xs); font: var(--type-small-strong); }
 }

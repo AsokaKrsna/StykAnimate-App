@@ -2,9 +2,14 @@
 
 // Keep the release feed and filesystem access in the main process. The renderer
 // receives only status, never installer paths or a configurable download URL.
-function updateAvailability({ packaged, platform, portable, installed }) {
+function updateAvailability({ packaged, platform, portable, installed, appImage }) {
   if (!packaged) return 'Updates are available in the installed app. Development copies do not update.';
-  if (platform !== 'win32') return 'Automatic updates currently require the Windows installer.';
+  if (platform === 'linux') {
+    if (!appImage) return 'Run the Linux AppImage to enable automatic updates.';
+    try { require('./appimage-updater.cjs').writableAppImage(appImage); return ''; }
+    catch { return 'Move the AppImage to a writable folder, such as Applications in your home folder, and reopen it to enable automatic updates.'; }
+  }
+  if (platform !== 'win32') return 'Automatic updates require the Windows installer or Linux AppImage.';
   if (portable || !installed) return 'Install StykAnimate using the Windows Setup installer to enable automatic updates.';
   return '';
 }
@@ -54,14 +59,20 @@ class UpdateService {
     if (this.state.status !== 'ready' || this.restarting) return false;
     this.restarting = true;
     try {
+      // Copy the AppImage asynchronously before the final save/close decision.
+      // No long file operation may separate that decision from installation.
+      if (this.updater.stageInstall) await this.updater.stageInstall();
       if (!await prepare()) return false;
       this.set({ status: 'restarting' });
-      // NSIS silent installation followed by an explicit relaunch.
+      // Install only on this explicit request, then relaunch on either platform.
       this.updater.quitAndInstall(true, true);
       if (this.state.status === 'error') { onFailure(); return false; }
       return true;
     } catch (error) { onFailure(); this.fail(error); return false; }
-    finally { this.restarting = false; }
+    finally {
+      try { await this.updater.discardStagedInstall?.(); }
+      finally { this.restarting = false; }
+    }
   }
 
   start() {

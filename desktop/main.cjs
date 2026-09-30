@@ -6,7 +6,7 @@ const os = require('node:os');
 const fs = require('node:fs/promises');
 const { mkdirSync, existsSync } = require('node:fs');
 const { startDesktopHost } = require('./web-host.cjs');
-const { applyGpuSwitches } = require('./gpu-switches.cjs');
+const { applyGpuSwitches, relaunchOnX11 } = require('./gpu-switches.cjs');
 const { RecoveryStore, atomicWrite } = require('./recovery.cjs');
 const { FileStreams } = require('./file-streams.cjs');
 const { SharedClipboard } = require('./shared-clipboard.cjs');
@@ -30,6 +30,10 @@ const getReleaseHistory = require('./release-history.cjs').createReleaseHistory(
 let telemetryBuild = {};
 try { telemetryBuild = require('./telemetry-build.json'); } catch { /* Unpackaged/older source has unknown build metadata. */ }
 const { RELEASES_URL, DONATE_URL } = require('./release-links.cjs');
+
+// On Wayland the window cannot show WebGPU content, and Chromium picks its display
+// backend before this file runs, so start again under XWayland (gpu-switches.cjs).
+if (relaunchOnX11(app)) return;
 
 const APP_ROOT = path.resolve(__dirname, '..');
 const MAX_FILE_BYTES = 256 * 1024 * 1024;
@@ -697,9 +701,12 @@ async function createWindow() {
 
 async function start() {
   const unavailable = updateAvailability({ packaged: app.isPackaged, platform: process.platform,
+    appImage: process.env.APPIMAGE,
     portable: Boolean(process.env.PORTABLE_EXECUTABLE_DIR), installed: existsSync(path.join(path.dirname(process.execPath), 'Uninstall StykAnimate.exe')) });
-  const updater = unavailable ? null : require('electron-updater').autoUpdater;
-  if (updater) updater.installDirectory = path.dirname(process.execPath);
+  const updater = unavailable ? null : process.platform === 'linux'
+    ? new (require('./appimage-updater.cjs').LinuxAppImageUpdater)()
+    : require('electron-updater').autoUpdater;
+  if (updater && process.platform === 'win32') updater.installDirectory = path.dirname(process.execPath);
   updates = new UpdateService({ updater,
     currentVersion: app.getVersion(), unavailable,
     onState: value => { if (value.status === 'error') quitting = false; if (window && !window.isDestroyed()) window.webContents.send('styk:update-state-changed', value); },

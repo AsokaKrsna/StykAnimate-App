@@ -20,6 +20,7 @@ import {onFontsReady} from './ui/font-loading.mjs';
 import {openMenu,menuFor} from './ui/ui-menu.mjs';
 import {sayTimeline} from './locales/en-timeline.mjs';
 import {ROW,HEADER,sheetRowLayout,shortSheet} from './timeline-rows.mjs';
+import {TOUCH_ZOOM,timelineTouchMethods} from './touch/timeline-scrubber.mjs';
 
 /** The tall tier's content row and ruler (timeline-rows.mjs holds the whole row geometry: 24px Camera and Scene,
  * 28px rows and a 24px ruler at the short tier). */
@@ -31,11 +32,13 @@ const element=(tag,parent,className,text)=>{const node=document.createElement(ta
  * not the number of frames, layers, instances or nested clip frames. */
 export class Timeline{
   constructor(container,editor,options={}){
-    this.editor=editor;this.container=container;Object.assign(this,options);this.events=new AbortController();this.labels=[];this.pxPerTick=14;this.labelWidth=220;
+    this.editor=editor;this.container=container;Object.assign(this,options);this.events=new AbortController();this.labels=[];this.pxPerTick=this._touch()?TOUCH_ZOOM.initial:14;this.labelWidth=220;
     this.selectedLayers=new Set([editor.activeLayerId]);this.start=this.end=Math.max(0,Math.floor(editor.tick));this.selectedTrackId=editor.activeLayerId;
     if(!editor.report._styk.layerSheet){initializeLayerSheet(editor.report);editor._invalidate({timing:true});}
     attachTimelineHotkeys(this);
     this.root=element('div',container,'layer-timeline');this.dirty=true;
+    // The touch interface's timeline (docs/TOUCH.md): finger-tall rows, a centred playhead, the header's action bar.
+    this.root.toggleAttribute('data-touch',this._touch());
     this.main=element('div',this.root,'sheet-main');
     // The layer list's header: its title (Find layers' field takes its place while it has focus or text),
     // Focus selected layers (from two layers), New layer (a split: + and the other kind) and Find layers.
@@ -65,13 +68,13 @@ export class Timeline{
     // Add frame and Next copy live in the shared header (timeline-header.mjs); an audio clip's selection hides them there, as it did here.
     this.headerTools=this.header?.frameTools??element('div',null,'sheet-header-tools');
     this.live=element('div',this.root,'sheet-live');this.live.setAttribute('role','status');this.live.setAttribute('aria-live','polite');
-    this._on(this.scroll,'scroll',()=>{this._cachedOffsetX=undefined;this.update();});this._on(this.scroll,'pointerdown',event=>this._pointerDown(event));this._on(this.scroll,'pointermove',event=>this._pointerMove(event));this._on(this.scroll,'pointerup',event=>this._pointerUp(event));this._on(this.scroll,'pointercancel',()=>this._cancelGesture());this._on(this.scroll,'lostpointercapture',()=>this._cancelGesture());
+    this._on(this.scroll,'scroll',()=>{this._cachedOffsetX=undefined;this.update();});this._on(this.scroll,'pointerdown',event=>this._pointerDown(event));this._on(this.scroll,'pointermove',event=>this._pointerMove(event));this._on(this.scroll,'pointerup',event=>this._pointerUp(event));this._on(this.scroll,'pointercancel',()=>this._cancelGesture());this._on(this.scroll,'lostpointercapture',()=>{if(!this.gesture?.touch)this._cancelGesture();});
     this._on(this.scroll,'contextmenu',event=>{event.preventDefault();const hit=this._hit(event);if(hit.row<0||!this.tracks[hit.row])return this._menu(event,{view:true});if(this.tracks[hit.row]?.kind.startsWith('vfx')){this._selectVfxRow(this.tracks[hit.row]);return;}if(!this._contains(hit))this._selectCell(hit);this._menu(event);});
     this._on(this.scroll,'dblclick',event=>this._doubleClick(event));
     this._on(this.main,'pointerleave',()=>{if(!this.gesture){this.hover=null;this.update();}});
     this._on(this.scroll,'keydown',event=>this._keyDown(event));this._on(this.labelViewport,'wheel',event=>{event.preventDefault();this.scroll.scrollTop+=event.deltaY;},{passive:false});
     this._on(this.scroll,'wheel',event=>{if(event.ctrlKey||event.metaKey){event.preventDefault();this.setZoom(clamp(this.pxPerTick*(event.deltaY<0?1.15:.87),1,36),event.clientX-this.scroll.getBoundingClientRect().left);}else if(event.shiftKey){event.preventDefault();this.scroll.scrollLeft+=event.deltaY||event.deltaX;}},{passive:false});
-    this._on(this.divider,'pointerdown',event=>{this._columnDrag={x:event.clientX,width:this.labelWidth};this.divider.setPointerCapture(event.pointerId);});
+    this._on(this.divider,'pointerdown',event=>{this._columnDrag={x:event.clientX,width:this.labelViewport.getBoundingClientRect().width||this.labelWidth};this.divider.setPointerCapture(event.pointerId);});
     this._on(this.divider,'pointermove',event=>{if(this._columnDrag){this.labelWidth=clamp(this._columnDrag.width+event.clientX-this._columnDrag.x,140,420);this.root.style.setProperty('--sheet-label',`${this.labelWidth}px`);this.resize();}});this._on(this.divider,'pointerup',()=>{this._columnDrag=null;});
     this.divider.tabIndex=0;this.divider.setAttribute('aria-orientation','vertical');
     this._on(this.divider,'keydown',event=>{if(!['ArrowLeft','ArrowRight','Home'].includes(event.key))return;event.preventDefault();event.stopPropagation();this.labelWidth=event.key==='Home'?220:clamp(this.labelWidth+(event.key==='ArrowRight'?1:-1)*(event.shiftKey?40:10),140,420);this.root.style.setProperty('--sheet-label',`${this.labelWidth}px`);this.resize();});
@@ -82,10 +85,11 @@ export class Timeline{
       if(d.kind==='vfx-selection'||d.kind==='vfx-target'||d.kind==='selection'&&editor._vfxTimelineVisible||d.kind==='document'||d.structural||d.layers||d.timing||d.layerSheet)this._reindex();
       else if(this.motionState!==editor.report._styk.cameraMotion)this._refreshMotionRows();
       if(d.kind==='selection'&&!d.sheetSelection&&editor.object){this.selectedTrackId=editor.layerForUid(editor.selectedUid);this.selectedLayers=new Set([this.selectedTrackId]);this.revealSelectedLayer();}
-      if(d.kind==='seek'&&!this.gesture&&!this.selecting){this.start=this.end=Math.floor(editor.tick);}this.update(this._changeNeedsPaint(d));});
+      if(d.kind==='seek'&&!this.gesture&&!this.selecting){if(!this.touchRange)this.start=this.end=Math.floor(editor.tick);this._centerSoon();}this.update(this._changeNeedsPaint(d));});
     this._on(window,'styk-theme-change',()=>this.resize());onFontsReady(()=>this.update(),{signal:this.events.signal});
     this.observer=new ResizeObserver(()=>this.resize());this.observer.observe(this.root);this._reindex();this.resize();
     mountTimelineNavigation(this);this.header?.setZoom(this.pxPerTick);
+    if(this._touch()){this._mountTouchActions();requestAnimationFrame(()=>{this.revealSelectedLayer();this.centerTick();});}
     this.audio=new AudioTimeline(container,editor,{...options,host:this,engine:options.audioEngine,mode:'advanced'});
     this._on(this.labelViewport,'pointerdown',()=>this.audio.clearSelection());
   }
@@ -124,7 +128,8 @@ export class Timeline{
       if(this.root.style.getPropertyValue(name)!==value)this.root.style.setProperty(name,value);
     const layout=this._layoutRows();
     this.audioTop=layout.header+layout.height;
-    this.logicalWidth=Math.max(this.width,(Math.max(this.editor.totalTicks,this.end+1)+60)*this.pxPerTick);this.logicalHeight=Math.max(this.height,this.audioTop+(this.audio?.contentHeight??0));
+    // Touch: room before frame 1 and after the end, so the centred playhead reaches every frame (timeline-scrubber.mjs).
+    this.logicalWidth=Math.max(this.width,(Math.max(this.editor.totalTicks,this.end+1)+(this._touch()?8:60))*this.pxPerTick)+2*this._pad();this.logicalHeight=Math.max(this.height,this.audioTop+(this.audio?.contentHeight??0));
     const width=`${Math.min(MAX_SCROLL,this.logicalWidth)}px`,height=`${Math.min(MAX_SCROLL,this.logicalHeight)}px`;
     if(this.spacer.style.width!==width)this.spacer.style.width=width;if(this.spacer.style.height!==height)this.spacer.style.height=height;
   }
@@ -132,9 +137,9 @@ export class Timeline{
    * one of them changes. It writes the ruler's height and where the scrolling rows start as custom properties, which
    * the label column, the playhead's tab and the overlays read (features/timeline.css). */
   _layoutRows(){
-    const short=shortSheet(),tracks=this.tracks??[],viewport=this.height||Infinity,key=this._layoutKey;
-    if(this.layout&&key?.tracks===tracks&&key.short===short&&key.viewport===viewport)return this.layout;
-    this._layoutKey={tracks,short,viewport};const layout=this.layout=sheetRowLayout(tracks,{short,viewport});this.labelSignature=null;
+    const short=shortSheet(),touch=this._touch(),tracks=this.tracks??[],viewport=this.height||Infinity,key=this._layoutKey;
+    if(this.layout&&key?.tracks===tracks&&key.short===short&&key.viewport===viewport&&key.touch===touch)return this.layout;
+    this._layoutKey={tracks,short,viewport,touch};const layout=this.layout=sheetRowLayout(tracks,{short,viewport,touch});this.labelSignature=null;
     for(const [name,value] of [['--sheet-ruler',`${layout.header}px`],['--sheet-body-top',`${layout.contentTop}px`]])
       if(this.root.style.getPropertyValue(name)!==value)this.root.style.setProperty(name,value);
     return layout;
@@ -149,9 +154,9 @@ export class Timeline{
    * clears it: playhead and marker updates run every played frame, after other
    * widgets wrote to the DOM, where a fresh read forces a synchronous layout. */
   offsetX(){return this._cachedOffsetX??=this._offsetX();}
-  _offsetX(){const actual=Math.max(0,this.scroll.scrollWidth-this.scroll.clientWidth);return actual?this.scroll.scrollLeft/actual*Math.max(0,this.logicalWidth-this.scroll.clientWidth):0;}
+  _offsetX(){const actual=Math.max(0,this.scroll.scrollWidth-this.scroll.clientWidth);return (actual?this.scroll.scrollLeft/actual*Math.max(0,this.logicalWidth-this.scroll.clientWidth):0)-this._pad();}
   _offsetY(){return this.scroll.scrollTop;}
-  _scrollToX(x){const max=this.logicalWidth-this.scroll.clientWidth;this.scroll.scrollLeft=max>0?clamp(x,0,max)/max*(this.scroll.scrollWidth-this.scroll.clientWidth):0;this.update();}
+  _scrollToX(x){const max=this.logicalWidth-this.scroll.clientWidth;this.scroll.scrollLeft=max>0?clamp(x+this._pad(),0,max)/max*(this.scroll.scrollWidth-this.scroll.clientWidth):0;this.update();}
   _scrollToY(y){this.scroll.scrollTop=y;this.update();}
   resize(){
     this.audio?.update();
@@ -167,8 +172,8 @@ export class Timeline{
     this.font=token('--font-ui')||css.fontFamily;
     this.update();
   }
-  setZoom(value,anchor=this.width/2){const old=this.pxPerTick,center=(this._offsetX()+anchor)/old;this.pxPerTick=clamp(Number(value)||14,1,36);this.header?.setZoom(this.pxPerTick);this._extent();this._scrollToX(center*this.pxPerTick-anchor);this.audio?.update();}
-  setPaused(value){const resumed=this.paused&&!value;this.paused=value;this.update(Boolean(resumed));}
+  setZoom(value,anchor=this.width/2){const old=this.pxPerTick,center=(this._offsetX()+anchor)/old,range=this.zoomRange;this.pxPerTick=clamp(Number(value)||14,range.min,range.max);this.header?.setZoom(this.pxPerTick);this._extent();this._scrollToX(center*this.pxPerTick-anchor);this.audio?.update();}
+  setPaused(value){const resumed=this.paused&&!value;this.paused=value;this.update(Boolean(resumed));if(resumed)this._centerSoon();}
   update(dirty=true){
     this.dirty||=dirty;if(this.disposed||this.raf)return;
     this.raf=requestAnimationFrame(()=>{this._flushScrub();if(this.dirty){this.dirty=false;this._paint();}this._syncPlayhead();this.raf=null;
@@ -221,6 +226,8 @@ export class Timeline{
       ctx.fillStyle=c['row-alt'];const shade=Math.min(bottom,ruler)-top;
       if(shade>0)for(let tick=Math.max(0,first);tick<=last;tick++)if((tick+1)%interval===0)ctx.fillRect(Math.round(tick*step-sx),top,Math.max(1,Math.round(step)),shade);
       if(endX<w){const x=Math.max(0,endX);ctx.fillStyle=c.hover;ctx.fillRect(x,top,w-x,bottom-top);if(endX>0){ctx.fillStyle=c.end;ctx.fillRect(Math.round(endX)-1,top,1.5,bottom-top);}}
+      // Touch: the room before frame 1, so the centred playhead can stand on it, reads as outside the animation.
+      if(sx<0){ctx.fillStyle=c.hover;ctx.fillRect(0,top,Math.min(w,-sx),bottom-top);}
     };
     backdrop(0,h);
     const region=(top,bottom,from,to,offset)=>{
@@ -254,9 +261,10 @@ export class Timeline{
     const active=this.editor.getLayer(this.editor.activeLayerId),drawing=Boolean(active?.drawing),locked=drawing?active.locked||!active.visible:this.ids.some(id=>this.editor.getLayer(id)?.locked);
     this.header?.setAddFrame({blank:drawing,disabled:locked||!this.ids.length});
     this.header?.setNextCopy({shown:drawing,disabled:locked});
+    this._syncTouchActions();
   }
   /** Where a row's bars sit: inset from the lane so neighbouring rows never touch, 16px tall in Camera and Scene. */
-  _cellBox(y,size){const inset=size<=24?4:5;return {top:y+inset,height:size-inset*2};}
+  _cellBox(y,size){const inset=size<=24?4:size>=36?Math.round(size*.17):5;return {top:y+inset,height:size-inset*2};}
   /**
    * The selected frames on a selected row: one continuous blue wash over the range and one accent outline around it
    * (a single frame included), so what is selected reads at a glance. Drawn over the bars and under the keys; only the
@@ -270,6 +278,7 @@ export class Timeline{
     ctx.fillStyle=c['cell-selected'];ctx.beginPath();ctx.roundRect(x+1,top,Math.max(2,width-2),height,radius);
     if(layer.drawing)ctx.globalAlpha=.6;ctx.fill();ctx.globalAlpha=1;
     ctx.strokeStyle=c['accent-line'];ctx.lineWidth=2;ctx.beginPath();ctx.roundRect(x,top-2,Math.max(2,width),height+4,Math.min(7,width/2));ctx.stroke();
+    if(this._touch()&&layer.id===this.selectedTrackId&&(this.touchRange||this.end>this.start))this._paintTouchHandles(ctx,y,size,sx);
   }
   /**
    * A row's exposures and keys (the VFX and camera-motion lanes paint themselves). An exposure is one rounded bar from
@@ -317,7 +326,7 @@ export class Timeline{
         this._paintSelection(ctx,layer,y,size,sx);
       }
       // Keys: ink dots at the start of their bar (Camera gold, Scene violet); blank keys and cel starts hollow.
-      const dot=Math.max(2.5,Math.min(size<=24?3.5:4.5,step*.34)),rowSelected=this.selectedLayers.has(layer.id),picked=tick=>rowSelected&&tick>=this.start&&tick<=this.end;
+      const dot=this._touch()?Math.max(3,Math.min(size>=40?7:5.5,step*.3)):Math.max(2.5,Math.min(size<=24?3.5:4.5,step*.34)),rowSelected=this.selectedLayers.has(layer.id),picked=tick=>rowSelected&&tick>=this.start&&tick<=this.end;
       const filled=new Path2D(),hollow=new Path2D();
       for(let i=from;i<track.keys.length;i++){
         const key=track.keys[i];if(key.tick>last)break;if(key.tick<first)continue;const x=(key.tick+.5)*step-sx;
@@ -495,7 +504,7 @@ export class Timeline{
     const bounds=this.scroll.getBoundingClientRect();
     if(event.clientX>=bounds.left+this.scroll.clientWidth||event.clientY>=bounds.top+this.scroll.clientHeight)return;
     if(event.button!==0)return;this.onSeek?.();const hit=this._hit(event);if(hit.row>=this.tracks.length)return;
-    this.scroll.setPointerCapture(event.pointerId);this.scroll.focus({preventScroll:true});
+    try{this.scroll.setPointerCapture(event.pointerId);}catch{/* a replayed tap's finger has already lifted (touch/timeline-touch.mjs) */}this.scroll.focus({preventScroll:true});
     if(hit.row<0){this.gesture={kind:'scrub',pointer:event.pointerId};this.onScrubStart?.();this.pendingScrub=hit.tick;this.update(false);event.preventDefault();return;}
     this.audio?.clearSelection();
     if(this._motionDown(event,hit))return;
@@ -544,11 +553,11 @@ export class Timeline{
     }
     if(g.kind==='scrub'){this.start=this.end=Math.floor(this.editor.tick);this.onScrubEnd?.();}
     if(this.scroll.hasPointerCapture(event.pointerId))this.scroll.releasePointerCapture(event.pointerId);
-    this.onRangeChange?.(this.selectedFrameIndices);this.update();
+    this.onRangeChange?.(this.selectedFrameIndices);this.update();this._centerSoon();
   }
   _cancelGesture(){if(this.gesture?.kind==='scrub')this.onScrubEnd?.();if(this.gesture?.kind==='camera-motion')this.onCameraMotionPreview?.(null);this.gesture=null;this.pendingScrub=null;this.pendingCell=null;this.update();}
   seek(tick){if(!Number.isInteger(tick)||tick<0)throw new Error('Choose a valid frame.');this.onSeek?.();this.start=this.end=tick;this.editor.seek(tick,{allowBeyondEnd:true});this.update();}
-  revealPlayhead(){const x=this.editor.tick*this.pxPerTick,left=this._offsetX();if(x<left)this._scrollToX(x);else if(x>left+this.width-30)this._scrollToX(x-this.width+60);}
+  revealPlayhead(){if(this._touch())return this.centerTick(undefined,{smooth:true});const x=this.editor.tick*this.pxPerTick,left=this._offsetX();if(x<left)this._scrollToX(x);else if(x>left+this.width-30)this._scrollToX(x-this.width+60);}
   jumpKey(direction){const keys=this.editor.layerFrameKeys(this.selectedTrackId),tick=direction<0?[...keys].reverse().find(k=>k.tick<this.editor.tick)?.tick:keys.find(k=>k.tick>this.editor.tick)?.tick;if(tick!==undefined){this.seek(tick);this.revealPlayhead();}}
   /** Add Frame inserts a key at the selected cell. When every selected layer
    * already holds a key there, it instead duplicates the current pose into the
@@ -562,7 +571,7 @@ export class Timeline{
   drawingKeyHere(blank=false){return this._run(()=>this.editor.drawingKey(this.ids,this.start,{blank}));}
   /** Fit timeline: the whole animation in the grid's width. */
   fitAll(){return this.fitFrameRange();}
-  get zoomRange(){return {min:1,max:36};}
+  get zoomRange(){return this._touch()?{min:TOUCH_ZOOM.min,max:TOUCH_ZOOM.max}:{min:1,max:36};}
   addFrameCell(){if(this.editor.getLayer(this.editor.activeLayerId)?.drawing)return this._run(()=>this.editor.addDrawingFrame(this.editor.activeLayerId,this.start));const onKey=this.ids.length>0&&this.ids.every(id=>this.editor.layerFrameKeys(id).some(key=>key.tick===this.start));return onKey?this.duplicateFrameAfter():this.addTrackKey();}
   addTrackKey(){return this._run(()=>this.editor.sheetInsertKey(this.ids,this.start));}
   duplicateFrameAfter(){return this._run(()=>{const result=this.editor.sheetDuplicateFrameAfter(this.ids);this.start=this.end=this.editor.tick;this.revealPlayhead();return result;});}
@@ -616,6 +625,9 @@ export class Timeline{
        {label:selected?.visible===false?'Show layer':'Hide layer',symbol:selected?.visible===false?'eye':'eye-off',action:()=>editor.setLayerVisible(selected.id,selected.visible===false)},
        {label:selected?.locked?'Unlock layer':'Lock layer',symbol:selected?.locked?'unlock':'lock',action:()=>editor.setLayerLocked(selected.id,!selected.locked)},
        own&&{label:several?'Focus selected layers':'Focus this layer',symbol:'layers',action:()=>several?this.focusSelectedLayers():this.setLayerFilter('',new Set([selected.id]))}],
+      // Moving a layer in the stack without dragging its name (a finger, a keyboard): up is toward the top row.
+      own?[{label:'Move layer up',symbol:'up',disabled:editor.report._styk.layers.order.at(-1)===selected.id,action:()=>this.reorderLayer(-1)},
+       {label:'Move layer down',symbol:'down',disabled:editor.report._styk.layers.order[0]===selected.id,action:()=>this.reorderLayer(1)}]:null,
       [{label:'New layer',symbol:'plus',action:()=>this.newLayer()},
        {label:'New drawing layer',symbol:'brush',action:()=>this.newLayer('drawing')}],
       [own&&!selected.locked&&editor.report._styk.layers.order.length>1&&{label:'Delete layer',symbol:'trash',danger:true,action:()=>this.deleteLayer()}],
@@ -643,9 +655,9 @@ export class Timeline{
        locked&&{label:'Unlock layers',symbol:'unlock',action:()=>{for(const id of this.ids)editor.setLayerLocked(id,false);}}],
     ]);
   }
-  destroy(){this.disposed=true;this.audio?.destroy();this._cancelGesture();this.events.abort();this.menuEvents?.abort();this.observer.disconnect();if(this.raf)cancelAnimationFrame(this.raf);this.menu?.remove();this.easingPopover?.hidePopover();this.headerTools.classList.remove('audio-selection');this.onionRange.destroy();this.root.remove();}
+  destroy(){this.disposed=true;this._unmountTouchActions();cancelAnimationFrame(this._centerFrame??0);this.audio?.destroy();this._cancelGesture();this.events.abort();this.menuEvents?.abort();this.observer.disconnect();if(this.raf)cancelAnimationFrame(this.raf);this.menu?.remove();this.easingPopover?.hidePopover();this.headerTools.classList.remove('audio-selection');this.onionRange.destroy();this.root.remove();}
 }
 
-Object.assign(Timeline.prototype,cameraMotionTimelineMethods,timelineOrganizationMethods);
+Object.assign(Timeline.prototype,cameraMotionTimelineMethods,timelineOrganizationMethods,timelineTouchMethods);
 
 installVfxTimeline(Timeline);

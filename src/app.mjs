@@ -71,13 +71,18 @@ import { createDockKeyboard } from "./shell/dock-keyboard.mjs";
 import { installDockTabs } from "./shell/dock-tabs.mjs";
 import { createLayoutPopover } from "./shell/layout-popover.mjs";
 import { installShellCommands } from "./shell/shell-commands.mjs";
-import { syncBandSession } from "./shell/topbar.mjs";
+import { bandBottom, syncBandSession } from "./shell/topbar.mjs";
 import { installRail, syncRailQuick } from "./shell/rail.mjs";
 import { initStudioShell } from "./studio-shell.mjs";
 import { createExportFlow } from "./export-flow.mjs";
 import { createAppDialogs } from "./app-dialogs.mjs";
 import { dragSlop, beyondSlop, installPenMenuGuard } from "./pen-input.mjs";
 import { installCanvasPinch } from "./canvas-pinch.mjs";
+import { installTouchMode } from "./touch/touch-mode.mjs";
+import { installTouchShell } from "./touch/touch-shell.mjs";
+import { installLongPress } from "./touch/long-press.mjs";
+import { installCanvasTouch } from "./touch/canvas-touch.mjs";
+import { installModifierDock } from "./touch/modifier-dock.mjs";
 import { initBuilderMode } from "./builder-mode.mjs";
 import { configureInspectorSections, inspectorView } from "./inspector-view.mjs";
 import { updateInspectorDOM } from "./inspector-dom.mjs";
@@ -328,6 +333,7 @@ overlays.install();
 const stageHead = createStageHead({
   root: document.querySelector(".stage-head"),
   toasts: () => toasts,
+  openMenu: (items, anchor, options) => showCommandMenu(items, anchor, options),
   toolOptions: () => ({ registry: commands, context: commandContext, icon: (name, className) => icon(name, className), t: kitT, overlays,
     onChange: ({ id, value }) => { if (id === "rig-mode") { state.rigMode = value; queueUI(); } } }),
 });
@@ -338,7 +344,7 @@ const toasts = createToasts({
   // The stage header's centre, or a line of its own under it; the stage's bottom centre while the header is not shown.
   slot: { place: (size) => stageHead.placeMessage(size), release: () => stageHead.releaseMessage() },
   area: () => viewport.getBoundingClientRect(),
-  topInset: () => document.querySelector(".titlebar")?.getBoundingClientRect().bottom ?? 0,
+  topInset: () => bandBottom(document),
   t: (key, params) => appLocalization?.t(key, params),
   feedback: desktop?.sendTelemetryFeedback
     ? { label: "Send feedback", run: () => feedbackUI.open({ category: "bug" }) }
@@ -354,6 +360,8 @@ let drawingController, timelineUI, timelineHost,
   appLocalization,
   shell,
   workspaceLayout,
+  touchMode,
+  touchModifiers,
   assetLibrary,
   raf = 0,
   playStart = 0,
@@ -428,7 +436,7 @@ const editablePreparation = new EditableScenePreparation(editor, {
   onReady(){state.editingPacket=null;status('Ready');warmPlayback();},
   onError:fail,
 });
-let lastFpsUI = 0, lastSlowUI = 0;
+let lastFpsUI = 0;
 function editingGestureActive(){return Boolean(state.drag||keyboardHandleGesture||editor._drag||editor._authoredPoseEdit||propertyControls?.active||vfxInspector?.active||vfxGizmos?.active||drawingController?.interacting);}
 // The editor chrome as surfaces (src/ui/ui-invalidation.mjs), in today's update order. queueUI()
 // marks them all; one pass a frame updates what is marked. While playing, only the transport updates
@@ -2003,11 +2011,6 @@ function loop(now) {
       setHidden($('preview-quality'), !(state.playbackPacket?.previewQuality?.reduced || state.previewGovernor?.index));
       adaptPreviewQuality(sample, measuredAt);
       lastFpsUI = measuredAt;
-      // "Slow · 14 of 24 fps · Details" only while playback misses its target (never while it waits for sound or frames).
-      if (measuredAt - lastSlowUI >= 1000) {
-        lastSlowUI = measuredAt;
-        stageHead.showSlow(sample.coherent === false && !state.buffering && sample.elapsedMs >= 1000 ? { fps: sample.fps, target: sample.targetFps } : null);
-      }
     }
   }
   // A seek/edit event can request the next frame while this callback runs.
@@ -2043,7 +2046,6 @@ async function play() {
     ? 1000 / editor.report.frame_delay_ms : editor.report.fps);
   telemetry.playbackStart(telemetry.consent.diagnostics ? workload({ report: editor.report, fps: playbackMetrics.targetFps }) : {});
   lastFpsUI = playStart;
-  lastSlowUI = playStart;
   setText($("playback-fps"), "— fps");
   setAttr($("playback-fps"), "data-health", "pending");
   setHidden($("playback-fps"), false);
@@ -2091,7 +2093,6 @@ function pause() {
   }
   setHidden($("playback-fps"), true);
   setHidden($('preview-quality'), true);
-  stageHead.showSlow(null);
   if (wasPlaying && state.playbackPacket)
     state.editingPacket = {
       packet: state.playbackPacket,
@@ -2170,6 +2171,7 @@ function syncAutoKey() {
 }
 function syncSelectionControls() {
   timelineHost.syncRangeEdit();
+  touchModifiers?.sync();
   if (state.tool === 'select' && !builderMode?.active && !drawingController?.active)
     setText($('viewport-hint'), editor.object?.join
       ? 'Alt-drag a joint around the attachment · Ctrl: rotate only · Shift: scale only'
@@ -2518,6 +2520,14 @@ overlay.addEventListener(
       return;
     }
     const p = worldPoint(e);
+    // Bending is available while creating parts too, without changing tools.
+    if (e.button === 2 && builderMode?.active) {
+      const hit = pick(p);
+      if (hit?.joint >= 0) {
+        state.drag = {kind: "maybe-bend", hit, start: p, clientX: e.clientX, clientY: e.clientY};
+        return;
+      }
+    }
     if(e.button===0&&state.handles&&!builderMode?.active&&['select','pose'].includes(state.tool)){
       const spatial=spatialGizmoDrag(editor,screenPoint(p),screenPoint);
       if(spatial){if(!editor.beginDrag('Rotate articulated joint'))return;state.drag={kind:'spatial',spatial};viewport.classList.add('dragging');return;}
@@ -2983,7 +2993,7 @@ const moveCanvasPointer = guarded((e) => {
         return;
       const hit = drag.hit;
       editor.select(hit.g.obj.unique_id, hit.joint);
-      if (!(state.tool === "rig" ? editor.beginRigDrag({bend: true}) : editor.beginDrag("Pose joint"))) {
+      if (!(builderMode?.active || state.tool === "rig" ? editor.beginRigDrag({bend: true}) : editor.beginDrag("Pose joint"))) {
         state.drag = null;
         releaseCanvasPointer();
         return;
@@ -3124,6 +3134,11 @@ function endDrag(event, {keepPointer = false} = {}) {
   if (!keepPointer) releaseCanvasPointer();
   if (!drag) return;
   viewport.classList.remove("dragging");
+  if (drag.kind === "maybe-bend" && drag.contextMenuOnPress && event) {
+    overlay.dispatchEvent(new MouseEvent("contextmenu", {bubbles: true, cancelable: true,
+      clientX: event.clientX, clientY: event.clientY, button: 2}));
+    state.suppressContext = true;
+  }
   if (drag.kind === 'duplicate-pending') {
     // Alt-click selects the root without inserting a figure.
   } else if (drag.kind === 'toggle-selection') {
@@ -3894,7 +3909,7 @@ function showHelp() { editorSettings?.open("shortcuts"); }
 // data-action for the click delegation below, and while a menu is open it takes
 // every key, so letters typed into it never reach the tool hotkeys.
 const menuHost = $("menu");
-const menuTopInset = () => document.querySelector(".titlebar").getBoundingClientRect().bottom + 6;
+const menuTopInset = () => bandBottom(document) + 6;
 let lastMenuAnchor = null;
 /** The shortcut a menu row shows: the user's binding for commands with a hotkey, else the row's own text. */
 /** A menu row's shortcut: the command's first key (a menu shows one; Settings and the tooltips list them all). */
@@ -4112,8 +4127,11 @@ overlay.addEventListener(
   guarded((e) => {
     e.preventDefault();
     if (state.drag?.kind === 'tweener') {cancelDrag();state.suppressContext=false;return;}
-    if (state.suppressContext) {
-      state.suppressContext = false;
+    if (state.suppressContext) return;
+    // Some platforms emit contextmenu on mouse-down. Wait until we know
+    // whether this press is a click or a bend; never open a menu mid-gesture.
+    if (state.drag?.kind === "maybe-bend") {
+      state.drag.contextMenuOnPress = true;
       return;
     }
     if(construction?.active) {showCommandMenu([["chain-finish","check","Finish chain","Enter"],["chain-cancel","close","Cancel chain","Esc"]],{left:e.clientX,bottom:e.clientY});return;}
@@ -4687,7 +4705,11 @@ const actions = {
       () => zoom(n / 100 / state.view.scale),
     ]),
   ),
-  "scene-settings": () => selectTrack({ id: "scene", kind: "scene" }),
+  "scene-settings": () => {
+    selectTrack({ id: "scene", kind: "scene" });
+    // Where the inspector is a sheet (a phone, an upright tablet), asking for the Scene's properties shows them.
+    if (shell?.presentation("properties") === "sheet") shell.showPanel("properties", { focus: false });
+  },
   settings: () => editorSettings?.open(),
   privacy: () => privacyUI.open(),
   feedback: () => feedbackUI.open(),
@@ -5177,6 +5199,7 @@ timelineHost = createTimelineHost({
   onMount: (timeline) => { timelineUI = timeline; window.styk.timeline = timeline; },
   propertyControls: () => propertyControls, cameraMotionControls: () => cameraMotionControls, drawing: () => drawingController,
   builder: () => builderMode, sharedClipboard: () => sharedClipboard, thumbnails: () => thumbnailRenderer, localization: () => appLocalization,
+  touch: () => touchMode,
 });
 /** What the command registry reads about the editor: the workspace, which decides the scoped shortcuts. */
 function commandContext() {
@@ -5957,6 +5980,7 @@ async function init() {
       state.settings = next;
       try { if (previousMode !== next.timelineMode) timelineHost.mount(); }
       catch (error) { state.settings = previousSettings; throw error; }
+      if (patch.touchInterface !== undefined) touchMode?.refresh();
       if (patch.rendererMode !== undefined && state.renderer) void recoverCanvas(true);
       if (patch.playbackQuality !== undefined && state.playing) selectPlaybackQuality();
       if (patch.hotkeys) { hotkeys.setBindings(next.hotkeys); refreshHotkeyHints(hotkeys); }
@@ -5987,6 +6011,11 @@ async function init() {
     onDonate: desktop?.openDonate ? () => desktop.openDonate() : undefined,
   });
   state.settings = editorSettings.value;
+  // The touch interface (docs/TOUCH.md): decided before the shell lays out, kept current as the window turns.
+  touchMode = installTouchMode({ getSetting: () => state.settings.touchInterface });
+  window.styk.touch = touchMode;
+  // The timeline has a presentation for each interface (touch/timeline-scrubber.mjs): switching mounts it again.
+  touchMode.on((next, previous) => { if (Boolean(next.active) !== Boolean(previous?.active)) timelineHost.mount(); });
   // The inspector's titled sections remember being open across sessions.
   configureInspectorSections(state.settings.inspectorSections, {onChange: (sections) => editorSettings.commit({ inspectorSections: sections })});
   hotkeys.setBindings(state.settings.hotkeys);
@@ -6025,10 +6054,39 @@ async function init() {
     timelineRows: { ruler: TIMELINE_RULER, pinnedRow: TIMELINE_ROW, row: TIMELINE_ROW },
     // The band's first measurement waits for the editor to be ready where it can (topbar.mjs).
     ready: editorReady,
+    touch: touchMode,
   });
   workspaceLayout = shell.workspace;
   window.styk.workspace = workspaceLayout;
   window.styk.shell = shell;
+  window.styk.touchShell = installTouchShell({ touch: touchMode, stageHead, shell });
+  // Press and hold: the right-click menus and the controls' names, for fingers (docs/TOUCH.md).
+  installLongPress({ touch: touchMode, tooltips });
+  // The stage's own: two fingers tap to undo, three to redo, a hold opens the menu of what is under the finger.
+  installCanvasTouch({
+    viewport, overlay, touch: touchMode,
+    holdable: () => !drawingController?.active && !state.playing && !state.previewing && !state.polygon,
+    onHold: ({ x, y }) => {
+      if (state.drag) cancelDrag();
+      releaseCanvasPointer();
+      state.suppressContext = false;
+      overlay.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 2 }));
+    },
+    onUndo: () => { if (state.drag) cancelDrag(); actions.undo(); },
+    onRedo: () => { if (state.drag) cancelDrag(); actions.redo(); },
+  });
+  // The right button and the modifier keys for fingers: the stage's modifier buttons (docs/TOUCH.md).
+  const workspaceElement = document.querySelector(".workspace");
+  window.styk.touchModifiers = touchModifiers = installModifierDock({
+    touch: touchMode, host: workspaceElement, viewport,
+    context: () => ({ workspace: workspaceElement.dataset.mode, tool: workspaceElement.querySelector(".shell-rail .tool-dock [data-tool].active")?.dataset.tool ?? state.tool,
+      spatial: Boolean(editor.figure?.segments?.some((segment) => segment._stykRig?.spatial)) }),
+    // The held keys the modifiers stand in for (hotkeys.mjs: hold R, hold D).
+    setHeld: (command, down) => {
+      if (command === "handle-edit-hold") { state.handleEditHeld = down; requestRender(); }
+      else if (command === "depth-hold") state.depthHeld = down;
+    },
+  });
   const shellAnnouncer = document.createElement("div");
   shellAnnouncer.className = "ui-visually-hidden";
   shellAnnouncer.setAttribute("role", "status");
@@ -6190,7 +6248,10 @@ async function init() {
   actions['chain-cancel'] = () => construction.cancel();
   actions['toggle-builder-snap'] = () => construction.toggleSnap();
   window.styk.builder = builderMode;
-  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:requestRender,onOverlayRender:requestDrawingOverlay,onView:placeArtboard,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getImageSource:()=>({baseURL:importer.baseURL,token:importer.token}),sampleColor:(x,y,signal)=>sampleCanvasColor(x,y,signal),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard});
+  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:requestRender,onOverlayRender:requestDrawingOverlay,onView:placeArtboard,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getImageSource:()=>({baseURL:importer.baseURL,token:importer.token}),sampleColor:(x,y,signal)=>sampleCanvasColor(x,y,signal),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard,
+    // A finger draws in the touch interface (Settings › Draw with a finger); elsewhere it pans, as before.
+    // Automatic draws with a finger only in the touch interface; Always also does on a desktop layout.
+    fingerDrawing:()=>{const mode=state.settings.fingerDraw;return mode==='auto'&&!touchMode?.active?'never':mode;}});
   window.styk.drawing=drawingController;
   // Draw's quick bar is the stage header's tool options until Draw declares option descriptors (M7b): the same
   // element, re-parented once out of #viewport with its handlers and sliders.
@@ -6216,6 +6277,7 @@ async function init() {
   window.styk.clipboard = sharedClipboard;
   window.styk.thumbnails = thumbnailRenderer;
   timelineHost.mount();
+  status("Preparing canvas and effects…", false, true);
   try {
     state.renderer = await createRenderer(canvas, rendererOptions());
   } catch (error) {

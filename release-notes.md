@@ -1,32 +1,70 @@
-# StykAnimate 1.1.0
+# StykAnimate 1.2.0
 
-Drawing layers and smoother editing
+A new workspace, particle effects, Linux and the browser
 
 ### Added
 
-- Drawing layers: draw and animate by hand on their own layers, right alongside your figures.
+- StykAnimate for Linux, with an AppImage you can download and run.
+- Animate in your browser, with project saving, recovery, your own library and offline use after the first visit.
+- Community library: browse free figures and movieclips shared by other animators and insert them straight into your scene.
+- Particle effects: add explosions, auras, beams, smoke and steam, design your own particles, and save reusable presets.
+- Custom layouts: dock, group or float panels wherever you like, and switch between layouts from View → Layout.
+- Command palette: press Ctrl+P or F1 to find any command, setting, layer, figure or frame.
+- Keyboard navigation: F6 moves between editor areas, Ctrl+\ switches to Focus mode, and Ctrl+1 to Ctrl+4 toggle the main panels.
+- Color palettes in every color picker: keep your project's colors, reuse recent ones, and create named palettes for any project.
+- Richer drawing brushes, with tapered strokes, textured tips, steadier lines and adjustable tablet pressure.
+- Moving parts for 3D props, like a pistol's slide or trigger; projects using them need this version or newer.
+- Reshape a whole arc of motion by right-dragging a point on its motion path.
+- Hold Alt and drag a figure to duplicate it, or hold Shift while dragging its origin to move its pinned joints too.
+- Press A while dragging a joint or figure to add frames without letting go.
+- Right-drag to bend lines in Build and Animate.
+- Choose whether pasted figures keep their original layering or appear in front in Canvas settings.
+- Pinch with two fingers to zoom and pan the canvas on a touch screen.
 
 ### Changed
 
-- Better drawing tablet support: pen taps no longer nudge joints, holding the pen still no longer opens the right-click menu, and you can zoom or rotate the view with the pen.
-- Scaling and rotating several figures at once now works like in Pivot, around the figure you drag.
-- Frame counts now match between the Simple timeline, the Advanced timeline and Export.
-- More compact onion skin settings and a clearer audio timeline.
-- Adding and editing effects in the VFX panel is easier.
-- Property labels you can drag to change a value are now marked. Hold Shift or Alt for finer steps.
+- A fresh look, with the StykAnimate typeface, brighter colors and matching panels, menus and dialogs.
+- More room for your animation, with floating canvas tools and panels that adapt to smaller windows.
+- The top bar keeps workspaces, Undo, Redo, Save and Export together and shows whether your project is saved.
+- Redesigned timelines, with stretchable frame cards in Simple mode and clearer pose bars in Advanced mode.
+- Redesigned motion paths, with multiple trails, speed colors and pose previews as you point along them.
+- Easier 3D posing, with on-screen joint dragging, depth adjustment and IK for arms and legs.
+- Drag along a line segment to pose it without having to grab its node precisely.
+- A clearer Export window with live preview, trimming, size options and presets for popular video platforms.
+- Simpler Properties and VFX panels, with common actions close to the selection and individual effect switches.
+- A clearer Build workspace, with simpler part properties and a compact toolbar for splitting, duplicating, flipping and deleting parts.
+- A cleaner Library panel with search, filters and larger previews.
+- Easier-to-find settings and commands, with searchable Settings, grouped menus and shortcut hints.
+- The app chooses a comfortable interface size for your screen, with manual adjustment in Settings.
+- Short hints guide joining figures, placing images, drawing shapes and using the Tweener.
+- A clearer What's new screen that matches the website.
+- New projects start with Blue, a simple stick figure with hand and foot IK for easy posing.
+- The small playback FPS counter is back, and the low-FPS warning has been removed.
 
 ### Fixed
 
-- If the app stops unexpectedly, it now offers to recover your work instead of leaving a black window.
-- Fixed right-click bending on the canvas.
-- Fixed joined figures coming apart when breaking apart or baking a movieclip.
-- Fixed movieclip Scale, Angle, Opacity and Z-index fields in Properties having no effect.
+- Fixed empty windows on Linux Wayland desktops.
+- Fixed browser update notices being delayed after an export.
+- Fixed selecting figures on the canvas while using the Tweener.
+- Fixed patchy onion skins where parts of a figure overlap.
+- Fixed Feedback sometimes opening on the wrong report type.
+- Fixed the timeline and effect list jumping while selecting several frames.
+- Selecting artwork no longer accidentally moves its figure.
+- Fixed leaving Draw sometimes losing your previous layer and selection.
+- Fixed errors appearing behind dialogs, and added confirmation before closing an active export.
+- Fixed typing in a menu switching tools, and the Properties ⋯ menu not opening.
+- Fixed What's new and the privacy prompt overlapping at startup.
+- Fixed Enter not confirming a new project name.
+- Fixed StykAnimate staying open in the background after an unexpected close.
+- Fixed adding figures being refused in some Pivot animations.
 
 ### Performance
 
-- Large animations open, play and edit faster and use less memory, especially freshly imported Pivot files.
-- Posing detailed figures is smoother.
-- Cancelling an import or export no longer delays the next one.
+- Fewer pauses when first adding particle effects or opening their previews.
+- Faster property adjustments in long animations and smoother editing in scenes with many images.
+- 3D figures pose, scrub and play more smoothly, use less memory and save to smaller files.
+- Older Pivot animations open faster, and large ones scrub and zoom more smoothly.
+- Smoother playback and editing in busy scenes, especially on laptops and in Compatibility mode.
 
 Free to create. Powered by your support.
 

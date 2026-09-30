@@ -44,6 +44,7 @@ import {openMenu, menuFor} from './ui/ui-menu.mjs';
 import {createPopover} from './ui/ui-popover.mjs';
 import {setAttr, setHidden, setProp, setText, setVar} from './ui/dom-write.mjs';
 import {setSharedSize} from './shell/layout-schema.mjs';
+import {bandBottom} from './shell/topbar.mjs';
 import {sayTimeline} from './locales/en-timeline.mjs';
 
 /**
@@ -248,7 +249,7 @@ export function createTimelineHeader(ctx, host) {
     overlays: ctx.overlays ?? null,
     icon: (name) => icon(name),
     t: ctx.localization?.()?.t ? (key) => ctx.localization().t(key) : null,
-    topInset: () => (document.querySelector('.titlebar')?.getBoundingClientRect().bottom ?? 0) + 6,
+    topInset: () => bandBottom(document) + 6,
   });
   function toggleMenu(anchor, items, label) {
     const open = menuFor(anchor);
@@ -260,12 +261,28 @@ export function createTimelineHeader(ctx, host) {
   function timelineMenuItems() {
     const tier = document.documentElement.dataset.tier;
     const items = [];
+    // A phone's touch interface folds Simple │ Advanced and Onion's settings into this menu (features/touch.css).
+    const root = document.documentElement.dataset;
+    if (root.input === 'touch' && root.form === 'phone') {
+      const current = modes.querySelector('[aria-pressed="true"]')?.dataset.timelineMode;
+      for (const item of modes.querySelectorAll('[data-timeline-mode]'))
+        items.push({label: item.textContent.trim(), icon: item.dataset.timelineMode === 'simple' ? 'frame' : 'timeline', radio: true, group: 'timeline-mode',
+          checked: item.dataset.timelineMode === current, run: () => item.click()});
+      items.push(null, {label: say('timeline.onionSettings'), icon: 'onion', run: () => $('onion-settings-button').click()});
+      // Auto key's header button would cover the touch action bar on a phone.
+      if (!simple) items.push({label: say('timeline.autoKey'), icon: 'circle', checked: autoKey.getAttribute('aria-pressed') === 'true', run: action('toggle-auto-key')});
+      items.push(null);
+    }
+    const phone = root.input === 'touch' && root.form === 'phone';
     if (sheetButton && !sheetButton.hidden)
       items.push({label: say('timeline.sheet'), icon: 'timeline', run: action('timeline-sheet')}, null);
     if (!cel.hidden && (toolbar.dataset.fold ?? '').split(' ').includes('celmenu'))
       items.push({label: say('timeline.nextCopyName'), icon: 'duplicate', disabled: celMain.disabled, run: () => run(() => host.timeline?.nextDrawing?.(false))},
         ...celItems().map(item => item && {...item, disabled: celMain.disabled}), null);
-    if (tier === 'minimal') {
+    if (tier !== 'minimal' && root.touchLayout === 'tablet-portrait')
+      items.push({label: say('timeline.firstFrame'), icon: 'first', shortcut: shortcut('first-frame'), run: action('first-frame')}, null);
+    // At the minimal width, and on a phone's touch timeline, the header's rarer buttons are rows here.
+    if (tier === 'minimal' || phone) {
       const mode = document.querySelector('.workspace')?.dataset.mode;
       items.push(
         {label: fit.getAttribute('aria-label'), icon: 'fit', run: () => run(() => host.timeline?.fitAll?.())},
@@ -381,9 +398,25 @@ export function createTimelineHeader(ctx, host) {
 
   function setSimple(value) { if (value !== simple) { simple = value; syncFolds(); } }
 
+  // ---- The touch timeline's action bar (touch/timeline-scrubber.mjs): a slot of its own in the header ----
+  const actionsSlot = element('div', null, 'tl-actions');
+  actionsSlot.dataset.slot = 'actions';
+  actionsSlot.hidden = true;
+  end.before(actionsSlot);
+  let actions = null;
+
   // ---- What the components and the host tell the header ----
   let shownCel = false, shownReady = null;
   return {
+    /** The mounted timeline's action bar (the touch interface's), or null to take it away. */
+    setActions(node) {
+      actions = node ?? null;
+      actionsSlot.replaceChildren(...(actions ? [actions] : []));
+      actionsSlot.hidden = !actions;
+      toolbar.toggleAttribute('data-actions', Boolean(actions));
+      requestFold();
+    },
+    get actions() { return actions; },
     /** Add frame's and Next copy's wrapper: an audio clip's selection hides them (audio-timeline.mjs). */
     frameTools: frameWrap,
     /** The zoom range and Fit's name for the mounted component (Advanced's frames or Simple's cards). */

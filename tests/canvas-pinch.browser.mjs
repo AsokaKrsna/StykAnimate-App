@@ -63,7 +63,7 @@ try {
   await touch('touchEnd', []);
   await page.waitForTimeout(150);
   const panned = await view();
-  check('Moving both fingers pans the canvas', near(panned.x - zoomedOut.x, 80, 1) && near(panned.y - zoomedOut.y, 40, 1) && panned.scale === zoomedOut.scale);
+  check('Moving both fingers pans the canvas', near(panned.x - zoomedOut.x, 80, 1) && near(panned.y - zoomedOut.y, 40, 1) && near(panned.scale, zoomedOut.scale, 1e-9));
 
   // The undo history and the selection are untouched by all of that.
   check('Navigating adds nothing to the undo history', await page.evaluate(() => window.styk.editor.canUndo === false));

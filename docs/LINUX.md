@@ -12,6 +12,13 @@ compatibility renderer on a capable GPU. `desktop/gpu-switches.cjs` adds the
 Vulkan feature and the WebGPU opt-in on Linux before Electron starts, merging any
 `--enable-features` given on the command line. Windows and macOS are unchanged.
 
+On a Wayland desktop with XWayland available, ordinary startup automatically
+relaunches through X11 so the window can display Vulkan-backed content. No extra
+flags are needed for `npm start` or the packaged app. An explicit
+`--ozone-platform` launch argument takes precedence; Electron's internally
+selected platform does not. `STYK_WAYLAND=1` keeps native Wayland; combine it
+with `STYK_GPU_UNSAFE=0` to use the compatibility renderer.
+
 - `STYK_GPU_UNSAFE=0` leaves Chromium's own driver allowlist untouched (use it to
   diagnose a driver problem; the app then uses the compatibility renderer).
 - `STYK_GPU_UNSAFE=1` forces the WebGPU opt-in on any platform.
@@ -32,7 +39,9 @@ npm run build:frame-scan               # needs a C++17 compiler (g++ or clang)
 npm run build:sidecar                  # freezes the Pivot codec with PyInstaller
 npm run verify:sidecar
 npm run build:video-encoder            # stages the bundled ffmpeg
-npm run dist:linux                     # release/<version>/StykAnimate-<version>-linux-x86_64.AppImage
+version=$(node -p 'require("./package.json").version')
+npm run dist:linux -- --x64 --publish never "--config.directories.output=release/$version"
+npm run release:verify -- "release/$version" --platform=linux
 ```
 
 The `build:*` scripts run through `scripts/run-python.mjs`, which uses
@@ -58,8 +67,13 @@ The desktop entry registers the document types (`.styk`, `.stkz`, `.stykmov`,
 and `StartupWMClass=stykanimate` groups the window under its launcher.
 Passing a document path on the command line opens it.
 
-Automatic updates stay disabled on Linux until Linux builds are published with
-their update metadata (see `desktop/updates.cjs`).
+The coordinated release workflow publishes the AppImage and `latest-linux.yml`
+alongside the Windows files. Starting with the next release after 1.2.0, a writable
+AppImage checks for updates, downloads them and offers **Restart to update** with
+the usual save/cancel prompt. Keep it in a writable folder such as `~/Applications`.
+Updates replace the same filename atomically, so existing launchers still work.
+Projects and preferences live outside the AppImage. Version 1.2.0 users need one
+manual download of the first updater-enabled release. See [updates](UPDATES.md).
 
 ## Testing on Linux
 

@@ -40,7 +40,10 @@ const PAINT_TOOLS=['brush','eraser','fill','shape'];
 const MAX_STROKE_SAMPLES=65536;
 const unionRects=(a,b)=>{if(!a)return b?{...b}:null;if(!b)return{...a};const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);return{x,y,width:Math.max(a.x+a.width,b.x+b.width)-x,height:Math.max(a.y+a.height,b.y+b.height)-y};};
 export class DrawingController {
-  constructor({editor,state,overlay,viewport,onRender,onOverlayRender=onRender,onView=()=>{},onUI,onError,onStatus,beforeEdit,getImageSource=()=>({}),getTimeline,getClipboard,sampleColor}) {
+  constructor({editor,state,overlay,viewport,onRender,onOverlayRender=onRender,onView=()=>{},onUI,onError,onStatus,beforeEdit,getImageSource=()=>({}),getTimeline,getClipboard,sampleColor,fingerDrawing=()=>'never'}) {
+    // Whether a finger draws (docs/TOUCH.md): 'auto' until a pen is used, 'always', or 'never' (a finger pans).
+    // The app answers 'never' for Automatic outside the touch interface.
+    this.fingerDrawing=fingerDrawing;this.penSeen=false;
     Object.assign(this,{editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getImageSource,getTimeline,getClipboard,sampleColor,settings:{preset:'ink',...BRUSH_DEFAULTS,spacingRatio:.08,color:'#252525',filterRadius:4,hue:0,saturation:0,lightness:0,brightness:0,contrast:0,mirrorX:false,mirrorY:false,selectShape:'lasso',shapeKind:'rect',shapeFill:false,color2:'#ffffff',resolution:2,filter:'smooth',length:1,tolerance:16,expansion:1,gap:0,sampleAll:false},sequence:0,strokeId:0,sessions:new Map(),strokeStats:{batches:0,maxQueueDepth:0,lastRoundTripMs:0}});
     // Recent colours are the shared palette's (color-palette.mjs), so every
     // picker offers what was painted; the property keeps Draw's old name and
@@ -357,6 +360,8 @@ export class DrawingController {
   geometryItem(target){let item;if(target.created||target.migratedFrom)item=buildGeometry({...this.editor.report,figure_types:[...this.editor.report.figure_types,target.figure]},createFrame([target.object])).drawables[0];else item=this.editor.geometry.drawables.find(i=>i.obj.unique_id===target.object.unique_id&&i.type==='image');if(!item)throw new Error('The drawing pose is unavailable.');return item;}
   pixelMatrix(target){return this.gesture?.session?.target===target?(this.gesture.session.matrix??this.gesture.session.pixelMatrix??drawingPixelMatrix(this.geometryItem(target))):drawingPixelMatrix(this.geometryItem(target));}
   pixel(event,target){return inversePoint(this.pixelMatrix(target),this.point(event));}
+  /** Whether a finger draws now: the setting, and in Automatic until a pen has drawn in this session. */
+  fingerDraws(){const mode=this.fingerDrawing?.()??'never';return mode==='always'||(mode==='auto'&&!this.penSeen);}
   async down(event){
     if(this.operation){if(!this.loading)this.loading={id:event.pointerId,sequence:++this.sequence,released:false,samples:[],event:{...pointerSample(event),pointerId:event.pointerId},queued:true};return;}
     if(this.gesture){
@@ -367,9 +372,9 @@ export class DrawingController {
     if(this.loading)return;
     if(event.pointerType==='touch'){
       if(this.penPointerId!=null||performance.now()-(this.lastPen??-Infinity)<700)return;
-      if(!this.state.settings.fingerDrawing){this.overlay.setPointerCapture(event.pointerId);this.gesture={id:event.pointerId,kind:'pan',touch:true,start:pointerSample(event),view:{...this.state.view}};return;}
+      if(!this.fingerDraws()){this.overlay.setPointerCapture(event.pointerId);this.gesture={id:event.pointerId,kind:'pan',touch:true,start:pointerSample(event),view:{...this.state.view}};return;}
     }
-    if(event.pointerType==='pen')this.lastPen=performance.now();
+    if(event.pointerType==='pen'){this.lastPen=performance.now();this.penSeen=true;}
     if(event.altKey&&this.sampleColor&&['brush','fill'].includes(this.tool)){this.overlay.setPointerCapture(event.pointerId);this.gesture={id:event.pointerId,kind:'pick'};this.pickColor(event);return;}
     if((event.ctrlKey||event.metaKey)&&['brush','eraser'].includes(this.tool)){this.overlay.setPointerCapture(event.pointerId);this.gesture={id:event.pointerId,kind:'resize',start:pointerSample(event),size:this.settings.size};return;}
     this._viewRect=null;this.beforeEdit();this.ensurePaintLayer();if(['brush','eraser','fill','shape'].includes(this.tool))this.editor.autoKeyDrawing();this.viewport.focus({preventScroll:true});if(!event.released)this.overlay.setPointerCapture(event.pointerId);

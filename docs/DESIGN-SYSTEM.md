@@ -160,6 +160,15 @@ stylesheet at runtime (JS02).
 | Status | `--danger-*`, `--warning-*`, `--success-*`, `--neutral-dot` | Each has `-text` and `-soft`; danger also `-strong` with `--on-danger`. |
 | Concepts | `--tint-select`, `-time`, `-library`, `-draw`, `-fx`, `-camera`, `-export` | One meaning per hue. `-soft` is a background; `-ink` is for small text and icons. |
 
+**The touch interface** ([docs/TOUCH.md](TOUCH.md)) re-states the scale under
+`:root[data-input="touch"]`: controls 36–52px (a tablet's slightly smaller),
+icons and the small type a step larger, 16px text fields, and the safe areas
+(`--safe-top` … `--safe-left`), the tab bar and the wing as tokens. Its layouts
+live in `layout/touch.css` and its components in `features/touch.css`; they
+follow `data-touch-layout` (written by `src/touch/touch-mode.mjs`), never the
+viewport's size, and start every selector from the root's state inside
+`:where()`, so the desktop's cascade is unchanged.
+
 Canvas painters read `--sheet-*`, `--audio-*`, `--layer-*` and `--canvas-*` as
 plain colour strings, so those never use `light-dark()` or `color-mix()`. Until
 the timelines are rebuilt, legacy rules on `.layer-timeline` and

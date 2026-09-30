@@ -79,9 +79,9 @@ try{
 
   // The default remains navigation; finger painting is explicit and persisted
   // by the ordinary settings owner, with the ordinary sparse drawing history.
-  await page.evaluate(view=>{Object.assign(styk.state.view,view);styk.drawing.onView();styk.settingsUI.commit({fingerDrawing:true});},before);
+  await page.evaluate(view=>{Object.assign(styk.state.view,view);styk.drawing.onView();styk.settingsUI.commit({fingerDraw:'always'});},before);
   await page.evaluate(()=>styk.settingsUI.flush());
-  check('Finger drawing is a persisted opt-in',await page.evaluate(async()=>JSON.parse(localStorage.getItem((await import('/src/settings.mjs')).EDITOR_SETTINGS_KEY)).fingerDrawing===true));
+  check('Finger drawing is a persisted opt-in',await page.evaluate(async()=>JSON.parse(localStorage.getItem((await import('/src/settings.mjs')).EDITOR_SETTINGS_KEY)).fingerDraw==='always'));
   const touch=(type,points)=>cdp.send('Input.dispatchTouchEvent',{type,touchPoints:points.map(([x,y,id])=>({x,y,id}))});
   const fingerRevision=await page.evaluate(()=>styk.editor.revision),y=cy+90;
   await touch('touchStart',[[cx-100,y,21]]);

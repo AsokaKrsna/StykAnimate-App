@@ -66,7 +66,7 @@ function browserStorage(win) {
  * host (see createDockHost), whose `workspace` is `window.styk.workspace`.
  */
 export async function installShell({document: doc = globalThis.document, window: win = globalThis.window, desktop,
-  legacy, platform, onError, onBeforeChange, timelineRows, ready = null, catalog = PANEL_CATALOG} = {}) {
+  legacy, platform, onError, onBeforeChange, timelineRows, ready = null, catalog = PANEL_CATALOG, touch = null} = {}) {
   const registry = createPanelRegistry({catalog});
   const backend = desktop?.getWorkspacePreferences && desktop?.setWorkspacePreferences
     ? desktopLayoutBackend(desktop) : storageLayoutBackend(browserStorage(win));
@@ -76,7 +76,7 @@ export async function installShell({document: doc = globalThis.document, window:
     onError?.(error);
   }});
   await store.load();
-  return createDockHost({document: doc, window: win, registry, store, platform, onBeforeChange, timelineRows, ready});
+  return createDockHost({document: doc, window: win, registry, store, platform, onBeforeChange, timelineRows, ready, touch});
 }
 
 /**
@@ -97,10 +97,13 @@ export function paintedMetrics(timelineRows, metrics = SHELL_METRICS) {
  * (panel-registry.mjs), `store` the layout store (loaded), `timelineRows`
  * the timeline painter's heights (see paintedMetrics), `ready` a promise of
  * the editor being ready (the band's first measurement waits for it where it
- * can; topbar.mjs).
+ * can; topbar.mjs), `touch` the touch mode (src/touch/touch-mode.mjs: its
+ * `state` and `on`), whose layouts the touch stylesheet arranges: the host
+ * then solves for the workspace's own box, folds the menubar into the mark
+ * and leaves the sheets' places to the stylesheet (docs/TOUCH.md).
  */
 export function createDockHost({document: doc = globalThis.document, window: win = globalThis.window, registry, store,
-  platform, onBeforeChange, timelineRows, ready = null} = {}) {
+  platform, onBeforeChange, timelineRows, ready = null, touch = null} = {}) {
   const metrics = paintedMetrics(timelineRows);
   const root = doc.documentElement;
   const app = doc.getElementById('app');
@@ -145,13 +148,26 @@ export function createDockHost({document: doc = globalThis.document, window: win
   // ---------------------------------------------------------------------
   // Solving
 
+  /** The touch mode's state while the touch interface is on, else null. */
+  const touchState = () => (touch?.state?.active ? touch.state : null);
+
   function env() {
+    // #viewport's top in the stage island: the stage header, and in Build the builder's row under it.
+    const head = viewport && stage && !stage.hidden ? Math.round(viewport.getBoundingClientRect().top - stage.getBoundingClientRect().top) || undefined : undefined;
+    const touching = touchState();
+    // The touch layouts place the band, the wing and the tab bar around the workspace themselves (touch.css), so the
+    // solver fits the workspace's own box.
+    if (touching) {
+      // The touch band always has its menubar folded into the mark: its fold steps are the folded pass's.
+      const widths = bandWatch?.forWidth(0);
+      const bandMin = widths?.minimal ? {...widths.minimal, minimal: widths.minimal} : 0;
+      return {width: workspace.offsetWidth, height: workspace.offsetHeight, mode: mode(), platform, footer: 0,
+        bandMin, metrics, measured: {band: 0, stageHead: head}, railColumns, touch: touching};
+    }
     // The window, the band above the workspace and (until M3b) the status bar below it.
     // The band's and the stage header's measured heights (the height tier's values unless the UI scale changed them).
     const chrome = band?.offsetHeight || undefined;
     const below = footer && !footer.hidden ? footer.offsetHeight : 0;
-    // #viewport's top in the stage island: the stage header, and in Build the builder's row under it.
-    const head = viewport && stage && !stage.hidden ? Math.round(viewport.getBoundingClientRect().top - stage.getBoundingClientRect().top) || undefined : undefined;
     return {width: app.clientWidth, height: app.clientHeight, mode: mode(), platform, footer: below,
       bandMin: bandWatch?.forWidth(app.clientWidth) ?? 0, metrics, measured: {band: chrome, stageHead: head}, railColumns};
   }
@@ -210,6 +226,11 @@ export function createDockHost({document: doc = globalThis.document, window: win
     applyBand(s);
     root.dataset.left = s.regions.left.state;
     workspace.dataset.rail = s.rail.side;
+    // Along the stage's bottom on an upright phone (the touch interface), down its side everywhere else.
+    if (s.rail.orientation === 'horizontal') workspace.dataset.railOrientation = 'horizontal';
+    else delete workspace.dataset.railOrientation;
+    const tools = workspace.querySelector('.shell-rail > .tool-dock');
+    if (tools && tools.getAttribute('aria-orientation') !== s.rail.orientation) tools.setAttribute('aria-orientation', s.rail.orientation);
     workspace.dataset.bottomSpan = s.regions.bottom.span;
     if (s.mode === 'rig') workspace.dataset.builderTimeline = s.regions.bottom.state === 'hidden' ? 'hidden' : 'visible';
     else delete workspace.dataset.builderTimeline;
@@ -224,7 +245,8 @@ export function createDockHost({document: doc = globalThis.document, window: win
   /** The band's fold steps, and at the minimal tier the menubar folded into the mark. */
   function applyBand(s) {
     if (!band) return;
-    const steps = (s.tier === 'minimal' ? [MENUBAR_FOLD, ...s.band] : s.band).join(' ');
+    // The touch interface always reaches the menus through the mark (docs/TOUCH.md); a tablet's band folds its words too.
+    const steps = (s.touch ? [MENUBAR_FOLD, ...s.band] : s.tier === 'minimal' ? [MENUBAR_FOLD, ...s.band] : s.band).join(' ');
     if ((band.getAttribute('data-band') ?? '') === steps) return;
     if (steps) band.setAttribute('data-band', steps); else band.removeAttribute('data-band');
   }
@@ -541,6 +563,11 @@ export function createDockHost({document: doc = globalThis.document, window: win
   function placeSheet(side) {
     const sheet = sheetIslands[side];
     if (!sheet) return;
+    // The touch stylesheet places sheets at the window's edges (touch.css).
+    if (touchState()) {
+      for (const name of ['--sheet-top', '--sheet-start', 'max-block-size', 'block-size']) sheet.style.removeProperty(name);
+      return;
+    }
     const area = workspace.getBoundingClientRect();
     const strip = side === 'left' && solution?.regions.left.strip ? solution.regions.left.strip : 0;
     // Down to the stage island's bottom (the timeline's header stays in view), or the workspace's when the stage spans it.
@@ -1051,6 +1078,15 @@ export function createDockHost({document: doc = globalThis.document, window: win
 
   const resizeObserver = new win.ResizeObserver(() => commit());
   resizeObserver.observe(app);
+  // The touch layouts size the workspace around their own chrome (the tab bar, the wing), without resizing the window.
+  resizeObserver.observe(workspace);
+  const stopTouch = touch?.on?.(() => {
+    for (const side of SIDES) closeSheet(side, {restoreFocus: false, recommit: false});
+    closeBody({restoreFocus: false, recommit: false});
+    // The band's controls changed size with the interface: measure its folds again.
+    bandWatch?.refresh();
+    commit();
+  });
   // The band is shorter at the low height tier: its new height solves again.
   if (band) resizeObserver.observe(band);
   // The floating tool bar folds into two columns where its tools in one column would be taller than the room the
@@ -1059,7 +1095,10 @@ export function createDockHost({document: doc = globalThis.document, window: win
   const rail = workspace.querySelector('.shell-rail');
   const railFit = () => {
     const dock = rail.querySelector(':scope > .tool-dock');
-    if (dock && solution?.rail?.rect) {
+    // A horizontal bar (an upright phone) is one row that scrolls sideways; columns are for a bar down the side.
+    if (solution?.rail?.orientation === 'horizontal') {
+      if (railColumns !== 1) { railColumns = 1; rail.toggleAttribute('data-columns', false); schedule(); }
+    } else if (dock && solution?.rail?.rect) {
       const items = [...dock.children].filter(node => node.offsetParent !== null);
       const box = win.getComputedStyle(rail), gap = parseFloat(win.getComputedStyle(dock).rowGap) || 0;
       const add = dock.querySelector(':scope > .rail-add');
@@ -1070,15 +1109,18 @@ export function createDockHost({document: doc = globalThis.document, window: win
           const style = win.getComputedStyle(node);
           return sum + node.offsetHeight + (parseFloat(style.marginTop) || 0) + (parseFloat(style.marginBottom) || 0);
         }, 0);
-      const columns = items.length > 1 && natural > solution.rail.rect.height + 0.5 ? 2 : 1;
+      const columns = mode() === 'rig' || items.length > 1 && natural > solution.rail.rect.height + 0.5 ? 2 : 1;
       if (columns !== railColumns) {
         railColumns = columns;
         rail.toggleAttribute('data-columns', columns === 2);
         schedule();
       }
     }
-    const more = rail.scrollHeight - rail.scrollTop - rail.clientHeight > 1;
+    const horizontal = solution?.rail?.orientation === 'horizontal';
+    const more = !horizontal && rail.scrollHeight - rail.scrollTop - rail.clientHeight > 1;
     if (rail.hasAttribute('data-more-below') !== more) rail.toggleAttribute('data-more-below', more);
+    const after = horizontal && rail.scrollWidth - rail.scrollLeft - rail.clientWidth > 1;
+    if (rail.hasAttribute('data-more-after') !== after) rail.toggleAttribute('data-more-after', after);
   };
   const railObserver = rail ? new win.ResizeObserver(railFit) : null;
   if (rail) {
@@ -1099,6 +1141,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
     if (destroyed) return store.flush();
     destroyed = true;
     abort.abort();
+    stopTouch?.();
     resizeObserver.disconnect();
     railObserver?.disconnect();
     modeObserver.disconnect();
@@ -1123,6 +1166,12 @@ export function createDockHost({document: doc = globalThis.document, window: win
     togglePanel,
     toggleTimelineSheet,
     toggleTall,
+    /** Closes every open sheet (the side panels' and the timeline body's), as Escape or a press outside does. */
+    closeSheets({restoreFocus = false} = {}) {
+      for (const side of SIDES) closeSheet(side, {restoreFocus, recommit: false});
+      closeBody({restoreFocus, recommit: false});
+      commit();
+    },
     canPlace: (id, target) => canPlacePanel(id, target, {mode: mode(), catalog: registry.constraints()}),
     presentation,
     /** The current workspace (animate, draw or rig). */

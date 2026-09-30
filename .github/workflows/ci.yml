@@ -53,36 +53,7 @@ jobs:
         run: node --test website/tests/*.test.mjs cloud/tests/*.test.mjs
 
   web:
-    # The editor as a static site: build it, verify it, run it in a real browser,
-    # and let wrangler validate the Cloudflare configuration without deploying.
-    name: Web build
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24.11.0'
-          cache: npm
-      - name: Install locked dependencies
-        run: |
-          npm ci --no-audit --no-fund
-          npm ci --prefix cloud --no-audit --no-fund
-          npx playwright install --with-deps chromium
-      - name: Build and verify the site
-        run: |
-          npm run web:build
-          npm run web:verify
-      - name: Browser test of the built site
-        # GitHub runners have no GPU: the editor uses its Canvas 2D renderer, which
-        # the test accepts alongside WebGPU.
-        run: node tests/web-build.browser.mjs
-        env:
-          STYK_WEB_DIR: build/web
-      - name: Cloudflare configuration
-        run: npm run web:deploy -- --dry-run
+    uses: ./.github/workflows/web-verify.yml
 
   linux-app:
     # Builds the Linux app from source exactly as a release would, then boots it.
@@ -122,9 +93,16 @@ jobs:
           npm run dist:linux -- --x64 --publish never
           npm run verify:package
       - name: Boot the packaged app
-        run: xvfb-run -a npm run test:boot:packaged
+        run: |
+          xvfb-run -a npm run test:boot:packaged
+          version=$(node -p 'JSON.parse(require("fs").readFileSync("package.json")).version')
+          STYK_PACKAGED_EXECUTABLE="$GITHUB_WORKSPACE/release/StykAnimate-$version-linux-x86_64.AppImage" xvfb-run -a npm run test:boot:packaged
       - name: Export video with the bundled encoder
         run: xvfb-run -a npm run test:export:packaged
+      - name: Verify Linux updates and save before restart
+        run: |
+          STYK_PACKAGED_EXECUTABLE="$GITHUB_WORKSPACE/release/linux-unpacked/stykanimate" xvfb-run -a npm run test:updates:desktop
+          xvfb-run -a npm run test:updates:linux
       - name: Upload the build evidence
         uses: actions/upload-artifact@v4
         with:
@@ -133,4 +111,6 @@ jobs:
             release/*.AppImage
             release/latest-linux.yml
             artifacts/sidecar-smoke.json
+            artifacts/updates/smoke.json
+            artifacts/updates/appimage-smoke.json
           retention-days: 7

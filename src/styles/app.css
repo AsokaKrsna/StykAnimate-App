@@ -44,6 +44,7 @@
 @import url("./layout/topbar.css");
 @import url("./layout/rail.css");
 @import url("./layout/stage.css");
+@import url("./layout/touch.css");     /* the touch interface's layouts (docs/TOUCH.md) */
 @import url("./components/island.css");
 @import url("./components/tabs.css");
 @import url("./components/strip.css");
@@ -107,3 +108,4 @@
 @import url("./features/view-options.css");
 @import url("./features/settings.css");
 @import url("./features/support-desktop.css");  /* the Feedback shell over the lazy support-bridge.css */
+@import url("./features/touch.css");  /* the touch interface's components (docs/TOUCH.md) */

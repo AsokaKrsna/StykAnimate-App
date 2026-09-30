@@ -58,6 +58,8 @@ const INSTALL_TAGS = [
   '<meta name="mobile-web-app-capable" content="yes" />',
   '<meta name="apple-mobile-web-app-capable" content="yes" />',
   '<meta name="apple-mobile-web-app-title" content="StykAnimate" />',
+  // The installed app draws under the status bar; the touch layouts keep their controls inside the safe areas.
+  '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />',
   '<script type="module" src="./src/web-offline.mjs"></script>',
 ];
 

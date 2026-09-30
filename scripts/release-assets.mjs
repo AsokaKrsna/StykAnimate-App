@@ -11,23 +11,38 @@ export async function fileHash(filename, algorithm = 'sha512', encoding = 'base6
   for await (const chunk of createReadStream(filename)) hash.update(chunk);
   return hash.digest(encoding);
 }
-export async function verifyReleaseAssets(directory, version) {
-  const metadata = yaml.load(await readFile(path.join(directory, 'latest.yml'), 'utf8'));
+async function verifyFeed(directory, version, feed, binary) {
+  const metadata = yaml.load(await readFile(path.join(directory, feed), 'utf8'));
   assert.equal(metadata.version, version, 'Update metadata version differs from the release.');
-  const setup = `StykAnimate-${version}-Setup-x64.exe`;
-  assert.equal(metadata.path, setup, 'Only the Setup installer can be an update target.');
-  assert.equal(metadata.files?.length, 1, 'Publish one Windows architecture per feed.');
+  assert.equal(metadata.path, binary, `Unexpected update target in ${feed}.`);
+  assert.equal(metadata.files?.length, 1, 'Publish one architecture per feed.');
   const entry = metadata.files[0];
-  assert.equal(entry.url, setup, 'Unexpected installer name or URL.');
-  assert.equal(entry.size, (await stat(path.join(directory, setup))).size);
-  assert.equal(entry.sha512, await fileHash(path.join(directory, setup)), 'Installer checksum differs from latest.yml.');
+  assert.equal(entry.url, binary, 'Unexpected release asset name or URL.');
+  assert.equal(entry.size, (await stat(path.join(directory, binary))).size);
+  assert.equal(entry.sha512, await fileHash(path.join(directory, binary)), `Asset checksum differs from ${feed}.`);
   assert.equal(metadata.sha512, entry.sha512);
-  const names = [setup, `${setup}.blockmap`, `StykAnimate-${version}-Portable-x64.exe`, 'latest.yml'];
+}
+
+export async function verifyReleaseAssets(directory, version, platform = 'all') {
+  assert.ok(['all', 'win32', 'linux'].includes(platform), 'Choose all, win32 or linux release assets.');
+  const names = [];
+  if (platform !== 'linux') {
+    const setup = `StykAnimate-${version}-Setup-x64.exe`;
+    await verifyFeed(directory, version, 'latest.yml', setup);
+    names.push(setup, `${setup}.blockmap`, `StykAnimate-${version}-Portable-x64.exe`, 'latest.yml');
+  }
+  if (platform !== 'win32') {
+    const appimage = `StykAnimate-${version}-linux-x86_64.AppImage`;
+    await verifyFeed(directory, version, 'latest-linux.yml', appimage);
+    names.push(appimage, 'latest-linux.yml');
+  }
   for (const name of names) assert.ok((await stat(path.join(directory, name))).size > 0, `Missing release asset: ${name}`);
   return names.map(name => path.join(directory, name));
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const { version } = JSON.parse(await readFile('package.json', 'utf8'));
-  const assets = await verifyReleaseAssets(process.argv[2] || `release/${version}`, version);
-  console.log(`Verified ${assets.length} public release assets and installer SHA-512 for ${version}.`);
+  const args = process.argv.slice(2);
+  const platform = args.find(arg => arg.startsWith('--platform='))?.slice(11) ?? 'all';
+  const assets = await verifyReleaseAssets(args.find(arg => !arg.startsWith('--')) || `release/${version}`, version, platform);
+  console.log(`Verified ${assets.length} public release assets and SHA-512 checksums for ${version} (${platform}).`);
 }

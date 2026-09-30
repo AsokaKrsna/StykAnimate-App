@@ -1,6 +1,7 @@
 import {icon} from './icons.mjs';
 import {OnionFrameField} from './onion-frame-field.mjs';
 import {setAttr, setFlag, setProp, setVar} from './ui/dom-write.mjs';
+import {placeFloating} from './ui/anchor-position.mjs';
 
 /** Settings view. All previews and commits go through the shared controller. */
 export class OnionControls {
@@ -28,6 +29,8 @@ export class OnionControls {
     document.body.append(panel);button.setAttribute('aria-controls',panel.id);button.setAttribute('aria-haspopup','dialog');button.setAttribute('aria-expanded','false');
     const on=(target,type,fn)=>target.addEventListener(type,fn,{signal:this.events.signal});
     on(button,'click',event=>{event.stopPropagation();this.sync(true);panel.togglePopover();});
+    // A right-click, or a press and hold on a touch screen (src/touch/long-press.mjs), on Onion opens its settings.
+    on(toggleButton,'contextmenu',event=>{event.preventDefault();event.stopPropagation();this.sync(true);if(!panel.matches(':popover-open'))panel.showPopover();});
     on(panel,'toggle',event=>{button.setAttribute('aria-expanded',String(event.newState==='open'));if(event.newState==='open')this.position();});
     on(panel,'beforetoggle',event=>{if(event.newState==='closed'){controller.cancel(this);for(const field of this.fields)field.finish(false);}});
     on(panel,'keydown',event=>{event.stopPropagation();if(event.key!=='Escape')this.blockNative=false;if(event.key==='Escape'){event.preventDefault();const editing=controller.session;if(editing){controller.cancel();this.sync(true);}else{panel.hidePopover();button.focus();}}});
@@ -61,7 +64,8 @@ export class OnionControls {
     }
     return input.value;
   }
-  position(){const r=this.button.getBoundingClientRect(),panel=this.panel;panel.style.left=`${Math.max(8,Math.min(innerWidth-panel.offsetWidth-8,r.right-panel.offsetWidth))}px`;panel.style.top=`${Math.max(8,Math.min(innerHeight-panel.offsetHeight-8,r.top-panel.offsetHeight-8))}px`;}
+  /** Above the settings button, or above Onion where the header folds the button away (a phone's touch interface). */
+  position(){const anchor=this.button.getClientRects().length?this.button:this.toggleButton;placeFloating(this.panel,anchor,{placement:'top-end',offset:8,overlap:true});}
   sync(force=false){
     const settings=this.controller.settings,enabled=this.controller.getEnabled(),range=this.controller.snapshot();
     // Runs on every editor change (each frame while playing): write only what changed.

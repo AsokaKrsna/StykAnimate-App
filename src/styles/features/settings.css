@@ -25,7 +25,7 @@
     background: var(--surface); color: var(--text-1); box-shadow: var(--elevation-4);
     overflow: hidden; font: var(--type-ui); font-feature-settings: var(--font-features);
   }
-  .styk-settings:where([open]) { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+  .styk-settings:where([open]) { display: grid; grid-template-rows: auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); }
   .styk-settings::backdrop { background: var(--surface-backdrop); }
   .styk-settings :where(button, input, select) { font-family: inherit; }
   .styk-settings :where(.icon) { flex: none; }

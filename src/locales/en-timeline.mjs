@@ -32,6 +32,7 @@ const TEXT = Object.freeze({
   'timeline.onion': 'Onion skin',
   'timeline.autoKey': 'Auto key',
   'timeline.autoKeyTip': 'Auto key: edits add keyframes at the playhead',
+  'timeline.onionSettings': 'Onion skin settings…',
   'timeline.lastFrame': 'Last frame',
   'timeline.previousKey': 'Previous key',
   'timeline.nextKey': 'Next key',

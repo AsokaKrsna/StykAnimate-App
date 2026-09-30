@@ -72,16 +72,20 @@ test('concurrent requests on one port are matched to their own replies', async t
 });
 
 test('aborting rejects immediately and ignores the late reply', async t => {
-  let release;
-  const {port, close} = codec(request => new Promise(resolve => { release = () => resolve({status: 200, headers: {}, body: bytesOf('late')}); }));
+  const received = Promise.withResolvers(), reply = Promise.withResolvers();
+  const {port, close} = codec(request => {
+    if (request.path === '/after') return {status: 200, headers: {}, body: bytesOf('next')};
+    received.resolve();
+    return reply.promise;
+  });
   t.after(close);
   const controller = new AbortController();
   const pending = codecRequest({codecPort: port}, '/api/import', {method: 'POST', body: bytesOf('x'), signal: controller.signal});
-  await new Promise(resolve => setTimeout(resolve, 10));
+  await received.promise;
   controller.abort();
   await assert.rejects(pending, {name: 'AbortError'});
-  release();
-  await new Promise(resolve => setTimeout(resolve, 20));
+  reply.resolve({status: 200, headers: {}, body: bytesOf('late')});
+  assert.equal(await textOf(await codecRequest({codecPort: port}, '/after')), 'next');
   await assert.rejects(codecRequest({codecPort: port}, '/x', {signal: AbortSignal.abort()}), {name: 'AbortError'});
 });
 

@@ -1,5 +1,6 @@
 import {icon} from './icons.mjs';
 import {createEasingControls} from './keyframe-easing-view.mjs';
+import {placeFloating, presentsAsSheet} from './ui/anchor-position.mjs';
 
 const STYLES = `
 .styk-easing-popover{position:fixed;inset:auto;margin:0;padding:6px;width:232px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:auto;box-sizing:border-box;border:1px solid var(--theme-border, #dce1e7);border-radius:8px;background:var(--theme-panel, #fff);color:var(--theme-text, #333);box-shadow:0 4px 20px var(--theme-shadow, #0002);font:11px Inter,InterFallback,'Segoe UI',sans-serif}
@@ -53,6 +54,8 @@ export function showKeyframeEasingPopover() {
   const events = new AbortController(), options = {signal: events.signal};
   const apply = popover.querySelector('[type=submit]'), error = popover.querySelector('[role=alert]');
   const position = () => {
+    // An upright phone's touch interface shows it as a sheet from the bottom edge (anchor-position.mjs).
+    if (presentsAsSheet(popover)) { placeFloating(popover, {x: anchor.x, y: anchor.y}); return; }
     const {width, height} = popover.getBoundingClientRect();
     popover.style.left = `${Math.max(8, Math.min(innerWidth - width - 8, anchor.x - width / 2))}px`;
     popover.style.top = `${Math.max(8, Math.min(innerHeight - height - 8, anchor.y - height - 10))}px`;

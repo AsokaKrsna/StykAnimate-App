@@ -68,7 +68,7 @@ export const SHELL_CONTRACT = Object.freeze({
     // The stage header: the crumb, the view cluster (Build's Handles, Highlight, Isolate and construction
     // background too), zoom and Fit, and the polygon's own controls. The rail holds tools only.
     canvas: ['scene-settings', 'toggle-handles', 'toggle-motion-paths', 'toggle-grid', 'zoom-menu', 'zoom-reset',
-      'finish-polygon', 'cancel-polygon', 'builder-static-handles', 'builder-highlight', 'toggle-isolate', 'builder-canvas-color'],
+      'finish-polygon', 'cancel-polygon', 'builder-static-handles', 'builder-highlight', 'builder-canvas-color'],
     transport: ['first-frame', 'previous-frame', 'play', 'next-frame', 'toggle-loop',
       'toggle-range-edit', 'toggle-onion'],
     insert: ['add-figure', 'add-text', 'import-sprite', 'import', 'movieclip-new', 'movieclip-create',
@@ -86,7 +86,7 @@ export const SHELL_CONTRACT = Object.freeze({
     'copy-builder-appearance', 'paste-builder-appearance', 'rig-connect', 'rig-examples',
     'unsplit-segment', 'origin-segment', 'segment-values', 'add-sprite-segment', 'edit-text',
     'delete-single-segment', 'delete-segment', 'segment-order-front', 'segment-order-up',
-    'segment-order-down', 'segment-order-back', 'toggle-builder-branch', 'duplicate-branch', 'mirror-branch', 'mirror-branch-vertical'],
+    'segment-order-down', 'segment-order-back', 'toggle-builder-branch', 'toggle-isolate', 'duplicate-branch', 'mirror-branch', 'mirror-branch-vertical'],
   // app.mjs setTool, studio-shell (.tool-dock [data-tool]), builder-mode, drawing-view, hotkey-hints.
   tools: ['select', 'rig', 'tweener', 'line', 'chain', 'circle', 'polygon', 'hand', 'drawing-brush',
     'drawing-eraser', 'drawing-fill', 'drawing-lasso', 'drawing-shape', 'drawing-transform'],

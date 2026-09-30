@@ -8,6 +8,7 @@ import {createVfxClip,frameWithVfxTime} from './vfx-clips.mjs';
 import {buildGeneratorBatch,generatorSchedule,scheduleWalker} from './vfx-generators.mjs';
 import {drawGeneratorDraws} from './vfx-generator-canvas.mjs';
 import {isGeneratorType} from './vfx-registry.mjs';
+import {prewarmAtlas} from './vfx-generator-atlas.mjs';
 
 const STAGE={width:240,height:160},WIDTH=120,HEIGHT=80,cache=new Map(),queue=[];let scheduled=false;
 
@@ -18,7 +19,7 @@ export const cachedEffectPreview=(mode,key)=>cache.get(`${mode}:${key}`)??null;
 /** Render the preview for `key` in idle time and hand it to `done(url)`. */
 export function requestEffectPreview(mode,key,done){
  const id=`${mode}:${key}`,url=cache.get(id);if(url){done(url);return;}
- queue.push({id,mode,key,done});if(!scheduled){scheduled=true;idle(drain);}
+ queue.push({id,mode,key,done});if(!scheduled){scheduled=true;void prewarmAtlas().then(()=>idle(drain));}
 }
 const idle=fn=>typeof requestIdleCallback==='function'?requestIdleCallback(fn,{timeout:250}):setTimeout(()=>fn({timeRemaining:()=>8}),16);
 function drain(deadline){
