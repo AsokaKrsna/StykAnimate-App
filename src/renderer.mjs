@@ -135,7 +135,7 @@ struct VertexOut {
   output.position = vec4f(screen.x / globals.viewport.x * 2.0 - 1.0, 1.0 - screen.y / globals.viewport.y * 2.0, 0, 1);
   let center = (globals.clip.xy + globals.clip.zw) * 0.5;
   let angle = globals.row1.w;
-  let delta = screen / globals.viewport.z - center;
+  let delta = screen - center;
   output.clipPoint = center + vec2f(cos(angle)*delta.x+sin(angle)*delta.y,-sin(angle)*delta.x+cos(angle)*delta.y);
   output.localUv = vec4f(p, uv);
   output.a = shape.a;
