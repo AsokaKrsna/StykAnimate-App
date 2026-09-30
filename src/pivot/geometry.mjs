@@ -42,7 +42,7 @@ export function invalidateEvaluationCaches(report) {
 }
 import {interpolateVfx} from '../vfx.mjs';
 import {vfxStack,activeVfx} from '../vfx.mjs';
-import {withVfx,segmentVfx,releaseVfxSurface} from '../vfx-canvas.mjs';
+import {withVfx,segmentVfx,releaseVfxSurface,hasDrawableVfx} from '../vfx-canvas.mjs';
 import {objectBounds} from '../renderer-geometry.mjs';
 export const TAU = Math.PI * 2;
 export const lerp = (a, b, t) => Number(a) + (Number(b) - Number(a)) * t;
@@ -1035,22 +1035,61 @@ export function releaseGeometryResources(ctx, { retainCanvases = false } = {}) {
     scratch.width = 1; scratch.height = 1;
   }
 }
-function isolated(ctx, alpha, paint, cache) {
+/** A conservative user-space rectangle for everything drawGeometry can paint
+ * for these items, or null when effects may paint beyond their artwork.
+ * objectBounds pads strokes by half their width; square caps at an angle reach
+ * up to sqrt(2) times that, so a quarter of the widest stroke is added. */
+function isolationBounds(items, resources) {
+  let widest = 0;
+  for (const s of items) {
+    if (hasDrawableVfx(s) || activeVfx(segmentVfx(s)).length) return null;
+    widest = Math.max(widest, Math.abs(s.thickness ?? 0) + 2 * Math.abs(s.outline ?? 0));
+  }
+  const b = objectBounds(items, resources), pad = widest / 4;
+  return {x: b.x - pad, y: b.y - pad, width: b.width + 2 * pad, height: b.height + 2 * pad};
+}
+/** Composite paint() at alpha as one layer. With bounds, the scratch surface
+ * ends at the layer's far corner and only the layer is cleared and composited:
+ * compositing an OffscreenCanvas snapshots its whole surface, so a frame-sized
+ * layer cost about 1.5 ms per translucent figure even when clipped. The surface
+ * keeps the destination's origin (translated surfaces antialias edges slightly
+ * differently) and nothing is painted outside the bounds, so pixels are unchanged. */
+function isolated(ctx, alpha, paint, cache, bounds = null) {
   if (alpha <= 0) return;
   if (alpha >= 1) {
     paint(ctx);
     return;
   }
+  const width = ctx.canvas.width, height = ctx.canvas.height;
+  let x0 = 0, y0 = 0, x1 = width, y1 = height;
+  if (typeof bounds === 'function') bounds = bounds();
+  if (bounds) {
+    const m = ctx.getTransform();
+    let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+    for (const [x, y] of [[bounds.x, bounds.y], [bounds.x + bounds.width, bounds.y], [bounds.x, bounds.y + bounds.height], [bounds.x + bounds.width, bounds.y + bounds.height]]) {
+      const dx = m.a * x + m.c * y + m.e, dy = m.b * x + m.d * y + m.f;
+      left = Math.min(left, dx); right = Math.max(right, dx); top = Math.min(top, dy); bottom = Math.max(bottom, dy);
+    }
+    if (Number.isFinite(left + top + right + bottom)) {
+      x0 = Math.max(0, Math.floor(left) - 2); y0 = Math.max(0, Math.floor(top) - 2);
+      x1 = Math.min(width, Math.ceil(right) + 2); y1 = Math.min(height, Math.ceil(bottom) + 2);
+      // The isolated brush is private, so an off-surface layer has nothing to paint.
+      if (x1 <= x0 || y1 <= y0) return;
+    }
+  }
+  // Allocations grow in 64-pixel steps, so similar figures reuse one surface.
+  const layerWidth = x1 - x0, layerHeight = y1 - y0;
+  const surfaceWidth = Math.min(width, Math.ceil(x1 / 64) * 64), surfaceHeight = Math.min(height, Math.ceil(y1 / 64) * 64);
   let scratch = cache.get(ctx);
   if (!scratch) {
     scratch =
       typeof OffscreenCanvas !== "undefined"
-        ? new OffscreenCanvas(ctx.canvas.width, ctx.canvas.height)
+        ? new OffscreenCanvas(surfaceWidth, surfaceHeight)
         : ctx.canvas.ownerDocument.createElement("canvas");
     cache.set(ctx, scratch);
   }
-  if (scratch.width !== ctx.canvas.width) scratch.width = ctx.canvas.width;
-  if (scratch.height !== ctx.canvas.height) scratch.height = ctx.canvas.height;
+  if (scratch.width !== surfaceWidth) scratch.width = surfaceWidth;
+  if (scratch.height !== surfaceHeight) scratch.height = surfaceHeight;
   // Opacity and outline isolation must follow the destination's storage policy;
   // otherwise a software export silently creates full-size GPU scratch images.
   const temp = scratch.getContext("2d", {
@@ -1058,7 +1097,7 @@ function isolated(ctx, alpha, paint, cache) {
   });
   if (!temp || temp.isContextLost?.()) throw Object.assign(new Error('The temporary drawing canvas is unavailable.'), { telemetryCode: 'device_lost' });
   temp.setTransform(1, 0, 0, 1, 0, 0);
-  temp.clearRect(0, 0, scratch.width, scratch.height);
+  temp.clearRect(x0, y0, layerWidth, layerHeight);
   temp.setTransform(ctx.getTransform());
   paint(temp);
   if (temp.isContextLost?.()) throw Object.assign(new Error('The temporary drawing canvas was lost while rendering.'), { telemetryCode: 'device_lost' });
@@ -1066,6 +1105,9 @@ function isolated(ctx, alpha, paint, cache) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha *= alpha;
   ctx.imageSmoothingEnabled = false;
+  // A clip keeps the whole-image blend pipeline; a source rectangle does not
+  // round identically.
+  if (x0 > 0 || y0 > 0 || x1 < surfaceWidth || y1 < surfaceHeight) { ctx.beginPath(); ctx.rect(x0, y0, layerWidth, layerHeight); ctx.clip(); }
   ctx.drawImage(scratch, 0, 0);
   ctx.restore();
 }
@@ -1135,7 +1177,8 @@ export function drawGeometry(ctx, geometry, resources = {}) {
       isolated(ctx,owner.opacity,target=>withVfx(target,owner.effects,filtered=>drawGeometry(filtered, {drawables:g.items.map(item => {
         const inner=item._movieclipInner;
         return {...item,slot:item._movieclipPart,_movieclipOwner:inner?.owner,_movieclipPart:inner?.part,_movieclipInner:inner?.inner};
-      })},resources),{bounds:owner.effects?.length?objectBounds(g.items,resources):undefined,domainBounds:owner.effects?.length?(owner.domainBounds??objectBounds(g.items,{...resources,vfxBounds:false})):undefined,scale:owner.scale,cacheHint:()=>vfxCacheHint(g.items),outputRect:geometry.outputRect}),groupCanvases);
+      })},resources),{bounds:owner.effects?.length?objectBounds(g.items,resources):undefined,domainBounds:owner.effects?.length?(owner.domainBounds??objectBounds(g.items,{...resources,vfxBounds:false})):undefined,scale:owner.scale,cacheHint:()=>vfxCacheHint(g.items),outputRect:geometry.outputRect}),groupCanvases,
+        ()=>activeVfx(owner.effects).length?null:isolationBounds(g.items,resources));
       continue;
     }
     const effects=vfxStack(g.items[0]?.obj);
@@ -1174,13 +1217,14 @@ export function drawGeometry(ctx, geometry, resources = {}) {
                 geometry.outputRect,
               ),
             outlineCanvases,
+            () => isolationBounds(outline, resources),
           );
         }
         const clip = !effects.length && !(ow > 0) ? geometry.clipBounds : null;
         drawPrimitives(target, g.items, resources, stroke, !skipPaint, clip, geometry.outputRect);
       },
       {bounds:effects.length?objectBounds(g.items,resources):undefined,domainBounds:effects.length?objectBounds(g.items,{...resources,vfxBounds:false}):undefined,scale:Math.abs(g.items[0]?.obj.scale??1),cacheHint:()=>vfxCacheHint(g.items),outputRect:geometry.outputRect},
-    ),groupCanvases);
+    ),groupCanvases,()=>activeVfx(effects).length?null:isolationBounds(g.items,resources));
   }
 }
 const vectorPaths = new WeakMap();
@@ -1225,11 +1269,22 @@ function strokeWidth(stroke, requested) {
   return stroke.width;
 }
 function drawPrimitives(ctx, items, resources, stroke, paint = true, clip = null, outputRect = null) {
+  // Styles this loop last assigned. Parsing an unchanged colour or line style
+  // again for every primitive dominated dense software frames; branches that
+  // may leave other context state behind forget these values.
+  let fillStyle, strokeStyle, lineCap, lineJoin, lineWidth;
+  const forget = () => { fillStyle = strokeStyle = lineCap = lineJoin = lineWidth = undefined; };
+  const fill = value => { if (value !== fillStyle) ctx.fillStyle = fillStyle = value; };
+  const line = (width, cap, join) => {
+    if (width !== lineWidth) ctx.lineWidth = lineWidth = width;
+    if (cap !== undefined && cap !== lineCap) ctx.lineCap = lineCap = cap;
+    if (join !== lineJoin) ctx.lineJoin = lineJoin = join;
+  };
   for (let itemIndex=0;itemIndex<items.length;itemIndex++) {
     const s=items[itemIndex];
     if(paint&&depthSurface(s)){
       let end=itemIndex+1;while(end<items.length&&depthSurface(items[end]))end++;
-      paintDepthSurfaces(ctx,items.slice(itemIndex,end));itemIndex=end-1;continue;
+      paintDepthSurfaces(ctx,items.slice(itemIndex,end));itemIndex=end-1;forget();continue;
     }
     // Outline and brush-only passes have nothing to paint for a solid mesh.
     if(s.type==='mesh')continue;
@@ -1238,7 +1293,7 @@ function drawPrimitives(ctx, items, resources, stroke, paint = true, clip = null
     // Union consecutive, equally wound faces without crossing painter layers.
     if(paint&&ctx.globalAlpha===1&&opaqueSurfaceTriangle(s)){
       const winding=triangleWinding(s.points),rgb=s.rgb;
-      ctx.fillStyle=rgba(rgb,1);strokeWidth(stroke,0);ctx.beginPath();
+      fill(rgba(rgb,1));strokeWidth(stroke,0);ctx.beginPath();
       let end=itemIndex;
       for(;;){
         const face=items[end],p=face.points;
@@ -1251,12 +1306,13 @@ function drawPrimitives(ctx, items, resources, stroke, paint = true, clip = null
       ctx.fill('nonzero');itemIndex=end;continue;
     }
     const effects=!s._vfxSkipNode&&!s.outline?segmentVfx(s):[];
-    if(activeVfx(effects).length && paint){withVfx(ctx,effects,target=>drawPrimitives(target,[{...s,_vfxSkipNode:true}],resources,stroke),{bounds:objectBounds([s],resources),domainBounds:objectBounds([s],{...resources,vfxBounds:false}),scale:Math.abs(s.obj.scale??1),cacheHint:()=>vfxCacheHint([s]),outputRect});continue;}
+    if(activeVfx(effects).length && paint){withVfx(ctx,effects,target=>drawPrimitives(target,[{...s,_vfxSkipNode:true}],resources,stroke),{bounds:objectBounds([s],resources),domainBounds:objectBounds([s],{...resources,vfxBounds:false}),scale:Math.abs(s.obj.scale??1),cacheHint:()=>vfxCacheHint([s]),outputRect});forget();continue;}
     if (paint) {
       const brush = gradient(ctx, s) || rgba(s.rgb, s.alpha);
-      ctx.fillStyle = brush;
-      ctx.strokeStyle = brush;
+      fill(brush);
+      if (brush !== strokeStyle) ctx.strokeStyle = strokeStyle = brush;
     }
+    if (s.type === "text" || s.type === "image") forget();
     if (s.type === "text") {
       const a = s.asset;
       if (!a?.normalized_svg_path || !a.bounds.width) continue;
@@ -1390,8 +1446,7 @@ function drawPrimitives(ctx, items, resources, stroke, paint = true, clip = null
       for (let i = 1; i < s.points.length; i++) ctx.lineTo(s.points[i].x, s.points[i].y);
       ctx.closePath();
       if (s.outline) {
-        ctx.lineWidth = width;
-        ctx.lineJoin = "round";
+        line(width, undefined, "round");
         ctx.stroke();
       } else ctx.fill("evenodd");
       continue;
@@ -1415,11 +1470,11 @@ function drawPrimitives(ctx, items, resources, stroke, paint = true, clip = null
       );
       if (filled) ctx.fill();
       else if (s.seg.segment_kind === "circle") {
-        if (!s.outline) ctx.fillStyle = rgba([255, 255, 255], s.alpha);
+        if (!s.outline) fill(rgba([255, 255, 255], s.alpha));
         ctx.fill();
       }
       if (!filled && width > 0) {
-        ctx.lineWidth = width;
+        if (width !== lineWidth) ctx.lineWidth = lineWidth = width;
         ctx.stroke();
       }
       continue;
@@ -1428,9 +1483,7 @@ function drawPrimitives(ctx, items, resources, stroke, paint = true, clip = null
     ctx.beginPath();
     ctx.moveTo(s.points[0].x, s.points[0].y);
     for (let i = 1; i < s.points.length; i++) ctx.lineTo(s.points[i].x, s.points[i].y);
-    ctx.lineWidth = width;
-    ctx.lineCap = s.seg.segment_kind === "squareLine" ? "square" : "round";
-    ctx.lineJoin = "round";
+    line(width, s.seg.segment_kind === "squareLine" ? "square" : "round", "round");
     ctx.stroke();
   }
 }
