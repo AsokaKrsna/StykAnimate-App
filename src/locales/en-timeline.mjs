@@ -30,6 +30,8 @@ const TEXT = Object.freeze({
   'timeline.loop': 'Loop playback',
   'timeline.audio': 'Audio',
   'timeline.onion': 'Onion skin',
+  'timeline.autoKey': 'Auto key',
+  'timeline.autoKeyTip': 'Auto key: edits add keyframes at the playhead',
   'timeline.lastFrame': 'Last frame',
   'timeline.previousKey': 'Previous key',
   'timeline.nextKey': 'Next key',

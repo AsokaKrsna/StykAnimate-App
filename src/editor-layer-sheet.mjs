@@ -310,12 +310,13 @@ export const editorLayerSheetMethods={
       const track = plan.get(id), {key, next} = sheetKeyAt(track, tick);
       const patchUids = new Set((key?.movieclipPatches ?? []).flatMap(p => this.getFrameById(p.frameId)?.objects.map(o => o.unique_id) ?? []));
       const changedHere = [...changedUids].filter(uid => owns(uid));
-      if (key?.movieclipPatches && changedHere.length && changedHere.every(uid => patchUids.has(uid))) {
+      if (!this.autoKey && key?.movieclipPatches && changedHere.length && changedHere.every(uid => patchUids.has(uid))) {
         key.empty = !frame.objects.some(o => owns(o.unique_id));
         entry = {key, writeTick: tick, nextTick: next?.tick ?? track.end, patchSources: new Map(), patchOnly: true};
         draft.writes.set(id, entry);
       } else {
-        const writeTick = key && ['constant', 'hold'].includes(key.interpolation) ? key.tick : tick;
+        // Auto key writes at the playhead; otherwise a held cell edits its preceding key.
+        const writeTick = !this.autoKey && key && ['constant', 'hold'].includes(key.interpolation) ? key.tick : tick;
         const written = plan.write(id, writeTick, frame, {easing: key ?? {interpolation: 'constant'}});
         const sourceRecord = written?.value?.frameId ? plan.sources.at(-1) : null;
         entry = {key: written, writeTick, sourceRecord, patchSources: new Map()};
@@ -481,7 +482,7 @@ export const editorLayerSheetMethods={
         }
         const clipPaste=operation.kind==='paste'&&payload?.objects.some(object=>object._stykMovieclip&&owner(object.unique_id)===id);
         if(key?.patchOnly){const end=sheetKeyAt(plan.get(id),entry.tick).next?.tick;if(end!==undefined)plan.write(id,end,at(this.report,end),{easing:sheetKeyAt(plan.get(id),end).key});}
-        plan.write(id,!clipPaste&&inside&&key&&['constant','hold'].includes(key.interpolation)?key.tick:entry.tick,entry.frame,{easing:key??{interpolation:'constant'}});
+        plan.write(id,!this.autoKey&&!clipPaste&&inside&&key&&['constant','hold'].includes(key.interpolation)?key.tick:entry.tick,entry.frame,{easing:key??{interpolation:'constant'}});
       }
     }
     const assets=payload?.definitions.length?{figure_types:{index:this.report.figure_types.length,added:payload.definitions.map(snapshotFigureDefinition)}}:undefined;
@@ -758,6 +759,8 @@ export const editorLayerSheetMethods={
     });}finally{this._sheetClipboard=clipboard;}
   },
   _commitSheetPose(edit,drag){
+    // Auto key behaves like pressing A during the gesture: every edited track keys the playhead.
+    const atPlayhead=Boolean(edit.keyAtPlayhead||this.autoKey);
     const before=edit.source,after=edit.frame,ids=new Set(edit.keyAtPlayheadLayers??[]),old=new Map(before.objects.map(o=>[o.unique_id,o])),current=new Map(after.objects.map(o=>[o.unique_id,o]));
     const owner=uid=>insertionOwner(this,uid,this._newLayerHints);
     const candidates=edit.transaction?[...new Set([...old.keys(),...current.keys()])]:drag.before.map(object=>object.unique_id);
@@ -779,7 +782,7 @@ export const editorLayerSheetMethods={
     for(const id of ids){const track=plan.get(id),{key}=sheetKeyAt(track,edit.tick),hold=key&&edit.tick<track.end&&['constant','hold'].includes(key.interpolation);
       const patchUids=new Set((key?.movieclipPatches??[]).flatMap(patch=>this.getFrameById(patch.frameId).objects.map(object=>object.unique_id)));
       const changed=changedUids.filter(uid=>owner(uid)===id);
-      if(!edit.keyAtPlayhead&&key?.movieclipPatches&&changed.length&&changed.every(uid=>patchUids.has(uid))){
+      if(!atPlayhead&&key?.movieclipPatches&&changed.length&&changed.every(uid=>patchUids.has(uid))){
         key.empty=!after.objects.some(object=>owner(object.unique_id)===id);
         key.movieclipPatches=key.movieclipPatches.map(patch=>{
           const source=this.getFrameById(patch.frameId),members=new Set(source.objects.map(object=>object.unique_id));
@@ -791,7 +794,7 @@ export const editorLayerSheetMethods={
       }
       if(key?.patchOnly){const end=sheetKeyAt(plan.get(id),edit.tick).next?.tick;if(end!==undefined)plan.write(id,end,at(this.report,end),{easing:sheetKeyAt(plan.get(id),end).key});}
       const membershipChanged=[...before.objects,...after.objects].some(object=>usesPresence(object)&&owner(object.unique_id)===id&&old.has(object.unique_id)!==current.has(object.unique_id));
-      plan.write(id,hold&&!membershipChanged&&!edit.keyAtPlayhead?key.tick:edit.tick,after,{easing:key??{interpolation:'constant'}});}
+      plan.write(id,hold&&!membershipChanged&&!atPlayhead?key.tick:edit.tick,after,{easing:key??{interpolation:'constant'}});}
     // Keep the exact gesture preview through publication. Membership and clock
     // edits must be sampled again; ordinary transforms already have their final
     // pose and incremental geometry, including attached descendants.
@@ -835,7 +838,7 @@ export const editorLayerSheetMethods={
         return composed.get(skipPatches);};
       for(const id of ids){const selected=list.filter(e=>(fixed(e.target.kind)?e.target.kind:e.target.kind==='layer'?e.target.id:this.layerForUid(e.target.uid))===id);if(!selected.length)continue;
         const {key:owner}=sheetKeyAt(plan.get(id),tick),
-          target=owner?.tick===tick||['constant','hold'].includes(owner?.interpolation)?owner:null,
+          target=owner?.tick===tick||!this.autoKey&&['constant','hold'].includes(owner?.interpolation)?owner:null,
           patches=target?.movieclipPatches,
           easing=selected.findLast(e=>e.interpolation!==undefined)??target??owner??{interpolation:'constant'};
         const written=plan.write(id,target?target.tick:tick,frameAt(Boolean(patches?.length)||Boolean(target?.patchOnly)),{easing});

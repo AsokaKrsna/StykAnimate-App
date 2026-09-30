@@ -72,6 +72,7 @@ export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   onionCamera: false,
   onionShowOnTop: false,
   onionTimelineMarkers: true,
+  autoKey: false,
   loopPlayback: true,
   fitViewOnPlayback: true,
   playbackQuality: 'normal',
@@ -124,6 +125,7 @@ export function normalizeEditorSettings(value = {}) {
     "onionCamera",
     "onionShowOnTop",
     "onionTimelineMarkers",
+    "autoKey",
     "loopPlayback",
     "fitViewOnPlayback",
   ])

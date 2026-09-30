@@ -39,6 +39,11 @@ export const editorDrawingMethods={
     if(figure&&!drawingMetadata(figure))throw new Error('Convert this image to a drawing before painting.');
     return {id,key,end:next?.tick??track.end,object,figure};
   },
+  /** Auto key: painting on a held drawing first copies it to the playhead. */
+  autoKeyDrawing(id=this.activeLayerId,tick=this.tick) {
+    if(!this.autoKey)return false;let target;try{target=this.drawingTarget(id,tick);}catch{return false;}
+    return target.key.tick!==tick&&Boolean(this.drawingKey([id],tick));
+  },
   drawingKey(ids=[this.activeLayerId],tick=this.tick,{blank=false}={}) {
     assertDrawingTargets(this,ids);const plan=drawingSheetPlan(this,ids),added=[],forks=[];let type=this.report.figure_types.reduce((n,f)=>Math.max(n,f.figure_type_id+1),1),changed=false;
     for(const id of ids){const track=plan.get(id),{key}=sheetKeyAt(track,tick);if(!blank&&key?.tick===tick)continue;

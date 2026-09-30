@@ -82,7 +82,7 @@ export const editorVfxClipMethods={
  // retaining untouched channel arrays and each existing key's easing.
  setVfxClipParameters(id,effectId,values,{key=false,tick=this.tick}={}){const c=find(this,id),effect=c.effects.find(e=>e.id===effectId);if(!effect)throw new Error('Select an effect.');let updated=effect,table=c.keys;
   for(const [param,value] of Object.entries(values)){const property=vfxProperty(effect.type,effectId,param);validateVfxValue(property,value);
-   if(key||c.keys[property]?.length){const time=Math.floor(clipTime(c,tick)),channel=c.keys[property]??[],index=channel.findIndex(k=>k.tick===time),old=channel[index];if(old&&Object.is(old.value,value))continue;
+   if(key||this.autoKey||c.keys[property]?.length){const time=Math.floor(clipTime(c,tick)),channel=c.keys[property]??[],index=channel.findIndex(k=>k.tick===time),old=channel[index];if(old&&Object.is(old.value,value))continue;
     const keys=[...channel],next={...old,tick:time,value,interpolation:old?.interpolation??(vfxDescriptor(property).discrete?'constant':'linear')};if(index<0)keys.push(next);else keys[index]=next;keys.sort((a,b)=>a.tick-b.tick);table={...table,[property]:keys};
    }else if(param==='enabled'){if(updated.enabled!==Boolean(value))updated={...updated,enabled:Boolean(value)};}
    else if(!Object.is(updated.params[param],value))updated={...updated,params:{...updated.params,[param]:value}};

@@ -2162,6 +2162,12 @@ function updateTitle() {
   shownTitle = { name, dirty, revision, words };
   if (documentChanged) desktop?.setDocumentState?.({ name, dirty, revision });
 }
+/** Auto key belongs to the Advanced timeline: edits on held frames key the playhead instead of the preceding key. */
+function syncAutoKey() {
+  editor.autoKey = Boolean(state.settings.autoKey) && state.settings.timelineMode !== "simple";
+  for (const button of document.querySelectorAll('[data-action="toggle-auto-key"]')) button.setAttribute("aria-pressed", String(editor.autoKey));
+  $("timeline")?.closest(".timeline-panel")?.classList.toggle("auto-keying", editor.autoKey);
+}
 function syncSelectionControls() {
   timelineHost.syncRangeEdit();
   if (state.tool === 'select' && !builderMode?.active && !drawingController?.active)
@@ -4617,6 +4623,11 @@ const actions = {
   },
   // The timeline header's Audio button (the Animation menu's row where the header folds it).
   "toggle-audio": () => $("timeline-audio")?.click(),
+  "toggle-auto-key": () => {
+    if (state.settings.timelineMode === "simple") return toast("Auto key works in the Advanced timeline.");
+    editorSettings.commit({ autoKey: !state.settings.autoKey });
+    status(state.settings.autoKey ? "Auto key on: edits add keyframes at the playhead" : "Auto key off");
+  },
   "toggle-loop": () => {
     editorSettings.commit({ loopPlayback: !state.loop });
     $("loop-button").classList.toggle("active", state.loop);
@@ -5157,6 +5168,7 @@ const TOGGLE_STATES = {
   "toggle-grid": () => Boolean(state.settings.canvasGrid),
   "toggle-onion": () => Boolean(state.onion),
   "toggle-loop": () => Boolean(state.loop),
+  "toggle-auto-key": () => Boolean(state.settings.autoKey),
   "toggle-builder-branch": () => Boolean(state.builderBranch || state.builderShiftHeld),
   "toggle-isolate": () => Boolean(state.isolateMode),
   "toggle-builder-snap": () => state.settings.builderSmartSnapping !== false,
@@ -5879,6 +5891,7 @@ async function init() {
       if (patch.playbackQuality !== undefined && state.playing) selectPlaybackQuality();
       if (patch.hotkeys) { hotkeys.setBindings(next.hotkeys); refreshHotkeyHints(hotkeys); }
       onionController.sync();
+      syncAutoKey();
       if (patch.motionPathRange !== undefined || patch.motionPathAllTargets !== undefined) pathCache.clear();
       state.handles = drawingController?.active ? false : next.showHandles;
       state.loop = next.loopPlayback;
@@ -5915,6 +5928,7 @@ async function init() {
   state.handles = state.settings.showHandles;
   state.loop = state.settings.loopPlayback;
   state.motionPaths = state.settings.motionPaths;
+  syncAutoKey();
   window.styk.settingsUI = editorSettings;
   onionControls = new OnionControls({button: $("onion-settings-button"), toggleButton: $("onion-button"), controller: onionController});
   window.styk.onionController = onionController;

@@ -193,8 +193,17 @@ export function createTimelineHeader(ctx, host) {
   readout.addEventListener('click', () => (goTo?.isOpen ? goTo.hide('toggle') : openGoToFrame()));
   controls.querySelector(':scope > .fps-control')?.classList.add('tl-fps');
 
-  // ---- End: Onion, Audio, Timeline… (a folded timeline) and Timeline ⋯ ----
+  // ---- End: Auto key (Advanced), Onion, Audio, Timeline… (a folded timeline) and Timeline ⋯ ----
   const onion = end.querySelector('.timeline-onion-controls');
+  // A record-style toggle: its dot turns red and the playhead follows while edits key the playhead.
+  const autoKey = element('button', null, 'tl-autokey');
+  autoKey.type = 'button';
+  autoKey.dataset.action = 'toggle-auto-key';
+  autoKey.setAttribute('aria-pressed', 'false');
+  autoKey.dataset.tooltip = say('timeline.autoKeyTip');
+  autoKey.innerHTML = `<span class="tl-autokey-dot" aria-hidden="true"></span><span class="ui-label">${say('timeline.autoKey')}</span>`;
+  kit(autoKey, ['ui-button'], {size: 'sm', variant: 'ghost'});
+  onion.before(autoKey);
   onion.classList.add('tl-onion');
   kit(onion, ['ui-split']);
   onion.setAttribute('role', 'group');

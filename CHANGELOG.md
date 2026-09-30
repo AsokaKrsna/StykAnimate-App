@@ -24,6 +24,7 @@ What's new in each version of StykAnimate.
 - Right-drag to bend lines in Build, just like in Animate.
 - A Canvas setting to choose whether pasted figures keep their original layering or appear in front.
 - Pinch with two fingers to zoom and pan the canvas on a touch screen.
+- Auto key in the Advanced timeline: turn it on (K) and every change you make adds a keyframe at the playhead.
 
 ### Changed
 

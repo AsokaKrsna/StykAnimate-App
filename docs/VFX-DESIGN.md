@@ -1,6 +1,6 @@
 # VFX implementation
 
-VFX use the existing layer/pose editing system. There is no separate VFX timeline, autokey mode, or parameter-key interface. Effects are instance data and stay editable in native files.
+VFX use the existing layer/pose editing system. There is no separate VFX timeline or parameter-key interface; the Advanced timeline's Auto key also keys effect values. Effects are instance data and stay editable in native files.
 
 ## User interaction
 

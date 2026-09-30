@@ -67,6 +67,16 @@
   .tl-fps > input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 0; }
 
   .tl-onion { margin: 0; padding: 0; border: 0; gap: 0; }
+  /* Auto key (Advanced only): a record dot that fills red while edits key the playhead; the playhead turns red too. */
+  .tl-autokey { gap: var(--space-1); }
+  .tl-autokey-dot { inline-size: 8px; block-size: 8px; border: 1.5px solid currentColor; border-radius: 50%; opacity: 0.7; }
+  .tl-autokey:where([aria-pressed="true"]) { color: var(--danger-text); }
+  .tl-autokey:where([aria-pressed="true"]) .tl-autokey-dot {
+    border-color: var(--danger-dot); background: var(--danger-dot); opacity: 1;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger-dot) 22%, transparent);
+  }
+  .timeline-panel:where(.simple-mode) .tl-autokey { display: none; }
+  .timeline-panel:where(.auto-keying) .layer-timeline { --sheet-playhead: var(--danger-dot); --sheet-playhead-tab: var(--danger-dot); }
   /* Audio's dot: only while the animation has sound. */
   .tl-audio:where([data-has-audio="true"])::after {
     inset: 5px 5px auto auto; inline-size: 6px; block-size: 6px;

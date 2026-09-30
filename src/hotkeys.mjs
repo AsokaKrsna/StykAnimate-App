@@ -48,6 +48,7 @@ group('Animation', [
   ['next-keyframe', 'Jump to next keyframe', ['Shift+Period'], {repeat: true}],
   ['first-frame', 'First frame', ['Home']], ['last-frame', 'Last frame', ['End']],
   ['toggle-loop', 'Toggle playback loop'], ['toggle-onion', 'Toggle onion skin', ['KeyO']],
+  ['toggle-auto-key', 'Toggle auto key', ['KeyK']],
 ]);
 group('Timeline', [
   ['remove-frames', 'Remove frames', ['Shift+F5']],
