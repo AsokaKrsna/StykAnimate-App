@@ -34,9 +34,9 @@ try{
     if(body&&name==='playback.mjs'&&process.env.STYK_PROBE_WORKERS){
       const count=Number(process.env.STYK_PROBE_WORKERS);
       if(!Number.isInteger(count)||count<1||count>4)throw new Error('Worker diagnostic count must be between one and four.');
-      const code=body.toString(),signature='workerCount, workerURL =';
-      if(!code.includes(signature))throw new Error('Worker diagnostic override could not be applied.');
-      body=Buffer.from(code.replace(signature,`workerCount = ${count}, workerURL =`));
+      const code=body.toString(),signature=/\bworkerCount,(?=\s*maxWorkerBytes\b)/;
+      if(!signature.test(code))throw new Error('Worker diagnostic override could not be applied.');
+      body=Buffer.from(code.replace(signature,`workerCount = ${count},`));
       result.environment.workerCount=count;result.executedPlaybackHash=digest(body);
     }
     if(body&&name==='playback-resources.mjs'&&process.env.STYK_PROBE_CPU_PATHS==='1'){
