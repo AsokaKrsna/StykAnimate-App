@@ -269,9 +269,11 @@
   }
   :where(:root[data-form="tablet"]) .tl-head:where([data-actions]) > .tl-actions { grid-row: 2; grid-column: 1 / -1; border-block-start: 1px solid var(--line-1); padding-block-start: var(--space-1); }
   :where(:root[data-form="tablet"]) .tl-touch-action { flex-grow: 0; min-inline-size: 64px; }
-  /* On a phone First frame, Loop, Audio and Auto key are rows of Timeline ⋯ (timeline-header.mjs), as at the minimal width. */
+  /* On a phone First frame, Loop and Audio are rows of Timeline ⋯ (timeline-header.mjs), as at the minimal width. */
   :where(:root[data-form="phone"]) .tl-head .tl-controls > :where(.tl-first, .tl-loop, .tl-fps) { display: none; }
-  :where(:root[data-form="phone"]) .tl-head .tl-end > :where(.tl-audio, .shell-timeline-sheet, .tl-autokey) { display: none; }
+  :where(:root[data-form="phone"]) .tl-head .tl-end > :where(.tl-audio, .shell-timeline-sheet) { display: none; }
+  /* Auto key is a row of Timeline ⋯ on touch, leaving the header to the touch action bar. */
+  :where(:root[data-input="touch"]) .tl-head .tl-end > .tl-autokey { display: none; }
 
   /* The rows: names a finger reads and hits; the playhead a bold line with its frame on a tab. */
   .layer-timeline:where([data-touch]) { min-block-size: 0; }

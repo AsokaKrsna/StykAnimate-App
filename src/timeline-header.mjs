@@ -268,10 +268,11 @@ export function createTimelineHeader(ctx, host) {
       for (const item of modes.querySelectorAll('[data-timeline-mode]'))
         items.push({label: item.textContent.trim(), icon: item.dataset.timelineMode === 'simple' ? 'frame' : 'timeline', radio: true, group: 'timeline-mode',
           checked: item.dataset.timelineMode === current, run: () => item.click()});
-      items.push(null, {label: say('timeline.onionSettings'), icon: 'onion', run: () => $('onion-settings-button').click()});
-      // Auto key's header button would cover the touch action bar on a phone.
-      if (!simple) items.push({label: say('timeline.autoKey'), icon: 'circle', checked: autoKey.getAttribute('aria-pressed') === 'true', run: action('toggle-auto-key')});
-      items.push(null);
+      items.push(null, {label: say('timeline.onionSettings'), icon: 'onion', run: () => $('onion-settings-button').click()}, null);
+    }
+    // The touch timeline's action bar needs the header's room: Auto key is a row here (features/touch.css).
+    if (root.input === 'touch' && !simple) {
+      items.push({label: say('timeline.autoKey'), icon: 'circle', checked: autoKey.getAttribute('aria-pressed') === 'true', run: action('toggle-auto-key')}, null);
     }
     const phone = root.input === 'touch' && root.form === 'phone';
     if (sheetButton && !sheetButton.hidden)
