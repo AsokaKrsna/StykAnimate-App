@@ -46,7 +46,5 @@ void main(){
  if(operation==25){vec4 front=texture(originalImage,uv),inner=texture(maskImage,uv),b=brush();float outer=max(0.,c.a-front.a)*p.x*b.a;vec4 ring=inner+vec4(b.rgb*outer,outer)*(1.-inner.a);pixel=p.y>0.?ring:ring+front*(1.-ring.a);return;}
  if(operation==26){pixel=mix(texture(originalImage,uv),c,p.x);return;}
  if(operation==27){vec2 xy=globalPixel()/p.y+vec2(p.z*.73,p.z*1.17),offset=vec2(0);float weight=1.,total=0.;for(int i=0;i<4;i++){if(float(i)>=q.x)break;offset+=vec2(noiseAt(xy,p.w+float(i)*37.,1.),noiseAt(xy+vec2(19.1,7.7),p.w+131.+float(i)*37.,1.))*weight;total+=weight;weight*=.5;xy*=2.;}pixel=sampleGlobal(globalPixel()+(offset/total*2.-1.)*p.x);return;}
- // Readback: straight alpha, with the image's first row in framebuffer row 0.
- if(operation==28){vec4 s=texture(sourceImage,vec2(uv.x,1.-uv.y));pixel=vec4(s.a>.000001?s.rgb/s.a:vec3(0),s.a);return;}
  pixel=c;
 }`;

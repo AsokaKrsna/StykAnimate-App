@@ -22,23 +22,23 @@ function install(t,events,sizes){
 }
 const blur=()=>{const effect=createVfx('blur','blur');effect.params.radius=3;return effect;};
 
-test('the pixel route reads the last pass once and never resizes the drawing buffer',t=>{
+test('the region route grows the drawing buffer in steps and never shrinks it for a smaller figure',t=>{
   const events=[],sizes=[];install(t,events,sizes);
   const gpu=new VfxGPU();
   try{
-    const calls=method=>events.filter(event=>event.method===method);
-    for(const [width,height] of [[640,512],[608,544],[700,96]]){
-      events.length=0;
-      const result=gpu.run({width,height},[blur()],{scale:1,pixels:true});
-      assert.equal(result.straight,true);assert.equal(result.width,width);assert.equal(result.height,height);
-      assert.equal(result.pixels.length,width*height*4);assert.ok(result.pixels instanceof Uint8ClampedArray);
-      assert.equal(calls('readPixels').length,1);
-      assert.deepEqual(calls('readPixels')[0].args.slice(0,4),[0,0,width,height]);
-      // The default framebuffer is never a pass target on this route.
-      assert.ok(calls('bindFramebuffer').every(event=>event.args[1]!==null));
+    const expected=[[640,512,768,512],[608,544,768,768],[700,96,768,768],[300,200,768,768],[900,40,1024,768]];
+    for(const [width,height,canvasWidth,canvasHeight] of expected){
+      const result=gpu.run({width,height},[blur()],{scale:1,region:true});
+      assert.equal(result.canvas,gpu.canvas);
+      assert.deepEqual([gpu.canvas.width,gpu.canvas.height],[canvasWidth,canvasHeight]);
+      // WebGL draws bottom-up: the result is the lower-left of the canvas image.
+      assert.deepEqual([result.x,result.y,result.width,result.height],[0,canvasHeight-height,width,height]);
+      const viewport=events.filter(event=>event.method==='viewport').at(-1).args;
+      assert.deepEqual(viewport,[0,0,width,height]);
     }
-    assert.deepEqual(sizes,[],'Each drawing-buffer resize waits for the graphics process.');
-    assert.ok(gpu.programs.has(28),'The last pass converts to straight alpha with the first image row first.');
+    assert.deepEqual(sizes,[['width',768],['height',512],['height',768],['width',1024]],'Five figures resize the drawing buffer three times, not ten.');
+    assert.equal(events.filter(event=>event.method==='readPixels').length,0);
+    gpu.releasePixels();assert.deepEqual([gpu.canvas.width,gpu.canvas.height],[1,1],'A quiet period releases the grown buffer.');
   }finally{gpu.destroy();}
 });
 
@@ -48,44 +48,31 @@ test('the canvas route keeps presenting on a drawing buffer of the surface size'
   try{
     const result=gpu.run({width:64,height:48},[blur()],{scale:1});
     assert.equal(result,gpu.canvas);assert.deepEqual(sizes,[['width',64],['height',48]]);
-    assert.equal(events.filter(event=>event.method==='readPixels').length,0);
-    assert.ok(!gpu.programs.has(28));
   }finally{gpu.destroy();}
 });
 
-test('small readbacks share one retained buffer; a large one is not kept between runs',t=>{
-  const events=[],sizes=[];install(t,events,sizes);
-  const gpu=new VfxGPU();
-  try{
-    const first=gpu.run({width:100,height:80},[blur()],{pixels:true}),buffer=first.pixels.buffer;
-    assert.equal(gpu.run({width:90,height:60},[blur()],{pixels:true}).pixels.buffer,buffer);
-    const large=gpu.run({width:2048,height:1024},[blur()],{pixels:true});
-    assert.notEqual(large.pixels.buffer,buffer);assert.equal(large.pixels.length,2048*1024*4);
-    assert.ok(gpu.readback.byteLength<=4*1024*1024,'Only a bounded buffer stays with the executor.');
-    gpu.releasePixels();assert.equal(gpu.readback,null);
-  }finally{gpu.destroy();}
-});
-
-test('effects painted for a destination in memory read pixels; other destinations keep the executor canvas',t=>{
+test('Canvas effects copy only the filtered region and keep the established source surface',t=>{
   const events=[],sizes=[];install(t,events,sizes);
   const run=VfxGPU.prototype.run,requests=[];
-  VfxGPU.prototype.run=function(source,stack,options){requests.push(options.pixels);return {width:source.width,height:source.height};};
+  const executorCanvas={width:1024,height:768};
+  VfxGPU.prototype.run=function(source,stack,options){requests.push(options.region);return {canvas:executorCanvas,x:0,y:768-source.height,width:source.width,height:source.height};};
   t.after(()=>{VfxGPU.prototype.run=run;});
-  const destination=attributes=>{
-    const context={canvas:{width:64,height:48},getContextAttributes:()=>attributes,getTransform:()=>({a:1,b:0,c:0,d:1,e:0,f:0}),save(){},restore(){},setTransform(){},drawImage(){}};
-    return context;
-  };
-  // The source surface of this fixture is the WebGL stand-in's canvas class.
   const sources=[];
   const Canvas=globalThis.OffscreenCanvas;
   globalThis.OffscreenCanvas=class extends Canvas{getContext(kind,options){if(kind==='webgl2')return super.getContext(kind);sources.push(options);return {setTransform(){},clearRect(){},canvas:this};}};
   t.after(()=>{globalThis.OffscreenCanvas=Canvas;});
+  const draws=[];
+  const destination=attributes=>({canvas:{width:64,height:48},getContextAttributes:()=>attributes,getTransform:()=>({a:1,b:0,c:0,d:1,e:0,f:0}),save(){},restore(){},setTransform(){},drawImage(...args){draws.push(args);}});
   const bounds={x:8,y:8,width:20,height:16};
   withVfx(destination({willReadFrequently:true}),[blur()],()=>{},{bounds});
-  withVfx(destination({willReadFrequently:false}),[blur()],()=>{},{bounds});
   withVfx(destination(undefined),[blur()],()=>{},{bounds});
-  assert.deepEqual(requests,[true,false,false]);
-  assert.deepEqual(sources,[{willReadFrequently:true},undefined,undefined],'The source follows the destination storage.');
+  assert.deepEqual(requests,[true,true]);
+  assert.deepEqual(sources,[undefined,undefined],'Software and accelerated destinations share one source policy, as worker captures do.');
+  assert.equal(draws.length,2);
+  for(const [image,sx,sy,w,h,,,dw,dh] of draws){
+    assert.equal(image,executorCanvas);
+    assert.deepEqual([sx,sy,dw,dh],[0,768-h,w,h],'The copy reads the lower-left result at its own size.');
+  }
 });
 
 test('effect pipelines compile ahead of first use without replacing one created on demand',async t=>{

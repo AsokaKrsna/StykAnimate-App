@@ -5,7 +5,6 @@ import {vfxVertex as vertex,vfxFragment as fragment} from './vfx-shaders.mjs';
 import {vfxWebGPUFor,releaseVfxWebGPU} from './vfx-webgpu.mjs';
 import {fitsVfxSurface,vfxSurfaceError,VFX_MAX_DIMENSION} from './vfx-surface.mjs';
 import {filterVfxCPU,releaseVfxCPU,releaseVfxCPUInput} from './vfx-cpu.mjs';
-const READBACK_RETAINED_BYTES=4*1024*1024;
 export class VfxGPU {
  constructor(){
   this.canvas=new OffscreenCanvas(1,1);const gl=this.gl=this.canvas.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:false,depth:false,stencil:false,preserveDrawingBuffer:true});
@@ -17,7 +16,7 @@ export class VfxGPU {
   this.slots=[];this.framebuffer=gl.createFramebuffer();this.stats={passes:0,bytes:0,calls:0};
  }
  program(operation){
-  if(!Number.isInteger(operation)||operation<0||operation>28)throw messageError(new RangeError(''), "errors.vfxGpu.unknownVfxGraphicsOperation", {});
+  if(!Number.isInteger(operation)||operation<0||operation>27)throw messageError(new RangeError(''), "errors.vfxGpu.unknownVfxGraphicsOperation", {});
   let entry=this.programs.get(operation);if(entry)return entry;
   const gl=this.gl,shader=this.compile(gl.FRAGMENT_SHADER,fragment.replace('uniform int operation,paintType,stopCount;',`const int operation=${operation}; uniform int paintType,stopCount;`)),program=gl.createProgram();gl.attachShader(program,this.vertexShader);gl.attachShader(program,shader);gl.linkProgram(program);gl.deleteShader(shader);
   if(!gl.getProgramParameter(program,gl.LINK_STATUS)){const reason=gl.getProgramInfoLog(program);gl.deleteProgram(program);throw messageError(new Error(''), "errors.vfxGpu.vfxProgram", {reason: reason});}
@@ -27,17 +26,17 @@ export class VfxGPU {
   const gl=this.gl;let slot=this.slots[index];if(!slot){const texture=gl.createTexture();slot={texture,width:0,height:0};this.slots[index]=slot;gl.bindTexture(gl.TEXTURE_2D,texture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);}
   gl.bindTexture(gl.TEXTURE_2D,slot.texture);if(slot.width!==width||slot.height!==height){slot.width=width;slot.height=height;gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,null);}return slot;
  }
- /** Returns this executor's canvas. With `pixels`, returns straight-alpha
-  * `{pixels,width,height,straight}` read from the last pass instead, valid
-  * until the next run: for a destination in memory. Presenting on the canvas
-  * resizes its drawing buffer for every surface size, and each resize and the
-  * later read of the canvas waits for the graphics process; the pixel route
-  * waits once and never touches the drawing buffer. */
- run(source,stack,{scale=1,origin={x:0,y:0},outputSize,pixels=false}={}){
+ /** Returns this executor's canvas, sized to the source. With `region`, the
+  * drawing buffer only grows, in 256-pixel steps, and the result is the
+  * rectangle `{canvas,x,y,width,height}` of that canvas until the next run.
+  * Each drawing buffer resize waits for the graphics process, and figures of
+  * different sizes resized it for every filtered figure. */
+ run(source,stack,{scale=1,origin={x:0,y:0},outputSize,region=false}={}){
   stack=activeVfx(stack);if(!stack.length)return source;
   const gl=this.gl,w=source.width,h=source.height;if(gl.isContextLost())throw messageError(new Error(''), "errors.vfxGpu.theVfxGraphicsContextWasLostRetryAfter", {});
   if(!fitsVfxSurface(w,h,this.maxDimension))throw vfxSurfaceError();
-  if(!pixels){if(this.canvas.width!==w)this.canvas.width=w;if(this.canvas.height!==h)this.canvas.height=h;}
+  const canvasWidth=region?Math.max(this.canvas.width,Math.min(this.maxDimension,Math.ceil(w/256)*256)):w,canvasHeight=region?Math.max(this.canvas.height,Math.min(this.maxDimension,Math.ceil(h/256)*256)):h;
+  if(this.canvas.width!==canvasWidth)this.canvas.width=canvasWidth;if(this.canvas.height!==canvasHeight)this.canvas.height=canvasHeight;
   gl.disable(gl.BLEND);gl.activeTexture(gl.TEXTURE0);const input=this.slot(0,w,h);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,source);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
   this.stats.passes=0;let brushType=0,brushAngle=0,brushStops=1;
@@ -81,16 +80,10 @@ export class VfxGPU {
     else if(type==='crt')pass(24,[p.amount,p.spacing*scale,p.curvature,p.chromatic*scale],[p.phase*scale,0,0,0]);
     if(strengthSource)pass(26,[p.effectStrength,0,0,0],undefined,strengthSource);
   }
-  this.stats.calls++;this.stats.bytes=(w*h+this.slots.reduce((n,s)=>n+(s?s.width*s.height:0),0))*4;
-  if(pixels){
-   pass(28);
-   gl.bindFramebuffer(gl.FRAMEBUFFER,this.framebuffer);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,current.texture,0);
-   // Small results reuse one buffer; a large one is not retained between runs.
-   const bytes=w*h*4,buffer=bytes<=READBACK_RETAINED_BYTES?(this.readback?.length>=bytes?this.readback:this.readback=new Uint8Array(Math.min(READBACK_RETAINED_BYTES,bytes*2))):new Uint8Array(bytes);
-   gl.readPixels(0,0,w,h,gl.RGBA,gl.UNSIGNED_BYTE,buffer);
-   return {pixels:new Uint8ClampedArray(buffer.buffer,0,bytes),width:w,height:h,straight:true};
-  }
-  pass(0,undefined,undefined,current,w,h,true);gl.flush();return this.canvas;
+  // The last pass draws the bottom-left w×h of the drawing buffer. Displayed
+  // rows run top-down, so that is the image's lower-left at y=height-h.
+  pass(0,undefined,undefined,current,w,h,true);gl.flush();this.stats.calls++;this.stats.bytes=(canvasWidth*canvasHeight+this.slots.reduce((n,s)=>n+(s?s.width*s.height:0),0))*4;
+  return region?{canvas:this.canvas,x:0,y:canvasHeight-h,width:w,height:h}:this.canvas;
  }
  /** Compile the programs no effect has needed yet, one per task. A program
   * compiles on the thread that presents frames and its status is read
@@ -100,8 +93,8 @@ export class VfxGPU {
   if(this.prewarming)return;this.prewarming=true;let operation=0;
   const step=()=>{
    if(!this.prewarming||this.gl.isContextLost())return;
-   while(operation<=28&&this.programs.has(operation))operation++;
-   if(operation>28)return;
+   while(operation<=27&&this.programs.has(operation))operation++;
+   if(operation>27)return;
    try{this.program(operation++);}catch{return;}
    schedule(step);
   };
@@ -114,10 +107,10 @@ export class VfxGPU {
   const gl=this.gl;
   gl.bindFramebuffer(gl.FRAMEBUFFER,this.framebuffer);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,null,0);gl.bindFramebuffer(gl.FRAMEBUFFER,null);
   for(let unit=0;unit<3;unit++){gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,null);}gl.activeTexture(gl.TEXTURE0);
-  for(const slot of this.slots)if(slot)gl.deleteTexture(slot.texture);this.slots=[];this.readback=null;
+  for(const slot of this.slots)if(slot)gl.deleteTexture(slot.texture);this.slots=[];
   this.canvas.width=this.canvas.height=1;this.stats.bytes=4;gl.flush();
  }
- destroy(){this.prewarming=false;for(const slot of this.slots)if(slot)this.gl.deleteTexture(slot.texture);this.slots=[];this.readback=null;this.gl.deleteFramebuffer(this.framebuffer);for(const {program} of this.programs.values())this.gl.deleteProgram(program);this.programs.clear();this.gl.deleteShader(this.vertexShader);this.gl.getExtension('WEBGL_lose_context')?.loseContext();this.canvas.width=this.canvas.height=1;}
+ destroy(){this.prewarming=false;for(const slot of this.slots)if(slot)this.gl.deleteTexture(slot.texture);this.slots=[];this.gl.deleteFramebuffer(this.framebuffer);for(const {program} of this.programs.values())this.gl.deleteProgram(program);this.programs.clear();this.gl.deleteShader(this.vertexShader);this.gl.getExtension('WEBGL_lose_context')?.loseContext();this.canvas.width=this.canvas.height=1;}
 }
 let executor,idleTimer,lastUse=0,sharedDevice=null,workerResources;
 /** One synchronous capture owns its private pixel storage. Its bounded graphics

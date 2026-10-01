@@ -20481,7 +20481,7 @@
     "locations": [
       "src/drawing-composite-worker.mjs:10",
       "src/raster-surfaces.mjs:9",
-      "src/vfx-gpu.mjs:130"
+      "src/vfx-gpu.mjs:123"
     ],
     "context": "if(previewActive)throw messageError(new Error(''), \"errors.rasterSurfaces.aRasterScratchSurfaceCannotBeUsedConcurrently\", {});"
   },
@@ -22955,32 +22955,32 @@
   },
   "errors.vfxGpu.theVfxGraphicsContextWasLostRetryAfter": {
     "locations": [
-      "src/vfx-gpu.mjs:38"
+      "src/vfx-gpu.mjs:36"
     ],
     "context": "const gl=this.gl,w=source.width,h=source.height;if(gl.isContextLost())throw messageError(new Error(''), \"errors.vfxGpu.theVfxGraphicsContextWasLostRetryAfter\", "
   },
   "errors.vfxGpu.unknownVfxGraphicsOperation": {
     "locations": [
-      "src/vfx-gpu.mjs:20",
+      "src/vfx-gpu.mjs:19",
       "src/vfx-webgpu.mjs:98"
     ],
-    "context": "if(!Number.isInteger(operation)||operation<0||operation>28)throw messageError(new RangeError(''), \"errors.vfxGpu.unknownVfxGraphicsOperation\", {});"
+    "context": "if(!Number.isInteger(operation)||operation<0||operation>27)throw messageError(new RangeError(''), \"errors.vfxGpu.unknownVfxGraphicsOperation\", {});"
   },
   "errors.vfxGpu.vfxProgram": {
     "locations": [
-      "src/vfx-gpu.mjs:23"
+      "src/vfx-gpu.mjs:22"
     ],
     "context": "if(!gl.getProgramParameter(program,gl.LINK_STATUS)){const reason=gl.getProgramInfoLog(program);gl.deleteProgram(program);throw messageError(new Error(''), \"erro"
   },
   "errors.vfxGpu.vfxRequireAnAvailableWebgl2GraphicsContext": {
     "locations": [
-      "src/vfx-gpu.mjs:12"
+      "src/vfx-gpu.mjs:11"
     ],
     "context": "if(!gl)throw messageError(new Error(''), \"errors.vfxGpu.vfxRequireAnAvailableWebgl2GraphicsContext\", {});"
   },
   "errors.vfxGpu.vfxShader": {
     "locations": [
-      "src/vfx-gpu.mjs:14"
+      "src/vfx-gpu.mjs:13"
     ],
     "context": "this.compile=(type,code)=>{const shader=gl.createShader(type);gl.shaderSource(shader,code);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_"
   },

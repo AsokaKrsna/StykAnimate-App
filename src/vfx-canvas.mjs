@@ -34,13 +34,15 @@ function filteredCanvas(filtered){
  if(!filtered?.pixels)return filtered;
  resultCanvas??=new OffscreenCanvas(1,1);
  if(resultCanvas.width!==filtered.width)resultCanvas.width=filtered.width;if(resultCanvas.height!==filtered.height)resultCanvas.height=filtered.height;
- // These pixels are already in memory: an accelerated canvas would upload them
- // and be read back again by a software destination.
- resultCanvas.getContext('2d',{willReadFrequently:true}).putImageData(new ImageData(filtered.straight?filtered.pixels:unpremultiply(filtered.pixels),filtered.width,filtered.height),0,0);
+ resultCanvas.getContext('2d').putImageData(new ImageData(unpremultiply(filtered.pixels),filtered.width,filtered.height),0,0);
  return resultCanvas;
 }
-/** A destination kept in memory reads the executor's pixels directly. */
-const softwareDestination=context=>context.getContextAttributes?.()?.willReadFrequently===true;
+/** Copy a filtered result's source rectangle (sx,sy,w,h) to (dx,dy). A region
+ * result lies inside a larger executor canvas. */
+function drawFiltered(context,filtered,sx,sy,w,h,dx,dy){
+ if(filtered?.canvas&&filtered.x!==undefined)context.drawImage(filtered.canvas,filtered.x+sx,filtered.y+sy,w,h,dx,dy,w,h);
+ else context.drawImage(filteredCanvas(filtered),sx,sy,w,h,dx,dy,w,h);
+}
 /** Filtered software results shared across output tiles. Tiled export
  * repaints the same owner effects for every tile; when the halo-bounded source
  * is tile-invariant its filtered pixels are identical, so each unique source
@@ -187,16 +189,14 @@ export function withVfx(context,stack,paint,{bounds,domainBounds=bounds,scale=1,
  if(!plan)return;
  const {rect,pixelScale,pad,corners,anchorX,anchorY,outputSize}=plan,{x,y,width,height}=rect;
  const paintAt=(ctx,tx,ty)=>{configureVfxSoftwareResources(ctx,{owner:context});ctx.setTransform(matrix.a,matrix.b,matrix.c,matrix.d,matrix.e-tx,matrix.f-ty);paint(ctx);};
- const inMemory=softwareDestination(context);
  const render=tile=>{
   prepareSource();
   let surface=surfaces.get(context);if(!surface){surface=new OffscreenCanvas(tile.width,tile.height);surfaces.set(context,surface);}if(surface.width!==tile.width)surface.width=tile.width;if(surface.height!==tile.height)surface.height=tile.height;
-  // The source follows the destination's storage, like opacity isolation.
-  const ctx=surface.getContext('2d',inMemory?{willReadFrequently:true}:undefined);ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,tile.width,tile.height);paintAt(ctx,tile.x,tile.y);
-  const filtered=filterVfxCanvas(surface,stack,{scale:pixelScale,origin:{x:tile.x-anchorX,y:tile.y-anchorY},outputSize,pixels:inMemory});
+  const ctx=surface.getContext('2d');ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,tile.width,tile.height);paintAt(ctx,tile.x,tile.y);
+  const filtered=filterVfxCanvas(surface,stack,{scale:pixelScale,origin:{x:tile.x-anchorX,y:tile.y-anchorY},outputSize,region:true});
   context.save();try{context.setTransform(1,0,0,1,0,0);const out=tile.output;
-   if(out)context.drawImage(filteredCanvas(filtered),out.x-tile.x,out.y-tile.y,out.width,out.height,out.x,out.y,out.width,out.height);
-   else context.drawImage(filteredCanvas(filtered),tile.x,tile.y);
+   if(out)drawFiltered(context,filtered,out.x-tile.x,out.y-tile.y,out.width,out.height,out.x,out.y);
+   else drawFiltered(context,filtered,0,0,tile.width,tile.height,tile.x,tile.y);
   }finally{context.restore();}
  };
  const limit=vfxSurfaceDimension();
