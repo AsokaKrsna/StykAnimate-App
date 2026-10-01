@@ -1,5 +1,6 @@
-// Canvas artwork whose figure effects are filtered on the WebGPU device, and
-// navigation that holds a GPU Camera image, in the real desktop app: hardware
+// Canvas artwork whose figure effects are filtered on the WebGPU device while
+// editing and in prepared playback, and navigation that holds a GPU Camera
+// image, in the real desktop app: hardware
 // WebGPU is required, which a headless test browser does not have everywhere.
 //
 //   node tests/renderer-artwork-vfx.desktop.mjs
@@ -23,9 +24,10 @@ try {
     for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
     const reports = [];
     try {
-      const {artworkVfxParity} = await import('/tests/renderer-artwork-vfx-fixture.mjs');
+      const {artworkVfxParity, preparedArtworkVfxParity} = await import('/tests/renderer-artwork-vfx-fixture.mjs');
       const {zoomGestureState, zoomCameraHeldGPU} = await import('/tests/renderer-zoom-gesture-fixture.mjs');
       reports.push(await artworkVfxParity());
+      reports.push(await preparedArtworkVfxParity());
       reports.push(await zoomGestureState({forceCanvas2D:false}));
       reports.push(await zoomCameraHeldGPU());
       return {reports};
@@ -35,5 +37,5 @@ try {
   console.log(JSON.stringify({output, checks:result.reports.reduce((count, report) => count + report.checks.length, 0), backends:[...new Set(result.reports.map(report => report.backend))], errors, failure:result.failure?.message}));
   assert.deepEqual(errors, []);
   assert.ifError(result.failure ? Error(result.failure.message) : undefined);
-  assert.equal(result.reports.length, 3);
+  assert.equal(result.reports.length, 4);
 } finally { await app.close().catch(() => {}); }

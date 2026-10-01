@@ -15,21 +15,23 @@ export {assetURL, imageDrawNeed} from './image-resources.mjs';
 export class PlaybackResources extends ImageResources {
   constructor(options = {}) {
     super(options);
-    const {preview = false, maxPacketBytes = 128 * 1024 * 1024,
+    const {preview = false, softwareImages = false, maxPacketBytes = 128 * 1024 * 1024,
       maxRasterBytes = previewMemoryPlan().workerRasters, maxVectorBytes = previewMemoryPlan().workerVectors} = options;
     this.rasterSurfaces = new RasterSurfacePool();
     this.softwareFrameSurfaces = new RasterSurfacePool({contextOptions:{willReadFrequently:true}});
     this.maxSoftwareFilterBytes=options.maxSoftwareFilterBytes??previewMemoryPlan().workerSoftwareFilters;
     this.backgroundBytes=options.maxBackgroundBytes??previewMemoryPlan().workerBackgrounds;
     // Isolate path rasterization from WebGPU presentation. Image compositing
-    // keeps acceleration to avoid expensive GPU-to-CPU source readbacks.
+    // keeps acceleration to avoid expensive GPU-to-CPU source readbacks, unless
+    // its owner keeps every image source in memory (softwareImages).
     this.pathRasterSurfaces = preview ? new RasterSurfacePool({contextOptions:{willReadFrequently:true}}) : this.rasterSurfaces;
+    this.softwareImages = Boolean(preview && softwareImages);
     // The hardware plan already reserves retained originals separately from
     // packet uploads. A per-packet limit is a ceiling, not another partition.
     this.artworkBitmaps = new PlaybackRasterCache({maxBytes: Math.min(maxRasterBytes, maxPacketBytes)});
     this.geometryDescriptors = new WeakMap();
     this.vectors = new PlaybackVectorCache({maxBytes:Math.min(maxVectorBytes,maxPacketBytes)});
-    this.drawingProvider = new DrawingTileProvider({budgetBytes: Math.min(96 * 1024 * 1024, Math.max(16 * 1024 * 1024, this.maxBytes))});
+    this.drawingProvider = new DrawingTileProvider({budgetBytes: Math.min(96 * 1024 * 1024, Math.max(16 * 1024 * 1024, this.maxBytes)),softwareScratch:this.softwareImages});
     // Onion tints over drawing scratch canvases, keyed by color+stamp+anchor.
     const tints = new Map(); let tintBytes = 0;
     this.tint = (image, rgb, stamp = 0) => {
@@ -61,9 +63,12 @@ export class PlaybackResources extends ImageResources {
     // thread that also presents frames; on integrated GPUs large path flushes
     // stalled playback for 100+ ms. CPU surfaces rasterize in parallel on the
     // worker threads instead. Image surfaces stay accelerated to avoid reading
-    // accelerated sources back. Routing depends only on content, never size,
-    // so an object keeps the same antialiasing as it grows or shrinks.
-    return hasImages ? this.rasterSurfaces : this.pathRasterSurfaces;
+    // accelerated sources back, except for playback packets: their decoded
+    // images and drawing scratch are in memory, and an accelerated packet
+    // bitmap is read back on the UI thread when a WebGPU renderer copies it.
+    // Routing depends only on content, never size, so an object keeps the same
+    // antialiasing as it grows or shrinks.
+    return hasImages && !this.softwareImages ? this.rasterSurfaces : this.pathRasterSurfaces;
   }
   /** Camera effect pixels and validity references belong to this worker mirror,
    * so replacing a document cannot retain its scene through module state. */

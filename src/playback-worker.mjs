@@ -1,6 +1,7 @@
 import {errorMessageData, messageError} from './localized-error.mjs';
 
-import {vectorVfxSource} from './renderer-vfx-vector.mjs';
+import {vectorVfxSource,canvasVfxSource} from './renderer-vfx-vector.mjs';
+import {fitsVfxSurface} from './vfx-surface.mjs';
 import {vfxRasterScale, hasDrawableVfx,drawableVfxPadding,releaseVfxSoftwareResources} from './vfx-canvas.mjs';
 import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {cameraAtTime} from './camera-motion.mjs';
@@ -254,6 +255,10 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
       if(vectorVfx){descriptor.bounds??=objectBounds(items,resources);const full=playbackRasterBounds(descriptor.bounds,detail?visibleBounds:null,rasterResolution,maxTextureDimension,padding),pixels=full.pixelWidth*full.pixelHeight;
         if(pixels<=16777216&&pixels*4<maxPacketBytes/2&&vectorVfxSource(items,full.pixelScale)){isolationBounds=full;}else vectorVfx=null;}
       if (items.every(item => item.opacity <= 0)) { clipping.culledObjects++; return; }
+      // Canvas artwork whose only effects are its outermost stack ships
+      // unfiltered: the presenting device filters it. Filtering here compiles
+      // shaders and waits on the graphics process that also presents frames.
+      const artworkVfx=gpuIsolation&&!vectorVfx&&!vectorIsolation?canvasVfxSource(items):null;
       group.compatibilityIndex = compatibility.length;
       if (vectorVfx || vectorIsolation || typeof OffscreenCanvas !== 'undefined') {
         if(descriptor.hasImages) {
@@ -262,7 +267,10 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
           reducedImages ||= Boolean(resources?.pressureReduced);
         }
         if(!descriptor.bounds)descriptor.bounds=objectBounds(items,resources);
-        const bounds = isolationBounds || playbackRasterBounds(descriptor.bounds, visibleBounds, rasterResolution, maxTextureDimension,padding);
+        // The device filters exactly the pixels it receives, so a cropped
+        // source keeps the artwork its effects sample beyond the artboard.
+        const cropPadding=artworkVfx?(descriptor.padding??=items.reduce((n,item)=>Math.max(n,drawableVfxPadding(item)),0)):padding;
+        const bounds = isolationBounds || playbackRasterBounds(descriptor.bounds, visibleBounds, rasterResolution, maxTextureDimension,cropPadding);
         if (!bounds) { clipping.culledObjects++; return; }
         const { pixelScale, pixelWidth: width, pixelHeight: height } = bounds;
         clipping.originalPixels += bounds.fullPixels; clipping.retainedPixels += width * height;
@@ -274,7 +282,8 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
         requireBudget(bitmapBytes + width * height * 4 + (shapeCount + 1) * SHAPE_FLOATS * 4 + (groups.length + 1) * 84);
         // A depth-tested mesh can ship its evaluated faces instead of pixels.
         const meshRaster=gpuIsolation&&!vectorVfx&&!vectorIsolation&&meshOnlyItems(items)&&!items.some(hasDrawableVfx);
-        const rasterKey=artwork?`${vectorVfx?'vfx-vector:':vectorIsolation?'vector:':meshRaster?'mesh:':''}${artworks.contentKey(artwork)}:${cropKey}`:undefined;
+        const deferredVfx=artworkVfx&&!meshRaster&&fitsVfxSurface(width,height,maxTextureDimension)?artworkVfx:null;
+        const rasterKey=artwork?`${vectorVfx?'vfx-vector:':vectorIsolation?'vector:':meshRaster?'mesh:':deferredVfx?'vfx-artwork:':''}${artworks.contentKey(artwork)}:${cropKey}`:undefined;
         const actualBounds = { x: bounds.x, y: bounds.y, width: width / pixelScale, height: height / pixelScale };
         if(vectorVfx){const data=compileVectorObject(vectorVfx.items,source.root,0);bitmapBytes+=width*height*4+data.byteLength;
           const entry={vectorRaster:{data,width,height},vfx:{stack:vectorVfx.stack,scale:vectorVfx.scale,domain:vectorVfx.domain??objectBounds(vectorVfx.items,{...resources,vfxBounds:false})},bounds:actualBounds,root:source.root,resolution,pixelScale,uid};
@@ -294,7 +303,7 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
           compatibility.push(entry);entry.artworkKey=rasterKey;
         } else {
         const pool = resources?.rasterSurface?.(width,height,{hasImages:descriptor.hasImages}) || resources?.rasterSurfaces || fallbackRasterSurfaces;
-        const rasterItems=items;
+        const rasterItems=deferredVfx?.items??items;
         const rasterize=()=>{
         if(cancelled())throw messageError(new DOMException('', 'AbortError'), "errors.playbackWorker.playbackPreparationWasSuperseded", {});
         const {surface, context: ctx} = pool.acquire(width, height);
@@ -310,6 +319,7 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
         // Ownership supplies its epoch in bitmapKey(); this key describes pixels
         // alone so unchanged artwork can share across retained frame revisions.
         const entry={bounds:actualBounds,root:g.root,resolution,pixelScale,uid};compatibility.push(entry);
+        if(deferredVfx)entry.vfx={stack:deferredVfx.stack,scale:deferredVfx.scale,domain:deferredVfx.domain??objectBounds(deferredVfx.items,{...resources,vfxBounds:false})};
         entry.artworkKey=rasterKey;
         const capture=async()=>{await beforeRaster();entry.bitmap=resources?.artworkBitmaps?await resources.artworkBitmaps.packetBitmap(rasterKey,rasterize):rasterize();
           if(cancelled())throw messageError(new DOMException('', 'AbortError'), "errors.playbackWorker.playbackPreparationWasSuperseded", {});};
@@ -658,7 +668,7 @@ export function createPlaybackWorkerEndpoint(postMessage) {
           }
           if(incoming!==snapshot || serial!==generation) return;
           delete snapshot.completing;
-          current = refreshSampling({ ...snapshot, resources: new PlaybackResources({...snapshot, preview: true, maxBytes: snapshot.maxAssetBytes || (snapshot.maxPacketBytes || 128 * 1024 * 1024) / 4}) }); incoming = null;
+          current = refreshSampling({ ...snapshot, resources: new PlaybackResources({...snapshot, preview: true, softwareImages: true, maxBytes: snapshot.maxAssetBytes || (snapshot.maxPacketBytes || 128 * 1024 * 1024) / 4}) }); incoming = null;
           postMessage({ type: 'loaded', revision: message.revision, sequence: message.sequence });
         } catch(error) {
           if(incoming!==snapshot || serial!==generation) return;
@@ -671,7 +681,7 @@ export function createPlaybackWorkerEndpoint(postMessage) {
       tweenCache.clear();
       serial++; releaseDelivery(); queue.length = 0; disposeCurrentResources();
       latestRevision = message.revision; incoming = null;
-      current = refreshSampling({ ...message, resources: new PlaybackResources({...message, preview: true, maxBytes: message.maxAssetBytes || (message.maxPacketBytes || 128 * 1024 * 1024) / 4}) });
+      current = refreshSampling({ ...message, resources: new PlaybackResources({...message, preview: true, softwareImages: true, maxBytes: message.maxAssetBytes || (message.maxPacketBytes || 128 * 1024 * 1024) / 4}) });
       postMessage({ type: 'loaded', revision: message.revision });
     } else if (message.type === 'invalidate') {
       planning.cancel();

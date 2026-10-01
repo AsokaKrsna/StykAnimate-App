@@ -77,3 +77,60 @@ export async function artworkVfxParity({rendererURL='../src/renderer.mjs',onProg
     return {checks,rows,errors,backend:current.stats.backend};
   }finally{for(const renderer of renderers)renderer.destroy();}
 }
+
+/** Prepared playback must present the same pixels whether a figure's effects
+ * were filtered while its packet was prepared or are filtered here from the
+ * unfiltered artwork the packet carries, including artwork the camera crops. */
+export async function preparedArtworkVfxParity({rendererURL='../src/renderer.mjs',workerURL='../src/playback-worker.mjs',onProgress=()=>{}}={}){
+  const [{createRenderer},{compilePlaybackPacket,PlaybackResources}]=await Promise.all([import(rendererURL),import(workerURL)]);
+  const width=384,height=288,checks=[],rows=[],errors=[],renderers=[];
+  const verify=(condition,message,details)=>{check(condition,message,details);checks.push(message);onProgress({checks:checks.length,message});};
+  const make=async()=>{
+    const renderer=await createRenderer(document.createElement('canvas'),{gpuDrawing:false});
+    renderer.resize(width,height,1);renderers.push(renderer);
+    renderer.device?.addEventListener('uncapturederror',event=>errors.push(event.error.message));return renderer;
+  };
+  const cases=[
+    ['glow',{figure:[effect('glow','a',{radius:5,intensity:1.2})]},{x:128.4,y:96.3}],
+    ['directional blur and glow',{figure:[effect('blur','a',{mode:1,radius:6,angle:54}),effect('glow','b',{radius:8,intensity:1.2})]},{x:128.4,y:96.3}],
+    ['outline',{figure:[effect('outline','a',{width:1.4,mode:2})]},{x:128.4,y:96.3}],
+    // The artboard crops this figure: its halo samples artwork beyond the crop.
+    ['glow across the artboard edge',{figure:[effect('glow','a',{radius:9,intensity:1.4})]},{x:12.6,y:30.2}],
+    ['blur across the artboard corner',{figure:[effect('blur','a',{radius:4})]},{x:250.7,y:186.4}],
+  ];
+  const resources=new PlaybackResources({preview:true,softwareImages:true});
+  try{
+    const current=await make(),reference=await make();
+    verify(current.device&&current.stats.backend==='WebGPU','The prepared effect regression executes the real WebGPU renderer');
+    let revision=1;
+    for(const [name,effects,at] of cases){
+      const s=scene(effects),object=s.frame.objects[0];object.root_x=at.x;object.root_y=at.y;
+      s.report._styk.layers.fixed.scene.visible=true;s.frame._stykBackgroundColor=0xffffffff;
+      const view={scale:1.5,x:0,y:0},options={report:s.report,view,cameraEnabled:true};
+      const shared={revision:revision++,scale:1.5,resources,maxPacketBytes:64*1024*1024,sharedArtwork:false};
+      const deferred=await compilePlaybackPacket(s.report,0,{...shared,gpuIsolation:true});
+      const filtered=await compilePlaybackPacket(s.report,0,{...shared,gpuIsolation:false});
+      const entry=deferred.compatibility.find(item=>item.vfx);
+      verify(entry?.bitmap&&entry.vfx.stack.length===effects.figure.length&&entry.vfx.domain&&entry.vfx.scale===1,`${name}: the packet carries unfiltered artwork and its figure stack`,
+        {kinds:deferred.compatibility.map(item=>Object.keys(item))});
+      verify(filtered.compatibility.length===deferred.compatibility.length&&filtered.compatibility.every(item=>item.bitmap&&!item.vfx),`${name}: without device filtering the packet carries filtered pixels`);
+      const before=current.preparedFrames.stats.vfxArtwork??0;
+      const present=async(renderer,packet)=>{
+        const key=renderer.prepareFrame(packet,options);
+        check(key&&renderer.renderPrepared(key,options),'The prepared frame presents');
+        await renderer.device.queue.onSubmittedWorkDone();return read(renderer.canvas);
+      };
+      const pixels=await present(current,deferred),expected=await present(reference,filtered);
+      verify((current.preparedFrames.stats.vfxArtwork??0)===before+1,`${name}: the device filters the uploaded artwork once`);
+      const diff=difference(pixels,expected);
+      verify(diff.painted>400&&diff.mean<.5&&diff.far<=diff.pixels*.002,`${name}: device-filtered playback matches packet-filtered playback (${diff.mean.toFixed(4)})`,diff);
+      const replay=await present(current,deferred);
+      verify((current.preparedFrames.stats.vfxArtwork??0)===before+1&&difference(replay,pixels).max===0,`${name}: replaying the frame reuses its filtered texture`);
+      rows.push({name,diff});
+      current.clearPreparedFrames();reference.clearPreparedFrames();
+      for(const packet of [deferred,filtered])for(const item of packet.compatibility)item.bitmap?.close();
+    }
+    verify(!errors.length,'Device-filtered playback produces no GPU validation errors',errors);
+    return {checks,rows,errors,backend:current.stats.backend};
+  }finally{resources.dispose();for(const renderer of renderers)renderer.destroy();}
+}

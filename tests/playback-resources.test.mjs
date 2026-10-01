@@ -15,6 +15,19 @@ test('preview path fills rasterize on worker CPUs at every size; images and expo
   }finally{preview.dispose();original.dispose();}
 });
 
+test('playback packets keep image artwork and its drawing scratch in memory; other owners stay accelerated',()=>{
+  const packets=new PlaybackResources({preview:true,softwareImages:true}),thumbnails=new PlaybackResources({preview:true}),exported=new PlaybackResources({softwareImages:true});
+  try {
+    assert.equal(packets.rasterSurface(20,20,{hasImages:true}),packets.pathRasterSurfaces,'An accelerated packet bitmap is read back when a WebGPU renderer copies it.');
+    assert.equal(packets.rasterSurface(20,20),packets.pathRasterSurfaces);
+    assert.equal(packets.drawingProvider.softwareScratch,true,'An accelerated drawing scratch would be read back into the software surface.');
+    assert.equal(thumbnails.rasterSurface(20,20,{hasImages:true}),thumbnails.rasterSurfaces);
+    assert.equal(thumbnails.drawingProvider.softwareScratch,false);
+    assert.equal(exported.rasterSurface(20,20,{hasImages:true}),exported.rasterSurfaces,'Original-resolution export has no software surface to select.');
+    assert.equal(exported.drawingProvider.softwareScratch,false);
+  }finally{packets.dispose();thumbnails.dispose();exported.dispose();}
+});
+
 test('software frame and camera scratch share the worker resource lifetime and filter allowance',t=>{
   const prior=Object.getOwnPropertyDescriptor(globalThis,'OffscreenCanvas');
   globalThis.OffscreenCanvas=class {

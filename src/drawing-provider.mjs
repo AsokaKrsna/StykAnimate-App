@@ -7,8 +7,8 @@ import {presenterScratch,levelStore} from './drawing-raster.mjs';
  * LRU so playback, export, thumbnail and preview paths all read the same
  * authoritative tiles through `paintDrawingTiles`. */
 export class DrawingTileProvider {
-  constructor({budgetBytes=96*1024*1024,hardBytes=Math.max(budgetBytes*4,64*1024*1024)}={}) {
-    Object.assign(this,{budgetBytes,hardBytes,entries:new Map(),clock:0});
+  constructor({budgetBytes=96*1024*1024,hardBytes=Math.max(budgetBytes*4,64*1024*1024),softwareScratch=false}={}) {
+    Object.assign(this,{budgetBytes,hardBytes,softwareScratch,entries:new Map(),clock:0});
   }
   /** Sync presenter lookup: {id,store,stamp,dirty:null,scratch,level} or null.
    * A superseded entry is never authoritative — bounds and paint callers must
@@ -32,7 +32,7 @@ export class DrawingTileProvider {
       const protectedBytes=[...this.entries].reduce((n,[id,old])=>n+(needed.has(id)&&id!==d.celId?old.store.bytes:0),0);
       const store=tileStoreFromList(url?await decodeTileBlob(url,{maxBytes:Math.max(0,this.hardBytes-protectedBytes)}):[]);
       if(e)this.drop(e);
-      e={id:d.celId,revision:d.revision,store,bytes:store.bytes,stamp:1,dirty:null,levels:null,levelsUsed:0,owner:this};
+      e={id:d.celId,revision:d.revision,store,bytes:store.bytes,stamp:1,dirty:null,levels:null,levelsUsed:0,owner:this,softwareScratch:this.softwareScratch};
       e.scratch=(rect,options)=>presenterScratch(e,rect,options);
       e.level=(k,rect)=>{e.levelsUsed=++this.clock;return levelStore(e,k,rect);};
       this.entries.set(d.celId,e);

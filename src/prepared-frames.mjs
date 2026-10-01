@@ -4,7 +4,7 @@ import {bitmapKey,bitmapBytes,entryImage} from './playback-bitmap-pool.mjs';
 import {playbackMemoryBudget,playbackReuseMemoryPlan} from './playback-budget.mjs';
 import {EditorRasterCache} from './renderer-raster-cache.mjs';
 import {hasSceneVfx} from './vfx-viewport.mjs';
-import {rasterizeVectorVfx} from './renderer-vfx-vector.mjs';
+import {rasterizeVectorVfx,filterArtworkVfx} from './renderer-vfx-vector.mjs';
 import {encodeVectorRaster,analyticCoverage} from './renderer-vector-raster.mjs';
 import {encodeMeshRaster,meshRasterBytes} from './renderer-mesh-raster.mjs';
 import {offsetGeneratorBatch,generatorSchedule,scheduleWalker} from './vfx-generator-frame.mjs';
@@ -345,6 +345,10 @@ export class PreparedFrameCache {
                 rasterBatch.cleanups.push(raster.cleanup);
                 rasterBatch.bytes+=poolW*poolH*4*(renderer.isolationSinglePipeline&&analyticCoverage(source.data)?1:Math.max(1,renderer.isolationSamples))+source.data.byteLength;
                 resource={key:resourceKey,refs:0,texture:raster.texture,bindGroup:raster.bindGroup,width:raster.width,height:raster.height,bytes:raster.bytes,poolable,poolClass,poolKey,poolW,poolH};}}
+            else if (compatibility.vfx) {this.stats.vfxArtwork=(this.stats.vfxArtwork||0)+1;
+              // Unfiltered Canvas artwork: upload it and run its figure stack here.
+              resource={...filterArtworkVfx(renderer,compatibility.vfx,source,{width:source.width,height:source.height,pixelScale:compatibility.pixelScale,bounds:compatibility.bounds,
+                label:`Prepared ${key} filtered object ${compatibility.uid}`}),key:resourceKey,refs:0};}
             else {this.stats.bitmapUploads=(this.stats.bitmapUploads||0)+1;
             const texture = pooled?.texture ?? device.createTexture({ label: `Prepared ${key} object ${compatibility.uid}`, size: [poolW, poolH], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
             resource = { key:resourceKey,refs:0,width:source.width,height:source.height,texture, bindGroup: pooled?.bindGroup ?? renderer.textureBindGroup(texture), bytes: poolW * poolH * 4, poolable, poolClass, poolKey, poolW, poolH };

@@ -130,7 +130,9 @@ export function presenterScratch(presenter,rect,{maxSide=4096,level=0,clamp=fals
   const {x,y,width:w,height:h}=s.cover;
   const result={canvas:s.canvas,x,y,width:w,height:h,level,scale,stamp:presenter.stamp,anchorKey:s.anchorKey,dirty:null};
   if(s.canvas&&s.stamp===presenter.stamp)return result;
-  s.canvas??=newCanvas(w,h);s.ctx??=s.canvas.getContext('2d');
+  // A worker that paints on software surfaces keeps its scratch in memory too:
+  // drawing an accelerated scratch there reads it back through the graphics process.
+  s.canvas??=newCanvas(w,h);s.ctx??=s.canvas.getContext('2d',presenter.softwareScratch?{willReadFrequently:true}:undefined);
   if(s.canvas.width!==w)s.canvas.width=w;if(s.canvas.height!==h)s.canvas.height=h;
   const c=s.ctx,pending=s.pending??s.cover;
   const bx=Math.max(pending.x,x),by=Math.max(pending.y,y),bx1=Math.min(pending.x+pending.width,x+w),by1=Math.min(pending.y+pending.height,y+h);
@@ -180,7 +182,7 @@ function paintDrawingStrips(ctx,presenter,rect,level,{tint,tintFn,filter='smooth
       const cx1=Math.min(x1,cx+STRIP),
         px0=Math.max(region.x,cx-TILE),py0=Math.max(region.y,cy-TILE),
         px1=Math.min(region.x+region.width,cx1+TILE),py1=Math.min(region.y+region.height,cy1+TILE);
-      const canvas=newCanvas(px1-px0,py1-py0),c=canvas.getContext('2d');
+      const canvas=newCanvas(px1-px0,py1-py0),c=canvas.getContext('2d',presenter.softwareScratch?{willReadFrequently:true}:undefined);
       for(const [tx,ty] of TileStore.tilesInRect(px0,py0,px1-px0,py1-py0))paintTile(c,store,tx,ty,px0,py0);
       let source=canvas;
       if(tint&&tintFn)source=tintFn(canvas,tint,`${presenter.stamp}:${level}:${cx},${cy}`)??canvas;
