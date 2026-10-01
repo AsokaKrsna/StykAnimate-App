@@ -13,11 +13,13 @@
  * Modes: gesture (paired trials per tick, in --order or a mirrored sequence),
  * profile (gesture with worker request and job traces), sweep (every tick, the
  * first variant as baseline and the last as current). Options: --ticks a,b,
- * --gpu (with STYK_BROWSER_GPU=1 on Linux), --warm (untimed wait for a loaded
+ * --base /url (tree for the editor and resource owners, default /src),
+ * --helper /url, --gpu (with STYK_BROWSER_GPU=1 on Linux), --warm (untimed wait for a loaded
  * capture worker before each gesture), --cpuprofile [--top n]. Run serialized:
  * concurrent work on the machine changes every timing. */
 import {chromium} from '../tests/support/playwright.mjs';
 import {writeFile,readFile} from 'node:fs/promises';
+import os from 'node:os';
 import {createHash} from 'node:crypto';
 const args=process.argv.slice(2),mode=args[0],opt=name=>{const i=args.indexOf('--'+name);return i>=0?args[i+1]:undefined;};
 const origin=process.env.STYK_URL||'http://127.0.0.1:47841',project=opt('project'),gpu=args.includes('--gpu');
@@ -25,21 +27,26 @@ if(!['gesture','profile','sweep'].includes(mode)||!project)throw new Error('Usag
 const variants=(opt('variants')||'new=/src').split(',').map(v=>v.split('='));
 const ticks=(opt('ticks')||'68,39,43,58,90,93,98,151,168').split(',').map(Number),out=opt('out');
 const order=(opt('order')||'').split(',').filter(Boolean);
+// Editor, importer and resource owners load from one tree; name a frozen one when the working tree may change.
+const base=opt('base')||'/src';
 const sha=async f=>createHash('sha256').update(await readFile(f)).digest('hex');
 const projectHash=await sha(project);
 const browser=await chromium.launch({channel:'chrome',headless:true,args:gpu?['--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=vulkan']:[]});
-const result={mode,measuredAt:new Date().toISOString(),browser:browser.version(),gpu,variants,errors:[]};
+const result={mode,measuredAt:new Date().toISOString(),browser:browser.version(),gpu,variants,base,errors:[]};
 try{
   const page=await browser.newPage({viewport:{width:1280,height:800}});
   page.on('pageerror',e=>result.errors.push(e.message));
   page.on('console',m=>{if(m.type()==='error')result.errors.push(m.text().slice(0,300));});
   await page.route('**/__zoom_probe__',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><title>Zoom probe</title><input type="file" id="f">'}));
   await page.goto(origin+'/__zoom_probe__'+(args.includes('--warm')?'#warm':''));
-  await page.exposeFunction('zoomProgress',d=>{if(process.env.VERBOSE)console.log(JSON.stringify(d));});
+  // Other work on the machine changes every timing. Keep the one-minute load
+  // average beside each sweep row and trial so disturbed samples are visible.
+  const load=()=>+os.loadavg()[0].toFixed(2);result.load=[];result.cpus=os.cpus().length;
+  await page.exposeFunction('zoomProgress',d=>{result.load.push({tick:d.tick,load1:load()});if(process.env.VERBOSE)console.log(JSON.stringify(d));});
   await page.locator('#f').setInputFiles(project);
-  await page.evaluate(async()=>{
+  await page.evaluate(async base=>{
     const [{ImportClient},{Editor},{PreviewImages},{assetURL},{drawingMetadata},{frameImageDrawables,backgroundImageAssets}]=await Promise.all(
-      ['import-client','editor','preview-images','image-resources','drawing-model','scene-preparation'].map(n=>import(`/src/${n}.mjs`)));
+      ['import-client','editor','preview-images','image-resources','drawing-model','scene-preparation'].map(n=>import(`${base}/${n}.mjs`)));
     const importer=new ImportClient(),imported=await importer.importFile(document.getElementById('f').files[0],{project:true});importer.adoptSource?.(imported);
     const editor=new Editor({demo:false,layerTimeline:true});editor.load(imported.document);
     const subscribers=new Set(),notify=()=>{for(const cb of [...subscribers])cb();};
@@ -54,7 +61,7 @@ try{
     window.zoom={editor,resources,owner,images,importer,
       subscribeResources:cb=>{subscribers.add(cb);return()=>subscribers.delete(cb);},
       async waitResourcesReady(){for(let quiet=0;quiet<3;){await new Promise(r=>setTimeout(r,4));quiet=idle()?quiet+1:0;}}};
-  });
+  },base);
   result.totalTicks=await page.evaluate(()=>zoom.editor.totalTicks);
   let cdpProfile;
   if(args.includes('--cpuprofile')){cdpProfile=await page.context().newCDPSession(page);await cdpProfile.send('Profiler.enable');await cdpProfile.send('Profiler.setSamplingInterval',{interval:500});
@@ -103,10 +110,10 @@ try{
         r.scratchInitial=scratchInitial;
         return {tick,name,pixelKey:tick+':'+name+':'+window.zoomTrial,hash,trace,...r};
       },{tick,url,gpu,name,helper:opt('helper')||'/scripts/zoom-gesture-benchmark.mjs',profile:mode==='profile'});
-      result.trials.push(trial);
+      trial.load1=load();result.trials.push(trial);
       const rf=trial.refinement;
       console.log(JSON.stringify({tick,name,init:+trial.rows[0].cpuMs.toFixed(1),gestP95:+trial.gesture.cpuMs.p95.toFixed(1),settle:+trial.settle.cpuMs.max.toFixed(1),
-        ready:+rf.settlementElapsedMs.toFixed(1),first:rf.firstPublicationMs&&+rf.firstPublicationMs.toFixed(0),half:rf.halfPublicationMs&&+rf.halfPublicationMs.toFixed(0),jobs:rf.completed,cb:rf.callbackCount,cbMax:rf.callbackCpuMs.max,steadyP95:+trial.steady.cpuMs.p95.toFixed(2),lt:trial.interactionLongTasks.length,scratch:trial.scratchInitial,err:trial.errors.length}));
+        ready:+rf.settlementElapsedMs.toFixed(1),first:rf.firstPublicationMs&&+rf.firstPublicationMs.toFixed(0),half:rf.halfPublicationMs&&+rf.halfPublicationMs.toFixed(0),jobs:rf.completed,cb:rf.callbackCount,cbMax:rf.callbackCpuMs.max,steadyP95:+trial.steady.cpuMs.p95.toFixed(2),lt:trial.interactionLongTasks.length,load:trial.load1,scratch:trial.scratchInitial,err:trial.errors.length}));
     }
     // Pixel comparisons against the first variant's same-tick capture, in page.
     result.pixels=await page.evaluate(()=>{
