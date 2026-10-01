@@ -31,6 +31,7 @@ await page.getByRole('button',{name:'Select layer Character hands',exact:true}).
 assert.deepEqual((await page.evaluate(()=>styk.timeline.ids)).sort(),['layer-2','layer-3']);
 await page.getByRole('button',{name:'Select layer Character hands',exact:true}).click({button:'right'});
 const beforeFocusLock=await snapshot(),focusHistory=await page.evaluate(()=>styk.editor._undo.length);
+await page.getByRole('menuitem',{name:'Focus',exact:true}).click();
 await page.getByRole('menuitem',{name:'Focus and lock',exact:true}).click();await settle();
 assert.deepEqual((await page.evaluate(()=>[...styk.editor.getLayerFocus().ids])).sort(),['layer-2','layer-3']);
 assert.equal(await page.evaluate(()=>styk.editor.getLayerFocus().lock),true);

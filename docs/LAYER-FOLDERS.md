@@ -1,11 +1,15 @@
 # Layer folders
 
-Advanced layer menus offer **Group selected layers in folder**, **Move to folder**,
-and **Remove from folder**. Ctrl/Cmd-click or Shift-click selects several rows.
-The Layers menu can also create an empty folder. Double-click a folder name to
+Advanced layer menus group folder commands and stacking commands under
+**Organize**, with separate **Focus**, **Visibility and lock**, and **Add layer**
+submenus. Ctrl/Cmd-click toggles individual layer rows; Shift-click extends or
+shrinks a range from the original selected row, skipping folder and effect rows.
+One selected layer remains active. The folder button beside Layers creates an
+empty folder and opens its name for editing. Double-click a folder name to
 rename it; its disclosure collapses its children. A layer name can be dragged
 onto a folder. The Simple timeline's Layers popover shows the same folders and
-can group the active layer.
+supports the same modifier selection, can group selected layers, and offers
+**New folder** with immediate naming. F2 renames a focused folder.
 
 Folders contain user layers, including drawings. Scene and Camera remain fixed
 tracks. Folders have one level, with no pose keys of their own. Collapsing a
@@ -18,6 +22,21 @@ layer and frame.
 Empty folders remain available while focusing layers and can be found by name.
 Adding a new layer during focus includes it in the focused set; closing a search
 keeps the focus and its temporary locks active.
+
+**Filter layers** opens a searchable checklist of layers and folders in either
+timeline mode. A folder checkbox controls all its children; a dash means some
+children are shown. **Only selected** narrows the list to the selected layers,
+and **Reset filter** restores all rows. Camera and Scene can also be filtered.
+Filtering changes timeline rows only: saved visibility, locks, stacking, keys,
+and undo history are untouched. Selecting excluded artwork on the canvas leaves
+the filter in place. Focus can further restrict the list; the checklist shows
+that restriction and offers **End focus** separately.
+
+The filter survives switching timeline modes and resets when opening another
+document. New layers are shown by default; children added to an unchecked folder
+stay excluded. Deleting layers or folders prunes their filter entries. The view
+session owns this state in `timeline-layer-view.mjs`; the shared checklist renders
+only the visible row window and supports arrow keys, Home, End, and Space.
 
 Folder names and membership save in STYK projects and undo through the existing
 layer command history. Each folder is a contiguous block in the existing layer
@@ -37,3 +56,7 @@ Verification: `node --test tests/layer-folders.test.mjs` and
 `node tests/layer-folders.browser.mjs` cover save/reload, undo, grouping order,
 moving and ungrouping, invalid references, collapse, search, row geometry, menus,
 and both timeline views.
+`tests/timeline-layer-{selection,menu,filter}.browser.mjs` cover modifier
+selection with real artwork, stable search during interface refreshes, keyboard
+menus, checklist state, Simple grouping, naming and undo, mode switching, compact
+themes, and a 2,000-layer checklist with a bounded number of row elements.

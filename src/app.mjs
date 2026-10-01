@@ -2200,7 +2200,7 @@ function renderLayers() {
     $("layer-count").textContent =
       editor.layers?.filter((layer) => !["scene", "camera"].includes(layer.id))
         .length || 1;
-  timelineUI?.selectTrack?.(state.selectedTrackId);
+  timelineUI?.selectTrack?.(state.selectedTrackId, {reveal: false});
 }
 function renderAssets() {
   const figures = editor.report.figure_types;

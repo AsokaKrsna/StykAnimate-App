@@ -1,7 +1,7 @@
 # Layer focus
 
 In the Advanced timeline, Ctrl/Command-click layer names to select several layers
-and choose **Focus selected layers** from a layer's context menu. Focus filters
+and choose **Focus → Focus selected layers** from a layer's context menu. Focus filters
 the timeline list while every layer keeps its existing canvas visibility. Selecting
 a figure from another layer leaves the focused list in place. **Show all layers**
 in the list header ends focus.
@@ -10,6 +10,10 @@ in the list header ends focus.
 Their artwork remains visible as a reference. It accepts the same multiple-layer
 selection; Camera and Scene are temporarily locked too. The saved eye and lock
 settings are preserved, so Show all restores those settings exactly.
+
+The **Filter layers** checklist is independent of focus and its temporary locks.
+It reports when focus is active and offers **End focus**; resetting the checklist
+keeps focus in place. Both restrictions must allow a layer for its row to appear.
 
 Focus is session state owned by `src/editor-layer-focus.mjs`, separate from the
 document's layer metadata. A weak map associates the focused layer IDs and the

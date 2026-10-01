@@ -35,6 +35,7 @@ export const timelineOrganizationMethods = {
     this.setLayerFilter(this.layerQuery, this.focusedLayerIds && !lock && ids === undefined ? null : selected.size ? selected : this.focusedLayerIds, {lock});
   },
   revealSelectedLayer() {
+    if (this.layerView && !this.layerView.shown(this.selectedTrackId)) return;
     const folderId = this.editor?.getLayer(this.selectedTrackId)?.folderId;
     if (!this.focusedLayerIds && folderId && this.collapsedFolders?.delete(folderId)) this._reindex();
     // Selection on the canvas can belong to a layer outside this list. Focus
@@ -72,8 +73,9 @@ export const timelineOrganizationMethods = {
     const focusHidden=!this.focusedLayerIds||searching;
     if(this.focusLayersButton.hidden!==focusHidden)this.focusLayersButton.hidden=focusHidden;
     if(this.newLayerButton)localizedAttribute(this.newLayerButton,'aria-label',this._drawWorkspace?.()?'timeline.newDrawingLayer':'timeline.newLayer');
+    if(this.filterButton)this.filterButton.dataset.active=String(Boolean(this.layerView?.active));
     if(this.searchField){if(this.searchField.hidden!==!searching)this.searchField.hidden=!searching;if(this.labelTitle.hidden!==searching)this.labelTitle.hidden=searching;}
-    const emptyHidden=count>0||!(this.layerQuery||this.focusedLayerIds);
+    const emptyHidden=count>0||!this.layerQuery&&!this.focusedLayerIds&&Boolean(this.layerView?.active)&&this.tracks.length>0||!(this.layerQuery||this.focusedLayerIds||this.layerView?.active);
     if(this.emptyLayers.hidden!==emptyHidden)this.emptyLayers.hidden=emptyHidden;
   },
 };

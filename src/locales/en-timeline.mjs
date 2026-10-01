@@ -52,6 +52,17 @@ const TEXT = Object.freeze({
   'timeline.goToFrameOf': 'of {total} · {seconds} s',
   'timeline.goToFrameGo': 'Go',
   'timeline.layers': 'Layers',
+  'layerFilter.title': 'Filter layers',
+  'layerFilter.help': 'Choose which rows appear in the timeline. Artwork visibility does not change.',
+  'layerFilter.search': 'Find layers or folders',
+  'layerFilter.list': 'Layers and folders to show',
+  'layerFilter.show': 'Show {name} in timeline',
+  'layerFilter.onlySelected': 'Only selected',
+  'layerFilter.reset': 'Reset filter',
+  'layerFilter.focusActive': 'Layer focus is also active.',
+  'layerFilter.endFocus': 'End focus',
+  'layerFilter.count': '{shown} of {total} layers shown',
+  'layerFilter.noMatches': 'No layers or folders found.',
   'timeline.findLayers': 'Find layers',
   'timeline.clearFind': 'Clear layer search',
   'timeline.newLayer': 'New layer',
@@ -107,5 +118,3 @@ const TEXT = Object.freeze({
   'layers.drawingLayer': 'Drawing layer',
 });
 export default TEXT;
-
-

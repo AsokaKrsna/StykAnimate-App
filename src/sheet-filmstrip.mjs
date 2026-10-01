@@ -15,6 +15,7 @@ import {showKeyframeEasingPopover} from './keyframe-easing-popover.mjs';
 import {showTimelineMenu} from './timeline-menu.mjs';
 import {AudioTimeline} from './audio-timeline.mjs';
 import {createLayersPopover} from './timeline-layers-popover.mjs';
+import {TimelineLayerView} from './timeline-layer-view.mjs';
 
 import {LAYER_COLORS} from './layers.mjs';
 import {bandBottom} from './shell/topbar.mjs';
@@ -43,6 +44,7 @@ export class SheetFilmstrip {
     this.editor = editor;
     this.container = container;
     Object.assign(this, options);
+    this.ownsLayerView=!options.layerView;this.layerView??=new TimelineLayerView(editor);
     attachTimelineHotkeys(this);
     this.events = new AbortController();
     this.cardWidth=112;
@@ -208,7 +210,7 @@ export class SheetFilmstrip {
     this.layerDot = layer.querySelector('.ui-dot');
     this.layerName = layer.querySelector('.sheet-framebar-layer-name');
     this._on(layer, 'click', () => {
-      this.layersPopover ??= createLayersPopover({anchor: layer, editor: this.editor, overlays: this.overlays ?? null, t: this.localizationText ?? null,
+      this.layersPopover ??= createLayersPopover({anchor: layer, editor: this.editor, view: this.layerView, overlays: this.overlays ?? null, t: this.localizationText ?? null,
         run: fn => this._run(fn), topInset: () => bandBottom(document) + 6});
       this.layersPopover.toggle();
     });
@@ -615,6 +617,7 @@ export class SheetFilmstrip {
   destroy() {
     if (this.header?.actions === this.controls) this.header.setActions(null);
     this.audio?.destroy();this.inflight?.abort();clearTimeout(this.retryTimer);this.clearThumbnailCache();
+    if(this.ownsLayerView)this.layerView.destroy();
     this.disposed = true; this.generation++;
     if (this.raf) cancelAnimationFrame(this.raf);
     this.events.abort(); this.menuEvents?.abort(); this.observer.disconnect();

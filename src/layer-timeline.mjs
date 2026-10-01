@@ -13,6 +13,8 @@ import {keyEasing} from './keyframe-easing.mjs';
 import {LAYER_COLORS} from './layers.mjs';
 import {layerFolderRows} from './layer-folders.mjs';
 import {timelineLayerFolderMethods} from './timeline-layer-folders.mjs';
+import {TimelineLayerView} from './timeline-layer-view.mjs';
+import {createLayerFilter} from './timeline-layer-filter.mjs';
 import {organizeTimelineRows,timelineOrganizationMethods} from './timeline-organization.mjs';
 import {motionRows,paintMotionRow,cameraMotionTimelineMethods} from './camera-motion-timeline.mjs';
 import {attachTimelineHotkeys} from './timeline-hotkeys.mjs';
@@ -21,7 +23,7 @@ import {sheetKeyAt} from './layer-sheet.mjs';
 import {initializeLayerSheet} from './editor-layer-sheet.mjs';
 import {drawingMetadata} from './drawing-model.mjs';
 import {icon} from './icons.mjs';
-import {showTimelineMenu} from './timeline-menu.mjs';
+import {showTimelineMenu, timelineLayerMenuGroups} from './timeline-menu.mjs';
 import {AudioTimeline} from './audio-timeline.mjs';
 import {onFontsReady} from './ui/font-loading.mjs';
 import {openMenu,menuFor} from './ui/ui-menu.mjs';
@@ -32,7 +34,6 @@ import {TOUCH_ZOOM,timelineTouchMethods} from './touch/timeline-scrubber.mjs';
 /** The tall tier's content row and ruler (timeline-rows.mjs holds the whole row geometry: 24px Camera and Scene,
  * 28px rows and a 24px ruler at the short tier). */
 export {ROW,HEADER};
-const layerColorMessages={blue:'layerTimeline.color.blue',violet:'layerTimeline.color.violet',rose:'layerTimeline.color.rose',orange:'layerTimeline.color.orange',green:'layerTimeline.color.green',teal:'layerTimeline.color.teal'};
 const MAX_SCROLL=8000000;
 const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
 const element=(tag,parent,className,text)=>{const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=text;parent?.append(node);return node;};
@@ -41,6 +42,7 @@ const element=(tag,parent,className,text)=>{const node=document.createElement(ta
 export class Timeline{
   constructor(container,editor,options={}){
     this.editor=editor;this.container=container;Object.assign(this,options);this.events=new AbortController();this.labels=[];this.pxPerTick=this._touch()?TOUCH_ZOOM.initial:14;this.labelWidth=220;
+    this.ownsLayerView=!options.layerView;this.layerView??=new TimelineLayerView(editor);
     this.selectedLayers=new Set([editor.activeLayerId]);this.start=this.end=Math.max(0,Math.floor(editor.tick));this.selectedTrackId=editor.activeLayerId;
     if(!editor.report._styk.layerSheet){initializeLayerSheet(editor.report);editor._invalidate({timing:true});}
     attachTimelineHotkeys(this);
@@ -69,8 +71,17 @@ export class Timeline{
     this._on(this.newLayerMore,'click',()=>{const other=this._drawWorkspace()?'layer':'drawing';if(menuFor(this.newLayerMore))return menuFor(this.newLayerMore).close('toggle');
       openMenu({anchor:this.newLayerMore,overlays:this.overlays??null,icon:name=>icon(name),label:sayTimeline(null,'timeline.moreLayerTypes'), labelKey: 'timeline.moreLayerTypes', labelParams: {},
         items:[{label:sayTimeline(null,other==='drawing'?'timeline.newDrawingLayer':'timeline.newLayer'), labelKey: other==='drawing'?'timeline.newDrawingLayer':'timeline.newLayer', labelParams: {},icon:other==='drawing'?'brush':'plus',run:()=>this._run(()=>this.newLayer(other))}]});});
+    this.newFolderButton=this._headButton(head,'folder',interfaceText('layerFolders.newFolder'),()=>this.newLayerFolder());
+    localizedAttribute(this.newFolderButton,'aria-label','layerFolders.newFolder');localizedAttribute(this.newFolderButton,'data-tooltip','layerFolders.newFolder');
+    this.newFolderButton.classList.add('sheet-new-folder');
+    this.filterButton=this._headButton(head,'sliders',interfaceText('layerFilter.title'),()=>{
+      this.layerFilterPopover??=createLayerFilter({anchor:this.filterButton,editor,view:this.layerView,overlays:this.overlays??null,selectedIds:()=>this.ids});
+      this.layerFilterPopover.toggle();
+    });this.filterButton.classList.add('sheet-layer-filter');this.filterButton.setAttribute('aria-haspopup','dialog');this.filterButton.setAttribute('aria-expanded','false');
+    localizedAttribute(this.filterButton,'aria-label','layerFilter.title');localizedAttribute(this.filterButton,'data-tooltip','layerFilter.title');
     this.findButton=this._headButton(head,'search',sayTimeline(null,'timeline.findLayers'),()=>this.openLayerSearch());this.findButton.setAttribute('aria-keyshortcuts','Control+F');this.findButton.dataset.tooltip=`${sayTimeline(null,'timeline.findLayers')} · Ctrl+F`;
     localizedAttribute(this.findButton,'aria-label','timeline.findLayers');localizedAttribute(this.findButton,'data-tooltip','common.shortcutHint',{label:{messageKey:'timeline.findLayers'},shortcut:'Ctrl+F'});
+    this.findButton.classList.add('sheet-find-layer');
     this.emptyLayers=translatedElement(element('div',this.main,'sheet-empty-layers',interfaceText("layerTimeline.noMatchingLayers")), "layerTimeline.noMatchingLayers", {});this.emptyLayers.hidden=true;
     this.labelViewport=element('div',this.main,'sheet-labels');this.scroll=element('div',this.main,'sheet-scroll');this.scroll.tabIndex=0;this.scroll.setAttribute('role','grid');localizedAttribute(this.scroll, 'aria-label', "layerTimeline.layerFrames", {});this.scroll.setAttribute('aria-multiselectable','true');
     this.spacer=element('div',this.scroll,'sheet-spacer');this.canvas=element('canvas',this.main,'sheet-canvas');
@@ -95,8 +106,9 @@ export class Timeline{
       if(d.kind==='vfx-channels'&&this.gesture?.kind.startsWith('vfx'))this._cancelGesture();
       if(d.kind==='vfx-selection'||d.kind==='vfx-target'||d.kind==='selection'&&editor._vfxTimelineVisible||d.kind==='document'||d.structural||d.layers||d.timing||d.layerSheet)this._reindex();
       else if(this.motionState!==editor.report._styk.cameraMotion)this._refreshMotionRows();
-      if(d.kind==='selection'&&!d.sheetSelection&&editor.object){this.selectedTrackId=editor.layerForUid(editor.selectedUid);this.selectedLayers=new Set([this.selectedTrackId]);this.revealSelectedLayer();}
+      this._syncLayerSelection(d);
       if(d.kind==='seek'&&!this.gesture&&!this.selecting){if(!this.touchRange)this.start=this.end=Math.floor(editor.tick);this._centerSoon();}this.update(this._changeNeedsPaint(d));});
+    this._on(this.layerView,'change',()=>{this._cancelGesture();this.anchor=this.hover=null;this._reindex();this.scroll.scrollTop=0;this.update();});
     this._on(window,'styk-theme-change',()=>this.resize());onFontsReady(()=>this.update(),{signal:this.events.signal});
     this.observer=new ResizeObserver(()=>this.resize());this.observer.observe(this.root);this._reindex();this.resize();
     mountTimelineNavigation(this);this.header?.setZoom(this.pxPerTick);
@@ -121,6 +133,7 @@ export class Timeline{
     this.motionState=this.editor.report._styk.cameraMotion;
     this.collapsedFolders??=new Set();
     this.tracks=organizeTimelineRows([this.editor.getLayer('camera'),...(this.cameraMotionsCollapsed?[]:motionRows(this.editor)),this.editor.getLayer('scene'),...layerFolderRows(this.editor.layers.filter(l=>l.kind==='layer').reverse(),this.editor.report._styk.layers,this.layerQuery||this.focusedLayerIds?new Set():this.collapsedFolders)],this.layerQuery,this.focusedLayerIds);
+    this.tracks=this.layerView.project(this.tracks);
     this.tracks=this._effectRows(this.tracks);
     this.visibleLayerCount=this.tracks.reduce((count,row)=>count+(row.kind==='layer'?1:0),0);
     const editor=this.editor;
@@ -464,15 +477,33 @@ export class Timeline{
     this.editor._selectedVfxClip=null;
     if(this.tracks.find(t=>t.id===id)?.kind==='motion')return this._selectMotion(id);
     this.editor._selectedCameraMotion=null;
-    if(event.shiftKey){const a=this.tracks.findIndex(t=>t.id===this.selectedTrackId),b=this.tracks.findIndex(t=>t.id===id);this.selectedLayers=new Set(this.tracks.slice(Math.min(a,b),Math.max(a,b)+1).map(t=>t.id));}
-    else if(event.ctrlKey||event.metaKey){this.selectedLayers.has(id)?this.selectedLayers.delete(id):this.selectedLayers.add(id);if(!this.selectedLayers.size)this.selectedLayers.add(id);}
-    else this.selectedLayers=new Set([id]);
+    if(!this.editor.getLayer(id))return;
+    if(event.shiftKey){this.anchor??={tick:this.start,id:this.selectedTrackId};this.selectedLayers=this._layerRange(this.anchor.id,id);}
+    else{
+      if(event.ctrlKey||event.metaKey){this.selectedLayers.has(id)?this.selectedLayers.delete(id):this.selectedLayers.add(id);if(!this.selectedLayers.size)this.selectedLayers.add(id);}
+      else this.selectedLayers=new Set([id]);
+      // Removing the active row leaves an active member for the host inspector.
+      // Its normal UI refresh must not select the removed row again.
+      if(!this.selectedLayers.has(id))id=[...this.selectedLayers].at(-1);
+      this.anchor={tick:this.start,id};
+    }
     this.selectedTrackId=id;this.editor.selectSheetLayer(id,{contents:id!=='camera'});this.onTrackSelect?.(this.trackById.get(id));this.update();
   }
-  // The app re-applies its selected track on every interface update. When that
-  // track is already selected there is nothing to reveal or repaint;
-  // reading the scroll position then would force layout mid-update.
-  selectTrack(id){if(id?.startsWith('figure:'))id=this.editor.layerForUid(Number(id.slice(7)));if(this.editor.getLayer(id)){if(this.selectedTrackId===id&&this.selectedLayers.has(id))return;this.selectedTrackId=id;this.selectedLayers=new Set([id]);this.revealSelectedLayer();this.update();}}
+  _layerRange(firstId,lastId){
+    const last=this.tracks.findIndex(row=>row.id===lastId),first=this.tracks.findIndex(row=>row.id===firstId);
+    return new Set(this.tracks.slice(Math.min(first<0?last:first,last),Math.max(first,last)+1).filter(row=>this.editor.getLayer(row.id)).map(row=>row.id));
+  }
+  _syncLayerSelection(detail){
+    // setActiveLayer publishes before selectSheetLayer follows its contents;
+    // that event still carries the previous figure selection.
+    if(detail.kind!=='selection'||detail.sheetSelection||detail.layerSelection||!this.editor.object)return;
+    this.selectedTrackId=this.editor.layerForUid(this.editor.selectedUid);this.selectedLayers=new Set([this.selectedTrackId]);
+    this.anchor={tick:Math.floor(this.editor.tick),id:this.selectedTrackId};this.revealSelectedLayer();
+  }
+  // The app re-applies its inspector target without revealing excluded rows.
+  // An unrelated UI refresh must preserve the current search and its selection.
+  // Reapplying the selected track also avoids a layout read mid-update.
+  selectTrack(id,{reveal=true}={}){if(id?.startsWith('figure:'))id=this.editor.layerForUid(Number(id.slice(7)));if(this.editor.getLayer(id)){if(!reveal&&!this.trackById.has(id)||this.selectedTrackId===id&&this.selectedLayers.has(id))return;this.selectedTrackId=id;this.selectedLayers=new Set([id]);this.anchor={tick:this.start,id};if(reveal)this.revealSelectedLayer();this.update();}}
   _renameLayer(node){const layer=this.editor.getLayer(node._id);const folder=this.tracks.find(row=>row.id===node._id&&row.kind==='folder');if(!layer&&!folder)return;if(layer?.kind!=='layer'&&!folder)return;const target=folder??layer;const input=element('input',null,'sheet-layer-rename');node._name.after(input);localizedAttribute(input, 'aria-label', "layerTimeline.rename", {name: target.name});input.value=target.name;node._name.hidden=true;input.focus();input.select();let done=false;
     const finish=save=>{if(done)return;done=true;if(save&&input.value!==target.name)this._run(()=>folder?this.editor.renameLayerFolder(target.id,input.value):this.editor.renameLayer(target.id,input.value));input.remove();node._name.hidden=false;this.update();};input.addEventListener('blur',()=>finish(true),{once:true});input.addEventListener('keydown',event=>{event.stopPropagation();if(event.key==='Enter')finish(true);if(event.key==='Escape')finish(false);});}
   /** The cell under a pointer: its frame and row (-1 on the ruler; pinned rows do not scroll). */
@@ -482,9 +513,9 @@ export class Timeline{
   _contains(hit){return hit.row>=0&&this.selectedLayers.has(this.tracks[hit.row]?.id)&&hit.tick>=this.start&&hit.tick<=this.end;}
   _selectCell(hit,{extend=false,notify=true}={}){
     const wait=this.beforeCommand?.();if(wait)return wait.then(()=>this._selectCell(hit,{extend,notify})).catch(error=>this.onError?.(error));
-    const layer=this.tracks[hit.row];if(!layer||layer.kind==='folder')return;if(layer.kind.startsWith('vfx'))return this._selectVfxRow(layer);if(layer.kind==='motion')return this._selectMotion(layer.id);this.editor._selectedCameraMotion=null;const changed=this.selectedTrackId!==layer.id,anchor=this.anchor??{tick:this.start,row:this.tracks.findIndex(l=>l.id===this.selectedTrackId)};
-    if(extend){this.start=Math.min(anchor.tick,hit.tick);this.end=Math.max(anchor.tick,hit.tick);this.selectedLayers=new Set(this.tracks.slice(Math.min(anchor.row,hit.row),Math.max(anchor.row,hit.row)+1).map(l=>l.id));}
-    else{this.start=this.end=hit.tick;this.selectedLayers=new Set([layer.id]);this.anchor={tick:hit.tick,row:hit.row};}
+    const layer=this.tracks[hit.row];if(!layer||layer.kind==='folder')return;if(layer.kind.startsWith('vfx'))return this._selectVfxRow(layer);if(layer.kind==='motion')return this._selectMotion(layer.id);this.editor._selectedCameraMotion=null;const changed=this.selectedTrackId!==layer.id,anchor=this.anchor??={tick:this.start,id:this.selectedTrackId};
+    if(extend){this.start=Math.min(anchor.tick,hit.tick);this.end=Math.max(anchor.tick,hit.tick);this.selectedLayers=this._layerRange(anchor.id,layer.id);}
+    else{this.start=this.end=hit.tick;this.selectedLayers=new Set([layer.id]);this.anchor={tick:hit.tick,id:layer.id};}
     this.selectedTrackId=layer.id;
     if(this.editor._sheetSelection?.id!==layer.id)this.editor.selectSheetLayer(layer.id,{contents:layer.id!=='camera'});
     this.selecting=true;try{if(this.editor.tick!==hit.tick)this.editor.seek(hit.tick,{allowBeyondEnd:true});}finally{this.selecting=false;}
@@ -644,24 +675,7 @@ export class Timeline{
       !locked&&motion.enabled&&{label:interfaceText("layerTimeline.bakeClipRange"), labelKey: "layerTimeline.bakeClipRange",symbol:'diamond',action:()=>editor.bakeCameraMotion({start:motion.start,end:motion.start+motion.duration})},
       locked&&{disabled:editor.isLayerFocusLocked('camera'),label:interfaceText("layerTimeline.unlockCamera"), labelKey: "layerTimeline.unlockCamera",symbol:'unlock',action:()=>editor.setLayerLocked('camera',false)},
     ],[!locked&&{label:interfaceText("layerTimeline.deleteMotion"), labelKey: "layerTimeline.deleteMotion",symbol:'trash',danger:true,action:()=>editor.deleteCameraMotion(motion.id)}]]);
-    // A layer's menu: named after the layer; its colour a submenu; New layer; Delete last.
-    const own=selected?.kind==='layer',several=this.ids.filter(id=>editor.getLayer(id)?.kind==='layer').length>1;
-    if(layer)return showTimelineMenu(this,event,[
-      [selected&&{heading:selected.name},
-       ...this.layerFolderMenuItems(),
-       own&&{label:interfaceText("layerTimeline.renameLayer"), labelKey: "layerTimeline.renameLayer",symbol:'text',shortcut:'F2',action:()=>{const node=this.labels.find(node=>node._id===selected.id);if(node)this._renameLayer(node);}},
-       own&&{label:interfaceText("layerTimeline.layerColor"), labelKey: "layerTimeline.layerColor",symbol:'palette',submenu:[[{label:interfaceText("layerTimeline.noColor"), labelKey: "layerTimeline.noColor",swatch:'var(--sheet-layer)',checked:!selected.color,action:()=>editor.setLayerColor([selected.id],null)},...Object.keys(LAYER_COLORS).map(color=>({label:interfaceText(layerColorMessages[color]),labelKey:layerColorMessages[color],swatch:LAYER_COLORS[color],checked:selected.color===color,action:()=>editor.setLayerColor([selected.id],color)}))]]},
-       {label:selected?.visible===false?interfaceText("layerTimeline.showLayer"):interfaceText("layerTimeline.hideLayer"), labelKey: (selected?.visible===false ? "layerTimeline.showLayer" : "layerTimeline.hideLayer"), labelParams: (selected?.visible===false ? {} : {}),symbol:selected?.visible===false?'eye':'eye-off',action:()=>editor.setLayerVisible(selected.id,selected.visible===false)},
-       {disabled:Boolean(selected?.focusLocked),label:selected?.savedLocked?interfaceText("layerTimeline.unlockLayer"):interfaceText("layerTimeline.lockLayer"), labelKey: (selected?.savedLocked ? "layerTimeline.unlockLayer" : "layerTimeline.lockLayer"),symbol:selected?.savedLocked?'unlock':'lock',action:()=>editor.setLayerLocked(selected.id,!selected.savedLocked)},
-       own&&{label:several?interfaceText("layerTimeline.focusSelectedLayers"):interfaceText("layerTimeline.focusThisLayer"), labelKey: (several ? "layerTimeline.focusSelectedLayers" : "layerTimeline.focusThisLayer"), labelParams: (several ? {} : {}),symbol:'layers',action:()=>this.focusSelectedLayers({ids:several?this.ids:[selected.id]})},
-       own&&{label:interfaceText('timelineOrganization.focusAndLock'),labelKey:'timelineOrganization.focusAndLock',symbol:'lock',action:()=>this.focusSelectedLayers({lock:true,ids:several?this.ids:[selected.id]})}],
-      // Moving a layer in the stack without dragging its name (a finger, a keyboard): up is toward the top row.
-      own?[{label:interfaceText("layerTimeline.moveLayerUp"), labelKey: "layerTimeline.moveLayerUp",symbol:'up',disabled:editor.report._styk.layers.order.at(-1)===selected.id,action:()=>this.reorderLayer(-1)},
-       {label:interfaceText("layerTimeline.moveLayerDown"), labelKey: "layerTimeline.moveLayerDown",symbol:'down',disabled:editor.report._styk.layers.order[0]===selected.id,action:()=>this.reorderLayer(1)}]:null,
-      [{label:interfaceText("layerTimeline.newLayer"), labelKey: "layerTimeline.newLayer",symbol:'plus',action:()=>this.newLayer()},
-       {label:interfaceText("layerTimeline.newDrawingLayer"), labelKey: "layerTimeline.newDrawingLayer",symbol:'brush',action:()=>this.newLayer('drawing')}],
-      [own&&!selected.locked&&editor.report._styk.layers.order.length>1&&{label:interfaceText("layerTimeline.deleteLayer"), labelKey: "layerTimeline.deleteLayer",symbol:'trash',danger:true,action:()=>this.deleteLayer()}],
-    ]);
+    if(layer)return showTimelineMenu(this,event,timelineLayerMenuGroups(this));
     const hasKey=this.ids.some(id=>editor.layerFrameKeys(id).some(k=>k.tick>0&&k.tick>=this.start&&k.tick<=this.end)),
       hasFrames=this.ids.some(id=>this.start<(editor.report._styk.layerSheet.tracks[id]?.end??0)),
       clipboard=editor._sheetClipboard,order=editor.getLayers().filter(l=>l.kind==='layer').map(l=>l.id).reverse(),
@@ -685,7 +699,7 @@ export class Timeline{
        locked&&{disabled:this.ids.some(id=>editor.isLayerFocusLocked(id)),label:interfaceText("layerTimeline.unlockLayers"), labelKey: "layerTimeline.unlockLayers",symbol:'unlock',action:()=>{for(const id of this.ids)editor.setLayerLocked(id,false);}}],
     ]);
   }
-  destroy(){this.editor.clearLayerFocus();this.disposed=true;this._unmountTouchActions();cancelAnimationFrame(this._centerFrame??0);this.audio?.destroy();this._cancelGesture();this.events.abort();this.menuEvents?.abort();this.observer.disconnect();if(this.raf)cancelAnimationFrame(this.raf);this.menu?.remove();this.easingPopover?.hidePopover();this.headerTools.classList.remove('audio-selection');this.onionRange.destroy();this.root.remove();}
+  destroy(){this.layerFilterPopover?.destroy();if(this.ownsLayerView)this.layerView.destroy();this.editor.clearLayerFocus();this.disposed=true;this._unmountTouchActions();cancelAnimationFrame(this._centerFrame??0);this.audio?.destroy();this._cancelGesture();this.events.abort();this.menuEvents?.abort();this.observer.disconnect();if(this.raf)cancelAnimationFrame(this.raf);this.menu?.remove();this.easingPopover?.hidePopover();this.headerTools.classList.remove('audio-selection');this.onionRange.destroy();this.root.remove();}
 }
 
 Object.assign(Timeline.prototype,cameraMotionTimelineMethods,timelineOrganizationMethods,timelineTouchMethods);

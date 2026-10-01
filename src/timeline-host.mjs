@@ -38,9 +38,11 @@ import {icon} from './icons.mjs';
 import {setAttr, setMarkup, setProp, setText} from './ui/dom-write.mjs';
 import {createTimelineHeader} from './timeline-header.mjs';
 import {normalizePlaybackRange} from './playback-window.mjs';
+import {TimelineLayerView} from './timeline-layer-view.mjs';
 
 export function createTimelineHost(ctx) {
   const {editor, state, $, actions} = ctx;
+  const layerView = new TimelineLayerView(editor);
   let timeline = null, inbetweenDialog, shownPlayback = null;
   const header = createTimelineHeader(ctx, {
     get timeline() { return timeline; },
@@ -112,6 +114,7 @@ export function createTimelineHost(ctx) {
     const TimelineClass =
       state.settings.timelineMode === "simple" ? SimpleTimeline : Timeline;
     timeline = new TimelineClass($("timeline"), editor, {
+      layerView,
       header,
       overlays: ctx.overlays ?? null,
       // The touch interface's state (docs/TOUCH.md): the grid takes a finger's swipes, taps and holds.

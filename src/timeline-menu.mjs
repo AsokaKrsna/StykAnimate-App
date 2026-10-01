@@ -1,6 +1,49 @@
 import {t as interfaceText} from './localization.mjs';
 import {icon} from './icons.mjs';
 import {openMenu} from './ui/ui-menu.mjs';
+import {LAYER_COLORS} from './layers.mjs';
+
+const layerColorMessages = {blue: 'layerTimeline.color.blue', violet: 'layerTimeline.color.violet', rose: 'layerTimeline.color.rose', orange: 'layerTimeline.color.orange', green: 'layerTimeline.color.green', teal: 'layerTimeline.color.teal'};
+
+/** A layer menu keeps its common edits at the root and related commands together. */
+export function timelineLayerMenuGroups(host) {
+  const editor = host.editor, selected = editor.getLayer(host.selectedTrackId);
+  if (!selected) return [];
+  const own = selected.kind === 'layer';
+  const ids = host.ids.filter(id => editor.getLayer(id)?.kind === 'layer');
+  const focusIds = ids.length > 1 ? ids : [selected.id];
+  const command = (labelKey, symbol, action, options = {}) => ({label: interfaceText(labelKey), labelKey, symbol, action, ...options});
+  return [
+    [{heading: selected.name},
+      own && command('layerTimeline.renameLayer', 'text', () => { const node = host.labels.find(node => !node.hidden && node._id === selected.id); if (node) host._renameLayer(node); }, {shortcut: 'F2'}),
+      own && {label: interfaceText('layerTimeline.layerColor'), labelKey: 'layerTimeline.layerColor', symbol: 'palette', submenu: [[
+        command('layerTimeline.noColor', null, () => editor.setLayerColor([selected.id], null), {swatch: 'var(--sheet-layer)', checked: !selected.color}),
+        ...Object.keys(LAYER_COLORS).map(color => command(layerColorMessages[color], null, () => editor.setLayerColor([selected.id], color), {swatch: LAYER_COLORS[color], checked: selected.color === color})),
+      ]]},
+    ],
+    [own && {label: interfaceText('timelineMenu.focus'), labelKey: 'timelineMenu.focus', symbol: 'layers', submenu: [[
+      command(ids.length > 1 ? 'layerTimeline.focusSelectedLayers' : 'layerTimeline.focusThisLayer', 'layers', () => host.focusSelectedLayers({ids: focusIds})),
+      command('timelineOrganization.focusAndLock', 'lock', () => host.focusSelectedLayers({ids: focusIds, lock: true})),
+    ], [host.focusedLayerIds && command('layerTimeline.showAllLayers', 'layers', () => host.focusSelectedLayers())]]},
+      {label: interfaceText('timelineMenu.organize'), labelKey: 'timelineMenu.organize', symbol: 'folder', submenu: [
+        host.layerFolderMenuItems(),
+        own ? [
+          command('layerTimeline.moveLayerUp', 'up', () => host.reorderLayer(-1), {disabled: editor.report._styk.layers.order.at(-1) === selected.id}),
+          command('layerTimeline.moveLayerDown', 'down', () => host.reorderLayer(1), {disabled: editor.report._styk.layers.order[0] === selected.id}),
+        ] : [],
+      ]},
+      {label: interfaceText('timelineMenu.visibilityAndLock'), labelKey: 'timelineMenu.visibilityAndLock', symbol: 'eye', submenu: [[
+        command(selected.visible === false ? 'layerTimeline.showLayer' : 'layerTimeline.hideLayer', selected.visible === false ? 'eye' : 'eye-off', () => editor.setLayerVisible(selected.id, selected.visible === false)),
+        command(selected.savedLocked ? 'layerTimeline.unlockLayer' : 'layerTimeline.lockLayer', selected.savedLocked ? 'unlock' : 'lock', () => editor.setLayerLocked(selected.id, !selected.savedLocked), {disabled: Boolean(selected.focusLocked)}),
+      ]]},
+    ],
+    [{label: interfaceText('timelineMenu.newLayer'), labelKey: 'timelineMenu.newLayer', symbol: 'plus', submenu: [[
+      command('layerTimeline.newLayer', 'plus', () => host.newLayer()),
+      command('layerTimeline.newDrawingLayer', 'brush', () => host.newLayer('drawing')),
+    ]]}],
+    [own && !selected.locked && editor.report._styk.layers.order.length > 1 && command('layerTimeline.deleteLayer', 'trash', () => host.deleteLayer(), {danger: true})],
+  ];
+}
 
 /**
  * The timelines' right-click and ⋯ menus (the Advanced sheet, Simple's cards, audio clips, effect clips) on the

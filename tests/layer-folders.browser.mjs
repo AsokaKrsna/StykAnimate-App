@@ -17,6 +17,7 @@ try {
   await row('layer-3').locator('.sheet-layer-name').click({modifiers:['Control']});await settle();
   assert.deepEqual(await page.evaluate(()=>styk.timeline.ids),['layer-2','layer-3']);
   await row('layer-3').click({button:'right'});
+  await page.getByRole('menuitem',{name:'Organize',exact:true}).click();
   await page.getByRole('menuitem',{name:'Group selected layers in folder',exact:true}).click();await settle();
   const rename=page.getByRole('textbox',{name:/Rename/});await rename.fill('Scene 1');await rename.press('Enter');await settle();
   assert.deepEqual(await page.evaluate(()=>styk.editor.getLayerFolders().map(folder=>folder.name)),['Scene 1']);
