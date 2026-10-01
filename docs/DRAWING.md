@@ -135,8 +135,10 @@ Drawing rows carry a brush icon, DRAW badge and tinted exposure spans; wide
 exposures display small cel thumbnails. First-stroke previews use the same layer
 order as committed drawings and playback, including while other layers are hidden.
 Existing onion settings apply, with key mode sampling distinct neighboring drawing
-exposures inside the selected frame range. Ghosts stay above lower layers and behind
-the current artwork on their own layer. Frame mode keeps its explicit frame-based sampling.
+exposures inside the selected frame range. Without Scene VFX, ghosts stay above lower
+layers and behind the current artwork on their own layer. Scene VFX retains its
+unfiltered ghost overlay above the camera preview. Frame mode keeps its explicit
+frame-based sampling.
 
 ## Document contract
 

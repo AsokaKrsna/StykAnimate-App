@@ -33,7 +33,7 @@ What's new in each version of StykAnimate.
 
 ### Fixed
 
-- Fixed new drawings changing their layer position between the first stroke and playback.
+- Fixed drawings disappearing with VFX enabled or changing layer position after the first stroke.
 - Fixed onion skins disappearing behind lower layers or skipping nearby drawings in animations with many layers.
 - Fixed repeated captions in controls and panels when changing the interface language.
 - Fixed Settings running off the edge of very narrow windows.

@@ -1470,8 +1470,7 @@ class WebGPURenderer {
     let rect=null;
     if(Math.abs(cd)>1e-12&&Math.abs(md)>1e-12){
       const toWorld=p=>({x:(camera[3]*(p.x-camera[4])-camera[2]*(p.y-camera[5]))/cd,y:(camera[0]*(p.y-camera[5])-camera[1]*(p.x-camera[4]))/cd});
-      const depth=this.rasterParallax?.(entry.uid),move=this.rasterDrag?.get?.(entry.uid)||this.rasterDrag?.[entry.uid];
-      const shift=translation??{x:(depth?.x||0)+(move?.x||0),y:(depth?.y||0)+(move?.y||0)},mx=m[4]+shift.x,my=m[5]+shift.y;
+      const shift=translation??{x:0,y:0},mx=m[4]+shift.x,my=m[5]+shift.y;
       const toPixel=p=>({x:(m[3]*(p.x-mx)-m[2]*(p.y-my))/md,y:(m[0]*(p.y-my)-m[1]*(p.x-mx))/md});
       const ps=[[0,0],[width,0],[width,height],[0,height]].map(([x,y])=>toPixel(toWorld({x,y})));
       const x=Math.min(...ps.map(p=>p.x)),y=Math.min(...ps.map(p=>p.y));

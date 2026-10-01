@@ -31,9 +31,11 @@ tint, and selection changes reuse sampled geometry. Shared-definition changes
 invalidate geometry even when the layer-sheet state is unchanged.
 
 Completed ghost pixels belong to the renderer, separately from sampled geometry.
-By default ghosts sit immediately behind the current artwork on their own layer,
-above lower layers such as an opaque floor. A blank current layer retains the same
-place in the stack. Show on top still places all ghosts above current artwork.
+Without Scene VFX, default ghosts sit immediately behind the current artwork
+on their own layer, above lower layers such as an opaque floor. A blank current
+layer retains the same place in the stack. Show on top still places all ghosts
+above current artwork.
+Scene VFX retains ghosts as an unfiltered overlay above the completed camera preview.
 Both backends cache contiguous ghost layers within a hardware-derived memory
 budget, retaining committed pixels during live poses. View, visibility, resource,
 and sampled-geometry changes invalidate the affected layer. The
