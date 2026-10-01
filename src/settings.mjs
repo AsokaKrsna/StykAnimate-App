@@ -36,6 +36,8 @@ export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   showUnselectedHandles: true,
   canvasGrid: false,
   canvasZoomGesture: "ctrl-scroll",
+  // Wheel zoom glides between levels. Automatic glides except in Compatibility mode (canvas-wheel-zoom.mjs).
+  smoothZoom: "auto",
   marqueeSelection: "origins",
   pasteDepth: "same",
   altDragDuplicate: "instance",
@@ -107,6 +109,7 @@ export function normalizeEditorSettings(value = {}) {
   result.playbackQuality = normalizePlaybackQuality(value?.playbackQuality);
   if (['scroll', 'ctrl-scroll'].includes(value?.canvasZoomGesture))
     result.canvasZoomGesture = value.canvasZoomGesture;
+  if (['auto', 'on', 'off'].includes(value?.smoothZoom)) result.smoothZoom = value.smoothZoom;
   if (['bounds', 'origins'].includes(value?.marqueeSelection))
     result.marqueeSelection = value.marqueeSelection;
   if (['same', 'front'].includes(value?.pasteDepth)) result.pasteDepth = value.pasteDepth;
@@ -612,6 +615,7 @@ export class EditorSettings {
       const handleSize = `<div class="styk-settings-row styk-settings-block"><span class="styk-settings-handle-head">${this.text(say("settings.handleRadius"))}<span class="styk-settings-slider"><input type="range" class="ui-slider" data-setting="handleSize" min="3" max="10" step="1" value="${value.handleSize}" aria-label="${escape(say("settings.handleRadius"))}" style="--_p:${sliderPercent(value.handleSize, 3, 10)}%" ${messageAttributes("settings.handleRadius", {}, "aria-label")}><output data-handle-value>${value.handleSize}px</output></span></span><div class="styk-settings-preview" role="img" aria-label="${escape(say("settings.handlePreview"))}" style="--size:${value.handleSize};--node-outline:${value.outlineHandles ? interfaceText("settings.message1pxSolid000") : interfaceText("settings.message0pxSolidTransparent")}" ${messageAttributes("settings.handlePreview", {}, "aria-label")}>${nodes.map(kind => `<span class="styk-settings-node-cell"><span class="styk-settings-node" style="--node-color:${PIVOT_HANDLE_COLORS[kind]}"></span><small ${messageAttributes('settings.handle.' + kind, {})}>${escape(say('settings.handle.' + kind))}</small></span>`).join('')}</div></div>`;
       return this.group(say("settings.navigation"),
           this.select(say("settings.zoomGesture"), 'canvasZoomGesture', [messageTuple(['ctrl-scroll', say("settings.zoomCtrlScroll")], {1: {key: "settings.zoomCtrlScroll", params: {}}}), messageTuple(['scroll', say("settings.zoomScroll")], {1: {key: "settings.zoomScroll", params: {}}})])
+          + this.select(say("settings.smoothZoom"), 'smoothZoom', [messageTuple(['auto', say("settings.smoothZoomAuto")], {1: {key: "settings.smoothZoomAuto", params: {}}}), messageTuple(['on', say("settings.smoothZoomOn")], {1: {key: "settings.smoothZoomOn", params: {}}}), messageTuple(['off', say("settings.smoothZoomOff")], {1: {key: "settings.smoothZoomOff", params: {}}})], say("settings.smoothZoomNote"))
           + this.select(say("settings.boxSelection"), 'marqueeSelection', [messageTuple(['bounds', say("settings.boxBounds")], {1: {key: "settings.boxBounds", params: {}}}), messageTuple(['origins', say("settings.boxOrigins")], {1: {key: "settings.boxOrigins", params: {}}})]))
         + this.group(interfaceText("settings.pasting"), this.select(interfaceText("settings.pastedFigureDepth"), 'pasteDepth', [messageTuple(['same', interfaceText("settings.sameZIndexDefault")], {1: {key: "settings.sameZIndexDefault", params: {}}}), messageTuple(['front', interfaceText("settings.inFront")], {1: {key: "settings.inFront", params: {}}})], interfaceText("settings.chooseWhetherPastedFiguresKeepTheirCopiedDepth")))
         + this.group(interfaceText("settings.duplication"),

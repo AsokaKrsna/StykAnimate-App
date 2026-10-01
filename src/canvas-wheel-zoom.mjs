@@ -8,6 +8,10 @@
  * Small deltas come from devices that are already continuous (a trackpad pinch, a
  * free-spinning wheel); they are applied directly so the view tracks the fingers.
  *
+ * With smooth zooming off, each notch applies its whole step at once: one repaint
+ * per notch instead of one per frame of a glide. The step is the same either way,
+ * so turning smoothing off changes how the view moves, never how far a notch zooms.
+ *
  * The owner advances the glide from its frame loop and applies each step through
  * `zoomBy(factor, point)`, the same anchored zoom every other control uses.
  */
@@ -20,13 +24,22 @@ const LONGEST_STEP_MS = 64;    // a stalled frame does not finish the glide in o
 const SETTLED = 0.004;         // remaining zoom (log scale) too small to see: land exactly
 const INPUT_IDLE_MS = 100;    // continuous input also needs a final detail paint
 
+/** Whether wheel notches glide. `setting` is Settings → Canvas → Smooth zooming;
+ * Automatic glides except in Compatibility mode, whose software repaints make each
+ * extra frame of a glide costly in dense scenes. */
+export function smoothWheelZoom(setting, backend) {
+  if (setting === 'on') return true;
+  if (setting === 'off') return false;
+  return backend !== 'Canvas 2D fallback';
+}
+
 /** The zoom (log scale) one wheel event asks for; monotonic in the delta across both kinds of device. */
 export function wheelZoomAmount(deltaY) {
   const size = Math.abs(deltaY);
   return -Math.sign(deltaY) * Math.max(Math.min(size, PRECISE_DELTA) * PRECISE_GAIN, size * NOTCH_GAIN);
 }
 
-export function createWheelZoom({getScale, zoomBy, min = 0.001, max = 100, reducedMotion = () => false, onSettled = () => {}}) {
+export function createWheelZoom({getScale, zoomBy, min = 0.001, max = 100, smooth = () => true, reducedMotion = () => false, onSettled = () => {}}) {
   let target = null, point = null, applied = 0, last = 0, idleTimer = null;
 
   const stop = () => { const active=target!==null;target = null;if(active&&idleTimer===null)onSettled(); };
@@ -57,7 +70,7 @@ export function createWheelZoom({getScale, zoomBy, min = 0.001, max = 100, reduc
       const scale = getScale();
       target = Math.min(max, Math.max(min, (target ?? scale) * Math.exp(wheelZoomAmount(deltaY))));
       point = at;
-      if (Math.abs(deltaY) < PRECISE_DELTA || reducedMotion()) {
+      if (Math.abs(deltaY) < PRECISE_DELTA || !smooth() || reducedMotion()) {
         zoomBy(target / scale, point);
         stop();
         return;

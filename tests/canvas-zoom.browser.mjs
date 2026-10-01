@@ -57,11 +57,40 @@ try {
   await page.evaluate(() => styk.settingsUI.open('canvas'));
   await select.selectOption('ctrl-scroll');
   await page.evaluate(() => styk.settingsUI.close());
+  // Let the previous notch's glide land before sampling the view.
+  await page.waitForTimeout(400);
   before = await view();
   await wheel({});
   assert.equal((await view()).scale,before.scale);
+  // Smooth zooming: Automatic glides except in Compatibility mode; On and Off override it.
+  const notch = async () => {
+    // A 100 px notch, then the view one frame later: a glide has only started, a step has finished.
+    const before = (await view()).scale;
+    await wheel({ctrlKey:true,deltaY:-100});
+    const first = (await view()).scale;
+    await page.waitForTimeout(400);
+    return {first:first/before, settled:(await view()).scale/before};
+  };
+  const backend = await page.evaluate(() => styk.state.renderer.stats.backend);
+  await page.evaluate(() => styk.settingsUI.open('canvas'));
+  const smooth = page.getByRole('combobox',{name:'Smooth zooming'});
+  assert.equal(await smooth.inputValue(),'auto');
+  await page.screenshot({path:'artifacts/canvas-zoom-smooth-setting.png'});
+  await page.evaluate(() => styk.settingsUI.close());
+  const expectedAutomatic = backend !== 'Canvas 2D fallback';
+  for (const [mode, glides] of [['auto', expectedAutomatic], ['on', true], ['off', false]]) {
+    await page.evaluate(async mode => { styk.settingsUI.commit({smoothZoom:mode}); await styk.settingsUI.flush(); }, mode);
+    const step = await notch();
+    assert.ok(Math.abs(step.settled - 1.35) < 0.01, `${mode}: a notch zooms about 1.35x (${step.settled})`);
+    if (glides) assert.ok(step.first < step.settled - 0.05, `${mode}: the view glides toward the notch (${step.first})`);
+    else assert.ok(Math.abs(step.first - step.settled) < 1e-9, `${mode}: the notch applies at once (${step.first})`);
+  }
+  await page.reload();
+  await page.waitForFunction(() => window.styk?.ready);
+  assert.equal(await page.evaluate(() => styk.state.settings.smoothZoom),'off');
+  await page.evaluate(async () => { styk.settingsUI.commit({smoothZoom:'auto'}); await styk.settingsUI.flush(); });
   assert.deepEqual(errors,[]);
-  console.log('PASS: zoom modes, pan modifiers, pointer anchor, settings UI, reload persistence, and no page errors');
+  console.log(`PASS: zoom modes, pan modifiers, pointer anchor, settings UI, smooth zooming (${backend}), reload persistence, and no page errors`);
 } finally {
   await browser.close();
 }

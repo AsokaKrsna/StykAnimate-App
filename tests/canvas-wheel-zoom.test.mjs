@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createWheelZoom, wheelZoomAmount} from '../src/canvas-wheel-zoom.mjs';
+import {createWheelZoom, smoothWheelZoom, wheelZoomAmount} from '../src/canvas-wheel-zoom.mjs';
+import {normalizeEditorSettings} from '../src/settings.mjs';
 
 // The app's anchored zoom: the artwork under `point` stays under it.
 function canvas(options = {}) {
@@ -127,4 +128,45 @@ test('the glide stops at the zoom limits and yields to another zoom or a cancel'
   press.glide.cancel();
   assert.equal(press.glide.advance(32), false);
   assert.equal(press.view.scale, held);
+});
+
+test('with smooth zooming off, each notch zooms its whole step at once with one repaint', () => {
+  let smooth = false;
+  const page = canvas({smooth: () => smooth}), artwork = under(page.view), notch = Math.exp(wheelZoomAmount(-100));
+  page.glide.wheel(-100, at, 0);
+  assert.equal(page.glide.active, false, 'nothing is left to glide');
+  assert.equal(page.steps.length, 1, 'one notch, one view change');
+  assert.ok(Math.abs(page.view.scale - notch) < 1e-12, 'the same step a glide would reach');
+  const now = under(page.view);
+  assert.ok(Math.abs(now.x - artwork.x) < 1e-9 && Math.abs(now.y - artwork.y) < 1e-9, 'still anchored at the pointer');
+  page.glide.wheel(-100, at, 20); page.glide.wheel(100, at, 40); page.glide.wheel(100, at, 60);
+  assert.equal(page.steps.length, 4);
+  assert.ok(Math.abs(page.view.scale - 1) < 1e-9, 'notches add up exactly in both directions');
+  assert.ok(notch < 1.4, 'a notch stays smaller than the old 1.65x jump');
+  // The setting is read per event: turning it back on glides the next notch.
+  smooth = true; page.glide.wheel(-100, at, 80);
+  assert.equal(page.glide.active, true);
+});
+
+test('stepped notches still settle once, after the last notch', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  let paints = 0;const page = canvas({smooth: () => false, onSettled: () => paints++});
+  page.glide.wheel(-100, at, 0); t.mock.timers.tick(60);
+  page.glide.wheel(-100, at, 60);
+  assert.equal(page.glide.interacting, true, 'a burst of notches is one navigation');
+  t.mock.timers.tick(99); assert.equal(paints, 0);
+  t.mock.timers.tick(1); assert.equal(page.glide.interacting, false); assert.equal(paints, 1);
+});
+
+test('Automatic smooth zooming glides except in Compatibility mode; On and Off override it', () => {
+  assert.equal(smoothWheelZoom('auto', 'WebGPU'), true);
+  assert.equal(smoothWheelZoom('auto', 'Canvas 2D fallback'), false);
+  assert.equal(smoothWheelZoom('auto', undefined), true, 'before a renderer exists, the default glide applies');
+  for (const backend of ['WebGPU', 'Canvas 2D fallback', undefined]) {
+    assert.equal(smoothWheelZoom('on', backend), true);
+    assert.equal(smoothWheelZoom('off', backend), false);
+  }
+  assert.equal(normalizeEditorSettings().smoothZoom, 'auto');
+  for (const value of ['auto', 'on', 'off']) assert.equal(normalizeEditorSettings({smoothZoom: value}).smoothZoom, value);
+  for (const value of [true, false, 'yes', null]) assert.equal(normalizeEditorSettings({smoothZoom: value}).smoothZoom, 'auto');
 });

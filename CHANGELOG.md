@@ -26,7 +26,7 @@ What's new in each version of StykAnimate.
 - Shorter layer menus with related commands grouped into submenus.
 - Easier timeline navigation: zooming stays on the playhead, the view follows it, and there is room below the last layer.
 - Layer focus stays active until you turn it off, with support for multiple layers and Focus and lock to protect other artwork while you work.
-- Zooming the canvas with the mouse wheel is smooth and easier to control.
+- Zooming the canvas with the mouse wheel is smooth and easier to control. Compatibility mode zooms in quick steps by default, and Settings › Canvas › Smooth zooming lets you choose.
 - Complete interface translations for all 26 supported non-English languages, with right-to-left layouts and clearer text in narrow windows.
 - Onion skin is enabled when the app starts.
 - While joining figures, movable nodes are shown in red and static nodes in white.

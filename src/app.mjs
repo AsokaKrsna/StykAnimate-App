@@ -86,7 +86,7 @@ import { createExportFlow } from "./export-flow.mjs";
 import { createAppDialogs } from "./app-dialogs.mjs";
 import { dragSlop, beyondSlop, installPenMenuGuard } from "./pen-input.mjs";
 import { installCanvasPinch } from "./canvas-pinch.mjs";
-import { createWheelZoom } from "./canvas-wheel-zoom.mjs";
+import { createWheelZoom, smoothWheelZoom } from "./canvas-wheel-zoom.mjs";
 import { createPoseInputQueue } from './canvas-pose-input.mjs';
 import { CanvasHandleOverlay } from './canvas-handle-overlay.mjs';
 import { installTouchMode } from "./touch/touch-mode.mjs";
@@ -1409,6 +1409,7 @@ const reducedMotionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)
 const wheelZoom = createWheelZoom({
   getScale: () => state.view.scale,
   zoomBy: zoom,
+  smooth: () => smoothWheelZoom(state.settings.smoothZoom, state.renderer?.stats?.backend),
   reducedMotion: () => Boolean(reducedMotionQuery?.matches),
   onSettled: requestRender,
 });
