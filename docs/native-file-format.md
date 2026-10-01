@@ -78,6 +78,11 @@ while inflating; malformed, truncated or trailing compressed streams are rejecte
 The Python zstd reader admits declared content sizes and windows before allocating
 and checks exact single-frame boundaries, including frames without a content size.
 Writers enforce the same admission limits rather than emitting an unreopenable file.
+Ordinary writes bound each finite numeric value by 32 JSON bytes during the
+existing traversal. If that conservative total exceeds the materialization
+limit, the writer runs the exact marker preflight before deciding whether the
+document fits. This avoids decimal formatting for every pose number while
+preserving acceptance of valid near-limit files and the separate allocation limit.
 
 Skeletons and sections prefer zstd (vendored WASM on the client, the optional
 `zstandard` package in Python); writers fall back to zlib when zstd is

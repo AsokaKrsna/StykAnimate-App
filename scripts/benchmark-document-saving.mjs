@@ -1,6 +1,6 @@
 /** Compare the production export worker with a committed control on identical
  * read-only projects. Excludes drawing publication, browser UI, IPC and disk. */
-import {readFile, writeFile, mkdir} from 'node:fs/promises';
+import {readFile, writeFile, mkdir, readdir, mkdtemp} from 'node:fs/promises';
 import {execFileSync, spawn} from 'node:child_process';
 import {Worker as NodeWorker, isMainThread, parentPort, workerData} from 'node:worker_threads';
 import {createHash} from 'node:crypto';
@@ -22,8 +22,8 @@ if (!isMainThread) {
   await import(workerData.target);
 } else if (process.argv.includes('--child')) {
   const args = JSON.parse(process.argv.at(-1));
-  const {decodeDocument, normalizeDecodedDocument} = await import('../src/native-container.mjs');
-  const {expandPoseSequencesSteps} = await import('../src/pose-sequence-storage.mjs');
+  const {decodeDocument, normalizeDecodedDocument} = await import(pathToFileURL(path.join(args.runtime, 'src/native-container.mjs')).href);
+  const {expandPoseSequencesSteps} = await import(pathToFileURL(path.join(args.runtime, 'src/pose-sequence-storage.mjs')).href);
   const {DocumentExporter} = await import(args.exporter);
   const raw = await readFile(args.filename), decoded = await decodeDocument(raw, 'styk');
   const report = normalizeDecodedDocument(decoded.document, 'styk'), seen = new Set();
@@ -67,16 +67,34 @@ if (!isMainThread) {
 } else {
   const control = process.argv.find(value => value.startsWith('--control='))?.slice(10);
   if (!control || !/^[a-f0-9]{8,40}$/.test(control)) throw new Error('Pass --control=<commit SHA> for the comparison.');
-  const controlDir = path.join(output, 'control'); await mkdir(controlDir, {recursive: true});
-  const controlHashes = {}, currentHashes = {};
+  await mkdir(output, {recursive: true});
+  // Both variants import one immutable dependency graph. Other editing tasks
+  // cannot change their runtime between pairs on the shared workstation.
+  const runtime = await mkdtemp(path.join(output, 'runtime-')), runtimeHashes = {};
+  async function capture(relative) {
+    await mkdir(path.join(runtime, relative), {recursive: true});
+    for (const entry of await readdir(path.join(root, relative), {withFileTypes: true})) {
+      const filename = path.join(relative, entry.name);
+      if (entry.isDirectory()) await capture(filename);
+      else if (entry.isFile()) {
+        const bytes = await readFile(path.join(root, filename));
+        await writeFile(path.join(runtime, filename), bytes);
+        runtimeHashes[filename.replaceAll('\\', '/')] = hash(bytes);
+      }
+    }
+  }
+  await capture('src'); await capture('vendor');
+  const controlDir = path.join(runtime, 'control'); await mkdir(controlDir, {recursive: true});
+  const controlHashes = {}, currentHashes = {}, adaptedControlHashes = {};
   for (const file of files) {
     const original = execFileSync('git', ['show', `${control}:${file}`], {cwd: root, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024});
-    controlHashes[file] = hash(original); currentHashes[file] = hash(await readFile(path.join(root, file)));
+    controlHashes[file] = hash(original); currentHashes[file] = runtimeHashes[file];
     const adapted = original.replace(/(['"])(\.{1,2}\/[^'"\r\n]+\.mjs)\1/g, (match, quote, relative) => {
       const target = path.resolve(root, path.dirname(file), relative);
       const controlled = files.find(candidate => path.join(root, candidate) === target);
-      return JSON.stringify(pathToFileURL(controlled ? path.join(controlDir, path.basename(controlled)) : target).href);
+      return JSON.stringify(pathToFileURL(controlled ? path.join(controlDir, path.basename(controlled)) : path.join(runtime, path.relative(root, target))).href);
     });
+    adaptedControlHashes[file] = hash(adapted);
     await writeFile(path.join(controlDir, path.basename(file)), adapted);
   }
   const fixtures = [
@@ -95,24 +113,25 @@ if (!isMainThread) {
   for (const [label, filename] of fixtures) {
     if (selected && label !== selected) continue;
     for (let pair = 0; pair < pairs; pair++) {
-    for (const variant of pair % 2 ? ['current', 'control'] : ['control', 'current']) {
-      const exporter = pathToFileURL(variant === 'control' ? path.join(controlDir, 'document-export.mjs') : path.join(root, files[0])).href;
-      const result = await new Promise((resolve, reject) => {
-        const child = spawn(process.execPath, [fileURLToPath(import.meta.url), '--child', JSON.stringify({label, filename, exporter, variant})], {cwd: root, windowsHide: true});
-        let stdout = '', stderr = '';
-        child.stdout.on('data', data => { stdout += data; }); child.stderr.on('data', data => { stderr += data; });
-        child.on('error', reject); child.on('exit', code => code === 0 ? resolve(JSON.parse(stdout.trim())) : reject(new Error(`${label}/${variant}: ${stderr || stdout || `exit ${code}`}`)));
-      });
-      result.pair = pair; results.push(result); console.log(JSON.stringify(result));
-      await writeFile(path.join(output, `comparison${selected ? '-' + selected : ''}.json`), JSON.stringify({control, controlHashes, currentHashes, node: process.version,
-        cpu: os.cpus()[0].model, measuredAt: new Date().toISOString(), results}, null, 2) + '\n');
-    }
-    const rows = results.slice(-2), before = rows.find(row => row.variant === 'control'), after = rows.find(row => row.variant === 'current');
-    assert.equal(before.inputSha256, after.inputSha256);
-    for (let i = 0; i < before.runs.length; i++) assert.equal(before.runs[i].sha256, after.runs[i].sha256, `${label} run ${i} output changed`);
-    console.log(JSON.stringify({label, unchangedReductionPercent: 100 * (1 - median(after.runs.slice(1, 3).map(run => run.wallMs)) / median(before.runs.slice(1, 3).map(run => run.wallMs))),
-      editedReductionPercent: 100 * (1 - after.runs[3].wallMs / before.runs[3].wallMs)}));
-    for (const file of files) assert.equal(currentHashes[file], hash(await readFile(path.join(root, file))), `${file} changed during benchmark`);
+      for (const variant of pair % 2 ? ['current', 'control'] : ['control', 'current']) {
+        const exporter = pathToFileURL(variant === 'control' ? path.join(controlDir, 'document-export.mjs') : path.join(runtime, files[0])).href;
+        const result = await new Promise((resolve, reject) => {
+          const child = spawn(process.execPath, [fileURLToPath(import.meta.url), '--child', JSON.stringify({label, filename, exporter, variant, runtime})], {cwd: root, windowsHide: true});
+          let stdout = '', stderr = '';
+          child.stdout.on('data', data => { stdout += data; }); child.stderr.on('data', data => { stderr += data; });
+          child.on('error', reject); child.on('exit', code => code === 0 ? resolve(JSON.parse(stdout.trim())) : reject(new Error(`${label}/${variant}: ${stderr || stdout || `exit ${code}`}`)));
+        });
+        result.pair = pair; results.push(result); console.log(JSON.stringify(result));
+        await writeFile(path.join(output, `comparison${selected ? '-' + selected : ''}.json`), JSON.stringify({control, controlHashes, adaptedControlHashes, currentHashes, runtime, runtimeHashes,
+          harnessSha256: hash(await readFile(fileURLToPath(import.meta.url))), node: process.version, nodeOptions: process.env.NODE_OPTIONS ?? '',
+          cpu: os.cpus()[0].model, measuredAt: new Date().toISOString(), results}, null, 2) + '\n');
+      }
+      const rows = results.slice(-2), before = rows.find(row => row.variant === 'control'), after = rows.find(row => row.variant === 'current');
+      assert.equal(before.inputSha256, after.inputSha256);
+      for (let i = 0; i < before.runs.length; i++) assert.equal(before.runs[i].sha256, after.runs[i].sha256, `${label} run ${i} output changed`);
+      console.log(JSON.stringify({label, unchangedReductionPercent: 100 * (1 - median(after.runs.slice(1, 3).map(run => run.wallMs)) / median(before.runs.slice(1, 3).map(run => run.wallMs))),
+        editedReductionPercent: 100 * (1 - after.runs[3].wallMs / before.runs[3].wallMs)}));
+      for (const file of files) assert.equal(currentHashes[file], hash(await readFile(path.join(root, file))), `${file} changed during benchmark`);
     }
   }
   for (const file of files) assert.equal(currentHashes[file], hash(await readFile(path.join(root, file))), `${file} changed during benchmark`);
