@@ -698,6 +698,41 @@ try {
   check('New library folders start with a translated editable name and keep the artist draft when the language changes',await page.evaluate(()=>libraryFolderInitialCaption.includes('اختبار')&&libraryFolderCaptionInput.value==='Artist folder العربية'&&document.activeElement===libraryFolderCaptionInput&&libraryFolderCaptionInput.getAttribute('aria-label')===styk.localization.t('userLibrary.folderName')));
   await page.locator('dialog[open] [data-cancel]').click();
   await page.evaluate(()=>{libraryFolderCaptionDialog.remove();libraryEmptyCaptionRoot.remove();supportPriorityCaptionCard.remove();styk.localization.localization.setPseudo(null);});
+  await page.evaluate(async()=>{
+    const {createAppDialogs}=await import('/src/app-dialogs.mjs');
+    const {appendLocalized,localizedMarkup}=await import('/src/localization-bindings.mjs');
+    const {clipNumber,clipStrength}=await import('/src/vfx-clip-controls.mjs');
+    window.recoveryCaptionRecords=[{id:'local-blank',name:'',savedAt:'2026-09-01T12:34:00Z'},{id:'local-artist',name:'Artist recovery العربية',savedAt:'2026-09-02T14:56:00Z'}];
+    window.recoveryCaptionBytes=JSON.stringify(recoveryCaptionRecords);
+    window.recoveryCaptionPrompts=createAppDialogs({editor:{},state:{},actions:{},overlays:styk.ui.overlays,localization:()=>styk.localization});
+    window.recoveryCaptionAnswer=recoveryCaptionPrompts.chooseRecovery(recoveryCaptionRecords,()=>{throw new Error('Read-only caption fixture must not discard recovery data');});
+    window.recoveryCaptionSelect=document.querySelector('dialog[open] select');recoveryCaptionSelect.value='local-artist';recoveryCaptionSelect.focus();
+    window.recoveryCaptionOptions=[...recoveryCaptionSelect.options];window.recoveryCaptionNodes=recoveryCaptionOptions.map(option=>[...option.childNodes]);
+    styk.localization.setLocale('ar');
+    window.vfxClipCaptionHost={bindings:new Map()};window.vfxClipCaptionRecord={id:'local-vfx',start:8,duration:12,strength:.75};
+    window.vfxClipCaptionRoot=document.createElement('section');appendLocalized(document.body,vfxClipCaptionRoot);
+    localizedMarkup(vfxClipCaptionRoot,clipNumber(vfxClipCaptionHost,vfxClipCaptionRecord,'start','vfxClipInspector.start',9,1,100,false)+clipNumber(vfxClipCaptionHost,vfxClipCaptionRecord,'duration','vfxClipInspector.duration',12,1,100,false)+clipStrength(vfxClipCaptionHost,vfxClipCaptionRecord,false));
+    window.vfxClipCaptionInputs=[...vfxClipCaptionRoot.querySelectorAll('input')];window.vfxClipCaptionBindings=JSON.stringify([...vfxClipCaptionHost.bindings]);
+    window.vfxClipCaptionBytes=JSON.stringify(vfxClipCaptionRecord);styk.localization.setLocale('he');
+  });
+  check('Native recovery options translate missing names and dates in retained text nodes while keeping selected IDs and authored names intact',await page.evaluate(()=>{
+    const t=(key,params)=>styk.localization.t(key,params);
+    return recoveryCaptionOptions.every((option,index)=>option===recoveryCaptionSelect.options[index]&&recoveryCaptionNodes[index].every((node,i)=>node===option.childNodes[i])
+      &&option.textContent===(recoveryCaptionRecords[index].name||t('app.untitled'))+' · '+t('supportMessages.date',{date:{format:'date',value:recoveryCaptionRecords[index].savedAt,options:{dateStyle:'short',timeStyle:'short'}}}))
+      &&recoveryCaptionSelect.value==='local-artist'&&document.activeElement===recoveryCaptionSelect&&JSON.stringify(recoveryCaptionRecords)===recoveryCaptionBytes;
+  }));
+  await page.locator('dialog[open] .ui-dialog-close').click();
+  check('Cancelling the translated recovery chooser leaves every recovery record available',await page.evaluate(async()=>await recoveryCaptionAnswer===null&&JSON.stringify(recoveryCaptionRecords)===recoveryCaptionBytes));
+  await page.evaluate(()=>{vfxClipCaptionInputs[0].focus();vfxClipCaptionInputs[0].value='17';styk.localization.localization.setPseudo('long');});
+  check('VFX group timing and strength captions refresh while slider values, unfinished drafts and raw gesture bindings stay unchanged',await page.evaluate(()=>{
+    const t=(key,params)=>styk.localization.t(key,params),root=vfxClipCaptionRoot;
+    return vfxClipCaptionInputs.every((input,index)=>input===root.querySelectorAll('input')[index]&&input.getAttribute('aria-label')===t(input.dataset.i18nAriaLabel))
+      &&root.querySelector('[data-i18n="vfxClipInspector.start"]').textContent===t('vfxClipInspector.start')
+      &&root.querySelector('[data-i18n="vfxClipInspector.duration"]').textContent===t('vfxClipInspector.duration')
+      &&document.activeElement===vfxClipCaptionInputs[0]&&vfxClipCaptionInputs[0].value==='17'&&root.querySelector('input[type=range]').value==='75'
+      &&JSON.stringify([...vfxClipCaptionHost.bindings])===vfxClipCaptionBindings&&JSON.stringify(vfxClipCaptionRecord)===vfxClipCaptionBytes;
+  }));
+  await page.evaluate(()=>{vfxClipCaptionRoot.remove();styk.localization.localization.setPseudo(null);styk.localization.setLocale('en');});
   check('No uncaught errors in retained dialog, menu, RTL and pseudolocalization workflows',errors.length===0);
   await writeFile(path.join(output,'report.json'),JSON.stringify({checks,errors,fontEvidence},null,2));
 } catch(e){await page.screenshot({path:path.join(output,'failure.png')});await writeFile(path.join(output,'report.json'),JSON.stringify({checks,errors,failure:e.message},null,2));throw e;}

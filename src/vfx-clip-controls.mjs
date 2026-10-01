@@ -1,3 +1,4 @@
+import {messageAttributes, messageHTML} from './localization-bindings.mjs';
 import {t as interfaceText} from './localization.mjs';
 import {setVfxVisibleChannels} from './vfx-key-channels.mjs';
 import {vfxDescriptor} from './vfx.mjs';
@@ -12,16 +13,16 @@ export function focusClipBinding(host,binding){
 }
 
 /** Timing and strength use the same gesture/undo owner as effect values. */
-export function clipNumber(host,clip,field,label,value,min,max,locked){
+export function clipNumber(host,clip,field,labelKey,value,min,max,locked){
  const key=`clip-${clip.id}-${field}`;
  host.bindings.set(key,{clip:clip.id,clipField:field,factor:field==='strength'?100:1,offset:field==='start'?1:0});
- return `<label class="ui-field" data-size="sm" data-property-row="${key}"><span class="ui-field-label" data-property-scrub="${key}">${label}</span><input class="ui-field-input" type="number" data-clip-field="${field}" data-property="${key}" data-property-scrub="${key}" data-property-value="${value}" data-property-step="1" data-property-precision="${field==='strength'?2:0}" aria-label="${label}" value="${value}" min="${min}" max="${max}" step="1" ${locked?'disabled':''}></label>`;
+ return `<label class="ui-field" data-size="sm" data-property-row="${key}"><span class="ui-field-label" data-property-scrub="${key}">${messageHTML(labelKey)}</span><input class="ui-field-input" type="number" data-clip-field="${field}" data-property="${key}" data-property-scrub="${key}" data-property-value="${value}" data-property-step="1" data-property-precision="${field==='strength'?2:0}" ${messageAttributes(labelKey,{},'aria-label')} value="${value}" min="${min}" max="${max}" step="1" ${locked?'disabled':''}></label>`;
 }
 /** A group's strength: the parameter row's scrub label, slider and typed value. */
 export function clipStrength(host,clip,locked){
  const key=`clip-${clip.id}-strength`,value=+(clip.strength*100).toFixed(2);
  host.bindings.set(key,{clip:clip.id,clipField:'strength',factor:100,offset:0});
- return `<div class="vfx-row vfx-parameter" data-property-row="${key}"><span class="vfx-label" data-property-scrub="${key}" data-i18n="vfxClipControls.strength">Strength</span><label class="ui-field vfx-number" data-size="sm"><input class="ui-field-input" type="number" data-clip-field="strength" data-property="${key}" data-property-scrub="${key}" data-property-value="${value}" data-property-step="1" data-property-precision="2" aria-label="Strength" value="${value}" min="0" max="100" step="1" ${locked?'disabled':''}><span class="ui-field-suffix" data-glue aria-hidden="true">%</span></label><input class="ui-slider vfx-slider" type="range" data-property="${key}" data-property-value="${value}" data-property-step="1" data-property-precision="2" value="${value}" min="0" max="100" step="1" style="--_p:${value}%" aria-label="Strength slider" ${locked?'disabled':''}></div>`;
+ return `<div class="vfx-row vfx-parameter" data-property-row="${key}"><span class="vfx-label" data-property-scrub="${key}" data-i18n="vfxClipControls.strength">Strength</span><label class="ui-field vfx-number" data-size="sm"><input class="ui-field-input" type="number" data-clip-field="strength" data-property="${key}" data-property-scrub="${key}" data-property-value="${value}" data-property-step="1" data-property-precision="2" data-i18n-aria-label="vfxClipControls.strength" aria-label="Strength" value="${value}" min="0" max="100" step="1" ${locked?'disabled':''}><span class="ui-field-suffix" data-glue aria-hidden="true">%</span></label><input class="ui-slider vfx-slider" type="range" data-property="${key}" data-property-value="${value}" data-property-step="1" data-property-precision="2" value="${value}" min="0" max="100" step="1" style="--_p:${value}%" data-i18n-aria-label="vfxClipControls.strength" aria-label="Strength" ${locked?'disabled':''}></div>`;
 }
 
 export function editGroupEffect(host,clip,id,operation){

@@ -317,7 +317,12 @@ export function createAppDialogs(ctx) {
     const body=document.createDocumentFragment(), label=document.createElement('label'), select=document.createElement('select'), wrap=document.createElement('span');
     label.className='ui-form-row';localizedText(label, "appDialogs.recoveryCopy", {});wrap.className='ui-select';localizedMarkup(wrap, icon('chevron-down'));
     localizedAttribute(select, 'aria-label', "appDialogs.recoveryCopy", {});
-    for(const record of records){const option=document.createElement('option');option.value=record.id;option.textContent=`${record.name || 'Untitled'} · ${interfaceLocalization.formatDate(record.savedAt, {dateStyle: "short", timeStyle: "short"})}`;appendLocalized(select, option);}
+    for(const record of records){
+      const option=document.createElement('option'),name=document.createTextNode(record.name || ''),time=document.createTextNode('');option.value=record.id;
+      if(!record.name)localizedText(name,'app.untitled');
+      localizedText(time,'supportMessages.date',{date:{format:'date',value:record.savedAt,options:{dateStyle:'short',timeStyle:'short'}}});
+      appendLocalized(option,name,' · ',time);appendLocalized(select,option);
+    }
     wrap.prepend(select);appendLocalized(label, wrap);appendLocalized(body, label, translatedElement(paragraph(interfaceText("appDialogs.restoreOpensThisCopyAsAnEditedProject")), "appDialogs.restoreOpensThisCopyAsAnEditedProject", {}));
     const dialog=dialogOf({title:interfaceText("appDialogs.restoreUnsavedWork"), titleKey: "appDialogs.restoreUnsavedWork",size:'sm',body,
       actions:[{label:interfaceText("common.cancel"), labelKey: "common.cancel",cancel:true},{label:interfaceText("appDialogs.discardCopy"), labelKey: "appDialogs.discardCopy",value:'discard',tone:'danger'},{label:interfaceText("appDialogs.restore"), labelKey: "appDialogs.restore",value:'restore',variant:'primary'}],

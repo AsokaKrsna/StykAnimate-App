@@ -1405,7 +1405,8 @@
   },
   "app.untitled": {
     "locations": [
-      "src/app-dialogs.mjs:91"
+      "src/app-dialogs.mjs:91",
+      "src/app-dialogs.mjs:322"
     ],
     "context": "const projectName = editor.name || {messageKey: \"app.untitled\"};"
   },
@@ -1539,7 +1540,7 @@
   },
   "appDialogs.discardCopy": {
     "locations": [
-      "src/app-dialogs.mjs:323"
+      "src/app-dialogs.mjs:328"
     ],
     "context": "actions:[{label:interfaceText(\"common.cancel\"), labelKey: \"common.cancel\",cancel:true},{label:interfaceText(\"appDialogs.discardCopy\"), labelKey: \"appDialogs.dis"
   },
@@ -1664,13 +1665,13 @@
   },
   "appDialogs.restore": {
     "locations": [
-      "src/app-dialogs.mjs:323"
+      "src/app-dialogs.mjs:328"
     ],
     "context": "actions:[{label:interfaceText(\"common.cancel\"), labelKey: \"common.cancel\",cancel:true},{label:interfaceText(\"appDialogs.discardCopy\"), labelKey: \"appDialogs.dis"
   },
   "appDialogs.restoreOpensThisCopyAsAnEditedProject": {
     "locations": [
-      "src/app-dialogs.mjs:321"
+      "src/app-dialogs.mjs:326"
     ],
     "context": "wrap.prepend(select);appendLocalized(label, wrap);appendLocalized(body, label, translatedElement(paragraph(interfaceText(\"appDialogs.restoreOpensThisCopyAsAnEdi"
   },
@@ -1682,7 +1683,7 @@
   },
   "appDialogs.restoreUnsavedWork": {
     "locations": [
-      "src/app-dialogs.mjs:322"
+      "src/app-dialogs.mjs:327"
     ],
     "context": "const dialog=dialogOf({title:interfaceText(\"appDialogs.restoreUnsavedWork\"), titleKey: \"appDialogs.restoreUnsavedWork\",size:'sm',body,"
   },
@@ -7234,7 +7235,7 @@
     "locations": [
       "src/app-dialogs.mjs:98",
       "src/app-dialogs.mjs:147",
-      "src/app-dialogs.mjs:323",
+      "src/app-dialogs.mjs:328",
       "src/app.mjs:5840",
       "src/app.mjs:5919",
       "src/builder-surface-ui.mjs:23",
@@ -11901,7 +11902,7 @@
   },
   "errors.appDialogs.theRecoveryCopyChangedOrIsOpenIn": {
     "locations": [
-      "src/app-dialogs.mjs:330"
+      "src/app-dialogs.mjs:335"
     ],
     "context": "if(!deleted)throw messageError(new Error(''), \"errors.appDialogs.theRecoveryCopyChangedOrIsOpenIn\", {});"
   },
@@ -34201,6 +34202,7 @@
   },
   "supportMessages.date": {
     "locations": [
+      "src/app-dialogs.mjs:323",
       "src/support-center.mjs:14",
       "src/support-center.mjs:126",
       "src/support-center.mjs:375",
@@ -34209,7 +34211,7 @@
       "src/support-center.mjs:444",
       "src/support-center.mjs:464"
     ],
-    "context": "const date = value => messageHTML('supportMessages.date',{date:dateValue(value)});"
+    "context": "localizedText(time,'supportMessages.date',{date:{format:'date',value:record.savedAt,options:{dateStyle:'short',timeStyle:'short'}}});"
   },
   "supportMessages.deleteFiles": {
     "locations": [
@@ -39204,31 +39206,31 @@
   },
   "vfxClipControls.enabled": {
     "locations": [
-      "src/vfx-clip-controls.mjs:39"
+      "src/vfx-clip-controls.mjs:40"
     ],
     "context": "[{label:interfaceText(\"vfxClipControls.enabled\"), labelKey: \"vfxClipControls.enabled\", labelParams: {},symbol:'eye',checked:host.editor.sampleVfxClip(clip.id).f"
   },
   "vfxClipControls.moveDown": {
     "locations": [
-      "src/vfx-clip-controls.mjs:40"
+      "src/vfx-clip-controls.mjs:41"
     ],
     "context": "[index>0&&{label:interfaceText(\"vfxClipControls.moveUp\"), labelKey: \"vfxClipControls.moveUp\", labelParams: {},symbol:'chevron-up',action:action('effect-up')},in"
   },
   "vfxClipControls.moveUp": {
     "locations": [
-      "src/vfx-clip-controls.mjs:40"
+      "src/vfx-clip-controls.mjs:41"
     ],
     "context": "[index>0&&{label:interfaceText(\"vfxClipControls.moveUp\"), labelKey: \"vfxClipControls.moveUp\", labelParams: {},symbol:'chevron-up',action:action('effect-up')},in"
   },
   "vfxClipControls.remove": {
     "locations": [
-      "src/vfx-clip-controls.mjs:41"
+      "src/vfx-clip-controls.mjs:42"
     ],
     "context": "[{label:interfaceText(\"vfxClipControls.remove\"), labelKey: \"vfxClipControls.remove\", labelParams: {},symbol:'trash',danger:true,action:action('effect-delete')}]"
   },
   "vfxClipControls.strength": {
     "locations": [
-      "src/vfx-clip-controls.mjs:24"
+      "src/vfx-clip-controls.mjs:25"
     ],
     "context": "return `<div class=\"vfx-row vfx-parameter\" data-property-row=\"${key}\"><span class=\"vfx-label\" data-property-scrub=\"${key}\" data-i18n=\"vfxClipControls.strength\">"
   },
