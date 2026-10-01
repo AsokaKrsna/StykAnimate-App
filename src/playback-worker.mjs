@@ -2,6 +2,8 @@ import {errorMessageData, messageError} from './localized-error.mjs';
 
 import {vectorVfxSource,canvasVfxSource} from './renderer-vfx-vector.mjs';
 import {fitsVfxSurface} from './vfx-surface.mjs';
+import {prewarmVfxGPU} from './vfx-gpu.mjs';
+import {vfxClips} from './vfx-clips.mjs';
 import {vfxRasterScale, hasDrawableVfx,drawableVfxPadding,releaseVfxSoftwareResources} from './vfx-canvas.mjs';
 import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {cameraAtTime} from './camera-motion.mjs';
@@ -51,6 +53,16 @@ const yieldPlaybackTask = () => globalThis.scheduler?.yield ? scheduler.yield() 
 function refreshSampling(snapshot) {
   snapshot.sampleReport = snapshot.storedFrames ? storedFrameReport(snapshot.report) : snapshot.report;
   snapshot.entries = timeline(snapshot.sampleReport); return snapshot;
+}
+
+/** A software presenter filters effects on the worker. Its programs compile on
+ * the thread that presents frames, so prepare them when a document with
+ * effects arrives rather than during the first frames that show one. */
+let effectsWarm = false;
+function warmEffects(snapshot) {
+  if (effectsWarm || !snapshot?.softwareFrames || snapshot.vfxEnabled === false || typeof OffscreenCanvas === 'undefined') return;
+  const report = snapshot.report;
+  if (vfxClips(report).length || report.keyframes?.some(frame => frame._stykVfx || frame.objects?.some(object => object._stykVfx))) effectsWarm = prewarmVfxGPU();
 }
 
 /** Exact native tick lookup, including disabled (zero-duration) keyframes. */
@@ -670,6 +682,7 @@ export function createPlaybackWorkerEndpoint(postMessage) {
           delete snapshot.completing;
           current = refreshSampling({ ...snapshot, resources: new PlaybackResources({...snapshot, preview: true, softwareImages: true, maxBytes: snapshot.maxAssetBytes || (snapshot.maxPacketBytes || 128 * 1024 * 1024) / 4}) }); incoming = null;
           postMessage({ type: 'loaded', revision: message.revision, sequence: message.sequence });
+          warmEffects(current);
         } catch(error) {
           if(incoming!==snapshot || serial!==generation) return;
           incoming=null;
@@ -683,6 +696,7 @@ export function createPlaybackWorkerEndpoint(postMessage) {
       latestRevision = message.revision; incoming = null;
       current = refreshSampling({ ...message, resources: new PlaybackResources({...message, preview: true, softwareImages: true, maxBytes: message.maxAssetBytes || (message.maxPacketBytes || 128 * 1024 * 1024) / 4}) });
       postMessage({ type: 'loaded', revision: message.revision });
+      warmEffects(current);
     } else if (message.type === 'invalidate') {
       planning.cancel();
       serial++; releaseDelivery(); latestRevision = message.revision; queue.length = 0; incoming = null; incomingFrames = null; incomingPatch = null;

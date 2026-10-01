@@ -19987,7 +19987,7 @@
   "errors.playbackPatch.playbackFrameUpdateTargetsAreInvalid": {
     "locations": [
       "src/playback-patch.mjs:37",
-      "src/playback-worker.mjs:613"
+      "src/playback-worker.mjs:625"
     ],
     "context": "throw messageError(new Error(''), \"errors.playbackPatch.playbackFrameUpdateTargetsAreInvalid\", {});"
   },
@@ -20086,105 +20086,105 @@
   },
   "errors.playbackWorker.aPlaybackFrameExceedsItsPreparationMemoryBudget": {
     "locations": [
-      "src/playback-worker.mjs:182",
-      "src/playback-worker.mjs:418"
+      "src/playback-worker.mjs:194",
+      "src/playback-worker.mjs:430"
     ],
     "context": "const error = messageError(new Error(''), \"errors.playbackWorker.aPlaybackFrameExceedsItsPreparationMemoryBudget\", {});"
   },
   "errors.playbackWorker.invalidNativeSnapshotChunk": {
     "locations": [
-      "src/playback-worker.mjs:640"
+      "src/playback-worker.mjs:652"
     ],
     "context": "!Number.isSafeInteger(position) || position<0) throw messageError(new Error(''), \"errors.playbackWorker.invalidNativeSnapshotChunk\", {});"
   },
   "errors.playbackWorker.invalidNativeSnapshotExtent": {
     "locations": [
-      "src/playback-worker.mjs:644"
+      "src/playback-worker.mjs:656"
     ],
     "context": "throw messageError(new Error(''), \"errors.playbackWorker.invalidNativeSnapshotExtent\", {});"
   },
   "errors.playbackWorker.nativeFramesRequireAPendingSnapshot": {
     "locations": [
-      "src/playback-worker.mjs:637"
+      "src/playback-worker.mjs:649"
     ],
     "context": "if(incoming?.revision !== message.revision || incoming.completing) throw messageError(new Error(''), \"errors.playbackWorker.nativeFramesRequireAPendingSnapshot\""
   },
   "errors.playbackWorker.nativeSnapshotChunksArrivedOutOfOrder": {
     "locations": [
-      "src/playback-worker.mjs:649"
+      "src/playback-worker.mjs:661"
     ],
     "context": "throw messageError(new Error(''), \"errors.playbackWorker.nativeSnapshotChunksArrivedOutOfOrder\", {});"
   },
   "errors.playbackWorker.playbackCameraModeMustBeABoolean": {
     "locations": [
-      "src/playback-worker.mjs:143",
-      "src/playback-worker.mjs:392"
+      "src/playback-worker.mjs:155",
+      "src/playback-worker.mjs:404"
     ],
     "context": "if (typeof cameraEnabled !== 'boolean') throw messageError(new TypeError(''), \"errors.playbackWorker.playbackCameraModeMustBeABoolean\", {});"
   },
   "errors.playbackWorker.playbackFrameChunksArrivedBeforeTheirHeader": {
     "locations": [
-      "src/playback-worker.mjs:603"
+      "src/playback-worker.mjs:615"
     ],
     "context": "if (incomingFrames?.revision !== message.revision) throw messageError(new Error(''), \"errors.playbackWorker.playbackFrameChunksArrivedBeforeTheirHeader\", {});"
   },
   "errors.playbackWorker.playbackFrameUpdatesRequireACompleteDocumentSnapshot": {
     "locations": [
-      "src/playback-worker.mjs:600"
+      "src/playback-worker.mjs:612"
     ],
     "context": "if (current?.revision !== message.revision) throw messageError(new Error(''), \"errors.playbackWorker.playbackFrameUpdatesRequireACompleteDocumentSnapshot\", {});"
   },
   "errors.playbackWorker.playbackPatchChunksArrivedBeforeTheirHeader": {
     "locations": [
-      "src/playback-worker.mjs:578"
+      "src/playback-worker.mjs:590"
     ],
     "context": "if (incomingPatch?.revision !== message.revision) throw messageError(new Error(''), \"errors.playbackWorker.playbackPatchChunksArrivedBeforeTheirHeader\", {});"
   },
   "errors.playbackWorker.playbackPatchesRequireACompleteDocumentSnapshot": {
     "locations": [
-      "src/playback-worker.mjs:575"
+      "src/playback-worker.mjs:587"
     ],
     "context": "if (current?.revision !== message.revision) throw messageError(new Error(''), \"errors.playbackWorker.playbackPatchesRequireACompleteDocumentSnapshot\", {});"
   },
   "errors.playbackWorker.playbackPreparationWasSuperseded": {
     "locations": [
       "src/playback-software-painter.mjs:6",
-      "src/playback-worker.mjs:101",
-      "src/playback-worker.mjs:174",
-      "src/playback-worker.mjs:191",
-      "src/playback-worker.mjs:223",
-      "src/playback-worker.mjs:229",
+      "src/playback-worker.mjs:113",
+      "src/playback-worker.mjs:186",
+      "src/playback-worker.mjs:203",
       "src/playback-worker.mjs:235",
-      "src/playback-worker.mjs:266",
-      "src/playback-worker.mjs:308",
-      "src/playback-worker.mjs:325",
-      "src/playback-worker.mjs:369",
-      "src/playback-worker.mjs:436",
-      "src/playback-worker.mjs:442",
-      "src/playback-worker.mjs:468",
-      "src/playback-worker.mjs:477",
-      "src/playback-worker.mjs:482",
-      "src/playback-worker.mjs:484"
+      "src/playback-worker.mjs:241",
+      "src/playback-worker.mjs:247",
+      "src/playback-worker.mjs:278",
+      "src/playback-worker.mjs:320",
+      "src/playback-worker.mjs:337",
+      "src/playback-worker.mjs:381",
+      "src/playback-worker.mjs:448",
+      "src/playback-worker.mjs:454",
+      "src/playback-worker.mjs:480",
+      "src/playback-worker.mjs:489",
+      "src/playback-worker.mjs:494",
+      "src/playback-worker.mjs:496"
     ],
     "context": "const abort=()=>{throw messageError(new DOMException('', 'AbortError'), 'errors.playbackWorker.playbackPreparationWasSuperseded', {});};"
   },
   "errors.playbackWorker.playbackSnapshotChunksArrivedBeforeTheirHeader": {
     "locations": [
-      "src/playback-worker.mjs:629"
+      "src/playback-worker.mjs:641"
     ],
     "context": "if (incoming?.revision !== message.revision) throw messageError(new Error(''), \"errors.playbackWorker.playbackSnapshotChunksArrivedBeforeTheirHeader\", {});"
   },
   "errors.playbackWorker.playbackStoredFrameModeMustBeABoolean": {
     "locations": [
-      "src/playback-worker.mjs:144",
-      "src/playback-worker.mjs:393"
+      "src/playback-worker.mjs:156",
+      "src/playback-worker.mjs:405"
     ],
     "context": "if (typeof storedFrames !== 'boolean') throw messageError(new TypeError(''), \"errors.playbackWorker.playbackStoredFrameModeMustBeABoolean\", {});"
   },
   "errors.playbackWorker.thePlaybackTickHasNoNativeFrame": {
     "locations": [
-      "src/playback-worker.mjs:148",
-      "src/playback-worker.mjs:397"
+      "src/playback-worker.mjs:160",
+      "src/playback-worker.mjs:409"
     ],
     "context": "if (!native) throw messageError(new Error(''), \"errors.playbackWorker.thePlaybackTickHasNoNativeFrame\", {});"
   },
@@ -20481,7 +20481,7 @@
     "locations": [
       "src/drawing-composite-worker.mjs:10",
       "src/raster-surfaces.mjs:9",
-      "src/vfx-gpu.mjs:115"
+      "src/vfx-gpu.mjs:130"
     ],
     "context": "if(previewActive)throw messageError(new Error(''), \"errors.rasterSurfaces.aRasterScratchSurfaceCannotBeUsedConcurrently\", {});"
   },

@@ -6,6 +6,7 @@ import {drawingMetadata} from './drawing-model.mjs';
 import {DrawingTileProvider} from './drawing-provider.mjs';
 import {CameraVfx} from './vfx-camera.mjs';
 import {configureVfxSoftwareResources,vfxSoftwareResourceStats} from './vfx-canvas.mjs';
+import {vfxGPUStats} from './vfx-gpu.mjs';
 
 import {ImageResources} from './image-resources.mjs';
 export {assetURL, imageDrawNeed} from './image-resources.mjs';
@@ -54,7 +55,7 @@ export class PlaybackResources extends ImageResources {
     return {imageBytes: this.bytes, sourceBytes: this.sourceBytes,
       rasterBytes: this.artworkBitmaps.bytes, rasterEntries: this.artworkBitmaps.entries.size,
       vectorBytes: this.vectors.bytes, vectorEntries: this.vectors.lru.size,
-      drawingBytes: this.drawingProvider.bytes, tintBytes,
+      drawingBytes: this.drawingProvider.bytes, tintBytes, effectPrograms: vfxGPUStats().programs,
       softwareFilterBytes:this.softwareFrameSurfaces.context?vfxSoftwareResourceStats(this.softwareFrameSurfaces.context).bytes:0,
       cameraBytes:(this.softwareCameraVfx?.canvas.width??0)*(this.softwareCameraVfx?.canvas.height??0)*4};
   }

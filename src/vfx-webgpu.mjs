@@ -71,7 +71,7 @@ fn noiseAt(pos:vec2f,seed:f32,smoothness:f32)->f32{let i=floor(pos);var f=fract(
  if(operation==26){return mix(sampleOrig(uv),c,p.x);}
  if(operation==27){var xy=globalPixel(uv)/p.y+vec2f(p.z*.73,p.z*1.17);var offset=vec2f(0.);var weight=1.;var total=0.;for(var i=0;i<4;i++){if(f32(i)>=q.x){break;}offset+=vec2f(noiseAt(xy,p.w+f32(i)*37.,1.),noiseAt(xy+vec2f(19.1,7.7),p.w+131.+f32(i)*37.,1.))*weight;total+=weight;weight*=.5;xy*=2.;}return sampleGlobal(globalPixel(uv)+(offset/total*2.-vec2f(1.))*p.x);}
  return c;}`;
-const UNIFORM_SIZE=736,UNIFORM_STRIDE=1024,UNIFORM_SLOTS=64;
+const UNIFORM_SIZE=736,UNIFORM_STRIDE=1024,UNIFORM_SLOTS=64,IDLE_MS=30000;
 /** WebGPU executor mirroring VfxGPU: one pipeline per operation, ping-pong
  * texture slots, identical uniform semantics. run() accepts a canvas source;
  * pass texture:true to receive the padded result texture instead of a canvas. */
@@ -176,9 +176,17 @@ export class VfxWebGPU{
   if(!texture)pass(0,undefined,undefined,current,W,H,true);
   submit();this.stats.calls++;this.stats.bytes=(W*H+this.slots.reduce((n,s)=>n+(s?s.width*s.height:0),0))*4;
   return texture?{texture:current.texture,width:W,height:H}:this.canvas;
-  }finally{for(const retired of this.retired)retired.destroy();this.retired.length=0;}
+  }finally{
+   for(const retired of this.retired)retired.destroy();this.retired.length=0;
+   // Every caller shares this lifetime: working pixels leave after a quiet
+   // period, compiled pipelines stay until the device goes.
+   clearTimeout(this.idleTimer);this.idleTimer=setTimeout(()=>{this.idleTimer=undefined;this.releasePixels();},IDLE_MS);this.idleTimer.unref?.();
+  }
  }
- destroy(){this.destroyed=true;for(const slot of this.slots)slot?.texture?.destroy();this.slots=[];for(const retired of this.retired)retired.destroy();this.retired=[];this.uniforms?.destroy();this.blank?.destroy();if(this.configured)this.context?.unconfigure();this.canvas.width=this.canvas.height=1;}
+ /** Release the working textures. A result returned by run() is copied by its
+  * caller in the same task, so nothing still reads these. */
+ releasePixels(){for(const slot of this.slots)slot?.texture?.destroy();this.slots=[];this.stats.bytes=0;}
+ destroy(){this.destroyed=true;clearTimeout(this.idleTimer);this.idleTimer=undefined;for(const slot of this.slots)slot?.texture?.destroy();this.slots=[];for(const retired of this.retired)retired.destroy();this.retired=[];this.uniforms?.destroy();this.blank?.destroy();if(this.configured)this.context?.unconfigure();this.canvas.width=this.canvas.height=1;}
 }
 const executors=new WeakMap();
 export function vfxWebGPUFor(device){let executor=executors.get(device);if(!executor){executor=new VfxWebGPU(device);executors.set(device,executor);}return executor;}

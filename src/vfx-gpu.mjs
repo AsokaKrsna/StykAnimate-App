@@ -92,6 +92,21 @@ export class VfxGPU {
   }
   pass(0,undefined,undefined,current,w,h,true);gl.flush();return this.canvas;
  }
+ /** Compile the programs no effect has needed yet, one per task. A program
+  * compiles on the thread that presents frames and its status is read
+  * synchronously, so the first frames that use an effect otherwise stall
+  * playback while every worker compiles the same programs. */
+ prewarm(schedule=callback=>setTimeout(callback,16)){
+  if(this.prewarming)return;this.prewarming=true;let operation=0;
+  const step=()=>{
+   if(!this.prewarming||this.gl.isContextLost())return;
+   while(operation<=28&&this.programs.has(operation))operation++;
+   if(operation>28)return;
+   try{this.program(operation++);}catch{return;}
+   schedule(step);
+  };
+  schedule(step);
+ }
  /** A completed worker capture releases pixels while keeping its bounded shader
   * programs warm. Detach framebuffer and sampler references before deleting
   * textures so no retained binding can extend a large surface's lifetime. */
@@ -102,11 +117,11 @@ export class VfxGPU {
   for(const slot of this.slots)if(slot)gl.deleteTexture(slot.texture);this.slots=[];this.readback=null;
   this.canvas.width=this.canvas.height=1;this.stats.bytes=4;gl.flush();
  }
- destroy(){for(const slot of this.slots)if(slot)this.gl.deleteTexture(slot.texture);this.slots=[];this.readback=null;this.gl.deleteFramebuffer(this.framebuffer);for(const {program} of this.programs.values())this.gl.deleteProgram(program);this.programs.clear();this.gl.deleteShader(this.vertexShader);this.gl.getExtension('WEBGL_lose_context')?.loseContext();this.canvas.width=this.canvas.height=1;}
+ destroy(){this.prewarming=false;for(const slot of this.slots)if(slot)this.gl.deleteTexture(slot.texture);this.slots=[];this.readback=null;this.gl.deleteFramebuffer(this.framebuffer);for(const {program} of this.programs.values())this.gl.deleteProgram(program);this.programs.clear();this.gl.deleteShader(this.vertexShader);this.gl.getExtension('WEBGL_lose_context')?.loseContext();this.canvas.width=this.canvas.height=1;}
 }
 let executor,idleTimer,lastUse=0,sharedDevice=null,workerResources;
 /** One synchronous capture owns its private pixel storage. Its bounded graphics
- * context/programs stay warm until the existing idle timeout or worker disposal.
+ * context/programs stay warm until worker disposal.
  * After a GPU failure,
  * release its textures before allocating software pixels and keep the original
  * surface limit so the native painter follows the same bounded surface route.
@@ -123,7 +138,11 @@ export function releaseVfxWorkerSource(context){workerResources?.releaseSource?.
 export function vfxWorkerPixelsOwned(){return !!workerResources;}
 export function prepareVfxWorkerSource(){if(workerResources)releaseVfxCPUInput();}
 export function vfxSourcePadding(stack,scale=1,extent=0){return (workerResources?.samplingPadding?vfxSamplingPadding:vfxPadding)(stack,scale,extent);}
-function releaseIdle(){const wait=30000-(performance.now()-lastUse);if(wait>0){idleTimer=setTimeout(releaseIdle,wait);return;}releaseVfxGPU();}
+/** A quiet period releases working pixels. The graphics context and its
+ * compiled programs stay: recreating them compiles on the thread that
+ * presents frames, a visible stall at the next playback or edit. The WebGPU
+ * executor applies the same rule to every caller itself. */
+function releaseIdle(){const wait=30000-(performance.now()-lastUse);if(wait>0){idleTimer=setTimeout(releaseIdle,wait);return;}idleTimer=undefined;executor?.releasePixels();}
 /** Register the renderer's WebGPU device so the shared WGSL executor can run
  * scene/drawable filters without leaving the device. Without one, callers fall
  * back to the WebGL 2 executor. */
@@ -154,7 +173,13 @@ export function vfxSurfaceDimension(){
  let limit;try{executor??=new VfxGPU();lastUse=performance.now();idleTimer??=setTimeout(releaseIdle,30000);limit=executor.maxDimension;}catch{limit=0;}
  if(workerResources){workerResources.limit=limit;if(!limit)workerResources.software=true;}return limit;
 }
-export function vfxGPUStats(){const source=sharedDevice?vfxWebGPUFor(sharedDevice).stats:executor?.stats;return {...(source??{passes:0,bytes:0,calls:0}),cpuFallbacks};}
+/** Prepare this thread's WebGL executor before its first effect. Owners that
+ * present through WebGPU filter there instead and never call this. */
+export function prewarmVfxGPU(){
+ if(sharedDevice||workerResources?.software)return false;
+ try{executor??=new VfxGPU();lastUse=performance.now();idleTimer??=setTimeout(releaseIdle,30000);executor.prewarm();return true;}catch{return false;}
+}
+export function vfxGPUStats(){const source=sharedDevice?vfxWebGPUFor(sharedDevice).stats:executor?.stats;return {...(source??{passes:0,bytes:0,calls:0}),cpuFallbacks,programs:executor?.programs.size??0};}
 function releasePrivateVfxPixels(){try{executor?.releasePixels();}catch(error){try{releasePrivateVfxGPU();}finally{throw error;}}}
 function releasePrivateVfxGPU(){clearTimeout(idleTimer);idleTimer=undefined;const retired=executor;executor=null;retired?.destroy();}
 export function releaseVfxGPU(){releasePrivateVfxGPU();if(sharedDevice)releaseVfxWebGPU(sharedDevice);}
