@@ -183,6 +183,9 @@ try {
     check('Its rows are finger-tall and the current frame sits under the playhead', row.size >= 44 && now.center === now.tick, { row, now });
     const shown = await t.eval(() => [...document.querySelectorAll('.tl-touch-action')].filter((b) => !b.hidden && b.getClientRects().length).map((b) => b.dataset.touchAction));
     check('The action bar offers Key, Shorter, Longer and Select', ['key', 'shorter', 'longer', 'select'].every((id) => shown.includes(id)), shown);
+    const reach = await t.eval(() => { const bar = document.querySelector('.tl-touch-actions').getBoundingClientRect(), select = document.querySelector('.tl-touch-action[data-touch-action="select"]').getBoundingClientRect();
+      return { bar: [Math.round(bar.left), Math.round(bar.right)], select: [Math.round(select.left), Math.round(select.right)], playbackRange: document.querySelector('#playback-range-button')?.getClientRects().length ?? 0 }; });
+    check('Playback range leaves the header to the action bar, so Select can be tapped without a swipe', reach.playbackRange === 0 && reach.select[0] >= reach.bar[0] && (reach.select[0] + reach.select[1]) / 2 < reach.bar[1] - 12, reach);
     check('The action bar’s buttons are finger-sized', (await t.small(44, '.tl-touch-action')).length === 0, await t.small(44, '.tl-touch-action'));
     // A slow swipe right slides time back under the playhead: 3 frames' width, 3 frames earlier.
     const from = now.tick;

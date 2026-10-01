@@ -269,8 +269,8 @@
   }
   :where(:root[data-form="tablet"]) .tl-head:where([data-actions]) > .tl-actions { grid-row: 2; grid-column: 1 / -1; border-block-start: 1px solid var(--line-1); padding-block-start: var(--space-1); }
   :where(:root[data-form="tablet"]) .tl-touch-action { flex-grow: 0; min-inline-size: 64px; }
-  /* On a phone First frame, Loop and Audio are rows of Timeline ⋯ (timeline-header.mjs), as at the minimal width. */
-  :where(:root[data-form="phone"]) .tl-head .tl-controls > :where(.tl-first, .tl-loop, .tl-fps) { display: none; }
+  /* On a phone First frame, Loop, Playback range and Audio are rows of Timeline ⋯ (timeline-header.mjs), as at the minimal width. */
+  :where(:root[data-form="phone"]) .tl-head .tl-controls > :where(.tl-first, .tl-loop, .tl-playback-range, .tl-fps) { display: none; }
   :where(:root[data-form="phone"]) .tl-head .tl-end > :where(.tl-audio, .shell-timeline-sheet) { display: none; }
   /* Auto key is a row of Timeline ⋯ on touch, leaving the header to the touch action bar. */
   :where(:root[data-input="touch"]) .tl-head .tl-end > .tl-autokey { display: none; }

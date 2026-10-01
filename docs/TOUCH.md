@@ -53,8 +53,9 @@ needs.
 - The tools float on the stage's left, in two columns where one does not fit.
 - The timeline stays docked under the stage: one row of its header (the transport, then the
   frame actions or, in Simple, the frame bar) over the ruler and the selected layer's row,
-  kept in view; a vertical swipe over the rows reaches the others. See
-  [The timeline](#the-timeline).
+  kept in view; a vertical swipe over the rows reaches the others. On a phone First frame,
+  Loop, Playback range and Audio are rows of Timeline ⋯, so Select can be tapped beside
+  the transport without swiping the frame actions. See [The timeline](#the-timeline).
 - Properties, VFX and Library open as a sheet beside the wing, the stage's whole height.
 - Menus opened from the wing open beside it, toward the stage.
 
