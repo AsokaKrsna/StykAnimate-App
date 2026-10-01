@@ -85,6 +85,7 @@ import { createExportFlow } from "./export-flow.mjs";
 import { createAppDialogs } from "./app-dialogs.mjs";
 import { dragSlop, beyondSlop, installPenMenuGuard } from "./pen-input.mjs";
 import { installCanvasPinch } from "./canvas-pinch.mjs";
+import { createWheelZoom } from "./canvas-wheel-zoom.mjs";
 import { installTouchMode } from "./touch/touch-mode.mjs";
 import { installTouchShell } from "./touch/touch-shell.mjs";
 import { installLongPress } from "./touch/long-press.mjs";
@@ -1397,6 +1398,12 @@ function zoom(factor, point) {
   placeArtboard();
   requestRender();
 }
+const reducedMotionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+const wheelZoom = createWheelZoom({
+  getScale: () => state.view.scale,
+  zoomBy: zoom,
+  reducedMotion: () => Boolean(reducedMotionQuery?.matches),
+});
 function fitSelection() {
   const b = selectionBounds();
   if (!Number.isFinite(b.minX)) return fit();
@@ -1769,6 +1776,7 @@ function loop(now) {
   flushPoseMove();
   canvasGuides?.render();
   raf = 0;
+  wheelZoom.advance(now);
   // Resizing clears the backing surface. Commit at the start of a paint task,
   // before drawing, never after publishing that task's completed frame.
   commitPreviewQuality();
@@ -2015,6 +2023,8 @@ function loop(now) {
       lastFpsUI = measuredAt;
     }
   }
+  // A wheel zoom still gliding has more of the view to draw.
+  if (wheelZoom.active) state.dirtyRender = true;
   // A seek/edit event can request the next frame while this callback runs.
   // Keep that request instead of starting a second animation loop.
   if (!raf && (state.playing || state.dirtyRender || state.dirtyDrawingOverlay)) raf = requestAnimationFrame(loop);
@@ -3310,13 +3320,15 @@ viewport.addEventListener(
       placeArtboard();
       requestRender();
     } else
-      zoom(Math.exp(-e.deltaY * 0.005), {
+      wheelZoom.wheel(e.deltaY, {
         x: e.clientX - r.left,
         y: e.clientY - r.top,
-      });
+      }, performance.now());
   },
   { passive: false },
 );
+// A press takes over the view (a pan, a pose): the glide stops where it is.
+overlay.addEventListener("pointerdown", () => wheelZoom.cancel(), { capture: true });
 // Two fingers zoom and pan the canvas; the first finger's drag is cancelled. Draw mode has its own pinch.
 installCanvasPinch({
   overlay, viewport,

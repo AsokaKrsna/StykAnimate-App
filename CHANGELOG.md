@@ -21,6 +21,7 @@ What's new in each version of StykAnimate.
 
 ### Changed
 
+- Zooming the canvas with the mouse wheel is smooth and easier to control.
 - Complete interface translations for all 26 supported non-English languages, with right-to-left layouts and clearer text in narrow windows.
 - Onion skin is enabled when the app starts.
 - While joining figures, movable nodes are shown in red and static nodes in white.

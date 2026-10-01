@@ -39,11 +39,12 @@ try {
         const e = styk.editor, viewport = document.querySelector('#viewport'), box = viewport.getBoundingClientRect();
         e.seek(cycle * 3); e.select(1, 3);
         const point = e.geometry.objects.get(e.selectedSlot).segments[3].end, v = styk.state.view;
-        // Centre the edited handle, then exercise the actual anchored wheel path.
+        // Centre the edited handle, then exercise the actual anchored wheel path
+        // (.003 is the wheel's zoom per pixel of a notch; settle() waits for its glide).
         v.x = box.width / 2 - point.x * v.scale; v.y = box.height / 2 - point.y * v.scale;
         const x = box.x + box.width / 2, y = box.y + box.height / 2;
         viewport.dispatchEvent(new WheelEvent('wheel', {bubbles: true, cancelable: true, ctrlKey: true,
-          clientX: x, clientY: y, deltaY: -Math.log(scale / v.scale) / .005}));
+          clientX: x, clientY: y, deltaY: -Math.log(scale / v.scale) / .003}));
         return {x, y};
       }, {scale, cycle});
       await settle();
