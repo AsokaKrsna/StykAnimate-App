@@ -51,7 +51,8 @@ strings:
 
 - `S2B:<type>:<section>:<offset>:<count>` — a packed numeric array. `type` is
   `u8`, `u16`, `u32`, `i32`, `f32` or `f64`, always the smallest exact
-  representation; `offset`/`count` are elements, not bytes.
+  representation; `offset` is bytes and `count` is elements. The offset must
+  align to the selected type's width.
 - `S2S:<section>:<offset>:<count>` — a base64 string stored as raw bytes.
 - `S2D:<section>:<offset>:<count>:<prefix>` — a data URL whose payload is
   stored raw; `prefix` is the literal text before the base64 part.
@@ -60,12 +61,23 @@ strings:
 Only arrays of 32 or more values where every element is a finite JSON number
 are lifted; integers beyond ±2^53 and any mixed, boolean, or object arrays stay
 inline so every encoding round-trips exactly. Base64 payloads are lifted only
-in `source_base64`,
-`data_base64`, `source_b64` fields and in `data:` URLs of 64 KiB or more.
-Repeated large arrays and identical payloads share one encoded range; reading
-restores them as the same in-memory array. Reading is bounded: skeleton and
-each section cap at 256 MiB and every lifted region is verified against its
-section checksum before materialization.
+in `source_base64` and `data_base64` fields, and in `data_url`/`styk_tiles`
+data URLs of 64 KiB or more. `source_b64` remains an ordinary opaque field.
+Arrays that intentionally share identity use one encoded range; equal but
+independent mutable arrays remain independent. Identical binary payloads can
+share a range. Packed pose-key sequences preserve their existing sharing
+contract, and editable poses are materialized independently when needed.
+
+The compressed file and each binary section cap at 256 MiB; the JSON skeleton
+caps at 384 MiB. A 1 GiB admission budget covers reconstructed JSON per marker
+occurrence and a separate conservative allocation estimate for restored
+numeric arrays and payload strings. Repeated references cannot bypass these
+limits. Readers validate marker kinds, ranges, alignment, finite values, reserved
+fields, lengths and checksums before restoring values. DEFLATE output is bounded
+while inflating; malformed, truncated or trailing compressed streams are rejected.
+The Python zstd reader admits declared content sizes and windows before allocating
+and checks exact single-frame boundaries, including frames without a content size.
+Writers enforce the same admission limits rather than emitting an unreopenable file.
 
 Skeletons and sections prefer zstd (vendored WASM on the client, the optional
 `zstandard` package in Python); writers fall back to zlib when zstd is
@@ -115,8 +127,14 @@ version 2 reject its containers with an unsupported-version error.
 Desktop writes retain the existing temporary-file, flush and atomic-rename
 implementation: cancellation and incomplete writes preserve the last completed
 file. Save targets and the saved revision are committed only after success.
-Browsers continue to use downloads; autosave/recovery stores the same native
-project bytes.
+Browsers use an acknowledged File System Access write where available; a
+download keeps the project unsaved because its completion cannot be verified.
+Autosave/recovery stores the same self-contained native project bytes.
+
+Portable `.stkz` and `.stykmov` exports remove original project archives only
+at recognized document boundaries, including nested movieclip documents and
+their editable source baselines. Unknown fields, assets, timing and topology
+remain intact. The live project and its `.styk` save retain every original archive.
 
 ## Verification
 

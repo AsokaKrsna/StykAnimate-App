@@ -3,6 +3,7 @@ import {restoreMessageError, messageError} from './localized-error.mjs';
 import {documentChunks} from './document-transport.mjs';
 import {drawingBarrier} from './drawing-resources.mjs';
 import {codecJob} from './codec-job.mjs';
+import {createContainerCompressionCache} from './native-container.mjs';
 
 function abortError(message = 'Document export cancelled.') { return new DOMException(message, 'AbortError'); }
 async function yieldToInput() {
@@ -16,8 +17,11 @@ async function yieldToInput() {
  */
 export class DocumentExporter {
   constructor({baseURL = globalThis.location?.origin, token = globalThis.stykDesktop?.apiToken || '', targetRecords = 2000,
-    targetBytes = 1024 * 1024, timeoutMs = 300000} = {}) {
+    targetBytes = 1024 * 1024, timeoutMs = 300000, idleMs = 30000, maxQueued = 4, workerByteBudget = 8 * 1024 * 1024} = {}) {
     if (!baseURL) throw messageError(new Error(''), "errors.documentExport.documentExportRequiresTheLocalFileServiceUrl", {});
+    if (!Number.isFinite(idleMs) || idleMs < 0 || !Number.isInteger(maxQueued) || maxQueued < 0 || maxQueued > 16 ||
+      !Number.isSafeInteger(workerByteBudget) || workerByteBudget <= 0)
+      throw new RangeError('Invalid document export worker capacity.');
     this.baseURL = new URL(baseURL, globalThis.location?.href).origin;
     this.token = token;
     this.targetRecords = targetRecords;
@@ -26,6 +30,62 @@ export class DocumentExporter {
     this.jobs = new Set();
     this.disposed = false;
     this.lastTimings = null;
+    this.idleMs = idleMs;
+    this.maxQueued = maxQueued;
+    this.queue = [];
+    this.active = false;
+    this.sequence = 0;
+    this.workerByteBudget = workerByteBudget;
+    this.workerBytes = 0;
+    // Only immutable, content-addressed compressed bytes survive retirement.
+    // Editable snapshots and codec heaps stay inside each worker's lifetime.
+    this.compressionCache = createContainerCompressionCache({maxBytes: 64 * 1024 * 1024, maxEntries: 8});
+  }
+
+  _terminateWorker({clearCache = true} = {}) {
+    clearTimeout(this.idleTimer);
+    this.worker?.terminate();
+    this.worker = null;
+    this.workerBytes = 0;
+    if (clearCache) this.compressionCache.clear();
+  }
+
+  _acquire(signal) {
+    if (signal.aborted) return Promise.reject(abortError());
+    if (!this.active) {
+      this.active = true;
+      clearTimeout(this.idleTimer);
+      return Promise.resolve();
+    }
+    if (this.queue.length >= this.maxQueued)
+      return Promise.reject(Object.assign(new Error('Too many document exports are waiting.'), {code: 'export_busy'}));
+    return new Promise((resolve, reject) => {
+      const entry = {resolve, reject, signal};
+      entry.abort = () => {
+        const index = this.queue.indexOf(entry);
+        if (index >= 0) this.queue.splice(index, 1);
+        reject(abortError());
+      };
+      signal.addEventListener('abort', entry.abort, {once: true});
+      this.queue.push(entry);
+    });
+  }
+
+  _release() {
+    const next = this.queue.shift();
+    if (next) {
+      next.signal.removeEventListener('abort', next.abort);
+      next.resolve();
+      return;
+    }
+    this.active = false;
+    if (this.worker || this.compressionCache.size) {
+      if (this.disposed || this.idleMs <= 0) this._terminateWorker();
+      else {
+        this.idleTimer = setTimeout(() => this._terminateWorker(), this.idleMs);
+        this.idleTimer.unref?.();
+      }
+    }
   }
 
   /** @returns {Promise<Blob>} Native .styk/.stkz or Pivot .piv/.stk bytes. */
@@ -34,18 +94,47 @@ export class DocumentExporter {
     if (!report || typeof report !== 'object') throw messageError(new TypeError(''), "errors.documentExport.exportRequiresAnEditableDocument", {});
     if (!['piv', 'stk', 'styk', 'stkz', 'stykmov'].includes(format)) throw messageError(new Error(''), "errors.documentExport.chooseAPivStkStykStkzOrStykmov", {});
     if (signal?.aborted) throw abortError();
-    const originalRevision = getRevision?.(), started = performance.now();
-    await drawingBarrier(report,{signal});
-    if(signal?.aborted||getRevision&&getRevision()!==originalRevision)throw abortError('The document changed while preparing drawing pixels.');
-    const worker = new Worker(new URL('./document-export-worker.mjs', import.meta.url), {type: 'module', name: 'StykAnimate document export'});
-    const backendJob = codecJob(this.baseURL, this.token);
-    let pending, sequence = 0, failure, count = 0, prepMax = 0, postMax = 0, mainWork = 0;
-    const fail = error => { failure = error; backendJob.cancel(); pending?.reject(error); pending = null; worker.terminate(); };
-    const job = {cancel: () => fail(abortError())};
+    const controller = new AbortController();
+    signal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    const job = {cancel: () => controller.abort()};
     this.jobs.add(job);
-    worker.addEventListener('error', event => { event.preventDefault(); fail(Object.assign((event.message ? new Error(event.message) : messageError(new Error(''), "errors.documentExport.theDocumentExportWorkerStopped")), { telemetryCode: 'worker_failed', telemetryStage: 'serialize' })); });
-    worker.addEventListener('messageerror', () => fail(Object.assign(messageError(new Error(''), "errors.documentExport.theDocumentSnapshotCouldNotBeTransferred", {}), { telemetryCode: 'snapshot_failed', telemetryStage: 'prepare' })));
-    worker.addEventListener('message', event => {
+    const started = performance.now();
+    let acquired = false;
+    try {
+      const originalRevision = getRevision?.();
+      await this._acquire(signal);
+      acquired = true;
+      await drawingBarrier(report,{signal});
+      if(signal.aborted||getRevision&&getRevision()!==originalRevision)throw abortError('The document changed while preparing drawing pixels.');
+      return await this._export(report, {sourceId, format, name, figureTypeId, figureUid, figureUids, tick, signal, getRevision, originalRevision, started});
+    } catch (error) {
+      if (acquired) this._terminateWorker();
+      throw error;
+    } finally {
+      this.jobs.delete(job);
+      if (acquired) this._release();
+    }
+  }
+
+  async _export(report, {sourceId, format, name, figureTypeId, figureUid, figureUids, tick, signal, getRevision, originalRevision, started}) {
+    const reusedWorker = Boolean(this.worker);
+    const worker = this.worker ??= new Worker(new URL('./document-export-worker.mjs', import.meta.url), {type: 'module', name: 'StykAnimate document export'});
+    if (!reusedWorker) {
+      const idleFailure = event => {
+        if (this.worker === worker && !this.active) {
+          event.preventDefault?.();
+          this._terminateWorker();
+        }
+      };
+      worker.addEventListener('error', idleFailure);
+      worker.addEventListener('messageerror', idleFailure);
+    }
+    const backendJob = codecJob(this.baseURL, this.token);
+    let pending, failure, completed = false, count = 0, prepMax = 0, postMax = 0, mainWork = 0;
+    const fail = error => { failure ??= error; backendJob.cancel(); pending?.reject(failure); pending = null; this._terminateWorker(); };
+    const onError = event => { event.preventDefault(); fail(Object.assign((event.message ? new Error(event.message) : messageError(new Error(''), "errors.documentExport.theDocumentExportWorkerStopped")), { telemetryCode: 'worker_failed', telemetryStage: 'serialize' })); };
+    const onMessageError = () => fail(Object.assign(messageError(new Error(''), "errors.documentExport.theDocumentSnapshotCouldNotBeTransferred", {}), { telemetryCode: 'snapshot_failed', telemetryStage: 'prepare' }));
+    const onMessage = event => {
       if (!pending || pending.id !== event.data?.id) return;
       const request = pending; pending = null;
       if (event.data.ok) request.resolve(event.data);
@@ -56,7 +145,10 @@ export class DocumentExporter {
         error.telemetryFrames=event.data.error?.telemetryFrames;error.name=event.data.error?.name||'Error';
         request.reject(error);
       }
-    });
+    };
+    worker.addEventListener('error', onError);
+    worker.addEventListener('messageerror', onMessageError);
+    worker.addEventListener('message', onMessage);
     const check = () => {
       if (signal?.aborted) throw abortError();
       if (failure) throw failure;
@@ -65,7 +157,7 @@ export class DocumentExporter {
     const request = (operation, data = {}, transfer = []) => {
       check();
       return new Promise((resolve, reject) => {
-        const id = ++sequence;
+        const id = ++this.sequence;
         pending = {id, resolve, reject};
         const before = performance.now();
         try { worker.postMessage({id, operation, ...data}, transfer); }
@@ -79,7 +171,7 @@ export class DocumentExporter {
     const timer = this.timeoutMs > 0 ? setTimeout(() => fail(Object.assign(messageError(new Error(''), "errors.documentExport.documentExportTimedOut", {}), { telemetryCode: 'timeout', telemetryStage: 'serialize' })), this.timeoutMs) : null;
     try {
       const link = backendJob.link();
-      await request('start', {options: {sourceId, format, name, figureTypeId, figureUid, figureUids, tick, baseURL: this.baseURL, token: this.token, jobId: backendJob.id, ...link.fields}}, link.transfer);
+      await request('start', {options: {sourceId, format, name, figureTypeId, figureUid, figureUids, tick, baseURL: this.baseURL, token: this.token, jobId: backendJob.id, ...link.fields}, cacheEntries: this.compressionCache.snapshot()}, link.transfer);
       const snapshotStarted = performance.now();
       const chunks = documentChunks(report, {maxRecords: this.targetRecords, maxBytes: this.targetBytes,
         timeBudgetMs: 3, omitRuntimeSegments: true});
@@ -100,16 +192,23 @@ export class DocumentExporter {
       const result = await request('export');
       check();
       if (!(result.blob instanceof Blob)) throw messageError(new Error(''), "errors.documentExport.theFileServiceReturnedNoExportedDocument", {});
-      this.lastTimings = {format, chunks: count, snapshot_ms: snapshotMs, max_chunk_prepare_ms: prepMax,
+      this.lastTimings = {format, reused_worker: reusedWorker, chunks: count, snapshot_ms: snapshotMs, max_chunk_prepare_ms: prepMax,
         max_chunk_post_ms: postMax, main_work_ms: mainWork, total_ms: performance.now() - started, ...result.timings};
       backendJob.finish();
+      this.compressionCache.restore(result.cacheEntries);
+      const rawBytes = result.timings?.container_raw_bytes ?? (result.timings?.json_characters || 0) * 2;
+      this.workerBytes += Number.isSafeInteger(rawBytes) && rawBytes >= 0 ? rawBytes : this.workerByteBudget;
+      if (this.workerBytes >= this.workerByteBudget) this._terminateWorker({clearCache: false});
+      completed = true;
       return result.blob;
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener('abort', abort);
-      this.jobs.delete(job);
       backendJob.cancel();
-      worker.terminate();
+      worker.removeEventListener('error', onError);
+      worker.removeEventListener('messageerror', onMessageError);
+      worker.removeEventListener('message', onMessage);
+      if (!completed) this._terminateWorker();
     }
   }
 
@@ -118,5 +217,6 @@ export class DocumentExporter {
     this.disposed = true;
     for (const job of this.jobs) job.cancel();
     this.jobs.clear();
+    this._terminateWorker();
   }
 }

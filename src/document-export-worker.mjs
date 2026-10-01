@@ -13,12 +13,14 @@ import {nativeFigureDocument} from './native-figure.mjs';
 import {validateMovieclipGraph,isMovieclip} from './movieclips.mjs';
 import {packPoseSequences} from './pose-sequence-storage.mjs';
 import {documentHasVfx} from './vfx.mjs';
-import {liftDocument, encodeContainerV2, validateNativeFigure} from './native-container.mjs';
+import {liftDocument, encodeContainerV2Parts, createContainerCompressionCache, validateNativeFigure} from './native-container.mjs';
 import {flattenDrawingFigures} from './drawing-flatten.mjs';
 import {codecRequest} from './codec-request.mjs';
+import {decodeSourceRecord} from './source-record.mjs';
 
 let document, config, running = false;
-const timings = {};
+let timings = {};
+const compressionCache = createContainerCompressionCache({maxBytes: 64 * 1024 * 1024, maxEntries: 8});
 function reply(id, payload) { self.postMessage({id, ok: true, ...payload}); }
 
 /** Fetch the retained original binary source for native-save provenance.
@@ -29,32 +31,31 @@ async function fetchOriginalSource() {
   const response = await codecRequest(config, `/api/source?id=${encodeURIComponent(config.sourceId)}`, {headers});
   if (response.status === 422 || response.status === 404) return null;
   if (!response.ok) throw Object.assign(messageError(new Error(''), "errors.documentExportWorker.theOriginalSourceIsUnavailable", {status: response.status}), {status: response.status});
-  const buffer = new Uint8Array(await response.arrayBuffer());
-  const magic = new TextDecoder().decode(buffer.subarray(0, 8));
-  if (magic !== 'STYKSRC1' || buffer.byteLength < 12) throw messageError(new Error(''), "errors.documentExportWorker.theFileServiceReturnedAnInvalidSourceRecord", {});
-  const metaLength = new DataView(buffer.buffer, buffer.byteOffset).getUint32(8, true);
-  const meta = JSON.parse(new TextDecoder().decode(buffer.subarray(12, 12 + metaLength)));
-  const bytes = buffer.subarray(12 + metaLength);
+  const {metadata: meta, bytes} = await decodeSourceRecord(await response.arrayBuffer());
   return {meta, bytes};
 }
 
 /** Build the native container in this worker: the editable document becomes a
  * compact skeleton plus binary sections instead of one large JSON payload. */
 async function buildNativeContainer() {
-  const output = config.format === 'styk' ? packPoseSequences(document) : {...document};
+  const portable = config.format === 'styk' ? document : {...document};
   if (config.format !== 'styk') {
-    delete output._stykSource;
-    validateNativeFigure(output, config.format);
+    delete portable._stykSource;
+    validateNativeFigure(portable, config.format);
   }
+  const output = packPoseSequences(portable);
   output._styk = {...output._styk, format: 'StykAnimate', format_version: 1};
   let preBlobs = [], sourceMeta = null;
   if (config.format === 'styk' && config.sourceId) {
     const source = await fetchOriginalSource();
     if (source) { preBlobs = [source.bytes]; sourceMeta = source.meta; }
   }
+  if (sourceMeta) output._stykSource = {...sourceMeta, source_base64: preBlobs[0]};
   const lifted = liftDocument(output, {preBlobs});
-  if (sourceMeta) lifted.skeleton._stykSource = {...sourceMeta, source_base64: `S2S:1:0:${preBlobs[0].byteLength}`};
-  return encodeContainerV2(lifted, config.format);
+  const stats = {};
+  const encoded = await encodeContainerV2Parts(lifted, config.format, {cache: compressionCache, stats});
+  Object.assign(timings, stats);
+  return encoded.parts;
 }
 
 self.addEventListener('message', async event => {
@@ -64,8 +65,11 @@ self.addEventListener('message', async event => {
   let stage = 'prepare';
   try {
     if (message.operation === 'start') {
+      config?.codecPort?.close();
       config = message.options;
       document = undefined;
+      timings = {};
+      compressionCache.restore(message.cacheEntries);
       reply(message.id);
     } else if (message.operation === 'chunk') {
       document = applyDocumentChunk(document, message.chunk);
@@ -143,7 +147,7 @@ self.addEventListener('message', async event => {
       if (['styk', 'stkz', 'stykmov'].includes(config.format)) {
         const building = performance.now();
         try {
-          blob = new Blob([await buildNativeContainer()]);
+          blob = new Blob(await buildNativeContainer());
           timings.container_build_ms = +(performance.now() - building).toFixed(3);
         } catch (error) {
           // A capacity rejection also applies to the JSON service fallback.
@@ -157,7 +161,7 @@ self.addEventListener('message', async event => {
       }
       if (!blob) {
         const serializing = performance.now();
-        const body = JSON.stringify({document: config.format === 'styk' ? packPoseSequences(document) : document, sourceId: config.sourceId, format: config.format,
+        const body = JSON.stringify({document: ['styk', 'stkz', 'stykmov'].includes(config.format) ? packPoseSequences(document) : document, sourceId: config.sourceId, format: config.format,
           filename: config.name, figureTypeId: config.figureTypeId});
         timings.stringify_ms = performance.now() - serializing;
         timings.json_characters = body.length;
@@ -192,10 +196,14 @@ self.addEventListener('message', async event => {
       timings.worker_ms = performance.now() - started;
       timings.output_bytes = blob.size;
       document = null;
-      reply(message.id, {blob, timings});
+      reply(message.id, {blob, timings, cacheEntries: compressionCache.snapshot()});
+      config.codecPort?.close();
+      config = null;
     } else throw messageError(new Error(''), "errors.documentExportWorker.unknownDocumentExportOperation", {});
   } catch (error) {
     document = null;
+    config?.codecPort?.close();
+    config = null;
     self.postMessage({id: message.id, ok: false, error: {message: error?.message || String(error), ...errorMessageData(error),
       code: error?.code, status: error?.status,
       ...diagnosticDetails(error,stage,stage === 'validate' ? 'invalid_document' : stage === 'serialize' ? 'serialize_failed' : stage === 'request' ? 'backend_unavailable' : 'snapshot_failed')}});

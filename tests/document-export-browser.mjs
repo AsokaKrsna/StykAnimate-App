@@ -87,19 +87,29 @@ try {
     }, fixture);
     checks.push(result); console.log(JSON.stringify(result));
   }
+  const behaviorFixture = fixtures.find(fixture => fixture.format === 'piv') ?? fixtures[0];
+  await page.locator('#fixture').setInputFiles(behaviorFixture.filename);
   const behavior = await page.evaluate(async () => {
     const cancelled = new AbortController(); cancelled.abort();
     let before = false, during = false, revision = false;
     try { await exporter.export(current.document, {signal: cancelled.signal}); } catch (error) { before = error.name === 'AbortError'; }
     const mid = new AbortController();
+    const originalPostMessage = Worker.prototype.postMessage;
+    let snapshotHook = () => mid.abort();
+    Worker.prototype.postMessage = function (message, ...args) {
+      const result = originalPostMessage.call(this, message, ...args);
+      if (message.operation === 'chunk') snapshotHook?.();
+      return result;
+    };
     const ongoing = exporter.export(current.document, {signal: mid.signal});
-    setTimeout(() => mid.abort(), 5);
     try { await ongoing; } catch (error) { during = error.name === 'AbortError'; }
     let rev = 1;
+    snapshotHook = () => rev++;
     const changed = exporter.export(current.document, {getRevision: () => rev});
-    setTimeout(() => rev++, 5);
     try { await changed; } catch (error) { revision = error.name === 'AbortError'; }
-    const small = await importer.openSample('Pivot Animator v5/Animations/tween_camera.piv');
+    snapshotHook = null;
+    Worker.prototype.postMessage = originalPostMessage;
+    const small = await importer.importFile(document.querySelector('#fixture').files[0]);
     let expired = false;
     try { await exporter.export(small.document, {sourceId: 'missing-source', format: 'piv'}); }
     catch (error) { expired = error.code === 'source_expired' && error.status === 410; }

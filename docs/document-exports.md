@@ -37,6 +37,29 @@ merely from normalization. A Blob returns to the renderer without JSON or
 base64 conversion. Use the native Blob streaming helper to save it through
 Electron; browser downloads and IndexedDB can consume the Blob directly.
 
+One exporter runs one worker at a time, with at most four queued requests.
+Waiting requests remain cancellable and recheck the captured revision before
+preparing a snapshot. Successful work can reuse that worker for 30 seconds,
+until its cumulative raw encoding work reaches 8 MiB. Larger jobs retire the
+worker immediately after completion so successive saves cannot accumulate
+old snapshot and codec heap capacity. This bounds reuse, not the peak memory
+needed to encode one document. The threshold includes JSON service uploads.
+Idle expiry, disposal, cancellation, timeout and failure terminate it and release
+its WASM memory. Every request resets its document, options, timings and codec
+port. A monotonically increasing request ID rejects delayed messages from older
+requests. No editable graph or completed snapshot remains between saves.
+
+The exporter retains only up to eight immutable compressed blocks, totaling at
+most 64 MiB, and passes them to replacement workers. The same idle deadline and
+failure/disposal paths clear this pool. Each save still snapshots and validates
+current content, then hashes
+fresh raw section bytes; identical SHA-256, length and codec settings can reuse
+compression. Mutable array identity or editor revision is never a content-cache
+key. Changed poses, media and unknown metadata therefore cannot return stale
+data. Multipart container output feeds `Blob(parts)` directly, avoiding the
+additional contiguous whole-file buffer. The layout, compression settings and
+output bytes are unchanged.
+
 An imported layer sheet whose tracks still map exactly to the original native
 times does not require Pivot baking. The materializer checks current track
 contents, durations and known controls on every export, including after Undo
@@ -48,8 +71,9 @@ editor initialization, preserving original stored and hidden keyframes.
 
 Sectioned containers keep separate limits: 256 MiB for the compressed file and
 each binary section, 384 MiB for the JSON skeleton, and the existing 1 GiB
-combined materialization estimate. Both readers and writers enforce these
-bounds; version-1 limits stay unchanged. Every decoded section must match its
+combined materialization budget. Both readers and writers enforce these
+bounds, including repeated marker expansion and restored array allocation;
+version-1 limits stay unchanged. Every decoded section must match its
 declared length and checksum, including zstd sections. Capacity failures do not
 retry through a larger JSON request that could obscure the original error.
 
@@ -58,6 +82,15 @@ frame at a time under the decode lock. It retains only the digest, so native
 saving does not depend on the separate 256 MiB JSON response limit or construct
 a second complete normalized pose inventory. Fingerprint version 3 and its
 numeric/opaque-field semantics remain unchanged.
+
+Project imports lease their immutable original PIV/STK bytes separately from
+the decoded-document LRU, before returning the result. The lease pool is bounded
+to 16 owners and 384 MiB of unique original bytes. Replacement adopts the new
+owner after document loading succeeds, then releases the old owner; rejected,
+cancelled and failed imports release their temporary owner. Import-only library
+operations do not lease originals. Browser project imports embed validated
+original bytes before publication so codec-worker cancellation cannot discard
+the active project's provenance. Native projects remain self-contained.
 
 PIV/STK export uses the same frame-at-a-time fingerprint for the submitted
 document. Older fingerprint versions keep their historical encoding. Validation
@@ -74,6 +107,21 @@ turn a saved document into a failed save; it reports an app diagnostic and sets
 `metadataSaved: false` in the finish result. Failures before commit still reject
 and preserve the previous destination. Diagnostic reporting cannot reverse a
 completed file write.
+
+Manual Save has one owner from destination selection through commit and optional
+cleanup. Repeated requests for the same checkpoint join it; differing requests
+cannot start a second write. Optional recovery deletion failures are diagnosed
+without changing a successful save result. Save-before-close/update retains the
+saved checkpoint and rechecks it after awaited preference, clipboard and desktop
+state flushes. A monotonic editor-event epoch supplements revision/draft checks,
+including persisted changes that do not advance the history revision.
+
+Recovery retains a maximum-wait deadline across edits instead of restarting the
+entire debounce every time. It waits for stable interaction boundaries, uses
+bounded retry delays and continues aborting mutable snapshots on changes. This
+does not guarantee a checkpoint during uninterrupted edits; complete incremental
+snapshots require a broader persisted-change contract. Failed or cancelled work
+leaves the previous recovery copy intact.
 
 Browser project Save selects a File System Access destination in the input task,
 before awaiting drawing publication or serialization. Its existing output sink
@@ -96,6 +144,13 @@ main-thread preparation time across all yields, and worker normalization,
 serialization, HTTP, container build, and output sizes. Background completion
 may take seconds for very large scenes; those durations do not represent UI
 blocking.
+
+The timings also include `reused_worker`, `container_raw_bytes`, compression `hits`/`misses`,
+`rawBytesReused`, `compressedBytesReused`, `cacheBytes` and `cacheEntries`.
+`node scripts/benchmark-document-saving.mjs --control=<commit SHA>` compares
+identical read-only corpus inputs, unchanged exports and a small edit against a
+committed encoder/exporter. It verifies output hashes and reports process peak
+RSS; its results exclude drawing publication, UI, IPC and atomic disk commit.
 
 Successful service exports also expose `service_ms` for request receipt, JSON
 parsing, validation, source fingerprinting, provenance, submitted-document
