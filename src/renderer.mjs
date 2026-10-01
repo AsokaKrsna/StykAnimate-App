@@ -3,7 +3,7 @@ import {vectorVfxSource,rasterizeVectorVfx} from './renderer-vfx-vector.mjs';
 import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {parallaxResolver} from './layer-parallax.mjs';
 import {rasterBounds,rasterCovers,rasterViewport} from './raster-view.mjs';
-import {canvasCoverageBounds,canvasBoundsOutside,canvasArtworkPlan,canvasLayerBounds} from './renderer-canvas-plan.mjs';
+import {canvasCoverageBounds,canvasBoundsOutside,canvasArtworkCropSafe,canvasArtworkPlan,canvasLayerBounds} from './renderer-canvas-plan.mjs';
 import {canvasPaint} from './paint.mjs';
 import {GpuTiming,requestInstrumentedDevice} from './gpu-timing.mjs';
 import {gpuStartupBudget} from './gpu-startup.mjs';
@@ -397,7 +397,7 @@ class CanvasFallback {
       if (cached) { this.onionArtwork.delete(group.g); this.onionArtworkBytes -= cached.bytes; cached.canvas.width = 1; cached.canvas.height = 1; }
       const originalBounds = cachedArtworkBounds(this,group.g,group.items);
       const padding=group.items.reduce((n,item)=>Math.max(n,drawableVfxPadding(item)),0);
-      const plan=canvasArtworkPlan(originalBounds,visible,resolution,{safe:Boolean(coverage),padding});
+      const plan=canvasArtworkPlan(originalBounds,visible,resolution,{safe:Boolean(coverage)&&canvasArtworkCropSafe(group.items),padding});
       if(plan===null)return;
       const bounds=plan??originalBounds;
       const pixelScale = vfxRasterScale(group.items,bounds,Math.min(resolution, 4096 / bounds.width, 4096 / bounds.height));
@@ -501,7 +501,7 @@ class CanvasFallback {
       if (!(originalBounds.width > 0 && originalBounds.height > 0)) { drawGeometry(ctx, directGeometry, this.resources); return; }
       const padding=items.reduce((n,item)=>Math.max(n,drawableVfxPadding(item)),0);
       const plan=canvasArtworkPlan(originalBounds,visible??canvasRasterViewport(ctx,group.g.root.x-source.root.x,group.g.root.y-source.root.y),resolution,
-        {safe:Boolean(cachedCanvasCoverage(this,source,items)),padding});
+        {safe:Boolean(cachedCanvasCoverage(this,source,items))&&canvasArtworkCropSafe(items),padding});
       if(plan===null)return;
       const bounds=plan??originalBounds;
       const pixelScale = vfxRasterScale(items,bounds,Math.min(resolution, 4096 / bounds.width, 4096 / bounds.height));

@@ -26,8 +26,16 @@ export function canvasBoundsOutside(bounds, visible, guard=0) {
     bounds.x>visible.x+visible.width+guard||bounds.y>visible.y+visible.height+guard));
 }
 
-/** Use the existing complete-artwork pixel grid. Ordinary zoom crops only when
- * a substantial allocation is saved, retaining pan coverage and effect halos. */
+/** Moving a Canvas path or glyph into a smaller source changes native edge
+ * coverage even on the original integer grid. Only verified image artwork
+ * opts into an ordinary crop; conservative bounds still support path culling. */
+export function canvasArtworkCropSafe(items) {
+  return Boolean(items.length)&&items.every(item=>item.type==='image'&&
+    (drawingMetadata(item.fig)||(item.asset?.display_width>0&&item.asset?.display_height>0)));
+}
+
+/** Ordinary verified image crops save a substantial allocation. Required
+ * high-density/oversized crops retain the established bounded painter policy. */
 export function canvasArtworkPlan(bounds, visible, resolution, {safe=false,padding=0,maxDimension=4096}={}) {
   const required=resolution>8||bounds.width*resolution>maxDimension||bounds.height*resolution>maxDimension;
   if(!required&&(!safe||!visible||bounds.width*bounds.height*resolution*resolution<256*1024))return undefined;

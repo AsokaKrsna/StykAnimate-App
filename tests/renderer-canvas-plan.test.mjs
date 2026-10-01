@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {canvasCoverageBounds,canvasBoundsOutside,canvasArtworkPlan,canvasLayerBounds} from '../src/renderer-canvas-plan.mjs';
+import {canvasCoverageBounds,canvasBoundsOutside,canvasArtworkCropSafe,canvasArtworkPlan,canvasLayerBounds} from '../src/renderer-canvas-plan.mjs';
 import {rasterCovers} from '../src/raster-view.mjs';
 import {createDrawingFigure} from '../src/drawing-model.mjs';
 
@@ -35,6 +35,25 @@ test('ordinary zoom crops substantial off-screen artwork on its original grid',(
   assert.equal(canvasArtworkPlan(bounds,visible,resolution,{safe:false}),undefined);
   assert.equal(canvasArtworkPlan({x:0,y:0,width:100,height:80},visible,1,{safe:true}),undefined);
   assert.equal(canvasArtworkPlan(bounds,{x:0,y:0,width:950,height:780},1,{safe:true}),undefined);
+});
+
+test('ordinary native paths and glyphs retain their complete Canvas source domain',()=>{
+  const visible={x:650,y:300,width:200,height:150},resolution=1.25;
+  for(const items of [[{type:'line'}],[{type:'circle'}],[{type:'poly'}],[{type:'text',asset:{bounds}}],
+    [{type:'image',asset:{display_width:1000,display_height:800}},{type:'line'}]]){
+    assert.ok(canvasCoverageBounds(items,bounds),'Native coverage remains available for culling.');
+    assert.equal(canvasArtworkCropSafe(items),false);
+    assert.equal(canvasArtworkPlan(bounds,visible,resolution,{safe:canvasArtworkCropSafe(items)}),undefined);
+    assert.equal(canvasArtworkPlan(bounds,visible,16,{safe:canvasArtworkCropSafe(items)}).cropped,true,
+      'Required high-density cropping remains bounded.');
+  }
+  assert.equal(canvasArtworkCropSafe([]),false);
+  assert.equal(canvasArtworkCropSafe([{type:'image',asset:{width:1000,height:800}}]),false);
+  for(const items of [[{type:'image',asset:{display_width:1000,display_height:800}}],
+    [{type:'image',fig:createDrawingFigure({celId:'verified',figureTypeId:1})}]]){
+    assert.equal(canvasArtworkCropSafe(items),true);
+    assert.equal(canvasArtworkPlan(bounds,visible,resolution,{safe:canvasArtworkCropSafe(items)}).cropped,true);
+  }
 });
 
 test('gesture layers crop transformed device extents, preserving uncertain and off-screen coverage',()=>{

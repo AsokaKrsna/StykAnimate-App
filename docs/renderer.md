@@ -349,12 +349,16 @@ layer boundaries; the existing Scene VFX overlay is a separate composition rule.
 
 ## Compatibility interaction and resource ownership
 
-Compatibility editing uses conservative viewport bounds at every scale. Large
-partially visible figures crop on the complete artwork's pixel grid, and the
-retained raster owner protects visible entries before admitting replacements.
-Eviction searches beyond protected entries rather than repeatedly repainting an
-over-budget scene. Native brush state advances even when primitives are culled.
-Effects and unsupported bounds keep their established painter.
+Compatibility editing uses conservative viewport bounds at every scale. Native
+paths and glyphs keep complete source rasters at ordinary density, including
+translucent groups and mixed path/image artwork, to preserve Canvas edge
+coverage. Large verified image-only artwork, including eligible drawing groups,
+may crop on the original pixel grid when this saves a substantial allocation.
+Required high-density or oversized crops retain the established bounded painter
+policy. The retained raster owner protects visible entries before admitting
+replacements. Eviction searches beyond protected entries rather than repeatedly
+repainting an over-budget scene. Native brush state advances even when primitives
+are culled. Effects and unsupported bounds keep their established painter.
 
 Gesture layers retain only the useful canvas coverage. Pose and move layers
 preserve the destination origin to keep native curve sampling; pan layers may
