@@ -27,6 +27,10 @@ const HEADER = 56, SECTION = 64, MAX_BYTES = 256 * 1024 * 1024;
 const MAX_SKELETON_BYTES = 384 * 1024 * 1024;
 const MAGIC = {styk: 'STYK', stkz: 'STKZ', stykmov: 'STMV'};
 const LIFT_MIN_ARRAY = 32, LIFT_MIN_STRING = 64 * 1024;
+// Binary64's shortest decimal has at most 17 significant digits. JSON uses
+// fixed notation only from 1e-6 to below 1e21, or a signed exponent with at
+// most three digits. Including sign and punctuation, 32 bytes bounds either.
+const MAX_JSON_NUMBER_BYTES = 32;
 const B64_FIELDS = new Set(['data_base64', 'source_base64']);
 const TYPES = {u8: Uint8Array, u16: Uint16Array, u32: Uint32Array, i32: Int32Array, f32: Float32Array, f64: Float64Array};
 const TYPE_BYTES = {u8: 1, u16: 2, u32: 4, i32: 4, f32: 4, f64: 8};
@@ -323,7 +327,7 @@ export function materializeMarkers(node, sections, {maxMaterializedBytes = MAX_B
     } else if (value && typeof value === 'object') {
       const keys = Object.keys(value); admit(2 + Math.max(0, keys.length - 1));
       for (const key of keys) { admit(jsonStringBytes(key) + 1); preflight(value[key]); }
-    } else admit(value == null ? 4 : String(value).length);
+    } else admit(value == null || typeof value === 'number' && !Number.isFinite(value) ? 4 : String(value).length);
   };
   preflight(node);
   if (metrics) metrics.byteLength = materializedBytes;
@@ -382,7 +386,6 @@ function jsonStringBytes(value) {
  *  Integers stay exact; floats use f32 only when every value round-trips. */
 function arrayType(values) {
   let ints = true, min = Infinity, max = -Infinity, f32 = true;
-  let jsonBytes = 2 + Math.max(0, values.length - 1);
   for (const v of values) {
     if (typeof v !== 'number' || !Number.isFinite(v)) return null;
     if (Number.isInteger(v)) {
@@ -390,18 +393,16 @@ function arrayType(values) {
       if (v < min) min = v; if (v > max) max = v;
     } else ints = false;
     if (f32 && Math.fround(v) !== v) f32 = false;
-    jsonBytes += String(v).length;
   }
-  const result = type => ({type, jsonBytes});
   if (ints) {
     if (min >= 0) {
-      if (max <= 0xff) return result('u8');
-      if (max <= 0xffff) return result('u16');
-      if (max <= 0xffffffff) return result('u32');
-    } else if (min >= -0x80000000 && max <= 0x7fffffff) return result('i32');
-    return result('f64');
+      if (max <= 0xff) return 'u8';
+      if (max <= 0xffff) return 'u16';
+      if (max <= 0xffffffff) return 'u32';
+    } else if (min >= -0x80000000 && max <= 0x7fffffff) return 'i32';
+    return 'f64';
   }
-  return result(f32 ? 'f32' : 'f64');
+  return f32 ? 'f32' : 'f64';
 }
 
 /** Walk an editable document and produce the v2 skeleton + binary sections.
@@ -425,11 +426,19 @@ export function liftDocument(document, {preBlobs = [], maxBytes = MAX_BYTES} = {
     if (stringSizes.size < 512) stringSizes.set(value, length);
     return length;
   };
-  let arraysLength = 0, blobsLength = 0, jsonBytes = 0, allocationBytes = 0;
+  let arraysLength = 0, blobsLength = 0, jsonUpperBytes = 0, knownJSONBytes = 0, allocationBytes = 0;
   const maxMaterializedBytes = maxBytes * 4;
-  const admit = length => {
-    if (!Number.isSafeInteger(length) || length > maxMaterializedBytes - jsonBytes) throw documentTooLarge();
-    jsonBytes += length;
+  // Formatting every pose number is expensive. An upper bound admits ordinary
+  // files; exceeding it triggers the existing exact scan before publication.
+  // Only exact, already-known costs can reject early, preserving near-limit
+  // files whose decimal representation is smaller than the bound.
+  const admit = (length, estimated = false) => {
+    if (!Number.isSafeInteger(length)) throw documentTooLarge();
+    if (!estimated) {
+      if (length > maxMaterializedBytes - knownJSONBytes) throw documentTooLarge();
+      knownJSONBytes += length;
+    }
+    jsonUpperBytes += length;
   };
   const checkAllocation = () => {
     if (allocationBytes + arraysLength + blobsLength > maxMaterializedBytes) throw documentTooLarge();
@@ -486,18 +495,18 @@ export function liftDocument(document, {preBlobs = [], maxBytes = MAX_BYTES} = {
     }
     if (Array.isArray(value)) {
       const hit = seenArrays.get(value);
-      if (hit) { admit(hit.jsonBytes); return hit.marker; }
-      const numeric = value.length >= LIFT_MIN_ARRAY ? arrayType(value) : null;
-      if (numeric) {
-        const {type, jsonBytes} = numeric;
-        admit(jsonBytes);
+      if (hit) { admit(hit.jsonUpperBytes, true); return hit.marker; }
+      const type = value.length >= LIFT_MIN_ARRAY ? arrayType(value) : null;
+      if (type) {
+        const jsonUpperBytes = 2 + Math.max(0, value.length - 1) + value.length * MAX_JSON_NUMBER_BYTES;
+        admit(jsonUpperBytes, true);
         const offset = align(arraysLength, type);
         if (value.length > Math.floor((maxBytes - offset) / TYPE_BYTES[type])) throw documentTooLarge();
         arraysLength = offset + value.length * TYPE_BYTES[type];
         allocationBytes += value.length * 48; checkAllocation();
         const marker = `S2B:${type}:0:${offset}:${value.length}`;
         arrays.push({type, value, offset});
-        seenArrays.set(value, {marker, jsonBytes});
+        seenArrays.set(value, {marker, jsonUpperBytes});
         return marker;
       }
       admit(2 + Math.max(0, value.length - 1));
@@ -516,7 +525,8 @@ export function liftDocument(document, {preBlobs = [], maxBytes = MAX_BYTES} = {
       }
       return out;
     }
-    admit(value == null ? 4 : String(value).length);
+    if (typeof value === 'number' && Number.isFinite(value)) admit(MAX_JSON_NUMBER_BYTES, true);
+    else admit(value == null || typeof value === 'number' ? 4 : String(value).length);
     return value;
   };
   const skeleton = lift(document, '');
@@ -527,6 +537,10 @@ export function liftDocument(document, {preBlobs = [], maxBytes = MAX_BYTES} = {
   let offset = 0;
   for (const bytes of blobs) { blobsBytes.set(bytes, offset); offset += bytes.byteLength; }
   const sections = [{kind: 1, bytes: arraysBytes}, {kind: 2, bytes: blobsBytes}];
+  if (jsonUpperBytes > maxMaterializedBytes) {
+    try { materializeMarkers(skeleton, sections, {maxMaterializedBytes, validateOnly: true}); }
+    catch (error) { if (!error.code) error.code = 'document_too_large'; throw error; }
+  }
   return {skeleton, sections, blobOffsets};
 }
 

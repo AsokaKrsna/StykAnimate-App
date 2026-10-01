@@ -87,6 +87,49 @@ test('writer rejects excess lifted data before allocating its sections', () => {
   assert.equal(liftDocument({data_base64: '=' + encoded.slice(1)}, {maxBytes: 20000}).skeleton.data_base64[0], '=');
 });
 
+test('numeric admission falls back to exact JSON costs near its limit', () => {
+  // The finite-number bound exceeds 16 bytes, but the actual document fits.
+  assert.doesNotThrow(() => liftDocument({x: 1.25}, {maxBytes: 4}));
+  assert.throws(() => liftDocument({x: 1.1234567891234567}, {maxBytes: 4}),
+    error => error.code === 'document_too_large');
+  const numbers = [Number.MIN_VALUE, -Number.MIN_VALUE, Number.MAX_VALUE, -Number.MAX_VALUE,
+    1e-7, -1e-7, 1e-6, -1e-6, 1e20, -1e20, 1e21, -1e21, Number.EPSILON, -0];
+  for (const x of numbers) {
+    const document = {x}, bytes = new TextEncoder().encode(JSON.stringify(document)).length;
+    assert.doesNotThrow(() => liftDocument(document, {maxBytes: Math.ceil(bytes / 4)}));
+    assert.throws(() => liftDocument(document, {maxBytes: Math.ceil(bytes / 4) - 1}),
+      error => error.code === 'document_too_large');
+  }
+});
+
+test('exact numeric fallback counts shared references and keeps allocation limits', () => {
+  const shared = Array(32).fill(0);
+  const document = {arr: Array(20).fill(shared)};
+  assert.ok(JSON.stringify(document).length < 1600);
+  const lifted = liftDocument(document, {maxBytes: 400});
+  assert.equal(lifted.sections[0].bytes.length, 32);
+  assert.equal(lifted.skeleton.arr[0], lifted.skeleton.arr[19]);
+  assert.equal(document.arr[0], shared); assert.equal(shared[0], 0);
+  const tooMany = {arr: Array(25).fill(shared)};
+  assert.ok(JSON.stringify(tooMany).length > 1600);
+  assert.throws(() => liftDocument(tooMany, {maxBytes: 400}), error => error.code === 'document_too_large');
+  // The serialized text fits, while 48 bytes per numeric element plus the
+  // unique raw section cannot fit. The estimate must not waive that limit.
+  assert.throws(() => liftDocument({arr: shared}, {maxBytes: 391}), error => error.code === 'document_too_large');
+});
+
+test('numeric admission retains inline JSON null and negative-zero behavior', async () => {
+  const document = {x: NaN, y: 1};
+  assert.equal(JSON.stringify(document).length, 16);
+  assert.doesNotThrow(() => liftDocument(document, {maxBytes: 4}));
+  assert.throws(() => liftDocument(document, {maxBytes: 3}), error => error.code === 'document_too_large');
+  const nonfinite = {values: Array(40).fill(Infinity), x: NaN, y: -Infinity, z: -0};
+  const lifted = liftDocument(nonfinite);
+  assert.ok(Array.isArray(lifted.skeleton.values));
+  assert.deepEqual((await decodeDocument(await encodeContainerV2(lifted, 'styk'), 'styk')).document,
+    JSON.parse(JSON.stringify(nonfinite)));
+});
+
 test('reserved binary source fields admit every reference and preserve foreign typed arrays', async () => {
   const bytes = new Uint8Array([0, 1, 2, 255]);
   const document = {_stykSource: {source_base64: bytes}, media: {data_base64: bytes}, foreign: bytes,
