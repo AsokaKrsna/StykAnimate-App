@@ -48,6 +48,9 @@
   .tl-controls > .divider { display: none; }
   .tl-controls > .tl-play { --_s: var(--control-lg); margin-inline: var(--space-0-5); }
   .tl-controls > .tl-loop { margin-inline-start: var(--space-1); }
+  .tl-playback-range { --_px: var(--space-1); gap: var(--space-1); font-variant-numeric: tabular-nums; }
+  .tl-playback-range[data-active] { color: var(--accent-text); background: var(--accent-soft); }
+  .tl-playback-range-label:empty { display: none; }
   .tl-readout {
     display: inline-flex; align-items: center; block-size: var(--control-md);
     margin-inline-start: var(--space-1); padding: 0 var(--space-1-5);
@@ -97,6 +100,7 @@
   /* Last, where even the glyphs do not fit, Next copy's commands lead Timeline ⋯. */
   .tl-head:where([data-fold~="celmenu"]) .tl-cel,
   .tl-head:where([data-fold~="autokeymenu"]) .tl-autokey,
+  .tl-head:where([data-fold~="playbackrangemenu"]) .tl-playback-range,
   .tl-head:where([data-fold~="modemenu"]) .tl-mode { display: none; }
 
   /* The frame rate folds at compact width (into the Scene's Rate), restated over this sheet's display. */
@@ -140,6 +144,11 @@
   /* ---- Go to frame ---- */
   .tl-goto { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); inline-size: 220px; }
   .tl-goto > .tl-goto-meta { grid-column: 1 / -1; font: var(--type-small); color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .tl-playback-range-form { display: grid; gap: var(--space-3); inline-size: min(320px, calc(100vw - 48px)); }
+  .tl-playback-range-fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+  .tl-playback-range-help { margin: 0; color: var(--text-3); font: var(--type-small); white-space: normal; }
+  .tl-playback-range-actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-1); }
+  .tl-playback-range-actions > [type="submit"] { grid-column: 1 / -1; justify-self: end; }
 
   /* ==== The Simple timeline ==== */
   /* The frame card: the thumbnail, framed as today on a white rounded card (the current and the selected cards

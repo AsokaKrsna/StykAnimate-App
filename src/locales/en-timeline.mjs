@@ -28,6 +28,15 @@ const TEXT = Object.freeze({
   'timeline.sheet': 'Timeline…',
   'timeline.firstFrame': 'First frame',
   'timeline.loop': 'Loop playback',
+  'timeline.playbackRange': 'Playback range',
+  'timeline.playbackRangeActive': 'Playback range: frames {first}–{last}',
+  'timeline.playbackRangeFrom': 'First frame',
+  'timeline.playbackRangeTo': 'Last frame',
+  'timeline.playbackRangeHelp': 'Frames include inbetweens. Turn on Loop to repeat this range.',
+  'timeline.playbackRangeTotal': '{total} frames in this animation',
+  'timeline.playbackRangeApply': 'Apply range',
+  'timeline.playbackRangeSelection': 'Use selection',
+  'timeline.playbackRangeEntire': 'Entire animation',
   'timeline.audio': 'Audio',
   'timeline.onion': 'Onion skin',
   'timeline.autoKey': 'Auto key',
@@ -98,6 +107,5 @@ const TEXT = Object.freeze({
   'layers.drawingLayer': 'Drawing layer',
 });
 export default TEXT;
-
 
 

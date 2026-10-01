@@ -37,6 +37,7 @@ import {refreshHotkeyHints} from './hotkey-hints.mjs';
 import {icon} from './icons.mjs';
 import {setAttr, setMarkup, setProp, setText} from './ui/dom-write.mjs';
 import {createTimelineHeader} from './timeline-header.mjs';
+import {normalizePlaybackRange} from './playback-window.mjs';
 
 export function createTimelineHost(ctx) {
   const {editor, state, $, actions} = ctx;
@@ -44,7 +45,31 @@ export function createTimelineHost(ctx) {
   const header = createTimelineHeader(ctx, {
     get timeline() { return timeline; },
     goToFrame: (number) => goToFrame(number),
+    setPlaybackRange,
   });
+
+  // Playback limits belong to the document's timeline session, independently
+  // of the editing selection. A replacement document starts with its full span.
+  editor.addEventListener('change', event => {
+    const detail = event.detail ?? {};
+    if (detail.kind === 'document') {
+      state.loopRange = null;
+      header.closePlaybackRange();
+    } else if (state.loopRange && (detail.timing || detail.structural || detail.kind === 'history')) {
+      const {start, end} = normalizePlaybackRange(state.loopRange, editor.totalTicks);
+      state.loopRange = end > start ? {startTick: start, endTick: end} : null;
+    } else return;
+    header.sync();
+  });
+
+  function setPlaybackRange(range) {
+    ctx.pause();
+    ctx.cancelWarmPlayback();
+    const {start, end} = normalizePlaybackRange(range, editor.totalTicks);
+    state.loopRange = range && end > start ? {startTick: start, endTick: end} : null;
+    header.sync();
+    ctx.warmPlayback();
+  }
 
   // The header's own controls.
   $("fps").addEventListener(
@@ -81,6 +106,7 @@ export function createTimelineHost(ctx) {
     state.rangeIndices = [];
     state.applyRange = false;
     state.loopRange = null;
+    header.closePlaybackRange();
     timeline?.destroy();
     $("timeline").replaceChildren();
     const TimelineClass =
@@ -166,11 +192,6 @@ export function createTimelineHost(ctx) {
         ctx.syncSelectionControls();
         if (!state.scrubbing) ctx.renderInspector();
         localizedText($("selection-summary"), "timelineHost.keyframeSelected", {count: indices.length});
-      },
-      onLoopRangeChange: (range) => {
-        ctx.pause();
-        state.loopRange = range;
-        ctx.warmPlayback();
       },
     });
     header.mount(timeline);

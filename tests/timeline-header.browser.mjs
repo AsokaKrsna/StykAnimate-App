@@ -83,7 +83,7 @@ try {
   // Timeline ⋯ holds the rare rows.
   await page.locator('#timeline-menu-button').click();
   const rows = await page.evaluate(() => [...document.querySelectorAll('.ui-menu [role^="menuitem"]')].map(item => item.querySelector('span')?.textContent.trim()));
-  assert.deepEqual(rows, ['Last frame', 'Previous key', 'Next key', 'Default height'], 'Timeline ⋯ rows at rest');
+  assert.deepEqual(rows, ['Playback range', 'Last frame', 'Previous key', 'Next key', 'Default height'], 'Timeline ⋯ rows at rest');
   await page.getByRole('menuitem', {name: 'Last frame'}).click(); await settle();
   check('Timeline ⋯ › Last frame goes to the last frame', await page.evaluate(() => styk.editor.tick === styk.editor.totalTicks - 1));
 

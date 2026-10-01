@@ -1,6 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {playbackWindow,playbackLookaheadSize,playbackStartupWindow} from '../src/playback-window.mjs';
+import {playbackWindow,playbackLookaheadSize,playbackStartupWindow,normalizePlaybackRange,playbackRangeFromFrames} from '../src/playback-window.mjs';
+
+test('inclusive playback frames produce exact half-open transport ticks',()=>{
+  const range=playbackRangeFromFrames(50,100,200);
+  assert.deepEqual(range,{startTick:49,endTick:100});
+  assert.deepEqual(playbackRangeFromFrames(100,50,200),range);
+  const ticks=playbackWindow(49,100,normalizePlaybackRange(range,200));
+  assert.equal(ticks.length,51);
+  assert.equal(ticks[0],49);
+  assert.equal(ticks.at(-1),99);
+  assert.deepEqual(playbackWindow(99,3,normalizePlaybackRange(range,200),{loop:true}),[99,49,50]);
+  assert.deepEqual(playbackRangeFromFrames(50,50,200),{startTick:49,endTick:50});
+});
+
+test('range input and shortened durations remain valid without losing inclusive endpoints',()=>{
+  assert.deepEqual(playbackRangeFromFrames(-5,500,100),{startTick:0,endTick:100});
+  assert.deepEqual(playbackRangeFromFrames(500,600,100),{startTick:99,endTick:100});
+  assert.deepEqual(normalizePlaybackRange({startTick:49,endTick:100},75),{start:49,end:75});
+  assert.deepEqual(normalizePlaybackRange({startTick:49,endTick:100},25),{start:24,end:25});
+  assert.deepEqual(normalizePlaybackRange({startTick:-5,endTick:0},10),{start:0,end:1});
+  assert.deepEqual(normalizePlaybackRange({startTick:NaN,endTick:10},20),{start:0,end:20});
+  assert.deepEqual(normalizePlaybackRange(null,20),{start:0,end:20});
+  assert.deepEqual(normalizePlaybackRange({startTick:49,endTick:100},0),{start:0,end:0});
+  assert.equal(playbackRangeFromFrames(1,1,0),null);
+  assert.equal(playbackRangeFromFrames(NaN,100,200),null);
+});
 
 test('expensive startup gets a bounded runway without starving a smaller worker queue',()=>{
   assert.equal(playbackStartupWindow(60,2,8),6);

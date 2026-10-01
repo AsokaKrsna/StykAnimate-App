@@ -16,6 +16,27 @@ export function playbackWindow(start,count,range,{loop=false,bidirectional=false
   return ticks;
 }
 
+/** Session playback limits use zero-based, half-open ticks. Shortening an
+ * animation keeps a non-empty range inside its new duration. */
+export function normalizePlaybackRange(range, totalTicks) {
+  const total = Math.max(0, Math.floor(Number(totalTicks)) || 0);
+  if (!total || !range || !Number.isFinite(range.startTick) || !Number.isFinite(range.endTick))
+    return {start: 0, end: total};
+  const start = Math.min(total - 1, Math.max(0, Math.floor(range.startTick)));
+  const end = Math.min(total, Math.max(start + 1, Math.floor(range.endTick)));
+  return {start, end};
+}
+
+/** Inclusive, one-based output frames in the UI; never stored-frame indices. */
+export function playbackRangeFromFrames(first, last, totalTicks) {
+  if (!Number.isFinite(first) || !Number.isFinite(last)) return null;
+  const {start, end} = normalizePlaybackRange({
+    startTick: Math.min(Math.round(first), Math.round(last)) - 1,
+    endTick: Math.max(Math.round(first), Math.round(last)),
+  }, totalTicks);
+  return end > start ? {startTick: start, endTick: end} : null;
+}
+
 export function playbackLookaheadSize(count, cores = 4) {
   return Math.max(Math.min(count, 8), Math.round(count * Math.min(1, cores / 8)));
 }

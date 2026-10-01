@@ -42,7 +42,7 @@ import { ImportClient } from "./import-client.mjs";
 import { codecMode } from "./codec-job.mjs";
 import { browserCodecHost } from "./codec-web-host.mjs";
 import { PlaybackCache } from "./playback.mjs";
-import {playbackWindow,playbackLookaheadSize,playbackStartupWindow} from './playback-window.mjs';
+import {playbackWindow,playbackLookaheadSize,playbackStartupWindow,normalizePlaybackRange} from './playback-window.mjs';
 import {PlaybackUploadWarmup,PlaybackUploadAhead} from './playback-upload.mjs';
 import {AudioEngine} from './audio-engine.mjs';
 import {audioState, audioFps, audibleClips} from './audio-model.mjs';
@@ -691,12 +691,7 @@ function syncPlayback() {
 }
 function playbackRange() {
   if(state.motionPreviewRange)return state.motionPreviewRange;
-  return state.loopRange
-    ? {
-        start: Math.min(state.loopRange.startTick, editor.totalTicks - 1),
-        end: Math.min(state.loopRange.endTick, editor.totalTicks),
-      }
-    : { start: 0, end: editor.totalTicks };
+  return normalizePlaybackRange(state.loopRange, editor.totalTicks);
 }
 function prepareAhead(start = editor.tick, count = 48, {bidirectional = false} = {}) {
   if (state.drag || state.scrubbing || !editor.totalTicks) return;

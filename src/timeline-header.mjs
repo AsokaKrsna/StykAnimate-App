@@ -49,15 +49,16 @@ import {createPopover} from './ui/ui-popover.mjs';
 import {setAttr, setHidden, setProp, setText, setVar} from './ui/dom-write.mjs';
 import {setSharedSize} from './shell/layout-schema.mjs';
 import {bandBottom} from './shell/topbar.mjs';
+import {normalizePlaybackRange, playbackRangeFromFrames} from './playback-window.mjs';
 
 /**
  * What folds, in order (experience.md §1.8, revision 4.3): the zoom slider (Ctrl + wheel and Fit still zoom), Edit
- * together's word, Next copy's word, Auto key's word and Add frame's word. When glyphs still do not fit,
- * Auto key, Next copy and finally the timeline mode switch move into Timeline ⋯. The same commands and
+ * together's word, Next copy's word and Auto key's word. Auto key and Playback range then move into
+ * Timeline ⋯ before Add frame loses its word; Next copy and finally the timeline mode switch follow. The same commands and
  * radio values remain available there, including with expanded translated captions.
  */
-export const HEADER_FOLDS = Object.freeze(['zoom', 'together', 'cel', 'autokey', 'autokeymenu', 'add', 'celmenu', 'modemenu']);
-const WORDS = 6;
+export const HEADER_FOLDS = Object.freeze(['zoom', 'together', 'cel', 'autokey', 'autokeymenu', 'playbackrangemenu', 'add', 'celmenu', 'modemenu']);
+const WORDS = 7;
 
 /** Which folds a header applies: the first `count` of HEADER_FOLDS; at the minimal tier every word from the start. */
 export function headerFolds(count, {tier = 'wide'} = {}) {
@@ -176,6 +177,16 @@ export function createTimelineHeader(ctx, host) {
   loop.classList.add('tl-loop');
   kit(loop, [], {quiet: ''});
   if (!loop.hasAttribute('aria-label')) localizedAttribute(loop, 'aria-label', "timeline.loop", {});
+  const playbackLimits = element('button', null, 'ui-button tl-playback-range');
+  playbackLimits.id = 'playback-range-button';
+  playbackLimits.type = 'button';
+  playbackLimits.dataset.variant = 'ghost';
+  playbackLimits.setAttribute('aria-haspopup', 'dialog');
+  playbackLimits.setAttribute('aria-expanded', 'false');
+  localizedMarkup(playbackLimits, `${icon('stretch-horizontal')}<span class="tl-playback-range-label"></span>`);
+  localizedAttribute(playbackLimits, 'aria-label', 'timeline.playbackRange');
+  loop.after(playbackLimits);
+  playbackLimits.addEventListener('click', () => playbackRangePopover?.isOpen ? playbackRangePopover.hide('toggle') : openPlaybackRange());
   // The readout is a button that opens Go to frame; its text stays #time-display's.
   const time = $('time-display');
   const readout = element('button', null, 'tl-readout');
@@ -299,6 +310,8 @@ export function createTimelineHeader(ctx, host) {
         null);
     }
     items.push(
+      {label: say("timeline.playbackRange"), labelKey: "timeline.playbackRange", icon: 'stretch-horizontal', run: openPlaybackRange},
+      null,
       {label: say("timeline.lastFrame"), labelKey: "timeline.lastFrame", labelParams: {}, icon: 'last', shortcut: shortcut('last-frame'), run: action('last-frame')},
       {label: say("timeline.previousKey"), labelKey: "timeline.previousKey", labelParams: {}, icon: 'chevron-left', shortcut: shortcut('previous-keyframe'), run: action('previous-keyframe')},
       {label: say("timeline.nextKey"), labelKey: "timeline.nextKey", labelParams: {}, icon: 'chevron-right', shortcut: shortcut('next-keyframe'), run: action('next-keyframe')},
@@ -362,13 +375,70 @@ export function createTimelineHeader(ctx, host) {
     goField.select();
   }
 
+  // Exact output-frame limits work in both views. Simple's selected cards
+  // include their entire exposure when transferred through Use selection.
+  let playbackRangePopover = null, rangeFirst = null, rangeLast = null, rangeSelection = null, rangeTotal = null;
+  function openPlaybackRange() {
+    if (!host.timeline) return;
+    if (!playbackRangePopover) {
+      const form = element('form', null, 'tl-playback-range-form');
+      form.noValidate = true;
+      const fields = element('div', form, 'tl-playback-range-fields');
+      const field = (key) => {
+        const label = element('label', fields, 'ui-field');
+        translatedElement(element('span', label, 'ui-field-label', say(key)), key);
+        const input = element('input', label, 'ui-field-input');
+        Object.assign(input, {type: 'number', min: '1', step: '1', required: true});
+        localizedAttribute(input, 'aria-label', key);
+        return input;
+      };
+      rangeFirst = field('timeline.playbackRangeFrom');
+      rangeLast = field('timeline.playbackRangeTo');
+      rangeTotal = element('p', form, 'tl-playback-range-help');
+      translatedElement(element('p', form, 'tl-playback-range-help', say('timeline.playbackRangeHelp')), 'timeline.playbackRangeHelp');
+      const actions = element('div', form, 'tl-playback-range-actions');
+      rangeSelection = translatedElement(element('button', actions, 'ui-button', say('timeline.playbackRangeSelection')), 'timeline.playbackRangeSelection');
+      rangeSelection.type = 'button';
+      rangeSelection.addEventListener('click', () => {
+        const selection = host.timeline?.selectedTimeRange;
+        if (selection) applyPlaybackRange(playbackRangeFromFrames(selection.start + 1, selection.end, ctx.editor.totalTicks));
+      });
+      const entire = translatedElement(element('button', actions, 'ui-button', say('timeline.playbackRangeEntire')), 'timeline.playbackRangeEntire');
+      entire.type = 'button';
+      entire.dataset.variant = 'ghost';
+      entire.addEventListener('click', () => applyPlaybackRange(null));
+      const submit = translatedElement(element('button', actions, 'ui-button', say('timeline.playbackRangeApply')), 'timeline.playbackRangeApply');
+      submit.type = 'submit';
+      submit.dataset.variant = 'primary';
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        const range = playbackRangeFromFrames(rangeFirst.valueAsNumber, rangeLast.valueAsNumber, ctx.editor.totalTicks);
+        if (range) applyPlaybackRange(range);
+      });
+      playbackRangePopover = createPopover({...menuOptions(), anchor: playbackLimits, placement: 'top-start', title: say('timeline.playbackRange'), titleKey: 'timeline.playbackRange', body: form,
+        keyboardScope: true, className: 'tl-playback-range-popover'});
+    }
+    const {start, end} = normalizePlaybackRange(ctx.state.loopRange, ctx.editor.totalTicks);
+    rangeFirst.max = rangeLast.max = String(Math.max(1, ctx.editor.totalTicks));
+    rangeFirst.value = String(start + 1);
+    rangeLast.value = String(end);
+    localizedText(rangeTotal, 'timeline.playbackRangeTotal', {total: ctx.editor.totalTicks});
+    rangeSelection.disabled = !host.timeline.selectedTimeRange;
+    playbackRangePopover.show();
+    rangeFirst.select();
+  }
+  function applyPlaybackRange(range) {
+    run(() => host.setPlaybackRange(range));
+    playbackRangePopover?.hide('apply');
+  }
+
   // ---- Tier and workspace folds (the header's buttons carry the kit's display, so it hides them itself) ----
   const first = controls.querySelector('[data-action="first-frame"]');
   const workspace = document.querySelector('.workspace');
   let oneFrame = false, simple = false;
   function syncFolds() {
     const minimal = document.documentElement.dataset.tier === 'minimal', mode = workspace?.dataset.mode;
-    for (const button of [first, loop, audio]) setHidden(button, minimal);
+    for (const button of [first, loop, playbackLimits, audio]) setHidden(button, minimal);
     // Without the timeline stylesheet the header keeps today's sizes, which leave no room for Timeline ⋯ at the
     // minimal width; its rows are the Animation menu's there (Last frame, the key jumps, and the folded buttons).
     setHidden(menuButton, minimal && !styled);
@@ -461,6 +531,11 @@ export function createTimelineHeader(ctx, host) {
     /** State the header shows from the app (the transport surface): Loop's pressed state. Writes nothing unchanged. */
     sync() {
       setAttr(loop, 'aria-pressed', String(Boolean(ctx.state.loop)));
+      const active = Boolean(ctx.state.loopRange);
+      setAttr(playbackLimits, 'data-active', active ? '' : null);
+      const {start, end} = normalizePlaybackRange(ctx.state.loopRange, ctx.editor.totalTicks);
+      if (setText(playbackLimits.lastChild, active ? `${start + 1}–${end}` : '')) requestFold();
+      localizedAttribute(playbackLimits, 'data-tooltip', active ? 'timeline.playbackRangeActive' : 'timeline.playbackRange', {first: start + 1, last: end});
     },
     /** Edit together (#range-edit): never on a one-frame file; its word shows while it applies, so the fold may change. */
     setEditTogether({oneFrame: single = false, ready = false} = {}) {
@@ -471,5 +546,7 @@ export function createTimelineHeader(ctx, host) {
     attach(value) { shell = value; },
     /** Go to frame, from the readout or a command. */
     openGoToFrame,
+    openPlaybackRange,
+    closePlaybackRange: () => playbackRangePopover?.hide('timeline-reset'),
   };
 }
