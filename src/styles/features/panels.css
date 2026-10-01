@@ -55,6 +55,15 @@
   .motion-select-name > small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--type-micro); color: var(--text-3); }
   .motion-card-title { display: flex; align-items: center; gap: var(--space-1-5); }
   .motion-card-title > svg { inline-size: 16px; block-size: 16px; color: var(--accent-text); }
+  /* Each motion type keeps its timeline colour (tokens.css --sheet-motion-*) on its icon here, so a pill on the Motion
+   * row and its card read as the same thing. */
+  :where(.motion-list-row, .motion-card, .motion-tile):where([data-kind="follow"]) { --motion-color: var(--sheet-motion-follow); }
+  :where(.motion-list-row, .motion-card, .motion-tile):where([data-kind="shake"]) { --motion-color: var(--sheet-motion-shake); }
+  :where(.motion-list-row, .motion-card, .motion-tile):where([data-kind="impact"]) { --motion-color: var(--sheet-motion-impact); }
+  :where(.motion-list-row, .motion-card, .motion-tile):where([data-kind="handheld"]) { --motion-color: var(--sheet-motion-handheld); }
+  :where(.motion-list-row, .motion-card, .motion-tile):where([data-kind="wobble"]) { --motion-color: var(--sheet-motion-wobble); }
+  :where(.motion-list-row, .motion-card, .motion-tile):where([data-kind="pulse"]) { --motion-color: var(--sheet-motion-pulse); }
+  .motion-select > svg, .motion-card-title > svg, .motion-tile-icon > svg { color: var(--motion-color, var(--accent-text)); }
   .motion-group { display: grid; gap: var(--space-1); padding-block: var(--space-2); border-block-start: 1px solid var(--line-1); }
   .motion-slider-row { grid-template-columns: 78px minmax(0, 1fr) 64px; }
   .motion-slider-value { display: flex; align-items: center; gap: 2px; padding-inline-end: var(--space-1); border-radius: var(--radius-sm); background: var(--surface-field); }

@@ -17,7 +17,7 @@ import {timelineLayerDragMethods} from './timeline-layer-drag.mjs';
 import {TimelineLayerView} from './timeline-layer-view.mjs';
 import {createLayerFilter} from './timeline-layer-filter.mjs';
 import {organizeTimelineRows,timelineOrganizationMethods} from './timeline-organization.mjs';
-import {motionRows,paintMotionRow,cameraMotionTimelineMethods} from './camera-motion-timeline.mjs';
+import {motionRows,paintMotionRow,paintMotionRibbon,MOTION_COLORS,cameraMotionTimelineMethods} from './camera-motion-timeline.mjs';
 import {attachTimelineHotkeys} from './timeline-hotkeys.mjs';
 import {pasteSheetClipboard} from './shared-clipboard.mjs';
 import {sheetKeyAt} from './layer-sheet.mjs';
@@ -94,10 +94,10 @@ export class Timeline{
     // Add frame and Next copy live in the shared header (timeline-header.mjs); an audio clip's selection hides them there, as it did here.
     this.headerTools=this.header?.frameTools??element('div',null,'sheet-header-tools');
     this.live=element('div',this.root,'sheet-live');this.live.setAttribute('role','status');this.live.setAttribute('aria-live','polite');
-    this._on(this.scroll,'scroll',()=>{this._cachedOffsetX=undefined;if(this.layerDrag?.active)this._layerDragTrack();this.update();});this._on(this.scroll,'pointerdown',event=>this._pointerDown(event));this._on(this.scroll,'pointermove',event=>this._pointerMove(event));this._on(this.scroll,'pointerup',event=>this._pointerUp(event));this._on(this.scroll,'pointercancel',()=>this._cancelGesture());this._on(this.scroll,'lostpointercapture',()=>{if(!this.gesture?.touch)this._cancelGesture();});
+    this._on(this.scroll,'scroll',()=>{this._cachedOffsetX=undefined;if(this.motionTip&&!this.gesture)this.motionTip.hidden=true;if(this.layerDrag?.active)this._layerDragTrack();this.update();});this._on(this.scroll,'pointerdown',event=>this._pointerDown(event));this._on(this.scroll,'pointermove',event=>this._pointerMove(event));this._on(this.scroll,'pointerup',event=>this._pointerUp(event));this._on(this.scroll,'pointercancel',()=>this._cancelGesture());this._on(this.scroll,'lostpointercapture',()=>{if(!this.gesture?.touch)this._cancelGesture();});
     this._on(this.scroll,'contextmenu',event=>{event.preventDefault();const hit=this._hit(event);if(hit.row<0||!this.tracks[hit.row])return this._menu(event,{view:true});if(this.tracks[hit.row]?.kind==='folder')return this.folderMenu(event,this.tracks[hit.row].id);if(this.tracks[hit.row]?.kind.startsWith('vfx')){this._selectVfxRow(this.tracks[hit.row]);return;}if(!this._contains(hit))this._selectCell(hit);this._menu(event);});
     this._on(this.scroll,'dblclick',event=>this._doubleClick(event));
-    this._on(this.main,'pointerleave',()=>{if(!this.gesture){this.hover=null;this.update();}});
+    this._on(this.main,'pointerleave',()=>{if(!this.gesture){this.hover=null;this._syncMotionTip(null);this.update();}});
     this._on(this.scroll,'keydown',event=>this._keyDown(event));this._on(this.labelViewport,'wheel',event=>this._wheelRows(event),{passive:false});
     this._on(this.scroll,'wheel',event=>{if(event.ctrlKey||event.metaKey){event.preventDefault();this.setZoom(this.pxPerTick*wheelZoom(event),event.clientX-this.scroll.getBoundingClientRect().left);}else if(event.shiftKey){event.preventDefault();this.scroll.scrollLeft+=event.deltaY||event.deltaX;}},{passive:false});
     this._on(this.divider,'pointerdown',event=>{this._columnDrag={x:event.clientX,width:this.labelViewport.getBoundingClientRect().width||this.labelWidth};this.divider.setPointerCapture(event.pointerId);});
@@ -216,7 +216,7 @@ export class Timeline{
     if(this.canvas.width!==width||this.canvas.height!==height){this.canvas.width=width;this.canvas.height=height;this.canvas.style.width=`${this.width}px`;this.canvas.style.height=`${this.height}px`;}
     const css=getComputedStyle(this.root),token=name=>css.getPropertyValue(name).trim(),color=name=>token(`--sheet-${name}`);
     this.colors=Object.fromEntries(['surface','hover','line','ink','muted','accent','selected','span','tween','camera-accent','camera-tint','scene-accent','scene-tint',
-      'key-outline','cel','cel-line','draw-line','fx','layer','row-alt','lane','end','tick','cell','cell-tween','cell-blank','cell-divider','cell-selected'].map(name=>[name,color(name)]));
+      'key-outline','cel','cel-line','draw-line','fx','layer','row-alt','lane','end','tick','cell','cell-tween','cell-blank','cell-divider','cell-selected',...MOTION_COLORS].map(name=>[name,color(name)]));
     Object.assign(this.colors,{'accent-soft':token('--accent-soft')||this.colors.selected,'accent-line':token('--accent-line')||this.colors.accent,'accent-text':token('--accent-text')||this.colors.accent});
     this.colors.cel||=this.colors.span;this.colors['cel-line']||=this.colors.line;this.colors['draw-line']||=this.colors.accent;this.colors.fx||=this.colors.accent;this.colors['key-outline']||=this.colors.muted;
     this.colors.cell||=this.colors.hover;this.colors['cell-tween']||=this.colors.tween;this.colors['cell-blank']||=this.colors['cel-line'];this.colors['cell-divider']||=this.colors.surface;this.colors['cell-selected']||=this.colors['accent-soft'];
@@ -415,6 +415,8 @@ export class Timeline{
       const grip=this._grip;
       if(grip?.id===layer.id&&(this.hover?.row===index||this.gesture?.kind==='resize')){const x=grip.end*step-sx;if(x>-4&&x<w+4){ctx.fillStyle=c['accent-line'];ctx.beginPath();ctx.roundRect(x-1.5,cy-7,3,14,1.5);ctx.fill();}}
     }
+    // Camera with its Motion row collapsed: a ribbon under its keys says where the camera moves.
+    if(layer.kind==='camera'&&this.cameraMotionsCollapsed)paintMotionRibbon(this,ctx,y,size);
     if(layer.locked){ctx.fillStyle=c.surface;ctx.globalAlpha=.45;ctx.fillRect(0,y,w,size);ctx.globalAlpha=1;}
   }
   /**
@@ -644,11 +646,11 @@ export class Timeline{
     if(this._motionMove(event))return;
     const bounds=this.scroll.getBoundingClientRect();
     if(!this.gesture&&(event.clientX>=bounds.left+this.scroll.clientWidth||event.clientY>=bounds.top+this.scroll.clientHeight)){
-      if(this.hover){this.hover=null;this.update();}return;
+      if(this.hover){this.hover=null;this._syncMotionTip(null);this.update();}return;
     }
     const hit=this._hit(event),g=this.gesture;
     if(!g){
-      const resize=this._resizeHit(hit);this.scroll.style.cursor=hit.row<0?'ew-resize':resize?'ew-resize':'default';
+      const resize=this._resizeHit(hit),motion=this._motionCursor(hit);this.scroll.style.cursor=hit.row<0?'ew-resize':resize?'ew-resize':motion??'default';this._syncMotionTip(hit);
       if(this.hover?.tick!==hit.tick||this.hover?.row!==hit.row||Boolean(resize)!==this.hoverResize){this.hover=hit;this.hoverResize=Boolean(resize);this.update();}return;
     }
     if(g.kind==='scrub'){this.pendingScrub=hit.tick;this.update(false);}
@@ -700,7 +702,7 @@ export class Timeline{
     if(this.scroll.hasPointerCapture(event.pointerId))this.scroll.releasePointerCapture(event.pointerId);
     this.onRangeChange?.(this.selectedFrameIndices);this.update();this._centerSoon();
   }
-  _cancelGesture(){this._edge=this._edgeClock=null;if(this.gesture?.kind==='scrub')this.onScrubEnd?.();if(this.gesture?.kind==='camera-motion')this.onCameraMotionPreview?.(null);this.gesture=null;this.pendingScrub=null;this.pendingCell=null;this.update();}
+  _cancelGesture(){this._edge=this._edgeClock=null;if(this.motionTip)this.motionTip.hidden=true;if(this.gesture?.kind==='scrub')this.onScrubEnd?.();if(this.gesture?.kind==='camera-motion')this.onCameraMotionPreview?.(null);this.gesture=null;this.pendingScrub=null;this.pendingCell=null;this.update();}
   seek(tick){if(!Number.isInteger(tick)||tick<0)throw messageError(new Error(''), "errors.layerTimeline.chooseAValidFrame", {});this.onSeek?.();this.start=this.end=tick;this.editor.seek(tick,{allowBeyondEnd:true});this.update();}
   revealPlayhead(){if(this._touch())return this.centerTick(undefined,{smooth:true});const x=this.editor.tick*this.pxPerTick,left=this._offsetX();if(x<left)this._scrollToX(x);else if(x>left+this.width-30)this._scrollToX(x-this.width+60);}
   jumpKey(direction){const keys=this.editor.layerFrameKeys(this.selectedTrackId),tick=direction<0?[...keys].reverse().find(k=>k.tick<this.editor.tick)?.tick:keys.find(k=>k.tick>this.editor.tick)?.tick;if(tick!==undefined){this.seek(tick);this.revealPlayhead();}}

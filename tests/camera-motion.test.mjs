@@ -5,6 +5,7 @@ import {Editor} from '../src/editor.mjs';
 import {createCameraMotion,sampleCameraMotion,validateCameraMotion,cameraAtTime} from '../src/camera-motion.mjs';
 import {cameraSamplingReport} from '../src/camera-motion-bake.mjs';
 import {packMotionLanes} from '../src/camera-motion-timeline.mjs';
+import {motionRowSize,motionLaneBox,sheetRowLayout} from '../src/timeline-rows.mjs';
 import {parallaxResolver} from '../src/layer-parallax.mjs';
 import {evaluatedFrame,buildGeometry} from '../src/pivot/geometry.mjs';
 import {cameraMatrix} from '../src/renderer-geometry.mjs';
@@ -21,6 +22,14 @@ test('motions that never play together share a timeline lane; overlapping ones s
   assert.deepEqual(lanes(Array.from({length:10},(_,i)=>clip(`m${i}`,i*20,12))),[['m0','m1','m2','m3','m4','m5','m6','m7','m8','m9']]);
   // A clip may start on the frame the one before it ends; clips come in start order whatever their saved order.
   assert.deepEqual(lanes([clip('late',12,4),clip('early',0,12),clip('long',6,40),clip('third',10,3)]),[['early','late'],['long'],['third']]);
+});
+test('the Motion row is a content row for one lane and grows a 14px sub-lane per overlapping motion',()=>{
+  assert.equal(motionRowSize(1),32);assert.equal(motionRowSize(1,{row:28}),28);assert.equal(motionRowSize(3),50);assert.equal(motionRowSize(2,{touch:true}),60);
+  // Sub-lanes split the row between 4px margins with a 2px gap; one lane keeps today's inset pill.
+  assert.deepEqual(motionLaneBox(100,50,0,3),{top:104,height:12});assert.deepEqual(motionLaneBox(100,50,2,3),{top:132,height:12});
+  assert.deepEqual(motionLaneBox(0,32,0,1),{top:5,height:22});assert.deepEqual(motionLaneBox(0,48,0,1),{top:8,height:32});
+  const layout=sheetRowLayout([{kind:'camera'},{kind:'motion',laneCount:3},{kind:'scene'},{kind:'layer'}],{viewport:400});
+  assert.equal(layout.size(1),50);assert.equal(layout.top(2),74);assert.equal(layout.at(30),1);assert.equal(layout.pinned,true);
 });
 test('seeded motion seeks identically, overlaps add, and boundaries return neutral',()=>{
   const clip=createCameraMotion('shake','a',10,48),state={version:1,clips:[clip]};validateCameraMotion(state);

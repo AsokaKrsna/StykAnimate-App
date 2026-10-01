@@ -8,8 +8,9 @@
  * rows; 32px content rows, 28 at the short tier).
  *
  * Under the ruler come the system rows, the rows before the first content
- * layer: Camera and Scene at 24px, and the Camera's motion lanes and the
- * Scene's effect lanes at the row height. The content rows below them share
+ * layer: Camera and Scene at 24px, the Camera's Motion row (a row height, or
+ * a 14px sub-lane per overlapping motion) and the Scene's effect lanes at the
+ * row height. The content rows below them share
  * one height, so a content row's top is arithmetic. The system rows are
  * pinned under the ruler (the content rows scroll beneath them) while they
  * take at most half of the grid's height or leave room for three content
@@ -19,6 +20,18 @@
 export const ROW = 32, HEADER = 32, SYSTEM_ROW = 24, SHORT_ROW = 28, SHORT_HEADER = 24;
 /** The touch interface's rows (docs/TOUCH.md): a fingertip's height for every lane, a ruler a thumb can scrub. */
 export const TOUCH_ROW = 48, TOUCH_HEADER = 44, TOUCH_SYSTEM_ROW = 44;
+/** A sub-lane of the Motion row while motions overlap (camera-motion-timeline.mjs): a pill and its gap. */
+export const MOTION_LANE = 14, TOUCH_MOTION_LANE = 26;
+
+/** The Motion row's height for `lanes` overlapping motions: a content row for one lane, then a sub-lane per motion
+ * playing at once, between 4px margins. */
+export const motionRowSize = (lanes, {row = ROW, touch = false} = {}) => lanes > 1 ? 8 + lanes * (touch ? TOUCH_MOTION_LANE : MOTION_LANE) : row;
+/** Where sub-lane `lane` of `lanes` draws its pills in a Motion row at `y`, `size` px tall. */
+export function motionLaneBox(y, size, lane, lanes) {
+  if (lanes <= 1) { const inset = size >= 40 ? 8 : 5; return {top: y + inset, height: size - inset * 2}; }
+  const step = (size - 8) / lanes;
+  return {top: y + 4 + lane * step, height: step - 2};
+}
 
 /** The short height tier (shell/dock-host.mjs writes data-height on the root). */
 export function shortSheet(doc = globalThis.document) {
@@ -39,7 +52,7 @@ export function sheetRowLayout(tracks = [], {short = false, viewport = Infinity,
   const systemRow = touch ? TOUCH_SYSTEM_ROW : SYSTEM_ROW;
   let system = 0, systemHeight = 0;
   while (system < tracks.length && !['layer', 'folder'].includes(tracks[system].kind)) {
-    const size = tracks[system].kind === 'camera' || tracks[system].kind === 'scene' ? systemRow : row;
+    const kind = tracks[system].kind, size = kind === 'camera' || kind === 'scene' ? systemRow : kind === 'motion' ? motionRowSize(tracks[system].laneCount, {row, touch}) : row;
     tops.push(systemHeight); sizes.push(size); systemHeight += size; system++;
   }
   const count = tracks.length, room = Math.max(0, viewport - header), pinned = system > 0 && systemHeight <= Math.max(room / 2, room - 3 * row);

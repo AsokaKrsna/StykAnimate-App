@@ -211,10 +211,10 @@ test('computed camera copy is complete and resolves after language changes witho
   assert.ok(view.includes(interfaceLocalization.t('cameraMotionUi.presetShake')));
   assert.match(view,/data-i18n="cameraMotionUi.roughness"/);
   assert.match(view,/data-i18n-aria-label="cameraMotionUi.disableMove"/);
-  assert.equal(motionRows(editor)[0].name,interfaceLocalization.t('cameraMotionUi.presetShake'));
+  assert.equal(motionRows(editor)[0].name,interfaceLocalization.t('inspectorView.motion'));
   assert.equal(JSON.stringify(editor.serialize()),bytes);assert.equal(editor._undo.length,history);
  }finally{interfaceLocalization.setPseudo(null);}
- assert.equal(motionRows(editor)[0].name,'Shake');
+ assert.equal(motionRows(editor)[0].name,'Motion');
 });
 
 test('preset summaries translate effect names, counts and animation while glyph categories stay canonical',()=>{

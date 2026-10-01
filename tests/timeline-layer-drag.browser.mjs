@@ -116,22 +116,36 @@ try{
   const gliding=await page.evaluate(()=>styk.timeline.scroll.scrollTop);assert.ok(gliding>0&&gliding<200,`The rows are on their way (${gliding})`);
   await page.waitForFunction(()=>styk.timeline.scroll.scrollTop===200);
 
-  // Camera motions that never overlap share a lane; overlapping ones stack.
-  await page.evaluate(()=>{for(let index=0;index<6;index++)styk.editor.addCameraMotion(index%2?'shake':'impact',{start:index*20,duration:12});styk.editor.addCameraMotion('handheld',{start:30,duration:40});});await settle();
-  const lanes=await page.evaluate(()=>styk.timeline.tracks.filter(track=>track.kind==='motion').map(track=>track.motions.length));
-  assert.deepEqual(lanes,[6,1]);
-  assert.ok(await page.evaluate(()=>styk.timeline.layout.pinned),'Camera, its two lanes and Scene stay pinned in the default timeline');
-  const grid=await page.locator('.sheet-scroll').boundingBox(),lane=await row('motion/0').boundingBox(),px=await page.evaluate(()=>styk.timeline.pxPerTick),clips=await page.evaluate(()=>styk.editor.getCameraMotions().map(clip=>clip.id));
-  await page.mouse.click(grid.x+26*px,lane.y+lane.height/2);await settle();
-  assert.equal(await page.evaluate(()=>styk.editor._selectedCameraMotion),clips[1],'A click picks the clip under it in a shared lane');
-  await page.mouse.move(grid.x+46*px,lane.y+lane.height/2);await page.mouse.down();await page.mouse.move(grid.x+50*px,lane.y+lane.height/2,{steps:4});await page.mouse.up();await settle();
+  // Camera motions share one Motion row: a sub-lane per motion playing at once, so the row is as tall as the overlap.
+  await page.evaluate(()=>{for(let index=0;index<6;index++)styk.editor.addCameraMotion(index%2?'shake':'impact',{start:index*20,duration:12});});await settle();
+  const motionRow=()=>page.evaluate(()=>{const timeline=styk.timeline,at=timeline.tracks.findIndex(track=>track.kind==='motion');return {rows:timeline.tracks.filter(track=>track.kind==='motion').length,lanes:timeline.tracks[at].laneCount,size:timeline.layout.size(at),row:timeline.layout.row};});
+  let shape=await motionRow();assert.deepEqual([shape.rows,shape.lanes,shape.size],[1,1,shape.row],'Motions that never overlap fit one row of the usual height');
+  await page.evaluate(()=>styk.editor.addCameraMotion('handheld',{start:30,duration:40}));await settle();
+  shape=await motionRow();assert.deepEqual([shape.rows,shape.lanes,shape.size],[1,2,36],'An overlap adds a 14px sub-lane');
+  assert.ok(await page.evaluate(()=>styk.timeline.layout.pinned),'Camera, its Motion row and Scene stay pinned in the default timeline');
+  const grid=await page.locator('.sheet-scroll').boundingBox(),lane=await row('motion').boundingBox(),px=await page.evaluate(()=>styk.timeline.pxPerTick),clips=await page.evaluate(()=>styk.editor.getCameraMotions().map(clip=>clip.id));
+  const top=lane.y+11,bottom=lane.y+25;
+  await page.mouse.move(grid.x+44*px,bottom);await settle();
+  assert.equal(await page.locator('.sheet-motion-tip').textContent(),'Handheld, frames 31–70','Hovering a clip names it and its frames');
+  await page.mouse.click(grid.x+44*px,top);await settle();
+  assert.equal(await page.evaluate(()=>styk.editor._selectedCameraMotion),clips[2],'A click picks the clip in the sub-lane under it');
+  await page.mouse.click(grid.x+44*px,bottom);await settle();
+  assert.equal(await page.evaluate(()=>styk.editor._selectedCameraMotion),clips[6]);
+  await page.mouse.move(grid.x+46*px,top);await page.mouse.down();await page.mouse.move(grid.x+50*px,top,{steps:4});
+  assert.equal(await page.locator('.sheet-motion-tip').textContent(),'Impact punch, frames 45–56','The tip follows a drag with the frames it will land on');
+  await page.mouse.up();await settle();
   assert.equal(await page.evaluate(()=>styk.editor.getCameraMotions()[2].start),44,'Dragging moves that clip alone');
-  await page.mouse.click(grid.x+15*px,lane.y+lane.height/2);await settle();
-  assert.equal(await page.evaluate(()=>styk.editor._selectedCameraMotion),null,'An empty stretch of a lane clears the motion selection');
-  steps=await undoCount();await row('motion/0').getByRole('button',{name:/^Hide /}).click();await settle();
-  assert.ok(await page.evaluate(()=>styk.editor.getCameraMotions().slice(0,6).every(clip=>!clip.enabled)&&styk.editor.getCameraMotions()[6].enabled),'A lane\'s eye mutes its clips');
-  assert.equal(await undoCount(),steps+1);
-  await page.screenshot({path:'artifacts/timeline-layer-drag/motion-lanes.png'});
+  await page.mouse.click(grid.x+15*px,top);await settle();
+  assert.equal(await page.evaluate(()=>styk.editor._selectedCameraMotion),null,'An empty stretch clears the motion selection');
+  await page.screenshot({path:'artifacts/timeline-layer-drag/motion-row.png'});
+  steps=await undoCount();await row('motion').getByRole('button',{name:/^Hide /}).click();await settle();
+  assert.ok(await page.evaluate(()=>styk.editor.getCameraMotions().every(clip=>!clip.enabled)),'The row\'s eye mutes every motion');
+  assert.equal(await undoCount(),steps+1);await page.evaluate(()=>styk.editor.undo());await settle();
+  // Collapsed, Camera keeps a ribbon of its motions; a press on it opens the row with that motion selected.
+  await page.getByRole('button',{name:'Collapse camera motions',exact:true}).click();await settle();
+  assert.equal(await row('motion').count(),0);
+  const camera=await row('camera').boundingBox();await page.mouse.click(grid.x+64*px,camera.y+camera.height-3);await settle();
+  assert.equal(await page.evaluate(()=>styk.editor._selectedCameraMotion),clips[3]);assert.equal(await row('motion').count(),1);
   assert.deepEqual(errors,[]);
   console.log('timeline layer drag: ok');
 }finally{await browser.close();}

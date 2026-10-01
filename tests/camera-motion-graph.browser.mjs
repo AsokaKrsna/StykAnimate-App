@@ -12,7 +12,7 @@ const field=key=>page.locator(`input[type="number"][data-motion-field="${key}"]`
 const graph=page.locator('[data-motion-graph]');
 const curve=key=>graph.locator(`[data-motion-curve="${key}"]`);
 const points=key=>curve(key).getAttribute('points');
-const state=()=>page.evaluate(()=>({clip:styk.editor.getCameraMotions()[0],undo:styk.editor._undo.length,tick:styk.editor.tick,rows:styk.timeline.tracks.map(t=>({id:t.id,kind:t.kind,clip:t.motions?.[0]})),audioTop:styk.timeline.audioTop}));
+const state=()=>page.evaluate(()=>({clip:styk.editor.getCameraMotions()[0],undo:styk.editor._undo.length,tick:styk.editor.tick,rows:styk.timeline.tracks.map(t=>({id:t.id,kind:t.kind,clip:t.motions?.[0],lanes:t.laneCount})),motionSize:styk.timeline.tracks.some(t=>t.kind==='motion')?styk.timeline.layout.size(1):0,audioTop:styk.timeline.audioTop}));
 try{
   await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>window.styk?.ready);
   await page.evaluate(()=>{const e=styk.editor;e.newDocument();e.addFigure();styk.settingsUI.commit({timelineMode:'advanced',theme:'light',onionCount:0});const id=e.addCameraMotion('wobble',{duration:48});styk.timeline._selectMotion(id);e.seek(12);});
@@ -75,7 +75,7 @@ try{
   before=await state();const serialized=await page.evaluate(()=>JSON.stringify(styk.editor.serialize()));
   await page.getByRole('button',{name:'Collapse camera motions',exact:true}).click();await settle();
   let collapsed=await state();
-  check('Camera disclosure hides all motion lanes and keeps Camera/Scene/layers',collapsed.rows.map(r=>r.kind).join(',')==='camera,scene,layer'&&collapsed.audioTop===before.audioTop-64);
+  check('Camera disclosure hides the Motion row and keeps Camera/Scene/layers',collapsed.rows.map(r=>r.kind).join(',')==='camera,scene,layer'&&before.motionSize===36&&collapsed.audioTop===before.audioTop-before.motionSize);
   check('Collapsing changes neither the document nor undo history',collapsed.undo===before.undo&&await page.evaluate(s=>JSON.stringify(styk.editor.serialize())===s,serialized));
   check('Hidden motions cannot remain the timeline edit target',await page.evaluate(()=>!styk.editor._selectedCameraMotion&&styk.timeline.selectedTrackId==='camera')&&await page.getByRole('button',{name:'Expand camera motions',exact:true}).getAttribute('aria-expanded')==='false');
   await page.screenshot({path:`${out}/camera-collapsed.png`});
@@ -85,10 +85,10 @@ try{
   const lane=await page.evaluate(()=>styk.timeline.rowY(1)+styk.timeline.rowSize(1)/2);await page.mouse.click(b.x+7,b.y+lane);await settle();
   check('Collapsed grid hit testing selects the visible Scene row',await page.evaluate(()=>styk.timeline.selectedTrackId==='scene'));
   const expand=page.getByRole('button',{name:'Expand camera motions',exact:true});await expand.focus();await expand.press('Enter');await settle();
-  check('Disclosure is keyboard operable',(await state()).rows.filter(r=>r.kind==='motion').length===2);
+  check('Disclosure is keyboard operable',(await state()).rows.filter(r=>r.kind==='motion').map(r=>r.lanes).join()==='2');
   await page.getByRole('button',{name:'Collapse camera motions',exact:true}).press('ArrowLeft');await settle();
   await page.evaluate(()=>styk.timeline._selectMotion(styk.editor.getCameraMotions()[0].id));await settle();
-  check('Selecting a motion reveals its collapsed lanes',(await state()).rows.filter(r=>r.kind==='motion').length===2);
+  check('Selecting a motion reveals its collapsed row',(await state()).rows.filter(r=>r.kind==='motion').map(r=>r.lanes).join()==='2');
   await page.evaluate(()=>styk.settingsUI.commit({theme:'dark'}));await settle();
   await graph.scrollIntoViewIfNeeded();await page.screenshot({path:`${out}/motion-graph-dark.png`});
   await page.setViewportSize({width:1280,height:720});await graph.scrollIntoViewIfNeeded();

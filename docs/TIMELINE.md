@@ -144,7 +144,7 @@ no longer fit, they
 scroll up to three row heights past the last layer, so the bottom layers clear
 the scrollbar and the "N more" button.
 
-Camera and Scene, with the Camera's motion lanes and the Scene's effect lanes,
+Camera and Scene, with the Camera's Motion row and the Scene's effect lanes,
 stay pinned under the ruler while they take at most half of the grid's height or
 leave room for three content rows; a taller block scrolls with the layers.
 

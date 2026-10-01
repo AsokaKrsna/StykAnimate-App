@@ -700,6 +700,14 @@
     --sheet-tick: var(--mist-400);            /* the ruler's frame ticks */
     --sheet-scene-accent: var(--violet-500);
     --sheet-scene-tint: var(--violet-50);
+    /* Camera motions by type (the Motion row's pills, the collapsed Camera ribbon, the Motion tab's icons); gold stays
+     * the camera's own colour. The pills tint the surface with 20% of these, so they serve light and dark alike. */
+    --sheet-motion-follow: var(--blue-500);
+    --sheet-motion-shake: var(--orange-500);
+    --sheet-motion-impact: var(--rose-500);
+    --sheet-motion-handheld: var(--teal-500);
+    --sheet-motion-wobble: var(--mint-500);
+    --sheet-motion-pulse: var(--violet-500);
     /* NEW - read after the painter update */
     --sheet-row-alt: var(--mist-100);         /* every 5th frame's column */
     --sheet-cell: var(--mist-500);            /* a held pose's bar, key to next key; ink keys on it 12.9:1 */
@@ -893,6 +901,7 @@
       --canvas-selection: Highlight;
       --canvas-label-bg: CanvasText; --canvas-label-text: Canvas; --canvas-muted: GrayText;
       --sheet-camera-accent: CanvasText; --sheet-camera-tint: Canvas; --sheet-scene-accent: CanvasText; --sheet-scene-tint: Canvas;
+      --sheet-motion-follow: CanvasText; --sheet-motion-shake: CanvasText; --sheet-motion-impact: CanvasText; --sheet-motion-handheld: CanvasText; --sheet-motion-wobble: CanvasText; --sheet-motion-pulse: CanvasText;
       --sheet-easing: Highlight; --sheet-easing-soft: Canvas; --sheet-fx: CanvasText; --sheet-fx-tint: Canvas;
       --sheet-draw: CanvasText; --sheet-draw-tint: Canvas;
       --sheet-camera-line: CanvasText; --sheet-scene-line: CanvasText; --sheet-fx-line: CanvasText; --sheet-draw-line: CanvasText;
