@@ -22,10 +22,10 @@ import {rigConstraintPlan} from './rig-constraints.mjs';
 import {canvasFont} from './ui/font-loading.mjs';
 
 const degrees = radians => Math.round(radians * 180 / Math.PI * 100) / 100;
-const num = (id, label, value, {unit = '', min, max, span, tip, description} = {}) => ({kind: 'number', id, label, value, unit, min, max, span, tip, description});
-const choice = (id, label, value, options, extra = {}) => ({kind: 'select', id, label, value, span: 2, options: options.map((_tuple) => {const [key, text] = _tuple; const _messages = tupleMessages(_tuple); return {value: key, label: text, ...(_messages[1] ? {labelKey: _messages[1].key, labelParams: _messages[1].params} : {})};}), ...extra});
+const num = (id, label, value, options = {}) => ({kind: 'number', id, label, value, unit: '', ...options});
+const choice = (id, labelKey, value, options, extra = {}) => ({kind: 'select', id, label:interfaceText(labelKey),labelKey,value, span: 2, options: options.map((_tuple) => {const [key, text] = _tuple; const _messages = tupleMessages(_tuple); return {value: key, label: text, ...(_messages[1] ? {labelKey: _messages[1].key, labelParams: _messages[1].params} : {})};}), ...extra});
 /** One behaviour's block; the section's CSS separates blocks with a hairline. */
-const block = (name, rows, extra = {}) => ({kind: 'group', label: name, role: 'group', data: {'rig-block': name.toLowerCase().replace(/\s+/g, '-')}, rows, ...extra});
+const block = (name, rows, extra = {}) => ({kind: 'group', label: name, role: 'group', data: {'rig-block': name.toLowerCase().replace(/\s+/g, '-')}, rows,labelKey:extra.titleKey,labelParams:extra.titleParams, ...extra});
 /** A block's head: the switch or choice that turns its behaviour on, as one full-width field. */
 const head = row => ({kind: 'grid', rows: [{span: 2, ...row}]});
 /** What a behaviour's head turns on: its settings, under a guide that ties them to the head. */
@@ -39,11 +39,11 @@ export function rigSectionTitle(segment) {
 
 /** A weighted joint's origin, anchor count and anchors (each a joint and its weight), under `prefix`. */
 const anchorRows = (w, prefix) => [{kind: 'grid', rows: [
-  num(`${prefix}origin`, interfaceText("rigControls.originJoint"), w.origin, {min: 0, max: 65535}),
-  num(`${prefix}count`, interfaceText("rigControls.anchors"), w.anchors.length, {min: 1, max: 16, description: interfaceText("rigControls.numberOfAnchors"), descriptionKey: "rigControls.numberOfAnchors"}),
+  num(`${prefix}origin`, interfaceText("rigControls.originJoint"), w.origin, {labelKey: "rigControls.originJoint", min: 0, max: 65535}),
+  num(`${prefix}count`, interfaceText("rigControls.anchors"), w.anchors.length, {labelKey: "rigControls.anchors", min: 1, max: 16, description: interfaceText("rigControls.numberOfAnchors"), descriptionKey: "rigControls.numberOfAnchors"}),
   ...w.anchors.flatMap((anchor, i) => [
-    num(`${prefix}joint-${i}`, `Anchor ${i + 1}`, anchor.joint, {min: 0, max: 65535}),
-    num(`${prefix}weight-${i}`, interfaceText("rigControls.weight"), anchor.weight, {unit: '×', min: -100, max: 100, description: interfaceText("rigControls.anchorWeight", {value: i + 1}), descriptionKey: "rigControls.anchorWeight", descriptionParams: {value: i + 1}}),
+    num(`${prefix}joint-${i}`, interfaceText("rigControls.anchor", {value:i+1}), anchor.joint, {labelKey:"rigControls.anchor",labelParams:{value:i+1},min: 0, max: 65535}),
+    num(`${prefix}weight-${i}`, interfaceText("rigControls.weight"), anchor.weight, {labelKey: "rigControls.weight", unit: '×', min: -100, max: 100, description: interfaceText("rigControls.anchorWeight", {value: i + 1}), descriptionKey: "rigControls.anchorWeight", descriptionParams: {value: i + 1}}),
   ]),
 ]}];
 
@@ -59,7 +59,7 @@ export function rigSections(editor, {hidden = false} = {}) {
   const none = id => ({id, hidden: true});
   if (hidden || !segment) return [none('rig-controls'), none('rig-attachment'), none('rig-path-keys')];
   const rigged = Boolean(r.connector || r.stretch || r.follow || r.response || r.angleLock || r.weighted || r.anglePath || r.orientation);
-  const rig = {id: 'rig-controls', title: rigSectionTitle(segment), place: 'titled', open: rigged};
+  const rig = {id: 'rig-controls', title: rigSectionTitle(segment),titleKey:r.weighted?'rigControls.weightedJoint':r.anglePath?'rigControls.angleDrivenPath':'rigControls.rig', place: 'titled', open: rigged};
   if (r.weighted) {
     const w = r.weighted;
     return [{...rig, rows: [
@@ -71,22 +71,22 @@ export function rigSections(editor, {hidden = false} = {}) {
   }
   if (r.anglePath) {
     const path = r.anglePath, depth = path.source !== undefined;
-    return [{...rig, rows: [{kind: 'grid', rows: depth ? [num('rig-path-source', interfaceText("rigControls.depthSourceJoint"), path.source, {min: 1, max: 65535, span: 2})] : [
-      num('rig-path-driver', interfaceText("rigControls.turnJoint"), path.driver, {min: 1, max: 65535}),
-      num('rig-path-pitch', interfaceText("rigControls.nodJoint"), path.pitch ?? 0, {min: 0, max: 65535, tip: interfaceText("rigControls.message0TurnsNoddingOff"), tipKey: "rigControls.message0TurnsNoddingOff", description: interfaceText("rigControls.nodJoint0Off"), descriptionKey: "rigControls.nodJoint0Off"}),
+    return [{...rig, rows: [{kind: 'grid', rows: depth ? [num('rig-path-source', interfaceText("rigControls.depthSourceJoint"), path.source, {labelKey: "rigControls.depthSourceJoint", min: 1, max: 65535, span: 2})] : [
+      num('rig-path-driver', interfaceText("rigControls.turnJoint"), path.driver, {labelKey: "rigControls.turnJoint", min: 1, max: 65535}),
+      num('rig-path-pitch', interfaceText("rigControls.nodJoint"), path.pitch ?? 0, {labelKey: "rigControls.nodJoint", min: 0, max: 65535, tip: interfaceText("rigControls.message0TurnsNoddingOff"), tipKey: "rigControls.message0TurnsNoddingOff", description: interfaceText("rigControls.nodJoint0Off"), descriptionKey: "rigControls.nodJoint0Off"}),
     ]}]}, none('rig-attachment'), {id: 'rig-path-keys', title: interfaceText("rigControls.referencePositions"), titleKey: "rigControls.referencePositions", place: 'titled', hidden: depth, rows: depth ? [] : path.keys.map((key, i) => {
       const at = `${degrees(key[0])}°`;
       return block(`At ${at}`, [{kind: 'grid', rows: messageTuple(['X', 'Y', interfaceText("rigControls.depth")], {2: {key: "rigControls.depth", params: {}}}).map((axis, j) =>
-        num(`rig-path-key-${i}-${j + 1}`, axis, key[j + 1], {unit: 'px', min: -1e6, max: 1e6, description: interfaceText("rigControls.at", {axis: axis, at: at}), descriptionKey: "rigControls.at", descriptionParams: {axis: axis, at: at}}))}], {title: interfaceText("rigControls.at2", {at: at}), titleKey: "rigControls.at2", titleParams: {at: at}});
+        num(`rig-path-key-${i}-${j + 1}`, axis, key[j + 1], {unit: 'px', min: -1e6, max: 1e6, description: interfaceText("rigControls.at", {axis: axis, at: at}), descriptionKey: "rigControls.at", descriptionParams: {axis: j===2?{messageKey:"rigControls.depth"}:axis, at: at}, ...(j===2?{labelKey:"rigControls.depth"}:{})}))}], {labelKey:"rigControls.at2",labelParams:{at},title: interfaceText("rigControls.at2", {at: at}), titleKey: "rigControls.at2", titleParams: {at: at}});
     })}];
   }
   const plan = rigConstraintPlan(editor.figure), source = plan.inputs[editor.selectedJoint];
   const c = r.connector, d = r.stretch, f = r.follow, response = r.response ?? {}, lock = r.angleLock;
-  const name = id => (id === 0 ? interfaceText("rigControls.origin") : editor.figure.segments[plan.ids.get(id)]?.name || `Joint ${id}`);
-  const pick = (action, label) => ({icon: 'origin', label, action});
+  const name = id => {const authored=editor.figure.segments[plan.ids.get(id)]?.name;if(id!==0&&authored)return {meta:authored};const metaKey=id===0?'rigControls.origin':'builderSurfaceUi.jointNumber',metaParams=id===0?{}:{id};return {meta:interfaceText(metaKey,metaParams),metaKey,metaParams};};
+  const pick = (action, labelKey, labelParams) => ({icon:'origin',label:interfaceText(labelKey,labelParams),labelKey,labelParams,action});
   const link = c
-    ? block(interfaceText("rigControls.anchors"), ['start', 'end'].map((key, i) => ({kind: 'list-row', label: interfaceText("rigControls.anchor", {value: i ? 'B' : 'A'}), labelKey: "rigControls.anchor", labelParams: {value: i ? 'B' : 'A'}, meta: name(c[key]),
-      actions: [pick(`rig-pick-${key}`, `Pick anchor ${i ? 'B' : 'A'} on canvas`)]})))
+    ? block(interfaceText("rigControls.anchors"), ['start', 'end'].map((key, i) => ({kind: 'list-row', label: interfaceText("rigControls.anchor", {value: i ? 'B' : 'A'}), labelKey: "rigControls.anchor", labelParams: {value: i ? 'B' : 'A'}, ...name(c[key]),
+      actions: [pick(`rig-pick-${key}`, 'rigControls.pickAnchorOnCanvas',{anchor:i?'B':'A'})]})),{labelKey:"rigControls.anchors"})
     : {kind: 'actions', label: interfaceText("rigControls.link"), labelKey: "rigControls.link", fill: true, items: [
       {action: 'rig-connect', icon: 'link', label: interfaceText("rigControls.connect"), labelKey: "rigControls.connect", text: true, variant: 'outline', tip: interfaceText("rigControls.connectJointsLinkThisJointToAnotherWith"), tipKey: "rigControls.connectJointsLinkThisJointToAnotherWith"},
       {action: 'rig-weighted', icon: 'nodes', label: interfaceText("rigControls.weighted"), labelKey: "rigControls.weighted", text: true, variant: 'outline', tip: interfaceText("rigControls.weightedJointAddAJointThatFollowsA"), tipKey: "rigControls.weightedJointAddAJointThatFollowsA"},
@@ -95,48 +95,48 @@ export function rigSections(editor, {hidden = false} = {}) {
   const stretch = block(interfaceText("rigControls.smartStretch"), [
     head({kind: 'field-switch', id: 'rig-stretch-enabled', label: interfaceText("rigControls.smartStretch"), labelKey: "rigControls.smartStretch", checked: Boolean(d), tip: interfaceText("rigControls.holdCtrlWhileDraggingToStretchNewAttached"), tipKey: "rigControls.holdCtrlWhileDraggingToStretchNewAttached"}),
     d && settings([
-      c && choice('rig-source', interfaceText("rigControls.drivenBy"), d.source ?? 'span', [messageTuple(['span', interfaceText("rigControls.anchorDistance")], {1: {key: "rigControls.anchorDistance", params: {}}}), messageTuple(['slide', interfaceText("rigControls.slidePosition")], {1: {key: "rigControls.slidePosition", params: {}}}), messageTuple(['combined', interfaceText("rigControls.distanceSlide")], {1: {key: "rigControls.distanceSlide", params: {}}})]),
-      num('rig-rest', interfaceText("rigControls.restLength"), d.restLength, {unit: 'px', min: 0.0001, max: 1e6, span: slide ? undefined : 2}),
-      slide && num('rig-rest-position', interfaceText("rigControls.restSlide"), d.restPosition * 100, {unit: '%', min: 0.01, max: 100}),
-      num('rig-min', interfaceText("rigControls.minimum"), d.min * 100, {unit: '%', min: 0, max: 10000}),
-      num('rig-max', interfaceText("rigControls.maximum"), d.max * 100, {unit: '%', min: 1, max: 10000}),
-      choice('rig-width', interfaceText("rigControls.width"), d.width, [messageTuple(['keep', interfaceText("rigControls.keepWidth")], {1: {key: "rigControls.keepWidth", params: {}}}), messageTuple(['inverse', interfaceText("rigControls.thickenOnCompression")], {1: {key: "rigControls.thickenOnCompression", params: {}}}), messageTuple(['scale', interfaceText("rigControls.scaleWithLength")], {1: {key: "rigControls.scaleWithLength", params: {}}})], {description: interfaceText("rigControls.widthResponse"), descriptionKey: "rigControls.widthResponse"}),
+      c && choice('rig-source', "rigControls.drivenBy", d.source ?? 'span', [messageTuple(['span', interfaceText("rigControls.anchorDistance")], {1: {key: "rigControls.anchorDistance", params: {}}}), messageTuple(['slide', interfaceText("rigControls.slidePosition")], {1: {key: "rigControls.slidePosition", params: {}}}), messageTuple(['combined', interfaceText("rigControls.distanceSlide")], {1: {key: "rigControls.distanceSlide", params: {}}})]),
+      num('rig-rest', interfaceText("rigControls.restLength"), d.restLength, {labelKey: "rigControls.restLength", unit: 'px', min: 0.0001, max: 1e6, span: slide ? undefined : 2}),
+      slide && num('rig-rest-position', interfaceText("rigControls.restSlide"), d.restPosition * 100, {labelKey: "rigControls.restSlide", unit: '%', min: 0.01, max: 100}),
+      num('rig-min', interfaceText("rigControls.minimum"), d.min * 100, {labelKey: "rigControls.minimum", unit: '%', min: 0, max: 10000}),
+      num('rig-max', interfaceText("rigControls.maximum"), d.max * 100, {labelKey: "rigControls.maximum", unit: '%', min: 1, max: 10000}),
+      choice('rig-width', "rigControls.width", d.width, [messageTuple(['keep', interfaceText("rigControls.keepWidth")], {1: {key: "rigControls.keepWidth", params: {}}}), messageTuple(['inverse', interfaceText("rigControls.thickenOnCompression")], {1: {key: "rigControls.thickenOnCompression", params: {}}}), messageTuple(['scale', interfaceText("rigControls.scaleWithLength")], {1: {key: "rigControls.scaleWithLength", params: {}}})], {description: interfaceText("rigControls.widthResponse"), descriptionKey: "rigControls.widthResponse"}),
       !d.branch && {kind: 'field-switch', id: 'rig-auto-branch', label: interfaceText("rigControls.includeNewParts"), labelKey: "rigControls.includeNewParts", checked: false, span: 2, tip: interfaceText("rigControls.newPartsAttachedBelowStretchWithThisOne"), tipKey: "rigControls.newPartsAttachedBelowStretchWithThisOne"},
     ]),
-  ]);
+  ],{labelKey:"rigControls.smartStretch"});
   const mode = response.mode ?? f?.mode ?? 'stretch';
   const respond = (source || f || r.response) && block(interfaceText("rigControls.stretchResponse"), [
-    head(choice('rig-response', interfaceText("rigControls.stretchResponse"), mode, [messageTuple(['stretch', interfaceText("rigControls.stretch")], {1: {key: "rigControls.stretch", params: {}}}), messageTuple(['rigid', interfaceText("rigControls.keepRigidPassThrough")], {1: {key: "rigControls.keepRigidPassThrough", params: {}}}), messageTuple(['stop', interfaceText("rigControls.stopAtThisJoint")], {1: {key: "rigControls.stopAtThisJoint", params: {}}})],
+    head(choice('rig-response', "rigControls.stretchResponse", mode, [messageTuple(['stretch', interfaceText("rigControls.stretch")], {1: {key: "rigControls.stretch", params: {}}}), messageTuple(['rigid', interfaceText("rigControls.keepRigidPassThrough")], {1: {key: "rigControls.keepRigidPassThrough", params: {}}}), messageTuple(['stop', interfaceText("rigControls.stopAtThisJoint")], {1: {key: "rigControls.stopAtThisJoint", params: {}}})],
       {tip: interfaceText("rigControls.howThisPartAnswersAStretchThatReaches"), tipKey: "rigControls.howThisPartAnswersAStretchThatReaches"})),
     mode !== 'stop' && settings([
-      mode === 'stretch' && num('rig-multiplier', interfaceText("rigControls.multiplier"), response.multiplier ?? 1, {unit: '×', min: -10, max: 10, span: 2}),
+      mode === 'stretch' && num('rig-multiplier', interfaceText("rigControls.multiplier"), response.multiplier ?? 1, {labelKey: "rigControls.multiplier", unit: '×', min: -10, max: 10, span: 2}),
       {kind: 'field-switch', id: 'rig-reset-impulse', label: interfaceText("rigControls.resetImpulseHere"), labelKey: "rigControls.resetImpulseHere", checked: Boolean(response.reset), span: 2,
         tip: interfaceText("rigControls.restartTheStretchAxisAtThisJointAnd"), tipKey: "rigControls.restartTheStretchAxisAtThisJointAnd"},
     ]),
-  ]);
+  ],{labelKey:"rigControls.stretchResponse"});
   const parent = lock?.mode === 'parent', second = parent ? lock.secondary : null;
   const angle = !c && block(interfaceText("rigControls.angleLock"), [
-    head(choice('rig-angle-lock', interfaceText("rigControls.angleLock"), lock?.mode ?? 'off', [messageTuple(['off', interfaceText("rigControls.off")], {1: {key: "rigControls.off", params: {}}}), messageTuple(['figure', interfaceText("rigControls.figure")], {1: {key: "rigControls.figure", params: {}}}), messageTuple(['parent', interfaceText("rigControls.movableParent")], {1: {key: "rigControls.movableParent", params: {}}}), messageTuple(['world', interfaceText("rigControls.world")], {1: {key: "rigControls.world", params: {}}})],
+    head(choice('rig-angle-lock', "rigControls.angleLock", lock?.mode ?? 'off', [messageTuple(['off', interfaceText("rigControls.off")], {1: {key: "rigControls.off", params: {}}}), messageTuple(['figure', interfaceText("rigControls.figure")], {1: {key: "rigControls.figure", params: {}}}), messageTuple(['parent', interfaceText("rigControls.movableParent")], {1: {key: "rigControls.movableParent", params: {}}}), messageTuple(['world', interfaceText("rigControls.world")], {1: {key: "rigControls.world", params: {}}})],
       {tip: interfaceText("rigControls.keepThisPartAtOneAngleWhileWhat"), tipKey: "rigControls.keepThisPartAtOneAngleWhileWhat"})),
     lock && settings([
-      num('rig-lock-angle', interfaceText("rigControls.angle"), degrees(lock.angle), {unit: '°', min: -36000, max: 36000, span: parent ? undefined : 2, description: interfaceText("rigControls.lockedAngle"), descriptionKey: "rigControls.lockedAngle"}),
-      parent && num('rig-lock-multiplier', interfaceText("rigControls.rotation"), lock.multiplier, {unit: '×', min: -10, max: 10, description: interfaceText("rigControls.parentRotation"), descriptionKey: "rigControls.parentRotation"}),
-      choice('rig-lock-space', interfaceText("rigControls.applies"), lock.space ?? 'rendered', [messageTuple(['rendered', interfaceText("rigControls.afterStretch")], {1: {key: "rigControls.afterStretch", params: {}}}), messageTuple(['authored', interfaceText("rigControls.beforeStretch")], {1: {key: "rigControls.beforeStretch", params: {}}})], {description: interfaceText("rigControls.applyAngleLock"), descriptionKey: "rigControls.applyAngleLock"}),
+      num('rig-lock-angle', interfaceText("rigControls.angle"), degrees(lock.angle), {labelKey: "rigControls.angle", unit: '°', min: -36000, max: 36000, span: parent ? undefined : 2, description: interfaceText("rigControls.lockedAngle"), descriptionKey: "rigControls.lockedAngle"}),
+      parent && num('rig-lock-multiplier', interfaceText("rigControls.rotation"), lock.multiplier, {labelKey: "rigControls.rotation", unit: '×', min: -10, max: 10, description: interfaceText("rigControls.parentRotation"), descriptionKey: "rigControls.parentRotation"}),
+      choice('rig-lock-space', "rigControls.applies", lock.space ?? 'rendered', [messageTuple(['rendered', interfaceText("rigControls.afterStretch")], {1: {key: "rigControls.afterStretch", params: {}}}), messageTuple(['authored', interfaceText("rigControls.beforeStretch")], {1: {key: "rigControls.beforeStretch", params: {}}})], {description: interfaceText("rigControls.applyAngleLock"), descriptionKey: "rigControls.applyAngleLock"}),
     ]),
     // A movable parent's lock can add a second joint's rotation: its own settings, named.
     parent && block(interfaceText("rigControls.secondRotation"), [settings([
-      num('rig-lock-secondary', interfaceText("rigControls.joint"), second?.reference ?? 0, {min: 0, max: 65535, span: 2, tip: interfaceText("rigControls.addTheRotationOfASecondJoint0"), tipKey: "rigControls.addTheRotationOfASecondJoint0", description: interfaceText("rigControls.secondJoint0Off"), descriptionKey: "rigControls.secondJoint0Off"}),
-      second && num('rig-lock-secondary-multiplier', interfaceText("rigControls.rotation"), second.multiplier, {unit: '×', min: -10, max: 10, description: interfaceText("rigControls.secondRotation"), descriptionKey: "rigControls.secondRotation"}),
-      second && num('rig-lock-secondary-rest', interfaceText("rigControls.restAngle"), second.restAngle * 180 / Math.PI, {unit: '°', min: -36000, max: 36000, description: interfaceText("rigControls.secondRestAngle"), descriptionKey: "rigControls.secondRestAngle"}),
+      num('rig-lock-secondary', interfaceText("rigControls.joint"), second?.reference ?? 0, {labelKey: "rigControls.joint", min: 0, max: 65535, span: 2, tip: interfaceText("rigControls.addTheRotationOfASecondJoint0"), tipKey: "rigControls.addTheRotationOfASecondJoint0", description: interfaceText("rigControls.secondJoint0Off"), descriptionKey: "rigControls.secondJoint0Off"}),
+      second && num('rig-lock-secondary-multiplier', interfaceText("rigControls.rotation"), second.multiplier, {labelKey: "rigControls.rotation", unit: '×', min: -10, max: 10, description: interfaceText("rigControls.secondRotation"), descriptionKey: "rigControls.secondRotation"}),
+      second && num('rig-lock-secondary-rest', interfaceText("rigControls.restAngle"), second.restAngle * 180 / Math.PI, {labelKey: "rigControls.restAngle", unit: '°', min: -36000, max: 36000, description: interfaceText("rigControls.secondRestAngle"), descriptionKey: "rigControls.secondRestAngle"}),
     ])], {title: interfaceText("rigControls.secondRotation"), titleKey: "rigControls.secondRotation"}),
-  ]);
+  ],{labelKey:"rigControls.angleLock"});
   const custom = r.orientation === 'world' || Boolean(f && !f.automatic);
   const attachment = {id: 'rig-attachment', title: interfaceText("rigControls.attachment"), titleKey: "rigControls.attachment", place: 'titled', open: custom, hidden: Boolean(c), rows: c ? [] : [
-    {kind: 'list-row', label: interfaceText("rigControls.stretchDriver"), labelKey: "rigControls.stretchDriver", meta: source ? name(editor.figure.segments[source.driver].segment_id) : interfaceText("rigControls.automatic"),
-      actions: [pick('rig-pick-driver', interfaceText("rigControls.pickStretchDriverOnCanvas"))]},
+    {kind: 'list-row', label: interfaceText("rigControls.stretchDriver"), labelKey: "rigControls.stretchDriver", ...(source ? name(editor.figure.segments[source.driver].segment_id) : {meta:interfaceText("rigControls.automatic"),metaKey:"rigControls.automatic"}),
+      actions: [pick('rig-pick-driver', 'rigControls.pickStretchDriverOnCanvas')]},
     {kind: 'grid', rows: [
-      choice('rig-orientation', interfaceText("rigControls.orientation"), r.orientation ?? 'inherit', [messageTuple(['inherit', interfaceText("rigControls.followConnector")], {1: {key: "rigControls.followConnector", params: {}}}), messageTuple(['world', interfaceText("rigControls.keepAuthoredAngle")], {1: {key: "rigControls.keepAuthoredAngle", params: {}}})], {description: interfaceText("rigControls.attachmentOrientation"), descriptionKey: "rigControls.attachmentOrientation"}),
-      f && !f.automatic && response.multiplier === undefined && num('rig-influence', interfaceText("rigControls.legacyInfluence"), f.influence, {unit: '×', min: -4, max: 4, span: 2}),
+      choice('rig-orientation', "rigControls.orientation", r.orientation ?? 'inherit', [messageTuple(['inherit', interfaceText("rigControls.followConnector")], {1: {key: "rigControls.followConnector", params: {}}}), messageTuple(['world', interfaceText("rigControls.keepAuthoredAngle")], {1: {key: "rigControls.keepAuthoredAngle", params: {}}})], {description: interfaceText("rigControls.attachmentOrientation"), descriptionKey: "rigControls.attachmentOrientation"}),
+      f && !f.automatic && response.multiplier === undefined && num('rig-influence', interfaceText("rigControls.legacyInfluence"), f.influence, {labelKey: "rigControls.legacyInfluence", unit: '×', min: -4, max: 4, span: 2}),
     ]},
   ]};
   // Test rig is the band's (beside Done) and the figure's ⋯ menu's, so the section carries no second play button.

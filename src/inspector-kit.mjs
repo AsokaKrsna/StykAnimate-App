@@ -185,6 +185,19 @@ export function describeField(label, unit = '', env = {}) {
   return say(env, 'inspector.withUnit', {label, unit: unit === '°' ? say(env, 'inspector.unit.degrees') : unit});
 }
 
+/** A control's explicitly owned accessible caption, including a displayed unit. */
+function fieldNameReference(row, withUnit = false) {
+  if (row.descriptionKey) return {messageKey: row.descriptionKey, messageParams: row.descriptionParams};
+  if (row.description != null) return row.description;
+  const label = row.labelKey ? {messageKey: row.labelKey, messageParams: row.labelParams} : row.label;
+  if (withUnit && row.unit) return {messageKey: 'inspector.withUnit', messageParams: {label, unit: row.unit === '°' ? {messageKey: 'inspector.unit.degrees'} : row.unit}};
+  return label;
+}
+function fieldNameAttributes(row, withUnit = false) {
+  const reference = fieldNameReference(row, withUnit);
+  return reference?.messageKey ? ' ' + messageAttributes(reference.messageKey, reference.messageParams, 'aria-label') : '';
+}
+
 const GLUED_UNITS = new Set(['%', '°', '×']);
 /** A value with its unit as a person reads it: "100%", "172°", "8 px", "24 fps". */
 export function formatValueWithUnit(value, {unit = '', precision = 2} = {}) {
@@ -264,11 +277,7 @@ function numberInput(row, env, className) {
   const precision = row.precision ?? 3, display = row.displayPrecision ?? restDisplayPrecision(precision, unit);
   const value = finite(row.value) ?? 0;
   const description = row.description ?? describeField(label, unit, env);
-  const labelReference = row.labelKey ? {messageKey: row.labelKey, messageParams: row.labelParams} : label;
-  const descriptionBinding = row.descriptionKey ? {labelKey: row.descriptionKey, labelParams: row.descriptionParams}
-    : unit && row.labelKey ? {labelKey: 'inspector.withUnit', labelParams: {label: labelReference, unit: unit === '°' ? {messageKey: 'inspector.unit.degrees'} : unit}}
-    : {labelKey: row.labelKey, labelParams: row.labelParams};
-  const descriptionReference = descriptionBinding.labelKey ? {messageKey: descriptionBinding.labelKey, messageParams: descriptionBinding.labelParams} : description;
+  const descriptionReference = fieldNameReference(row, true);
   const legacy = row.field === false ? undefined : (row.field ?? key);
   const mixed = Boolean(row.mixed);
   const input = `<input${attributes({
@@ -277,11 +286,11 @@ function numberInput(row, env, className) {
     'data-property-step': row.step ?? 1, value: mixed ? '' : formatPropertyValue(value, display), step: 'any',
     'aria-label': description, min: finite(row.min), max: finite(row.max), disabled: Boolean(row.disabled),
     placeholder: mixed ? say(env, 'inspector.mixed') : undefined, 'data-mixed': mixed ? String(value) : undefined, ...extras(row),
-  })}${descriptorAttributes(descriptionBinding, 'label', 'aria-label')}>`;
+  })}${fieldNameAttributes(row, true)}>`;
   const scrub = `<span${attributes({
     class: 'ui-field-label', 'data-property-scrub': true, tabindex: 0, role: 'button',
     'aria-label': row.scrubLabel ?? say(env, 'inspector.scrubLabel', {name: description}), 'data-tooltip': row.tip ?? say(env, 'inspector.scrubTip'),
-  })}${descriptorAttributes(row, 'label')}${row.labelKey || row.descriptionKey ? ' ' + messageAttributes('inspector.scrubLabel', {name: descriptionReference}, 'aria-label') : ''}>${escapeHTML(label)}</span>`;
+  })}${descriptorAttributes(row, 'label')}${row.labelKey || row.descriptionKey ? ' ' + messageAttributes('inspector.scrubLabel', {name: descriptionReference}, 'aria-label') : ''}${row.tipKey ? descriptorAttributes(row, 'tip', 'data-tooltip') : row.tip == null ? ' ' + messageAttributes('inspector.scrubTip', {}, 'data-tooltip') : ''}>${escapeHTML(label)}</span>`;
   return {input, scrub, description, value, mixed};
 }
 
@@ -298,8 +307,8 @@ function numberField(row, env) {
       class: 'ui-field-input', type: 'number', id: id(row.id), step: row.step ?? 'any', value: formatPropertyValue(finite(row.value) ?? 0, row.precision ?? 3),
       'aria-label': row.description ?? describeField(row.label, row.unit, env), min: finite(row.min), max: finite(row.max),
       disabled: Boolean(row.disabled), ...extras(row),
-    })}>`;
-    return `<label${attributes({class: `ui-field${span(row)}`, 'data-tooltip': row.tip})}><span class="ui-field-label"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>${input}${suffix}</label>`;
+    })}${fieldNameAttributes(row, true)}>`;
+    return `<label${attributes({class: `ui-field${span(row)}`, 'data-tooltip': row.tip})}${descriptorAttributes(row, 'tip', 'data-tooltip')}><span class="ui-field-label"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>${input}${suffix}</label>`;
   }
   const {input, scrub} = numberInput(row, env, 'ui-field-input');
   return `<label${attributes({class: `ui-field${span(row)}`, 'data-property-row': row.key, 'data-mixed': Boolean(row.mixed)})}>${scrub}${input}${suffix}</label>`;
@@ -333,8 +342,8 @@ const atLimit = (row, value, direction) => {
 function stepperField(row, env) {
   const {input, scrub, description, value} = numberInput(row, env, 'ui-field-input');
   const core = `<span class="ui-field-core" data-property-row="${escapeHTML(row.key)}">${scrub}${input}</span>`;
-  const step = direction => stepButton(direction < 0 ? row.down : row.up, direction, description, env, {disabled: row.disabled || atLimit(row, value, direction)});
-  return `<div${attributes({class: `ui-field${span(row)}`, 'data-steps': true, role: 'group', 'aria-label': row.groupLabel ?? description, 'data-tooltip': row.groupTip})}>` +
+  const step = direction => stepButton(direction < 0 ? row.down : row.up, direction, fieldNameReference(row, true), env, {disabled: row.disabled || atLimit(row, value, direction)});
+  return `<div${attributes({class: `ui-field${span(row)}`, 'data-steps': true, role: 'group', 'aria-label': row.groupLabel ?? description, 'data-tooltip': row.groupTip})}${row.groupLabelKey ? descriptorAttributes(row, 'groupLabel', 'aria-label') : row.groupLabel == null ? fieldNameAttributes(row, true) : ''}${descriptorAttributes(row, 'groupTip', 'data-tooltip')}>` +
     `${core}${step(-1)}${step(1)}</div>`;
 }
 
@@ -342,18 +351,18 @@ function stepperField(row, env) {
 function stepper(row, env) {
   const name = row.description ?? row.label;
   let input, value;
-  if (row.key) ({input, value} = numberInput({...row, description: name}, env, 'ui-stepper-input'));
+  if (row.key) ({input, value} = numberInput(row, env, 'ui-stepper-input'));
   else {
     value = finite(row.value) ?? 0;
     input = `<input${attributes({
       class: 'ui-stepper-input', type: 'number', id: id(row.id), min: finite(row.min), max: finite(row.max), step: row.step ?? 1,
       value: formatPropertyValue(value, row.precision ?? 0), 'aria-label': name, disabled: Boolean(row.disabled),
       'data-precision': row.precision ?? 0, ...extras(row),
-    })}>`;
+    })}${fieldNameAttributes(row)}>`;
   }
   const body = row.key ? `<span class="ui-field-core" data-property-row="${escapeHTML(row.key)}">${input}</span>` : input;
-  const step = direction => stepButton(direction < 0 ? row.down : row.up, direction, name, env, {disabled: row.disabled || atLimit(row, value, direction)});
-  const control = `<div class="ui-stepper" role="group"${attributes({'aria-label': name})}>${step(-1)}${body}${step(1)}</div>`;
+  const step = direction => stepButton(direction < 0 ? row.down : row.up, direction, fieldNameReference(row), env, {disabled: row.disabled || atLimit(row, value, direction)});
+  const control = `<div class="ui-stepper" role="group"${attributes({'aria-label': name})}${fieldNameAttributes(row)}>${step(-1)}${body}${step(1)}</div>`;
   return row.label ? `<div class="ui-row"><span class="ui-row-label" aria-hidden="true"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>${control}</div>` : control;
 }
 
@@ -376,8 +385,8 @@ function slider(row, env) {
     'aria-label': row.description ?? row.label, 'aria-valuetext': text, disabled: Boolean(row.disabled),
     'data-unit': unit || undefined, 'data-precision': precision, 'data-value-text': custom, 'data-value-at': custom === undefined ? undefined : value,
     style: `--_p:${sliderFill(value, min, max)}`, ...extras(row),
-  })}>`;
-  return `<div${attributes({class: 'ui-slider-row', 'data-property-row': row.key, 'data-tooltip': row.tip})}><span class="ui-slider-label" aria-hidden="true"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>${input}<output class="ui-slider-value" aria-hidden="true">${escapeHTML(text)}</output></div>`;
+  })}${fieldNameAttributes(row)}>`;
+  return `<div${attributes({class: 'ui-slider-row', 'data-property-row': row.key, 'data-tooltip': row.tip})}${descriptorAttributes(row, 'tip', 'data-tooltip')}><span class="ui-slider-label" aria-hidden="true"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>${input}<output class="ui-slider-value" aria-hidden="true">${escapeHTML(text)}</output></div>`;
 }
 
 /**
@@ -392,12 +401,12 @@ function select(row, env) {
   const body = options.map(option => `<option${attributes({
     value: option.value, selected: row.value === undefined ? Boolean(option.selected) : String(option.value) === String(row.value),
     disabled: Boolean(option.disabled), ...extras(option),
-  })}>${escapeHTML(option.label ?? option.value)}</option>`).join('');
+  })}${descriptorAttributes(option, 'label')}>${escapeHTML(option.label ?? option.value)}</option>`).join('');
   const control = `<select${attributes({
     class: 'ui-field-input', id: id(row.id), 'aria-label': row.description ?? row.label, disabled: Boolean(row.disabled), ...extras(row),
-  })}>${placeholder}${body}</select>`;
+  })}${fieldNameAttributes(row)}>${placeholder}${body}</select>`;
   const label = row.bare ? '' : `<span class="ui-field-label"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>`;
-  return `<label${attributes({class: `ui-field${span(row)}`, 'data-select': true, 'data-bare': Boolean(row.bare), 'data-tooltip': row.bare ? row.tip ?? row.label : row.tip})}>` +
+  return `<label${attributes({class: `ui-field${span(row)}`, 'data-select': true, 'data-bare': Boolean(row.bare), 'data-tooltip': row.bare ? row.tip ?? row.label : row.tip})}${descriptorAttributes(row, row.tipKey || row.tip != null ? 'tip' : row.bare ? 'label' : 'tip', 'data-tooltip')}>` +
     `${label}${control}${glyph(env, 'chevron-down', 'ui-icon ui-field-chev')}</label>`;
 }
 
@@ -411,17 +420,17 @@ const switchInput = (item, {named = true} = {}) => `<input${attributes({
   class: 'ui-switch', type: 'checkbox', role: 'switch', id: id(item.id),
   'aria-label': named ? (item.description && item.description !== item.label ? item.description : undefined) : item.description ?? item.label,
   checked: Boolean(item.checked), 'aria-controls': item.controls, disabled: Boolean(item.disabled), ...extras(item),
-})}>`;
+})}${named ? item.description && item.description !== item.label ? descriptorAttributes(item, 'description', 'aria-label') : '' : fieldNameAttributes(item)}>`;
 
 /** The field switch (revision 4.2): the one switch pattern in inspector sections, laid out in the field grid. */
-const fieldSwitch = row => `<label${attributes({class: `ui-field${span(row)}`, 'data-switch-field': true, 'data-tooltip': row.tip})}><span class="ui-field-label"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>${switchInput(row)}</label>`;
+const fieldSwitch = row => `<label${attributes({class: `ui-field${span(row)}`, 'data-switch-field': true, 'data-tooltip': row.tip})}${descriptorAttributes(row, 'tip', 'data-tooltip')}><span class="ui-field-label"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>${switchInput(row)}</label>`;
 /** The switch row of popovers and dialogs: the label left, the switch right, the whole row the target. */
-const switchRow = row => `<label${attributes({class: 'ui-switch-row', 'data-tooltip': row.tip})}><span${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>${switchInput(row)}</label>`;
+const switchRow = row => `<label${attributes({class: 'ui-switch-row', 'data-tooltip': row.tip})}${descriptorAttributes(row, 'tip', 'data-tooltip')}><span${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>${switchInput(row)}</label>`;
 
-const checkbox = row => `<label${attributes({class: 'ui-check-row', 'data-tooltip': row.tip})}><input${attributes({
+const checkbox = row => `<label${attributes({class: 'ui-check-row', 'data-tooltip': row.tip})}${descriptorAttributes(row, 'tip', 'data-tooltip')}><input${attributes({
   class: 'ui-checkbox', type: 'checkbox', id: id(row.id), checked: Boolean(row.checked), 'aria-label': row.description,
   'aria-checked': row.mixed ? 'mixed' : undefined, disabled: Boolean(row.disabled), ...extras(row),
-})}><span${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span></label>`;
+})}${descriptorAttributes(row, 'description', 'aria-label')}><span${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span></label>`;
 
 const hexCaption = value => (HEX.test(String(value ?? '')) ? String(value).slice(1).toUpperCase() : '');
 
@@ -439,13 +448,13 @@ function color(row, env) {
     return `<button${attributes({
       type: 'button', class: `ui-field${span(row)}`, 'data-color': true, id: id(row.id), 'data-paint-picker': true,
       'aria-label': row.description ?? row.label, 'data-tooltip': row.tip, disabled: Boolean(row.disabled), ...extras(row),
-    })}>${swatch}<span class="ui-field-hex">${caption}</span></button>`;
+    })}${fieldNameAttributes(row)}${descriptorAttributes(row, 'tip', 'data-tooltip')}>${swatch}<span class="ui-field-hex">${caption}</span></button>`;
   }
   const value = HEX.test(String(row.value ?? '')) ? String(row.value).toLowerCase() : '#000000';
-  return `<label${attributes({class: `ui-field${span(row)}`, 'data-color': true, 'data-tooltip': row.tip})}><input${attributes({
+  return `<label${attributes({class: `ui-field${span(row)}`, 'data-color': true, 'data-tooltip': row.tip})}${descriptorAttributes(row, 'tip', 'data-tooltip')}><input${attributes({
     class: 'ui-swatch', type: 'color', id: id(row.id), value, 'aria-label': row.description ?? row.label, disabled: Boolean(row.disabled),
     'data-mixed': Boolean(row.mixed), ...extras(row),
-  })}><span class="ui-field-hex">${caption}</span></label>`;
+  })}${fieldNameAttributes(row)}><span class="ui-field-hex">${caption}</span></label>`;
 }
 
 /** One swatch on its own (a list row's colour, a palette entry): a native colour input or a paint-picker button. */
@@ -455,13 +464,13 @@ function swatch(item) {
     return `<input${attributes({
       class: 'ui-swatch', type: 'color', id: id(item.id), value, 'data-size': item.size, 'aria-label': item.label,
       'data-tooltip': item.tip, tabindex: item.tabindex, disabled: Boolean(item.disabled), ...extras(item),
-    })}>`;
+    })}${descriptorAttributes(item, 'label', 'aria-label')}${descriptorAttributes(item, 'tip', 'data-tooltip')}>`;
   }
   return `<button${attributes({
     type: 'button', class: 'ui-swatch', id: id(item.id), 'data-size': item.size, 'data-paint-picker': item.picker === 'paint' ? true : undefined,
     style: swatchStyle({color: item.value, paint: item.paint}), 'aria-label': item.label, 'data-tooltip': item.tip,
     'aria-pressed': item.pressed === undefined ? undefined : String(Boolean(item.pressed)), tabindex: item.tabindex, disabled: Boolean(item.disabled), ...extras(item),
-  })}></button>`;
+  })}${descriptorAttributes(item, 'label', 'aria-label')}${descriptorAttributes(item, 'tip', 'data-tooltip')}></button>`;
 }
 /**
  * A collection of swatches (the figure's palette, recent colours): one group
@@ -472,7 +481,7 @@ function swatch(item) {
 function swatches(row) {
   const items = row.items ?? [];
   const current = Math.max(0, items.findIndex(item => item.pressed));
-  return `<div${attributes({class: 'ui-swatch-grid', role: 'group', 'aria-label': row.label, 'data-count-one': true, ...extras(row)})}>` +
+  return `<div${attributes({class: 'ui-swatch-grid', role: 'group', 'aria-label': row.label, 'data-count-one': true, ...extras(row)})}${descriptorAttributes(row, 'label', 'aria-label')}>` +
     `${items.map((item, index) => swatch({...item, tabindex: index === current ? 0 : -1})).join('')}</div>`;
 }
 
@@ -491,22 +500,22 @@ function segmented(row, env) {
     const lead = option.icon ? glyph(env, option.icon, 'ui-icon') : '';
     const text = option.iconOnly ? '' : `<span class="ui-label"${descriptorAttributes(option, "label")}>${escapeHTML(option.label)}</span>`;
     if (mode === 'radio') {
-      return `<label${attributes({class: 'ui-segmented-item', 'data-tooltip': option.tip ?? (option.iconOnly ? option.label : undefined)})}><input${attributes({
+      return `<label${attributes({class: 'ui-segmented-item', 'data-tooltip': option.tip ?? (option.iconOnly ? option.label : undefined)})}${descriptorAttributes(option, option.tipKey || option.tip != null ? 'tip' : option.iconOnly ? 'label' : 'tip', 'data-tooltip')}><input${attributes({
         class: 'ui-segmented-input', type: 'radio', name: row.name, value: option.value, checked: current(option),
         'aria-label': option.description ?? (option.iconOnly ? option.label : undefined), disabled: Boolean(row.disabled || option.disabled), ...extras(option),
-      })}>${lead}${text}</label>`;
+      })}${option.description ? descriptorAttributes(option, 'description', 'aria-label') : option.iconOnly ? fieldNameAttributes(option) : ''}>${lead}${text}</label>`;
     }
     return `<button${attributes({
       type: 'button', class: 'ui-segmented-item', id: id(option.id), role: mode === 'tab' ? 'tab' : undefined,
       'aria-selected': mode === 'tab' ? String(current(option)) : undefined, 'aria-pressed': mode === 'pressed' ? String(current(option)) : undefined,
       'aria-label': option.iconOnly ? option.label : undefined, 'data-tooltip': option.tip,
       'data-action': option.action, disabled: Boolean(row.disabled || option.disabled), ...extras(option),
-    })}>${lead}${text}</button>`;
+    })}${option.iconOnly ? descriptorAttributes(option, 'label', 'aria-label') : ''}${descriptorAttributes(option, 'tip', 'data-tooltip')}>${lead}${text}</button>`;
   }).join('');
   const role = mode === 'tab' ? 'tablist' : mode === 'radio' ? 'radiogroup' : 'group';
   const control = `<div${attributes({
     class: 'ui-segmented', role, 'aria-label': row.description ?? row.label, 'data-size': row.size ?? 'sm', 'data-fill': Boolean(row.fill), ...extras(row),
-  })}>${items}</div>`;
+  })}${fieldNameAttributes(row)}>${items}</div>`;
   return row.label && !row.inline ? `<div class="ui-row"><span class="ui-row-label" aria-hidden="true"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>${control}</div>` : control;
 }
 
@@ -516,13 +525,13 @@ function text(row) {
     class: 'ui-field-input', type: 'text', id: id(row.id), value: row.value ?? '', 'aria-label': row.description ?? row.label,
     maxlength: finite(row.maxlength), placeholder: row.placeholder, ...tooltip(row), disabled: Boolean(row.disabled),
     spellcheck: row.spellcheck === undefined ? undefined : String(Boolean(row.spellcheck)), ...extras(row),
-  })}>`;
+  })}${fieldNameAttributes(row)}${descriptorAttributes(row, 'placeholder', 'placeholder')}>`;
   if (row.stacked) return `<div class="ui-form-row${span(row)}"><span class="ui-form-label" aria-hidden="true"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span><div class="ui-field">${input}</div></div>`;
   return `<label class="ui-field${span(row)}" data-text><span class="ui-field-label"${descriptorAttributes(row, "label")}>${escapeHTML(row.label)}</span>${input}</label>`;
 }
 
 /** An action row: a few buttons that act on the selection (Align's six, Fit view…). */
-const actions = (row, env) => `<div${attributes({class: 'ui-action-row', role: 'group', 'aria-label': row.label, 'data-fill': Boolean(row.fill), ...extras(row)})}>${(row.items ?? []).map(item => renderButton(item, env, {size: row.size})).join('')}</div>`;
+const actions = (row, env) => `<div${attributes({class: 'ui-action-row', role: 'group', 'aria-label': row.label, 'data-fill': Boolean(row.fill), ...extras(row)})}${descriptorAttributes(row, 'label', 'aria-label')}>${(row.items ?? []).map(item => renderButton(item, env, {size: row.size})).join('')}</div>`;
 
 /** A list row: lead glyph, name, meta, and its actions in their own column (eye, lock, a swatch, delete). */
 function listRow(row, env) {
@@ -542,7 +551,7 @@ function listRow(row, env) {
 /** Pages of a long list (fills, palette colours): previous, "1–12 / 14", next. */
 function pager(row, env) {
   const button = item => renderButton({size: 'sm', ...item}, env, {size: 'sm'});
-  return `<div${attributes({class: 'inspector-pager', role: 'group', 'aria-label': row.label, ...extras(row)})}>${button(row.previous)}` +
+  return `<div${attributes({class: 'inspector-pager', role: 'group', 'aria-label': row.label, ...extras(row)})}${descriptorAttributes(row, 'label', 'aria-label')}>${button(row.previous)}` +
     `<span class="inspector-pager-text"${descriptorAttributes(row, "text")}>${escapeHTML(row.text)}</span>${button(row.next)}</div>`;
 }
 
@@ -554,7 +563,8 @@ function owned(row) {
     class: row.className, 'data-inspector-owned': row.key, 'data-section': row.section, role: row.role, 'aria-label': row.label,
     'data-tooltip': row.tip, ...extras(row),
   });
-  return tag === 'canvas' ? `<canvas${attrs}></canvas>` : `<div${attrs}>${row.html ?? ''}</div>`;
+  const bindings = descriptorAttributes(row, 'label', 'aria-label') + descriptorAttributes(row, 'tip', 'data-tooltip');
+  return tag === 'canvas' ? `<canvas${attrs}${bindings}></canvas>` : `<div${attrs}${bindings}>${row.html ?? ''}</div>`;
 }
 
 /**
@@ -612,7 +622,7 @@ function grid(row, env) {
 function group(row, env) {
   const title = row.title ? `<div class="inspector-group-title" aria-hidden="true"${descriptorAttributes(row, "title")}>${escapeHTML(row.title)}</div>` : '';
   return `<div${attributes({class: 'inspector-group', id: id(row.id), role: row.role ?? (row.title ? 'group' : undefined), 'aria-label': row.label ?? row.title,
-    hidden: Boolean(row.hidden), ...extras(row)})}>${title}${renderRows(row.rows, env)}</div>`;
+    hidden: Boolean(row.hidden), ...extras(row)})}${descriptorAttributes(row, row.labelKey || row.label != null ? 'label' : 'title', 'aria-label')}>${title}${renderRows(row.rows, env)}</div>`;
 }
 
 const RENDERERS = {

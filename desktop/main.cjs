@@ -470,7 +470,7 @@ function registerIpc() {
       let destination = document.filename;
       if (options.saveAs || !destination) {
         const result = await dialog.showSaveDialog(window, {
-          title: options.saveAs ? 'Save animation as' : 'Save animation',
+          title: t(options.saveAs ? 'common.saveAs' : 'desktop.main.saveAnimation'),
           defaultPath: destination || path.basename(String(options.defaultPath || 'Untitled.styk')),
           filters: [{ name: t('desktop.main.stykanimateProject'), extensions: ['styk'] }],
           properties: ['createDirectory', 'showOverwriteConfirmation'],

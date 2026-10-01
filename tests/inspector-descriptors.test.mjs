@@ -485,7 +485,7 @@ test('a joint: Joint, IK, Style and its figure\'s Layer are open; the second col
   assert.equal(nameOf(now, {id: 'node-is-ik'}), 'Use IK');
   // Use IK controls a rendered region even while IK is off.
   assert.ok('hidden' in tag(now, {id: 'node-ik-options'}).attrs);
-  assert.match(now, /<label class="ui-field" data-switch-field data-tooltip="Does not turn with its parent"><span class="ui-field-label" data-i18n="inspectorView.static" data-i18n-params="\{\}">Static<\/span><input class="ui-switch" type="checkbox" role="switch" id="static-joint"/);
+  assert.match(now, /<label class="ui-field" data-switch-field data-tooltip="Does not turn with its parent" data-i18n-tooltip="inspectorView.doesNotTurnWithItsParent" data-i18n-tooltip-params="\{\}"><span class="ui-field-label" data-i18n="inspectorView.static" data-i18n-params="\{\}">Static<\/span><input class="ui-switch" type="checkbox" role="switch" id="static-joint"/);
   assertNoTitles(now);
   assertNoKeyState(now);
   assertBudget(descriptor, 'joint');

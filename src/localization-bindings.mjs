@@ -9,6 +9,7 @@ const ATTRIBUTES = Object.freeze({
   'aria-description': 'data-i18n-aria-description',
   'data-tooltip': 'data-i18n-tooltip',
   'data-hotkey-title': 'data-i18n-hotkey-title',
+  'validation-message': 'data-i18n-validation-message',
 });
 const SELECTOR = ['data-i18n', ...Object.values(ATTRIBUTES)].map(name => `[${name}]`).join(',');
 let application = null;
@@ -83,14 +84,14 @@ export function localizedText(element, key, params = {}) {
 export function localizedAttribute(element, attribute, key, params = {}) {
   if (!element) return;
   if (typeof element.setAttribute !== 'function') throw new TypeError(`Translation ${key} requires an element (${attribute}, ${element.nodeName ?? typeof element}).`);
-  const previous = element.getAttribute(attribute);
+  const previous = attribute==='validation-message'?element.validationMessage:element.getAttribute(attribute);
   bindingAttribute(element, ATTRIBUTES[attribute], key);
   if (!runtimeParameters.has(element)) runtimeParameters.set(element, new Map());
   runtimeParameters.get(element).set(ATTRIBUTES[attribute], params);
   if (element.hasAttribute(`${ATTRIBUTES[attribute]}-params`)) element.removeAttribute(`${ATTRIBUTES[attribute]}-params`);
   translateElement(element, interfaceLocalization);
   if (element.isConnected) application?.elements.add(element);
-  return previous !== element.getAttribute(attribute);
+  return previous !== (attribute==='validation-message'?element.validationMessage:element.getAttribute(attribute));
 }
 export function localizedMarkup(element, html) {
   clearTranslation(element);
@@ -163,6 +164,10 @@ function translateElement(element, localization) {
       try { const authored = element.getAttribute(`${binding}-params`); if (authored) attributeParams = JSON.parse(authored); } catch { /* leave invalid parameters visible */ }
       attributeParams = runtimeParameters.get(element)?.get(binding) ?? attributeParams;
       const text = localization.t(key, attributeParams);
+      if(attribute==='validation-message'){
+        if(element.validationMessage!==text)element.setCustomValidity?.(text);
+        continue;
+      }
       if (attribute === 'aria-label' && element.dataset.hotkeyHint !== undefined && element.dataset.hotkeyTitle === element.getAttribute('aria-label'))
         element.dataset.hotkeyTitle = text;
       if (attribute === 'title' && element.dataset.hotkeyHint !== undefined) {

@@ -1,4 +1,4 @@
-import {appendLocalized} from './localization-bindings.mjs';
+import {appendLocalized,clearTranslation,localizedAttribute} from './localization-bindings.mjs';
 import {messageError} from './localized-error.mjs';
 import {t as interfaceText} from './localization.mjs';
 /** Delegated numeric/property controls. Model transactions are supplied by the owner. */
@@ -222,6 +222,7 @@ export class PropertyControls {
     value = this._limit(g, value, round);
     if (!Number.isFinite(value)) return;
     g.invalid = false;
+    clearTranslation(g.element,'validation-message');
     g.element.setCustomValidity("");
     g.element.removeAttribute("aria-invalid");
     if (g.value !== value) {
@@ -259,6 +260,7 @@ export class PropertyControls {
       g.element.dataset.propertyValue = String(g.initialValue);
       g.element.value = formatPropertyValue(g.initialValue, g.precision);
     }
+    clearTranslation(g.element,'validation-message');
     g.element.setCustomValidity("");
     g.element.removeAttribute("aria-invalid");
     showAtRest(g.element);
@@ -368,11 +370,7 @@ export class PropertyControls {
     if (!Number.isFinite(value) || value < min || value > max) {
       g.invalid = true;
       input.setAttribute("aria-invalid", "true");
-      input.setCustomValidity(
-        Number.isFinite(value)
-          ? `Enter a value between ${min} and ${max}.`
-          : interfaceText("propertyControls.enterAFiniteNumber"),
-      );
+      localizedAttribute(input,'validation-message',Number.isFinite(value)?'propertyControls.enterValueBetween':'propertyControls.enterAFiniteNumber',Number.isFinite(value)?{min,max}:{});
       return;
     }
     this._preview(g, value, { display: false, round: false });

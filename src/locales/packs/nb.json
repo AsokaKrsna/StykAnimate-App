@@ -2079,7 +2079,7 @@
     "drawingController.exposure": "{kind} · bilderute {start}–{end}{hold}",
     "drawingController.drawing": "Tegning",
     "drawingController.blank": "Tom",
-    "drawingController.editingHold": " · redigerer varighet",
+    "drawingController.editingHold": " · redigerer tegningen som vises videre",
     "drawingController.noExposure": "Ingen tegningseksponering ved denne bilderuten",
     "drawingController.secondColor": "Andre farge",
     "drawingController.color": "Farge",
@@ -6836,6 +6836,26 @@
     "vfwExportControls.invalidCodecTable": "Kodektabellen for arkitekturen {arch} er ugyldig.",
     "vfwExportControls.codecDoesNotAcceptFrames": "Denne kodeken støtter ikke RGB24-bilderuter med størrelsen {width} × {height}.",
     "vfwExportControls.codecCheckFailure": "Kontroll av Windows-kodeker mislyktes: {details}",
-    "settings.altDragFigureRoot": "Dra figurens origo med Alt"
+    "settings.altDragFigureRoot": "Dra figurens origo med Alt",
+    "timelineOrganization.focus": "Bare valgte lag",
+    "timelineOrganization.showAll": "Vis alle",
+    "timelineOrganization.visibleLayers": {
+      "one": "{visible} av {count} lag",
+      "other": "{visible} av {count} lag"
+    },
+    "vfxInspector.segmentOwner": "{name} · {joint}",
+    "app.openedTimingCached": " · {milliseconds} ms · import fra hurtigbufferen",
+    "builderMode.buildingFigure": "Redigerer figuren: {name} — endringene gjelder bare denne figurdefinisjonen",
+    "dockHost.sizePixels": {
+      "one": "{count} piksel",
+      "other": "{count} piksler"
+    },
+    "dockHost.resizePanels": "Endre størrelse: {panels}",
+    "rigControls.pickAnchorOnCanvas": "Velg anker {anchor} på lerretet",
+    "insertInbetweenDialog.insertFrames": {
+      "one": "Sett inn {count} mellombilde",
+      "other": "Sett inn {count} mellombilder"
+    },
+    "propertyControls.enterValueBetween": "Skriv inn en verdi mellom {min} og {max}."
   }
 }

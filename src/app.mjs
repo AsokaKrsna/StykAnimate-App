@@ -3442,7 +3442,7 @@ async function acceptImport(
   state.lastImport = result.timings || null;
   const ms = result.timings?.total_ms ?? result.timings?.decode_ms;
   status(
-    {messageKey: "app.opened", messageParams: {value: result.filename || name || editor.name, value2: ms !== undefined ? ` · ${Math.round(ms)} ms${result.timings?.cache_hit ? " · cached" : ""}` : ""}},
+    {messageKey: "app.opened", messageParams: {value: result.filename || name || editor.name, value2: ms !== undefined ? result.timings?.cache_hit ? {messageKey:'app.openedTimingCached',messageParams:{milliseconds:Math.round(ms)}} : ` · ${Math.round(ms)} ms` : ""}},
   );
   warmPlayback({immediate:true});
   return true;

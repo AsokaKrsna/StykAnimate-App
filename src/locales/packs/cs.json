@@ -6914,6 +6914,32 @@
     "vfwExportControls.invalidCodecTable": "Tabulka kodeků pro architekturu {arch} je neplatná.",
     "vfwExportControls.codecDoesNotAcceptFrames": "Tento kodek nepřijímá snímky RGB24 o rozměrech {width} × {height}.",
     "vfwExportControls.codecCheckFailure": "Kontrola kodeků Windows selhala: {details}",
-    "settings.altDragFigureRoot": "Tažení počátku figury s klávesou Alt"
+    "settings.altDragFigureRoot": "Tažení počátku figury s klávesou Alt",
+    "timelineOrganization.focus": "Pouze vybrané vrstvy",
+    "timelineOrganization.showAll": "Zobrazit vše",
+    "timelineOrganization.visibleLayers": {
+      "one": "{visible} z {count} vrstvy",
+      "few": "{visible} z {count} vrstev",
+      "many": "{visible} z {count} vrstvy",
+      "other": "{visible} z {count} vrstev"
+    },
+    "vfxInspector.segmentOwner": "{name} · {joint}",
+    "app.openedTimingCached": " · {milliseconds} ms · import z mezipaměti",
+    "builderMode.buildingFigure": "Úprava figury: {name} — změny se týkají pouze její definice",
+    "dockHost.sizePixels": {
+      "one": "{count} pixel",
+      "few": "{count} pixely",
+      "many": "{count} pixelu",
+      "other": "{count} pixelů"
+    },
+    "dockHost.resizePanels": "Změnit velikost: {panels}",
+    "rigControls.pickAnchorOnCanvas": "Vybrat kotevní bod {anchor} na plátně",
+    "insertInbetweenDialog.insertFrames": {
+      "one": "Vložit {count} mezisnímek",
+      "few": "Vložit {count} mezisnímky",
+      "many": "Vložit {count} mezisnímku",
+      "other": "Vložit {count} mezisnímků"
+    },
+    "propertyControls.enterValueBetween": "Zadejte hodnotu v rozmezí {min} až {max}."
   }
 }

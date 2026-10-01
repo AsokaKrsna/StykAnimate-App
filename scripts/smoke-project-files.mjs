@@ -10,7 +10,7 @@ const output = path.join(appRoot, 'artifacts');
 const runDirectory = path.join(output, `native-project-${Date.now()}`);
 const profile = path.join(runDirectory, 'profile');
 await mkdir(runDirectory, { recursive: true });
-const paths = { first: path.join(runDirectory, 'First.styk'), second: path.join(runDirectory, 'Save As.styk'), aborted: path.join(runDirectory, 'Aborted.styk'), pivotSave: path.join(runDirectory, 'Pivot converted.styk'), piv: path.join(appRoot, '..', 'Goku_Broly_Movie_by_Killer1.piv') };
+const paths = { first: path.join(runDirectory, 'First.styk'), second: path.join(runDirectory, 'Save As.styk'), aborted: path.join(runDirectory, 'Aborted.styk'), pivotSave: path.join(runDirectory, 'Pivot converted.styk'), piv: process.env.STYK_PROJECT_PIV_SAMPLE ? path.resolve(process.env.STYK_PROJECT_PIV_SAMPLE) : path.join(appRoot, '..', 'Goku_Broly_Movie_by_Killer1.piv') };
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const pivotHash = hash(await readFile(paths.piv));
 const launch = () => electron.launch({ args: [appRoot], cwd: appRoot, timeout: 45000, env: { ...process.env, STYK_USER_DATA_DIR: profile } });
@@ -25,8 +25,10 @@ try {
   await app.evaluate(({ dialog }) => {
     globalThis.__saveChoices = [];
     globalThis.__saveDialogCount = 0;
-    dialog.showSaveDialog = async () => {
+    globalThis.__saveDialogTitles = [];
+    dialog.showSaveDialog = async (_window, options) => {
       globalThis.__saveDialogCount++;
+      globalThis.__saveDialogTitles.push(options.title);
       if (!globalThis.__saveChoices.length) throw new Error('An unexpected Save dialog appeared.');
       const choice = globalThis.__saveChoices.shift();
       return choice ? { canceled: false, filePath: choice } : { canceled: true };
@@ -34,6 +36,7 @@ try {
   });
   const choose = (value) => app.evaluate((_electron, choice) => { globalThis.__saveChoices.push(choice); }, value);
   const count = () => app.evaluate(() => globalThis.__saveDialogCount);
+  await page.evaluate(async () => { window.styk.settingsUI.commit({locale:'it'}); await window.styk.settingsUI.flush(); });
   await page.evaluate(async () => {
     const response = await fetch('/api/export', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${window.stykDesktop.apiToken}` }, body: JSON.stringify({ document: window.styk.editor.serialize(), format: 'styk' }) });
     if (!response.ok) throw new Error('Could not create a valid native project fixture.');
@@ -54,12 +57,15 @@ try {
   const first = await save('first');
   assert.equal(first.saved, true); assert.equal(await readFile(paths.first, 'utf8'), first.text);
   assert.equal(await count(), 1);
+  assert.equal(await app.evaluate(() => globalThis.__saveDialogTitles[0]), await page.evaluate(() => window.styk.localization.t('desktop.main.saveAnimation')));
   const second = await save('normal-save');
   assert.equal(await count(), 1); assert.equal(await readFile(paths.first, 'utf8'), second.text);
   checks.push('First Save chooses a native STYK destination; subsequent Save reuses it without a dialog.');
 
   await choose(null);
   assert.equal((await save('cancelled-dialog', { saveAs: true })).saved, false);
+  assert.equal(await app.evaluate(() => globalThis.__saveDialogTitles[1]), await page.evaluate(() => window.styk.localization.t('common.saveAs')));
+  checks.push('Native Save and Save As titles follow the selected interface language.');
   const afterCancel = await save('after-cancel');
   assert.equal(await count(), 2); assert.equal(await readFile(paths.first, 'utf8'), afterCancel.text);
   checks.push('Cancelling Save As retains the existing target.');
@@ -128,6 +134,7 @@ try {
     return { kind: opened.kind, openToken: opened.openToken, ...window.__projectSession };
   });
   assert.equal(pivotOpen.kind, 'piv'); assert.equal(pivotOpen.openToken, null); assert.equal(pivotOpen.hasSaveTarget, false);
+  await page.evaluate(async () => { window.styk.settingsUI.commit({locale:'en'}); await window.styk.settingsUI.flush(); });
   await choose(paths.piv);
   await assert.rejects(save('wrong-extension'), /Choose a .styk/);
   await choose(paths.pivotSave);

@@ -127,5 +127,25 @@ export default {
   "vfwExportControls.invalidCodecTable": "{arch} codec table is invalid.",
   "vfwExportControls.codecDoesNotAcceptFrames": "This codec does not accept {width} × {height} RGB24 frames.",
   "vfwExportControls.codecCheckFailure": "Windows codec check failed: {details}",
-  "settings.altDragFigureRoot": "Alt-drag a figure root"
+  "settings.altDragFigureRoot": "Alt-drag a figure root",
+  "timelineOrganization.focus": "Focus",
+  "timelineOrganization.showAll": "Show all",
+  "timelineOrganization.visibleLayers": {
+    "one": "{visible} of {count} layer",
+    "other": "{visible} of {count} layers"
+  },
+  "vfxInspector.segmentOwner": "{name} · {joint}",
+  "app.openedTimingCached": " · {milliseconds} ms · cached",
+  "builderMode.buildingFigure": "Building {name} — changes stay scoped to it",
+  "dockHost.sizePixels": {
+    "one": "{count} pixel",
+    "other": "{count} pixels"
+  },
+  "dockHost.resizePanels": "Resize {panels}",
+  "rigControls.pickAnchorOnCanvas": "Pick anchor {anchor} on canvas",
+  "insertInbetweenDialog.insertFrames": {
+    "one": "Insert {count} inbetween",
+    "other": "Insert {count} inbetweens"
+  },
+  "propertyControls.enterValueBetween": "Enter a value between {min} and {max}."
 };

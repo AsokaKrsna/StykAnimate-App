@@ -2,7 +2,7 @@ import {presentError} from './error-presentation.mjs';
 import {messageError} from './localized-error.mjs';
 import {t as interfaceText} from './localization.mjs';
 
-import {appendLocalized, localizedMarkup, messageHTML, localizedAttribute} from './localization-bindings.mjs';
+import {appendLocalized, localizedMarkup, messageHTML, messageAttributes, localizedAttribute, localizedText} from './localization-bindings.mjs';
 import {backgroundPaint, paintBackground, paintCSS} from './paint.mjs';
 import {
   drawBackground,
@@ -25,6 +25,7 @@ const defaults = (kind) =>
   kind === 4
     ? { x1: 0.5, y1: 0.5, x2: 0, y2: 0.7 }
     : { x1: 0.5, y1: 0, x2: 0.5, y2: 1 };
+const paintLabels={solid:'backgroundDialog.solidColor',linear:'backgroundDialog.linearGradient',radial:'backgroundDialog.radialGradient',angular:'colorPicker.angular',diamond:'colorPicker.diamond'};
 
 /** A background draft never mutates an asset shared by other native frames. */
 export class BackgroundDialog {
@@ -75,8 +76,7 @@ export class BackgroundDialog {
     const trigger=document.createElement('button');trigger.type='button';trigger.className='paint-trigger';trigger.id='background-paint';trigger.dataset.paintPicker='';localizedAttribute(trigger, 'aria-label', "backgroundDialog.backgroundFill", {});
     this.$('background-preview').after(trigger);
     this.paintTrigger=trigger;
-    const refresh=()=>{trigger.textContent=this.paint.type==='solid'?interfaceText("backgroundDialog.solidColor"):this.paint.type[0].toUpperCase()+this.paint.type.slice(1)+' gradient';trigger.style.borderLeft='24px solid '+(this.paint.type==='solid'?paintCSS(this.paint):'#0d99ff');};
-    trigger.paintPicker=()=>({anchor:trigger,paint:this.paint,onChange:paint=>{this.paint=paint;this.paintDirty=true;this.$("background-kind").value=paintBackground(paint).kind;refresh();this.preview();}});refresh();
+    trigger.paintPicker=()=>({anchor:trigger,paint:this.paint,onChange:paint=>{this.paint=paint;this.paintDirty=true;this.$("background-kind").value=paintBackground(paint).kind;this.refreshPaint();this.preview();}});this.refreshPaint();
     for(const node of [this.$('background-kind').closest('.text-options'),this.$('background-first').closest('.text-options'),this.content.querySelector('div[data-bg-gradient]')])node.style.display='none';
     this.content.addEventListener(
       "click",
@@ -156,7 +156,7 @@ export class BackgroundDialog {
         )
         .map(
           (bg) =>
-            `<option value="${bg.background_id}">${esc(bg.name || `Background ${bg.background_id}`)}</option>`,
+            `<option value="${bg.background_id}" ${bg.name?'':messageAttributes('builderOutliner.partNumber',{kind:{messageKey:'backgroundDialog.background'},id:bg.background_id})}>${esc(bg.name || interfaceText('builderOutliner.partNumber',{kind:{messageKey:'backgroundDialog.background'},id:bg.background_id}))}</option>`,
         )
         .join(""));
     this.$("background-library").value = this.selection;
@@ -168,7 +168,7 @@ export class BackgroundDialog {
     );
     const bg = this.selected || { kind: 2, color: 0xffffffff, name: "White" };
     this.paint=backgroundPaint(bg);this.paintDirty=Boolean(bg.paint);
-    if(this.paintTrigger?.isConnected)this.paintTrigger.textContent=this.paint.type==='solid'?interfaceText("backgroundDialog.solidColor"):this.paint.type+' gradient';
+    this.refreshPaint();
     const kind = [2, 3, 4].includes(bg.kind) ? bg.kind : 1;
     this.$("background-kind").value = kind;
     this.$("background-kind").querySelector('[value="1"]').disabled =
@@ -189,6 +189,11 @@ export class BackgroundDialog {
     this.visibility();
     this.preview();
   }
+  refreshPaint() {
+    const trigger=this.paintTrigger;if(!trigger?.isConnected)return;
+    localizedText(trigger,paintLabels[this.paint.type]);
+    trigger.style.borderLeft='24px solid '+(this.paint.type==='solid'?paintCSS(this.paint):'#0d99ff');
+  }
   visibility() {
     const kind = Number(this.$("background-kind").value);
     for (const element of this.content.querySelectorAll("[data-bg-fill]"))
@@ -200,17 +205,17 @@ export class BackgroundDialog {
     const labels =
       kind === 4
         ? [
-            interfaceText("backgroundDialog.centerXPx"),
-            interfaceText("backgroundDialog.centerYPx"),
-            interfaceText("backgroundDialog.innerRadiusPx"),
-            interfaceText("backgroundDialog.outerRadiusPx"),
+            "backgroundDialog.centerXPx",
+            "backgroundDialog.centerYPx",
+            "backgroundDialog.innerRadiusPx",
+            "backgroundDialog.outerRadiusPx",
           ]
-        : [interfaceText("backgroundDialog.startXPx"), interfaceText("backgroundDialog.startYPx"), interfaceText("backgroundDialog.endXPx"), interfaceText("backgroundDialog.endYPx")];
+        : ["backgroundDialog.startXPx", "backgroundDialog.startYPx", "backgroundDialog.endXPx", "backgroundDialog.endYPx"];
     ["x1", "y1", "x2", "y2"].forEach(
       (key, index) =>
-        (this.content.querySelector(
+        localizedText(this.content.querySelector(
           `[data-bg-coordinate="${key}"]`,
-        ).textContent = labels[index]),
+        ),labels[index]),
     );
     this.$("create-background").disabled = kind === 1;
   }

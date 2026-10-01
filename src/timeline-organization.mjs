@@ -1,4 +1,4 @@
-import {localizedText} from './localization-bindings.mjs';
+import {localizedAttribute,localizedText} from './localization-bindings.mjs';
 /** View-only layer projection. Never changes document order or visibility. */
 export function organizeTimelineRows(rows, query = '', focusedIds = null) {
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
@@ -47,23 +47,19 @@ export const timelineOrganizationMethods = {
   _syncOrganization() {
     const count = this.visibleLayerCount;
     const total = this.editor.report._styk.layers.order.length;
-    const title=`${count} of ${total} layers`,hidden=!this.layerQuery,focused=String(Boolean(this.focusedLayerIds));
-    if(this.layerSearch.title!==title)this.layerSearch.title=title;
+    const hidden=!this.layerQuery,focused=String(Boolean(this.focusedLayerIds));
+    localizedAttribute(this.layerSearch,'title','timelineOrganization.visibleLayers',{visible:count,count:total});
     if(this.clearSearch.hidden!==hidden)this.clearSearch.hidden=hidden;
     if(this.focusLayersButton.getAttribute('aria-pressed')!==focused)this.focusLayersButton.setAttribute('aria-pressed',focused);
-    const focusName=this.focusedLayerIds?'Show all layers':'Focus selected layers',focusWord=this.focusedLayerIds?'Show all':'Focus';
-    if(this.focusLayersButton.getAttribute('aria-label')!==focusName)this.focusLayersButton.setAttribute('aria-label',focusName);
-    const word=this.focusLayersButton.querySelector('.ui-label');if(word&&word.textContent!==focusWord)word.textContent=focusWord;
+    localizedAttribute(this.focusLayersButton,'aria-label',this.focusedLayerIds?'timeline.showAllLayers':'timeline.focusLayers');
+    const word=this.focusLayersButton.querySelector('.ui-label');if(word)localizedText(word,this.focusedLayerIds?'timelineOrganization.showAll':'timelineOrganization.focus');
     // The layer list's header: Show all while a focus is on (a layer's menu focuses it), New layer's kind
     // for the workspace (Draw makes drawing layers), and the find field in the title's place while it is used.
     const focusHidden=!this.focusedLayerIds;
     if(this.focusLayersButton.hidden!==focusHidden)this.focusLayersButton.hidden=focusHidden;
-    if(this.newLayerButton){const label=this._drawWorkspace?.()?'New drawing layer':'New layer';if(this.newLayerButton.getAttribute('aria-label')!==label)this.newLayerButton.setAttribute('aria-label',label);}
+    if(this.newLayerButton)localizedAttribute(this.newLayerButton,'aria-label',this._drawWorkspace?.()?'timeline.newDrawingLayer':'timeline.newLayer');
     if(this.searchField){const open=Boolean(this.layerQuery)||document.activeElement===this.layerSearch;if(this.searchField.hidden!==!open)this.searchField.hidden=!open;if(this.labelTitle.hidden!==open)this.labelTitle.hidden=open;}
     const emptyHidden=count>0||!(this.layerQuery||this.focusedLayerIds);
     if(this.emptyLayers.hidden!==emptyHidden)this.emptyLayers.hidden=emptyHidden;
-    const frames = this.end - this.start + 1;
-    const text = `${this.ids.length} ${this.ids.length === 1 ? 'layer' : 'layers'} · ${frames === 1 ? `Frame ${this.start + 1}` : `${this.start + 1}–${this.end + 1} · ${frames} frames`}`;
-    if (this.selectionSummary && this.selectionSummary.textContent !== text) this.selectionSummary.textContent = text;
   },
 };

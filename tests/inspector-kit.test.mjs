@@ -77,7 +77,10 @@ test('drawing brush inspector: preview, recent colours, Blend and Lock alpha kee
 
 test('number fields carry the PropertyControls hooks, the unit after the value and no key state', () => {
   const html = renderRow({kind: 'number', key: 'root_x', label: 'X', unit: 'px', value: 456.36396, min: -10, max: 1000}, {icon});
-  assert.equal(html, '<label class="ui-field" data-property-row="root_x"><span class="ui-field-label" data-property-scrub tabindex="0" role="button" ' +
+  assert.equal(tag(html, {'data-property-scrub': true}).attrs['data-i18n-tooltip'], 'inspector.scrubTip');
+  assert.equal(tag(html, {'data-property': 'root_x'}).attrs['data-i18n-aria-label'], 'inspector.withUnit');
+  // Localization metadata augments the established numeric editing markup.
+  assert.equal(html.replace(/ data-i18n[\w-]*="[^"]*"/g, ''), '<label class="ui-field" data-property-row="root_x"><span class="ui-field-label" data-property-scrub tabindex="0" role="button" ' +
     'aria-label="Scrub X (px)" data-tooltip="Drag to adjust · Shift: fine · Alt: extra fine">X</span><input class="ui-field-input" type="number" data-field="root_x" ' +
     'data-property="root_x" data-property-value="456.36396" data-property-precision="3" data-property-display-precision="1" data-property-step="1" value="456.4" ' +
     'step="any" aria-label="X (px)" min="-10" max="1000"><span class="ui-field-suffix" aria-hidden="true">px</span></label>');

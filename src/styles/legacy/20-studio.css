@@ -118,7 +118,7 @@ dialog::backdrop { background: var(--theme-backdrop, #18273c55); backdrop-filter
 .insert-movieclip { padding: 0 24px 20px; }
 .insert-movieclip h3,
 .insert-library h3 { font-size: 12px; margin: 0 0 10px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.insert-movieclip h3 span { font-weight: 400; font-size: 11px; color: var(--theme-muted, #6b7585); }
+.insert-movieclip h3 .insert-movieclip-description { font-weight: 400; font-size: 11px; color: var(--theme-muted, #6b7585); }
 #insert-dialog .movieclip-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 #insert-dialog .movieclip-actions .button { height: 32px; justify-content: flex-start; }
 #insert-dialog .movieclip-actions .icon { width: 14px; height: 14px; color: var(--theme-accent, #0d99ff); }

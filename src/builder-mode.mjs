@@ -1,4 +1,4 @@
-import {localizedAttribute, messageHTML, messageAttributes} from './localization-bindings.mjs';
+import {localizedAttribute, messageHTML} from './localization-bindings.mjs';
 import {t as interfaceText} from './localization.mjs';
 
 /** Builder mode controller: owns the bounded figure session and its chrome —
@@ -169,8 +169,8 @@ export function initBuilderMode({editor, state, host}) {
     onEditorChange();
     host.onModeChange?.();
     host.status?.(session.mode === 'edit'
-      ? `Building ${session.figure?.name || 'figure'} — changes stay scoped to it`
-      : interfaceText("builderMode.newFigureDrawALineOrCircleTo"));
+      ? {messageKey:'builderMode.buildingFigure',messageParams:{name:session.figure?.name||{messageKey:'vfxInspector.figure'}}}
+      : {messageKey:'builderMode.newFigureDrawALineOrCircleTo'});
     return true;
   }
   /** Ends the session after applying the exit choice to the document. */
@@ -205,10 +205,10 @@ export function initBuilderMode({editor, state, host}) {
     host.finishCurrentEdit?.();
     if (!session.changed) { session.resolve(session.mode === 'edit' ? 'update' : 'import'); return leave(); }
     if (document.querySelector('#dialog')?.open) host.closeDialog?.();
-    const edit = session.mode === 'edit', name = session.figure?.name || 'the figure';
+    const edit = session.mode === 'edit', name = session.figure?.name || {messageKey:'vfxInspector.figure'};
     host.showDialog(edit ? interfaceText("builderMode.keepChangesTo", {name}) : interfaceText("builderMode.addTheNewFigureToTheScene"),
-      `<div class="builder-exit-options">${edit ? `<button class="builder-exit-option primary" id="builder-exit-update">${icon('check')}<span><strong data-i18n="builderMode.updateFigure">${messageHTML("builderMode.updateFigure", {})}</strong><small ${messageAttributes("builderMode.applyTheChangesEveryInstanceOfInThe", {name: name})}>Apply the changes — every instance of ${esc(name)} in the animation updates.</small></span></button>
-        <button class="builder-exit-option" id="builder-exit-import-new">${icon('duplicate')}<span><strong data-i18n="builderMode.importAsNewFigure">${messageHTML("builderMode.importAsNewFigure", {})}</strong><small ${messageAttributes("builderMode.keepUnchangedAndAddTheEditedFigureTo", {name: name})}>Keep ${esc(name)} unchanged and add the edited figure to the scene.</small></span></button>`
+      `<div class="builder-exit-options">${edit ? `<button class="builder-exit-option primary" id="builder-exit-update">${icon('check')}<span><strong data-i18n="builderMode.updateFigure">${messageHTML("builderMode.updateFigure", {})}</strong><small>${messageHTML("builderMode.applyTheChangesEveryInstanceOfInThe", {name})}</small></span></button>
+        <button class="builder-exit-option" id="builder-exit-import-new">${icon('duplicate')}<span><strong data-i18n="builderMode.importAsNewFigure">${messageHTML("builderMode.importAsNewFigure", {})}</strong><small>${messageHTML("builderMode.keepUnchangedAndAddTheEditedFigureTo", {name})}</small></span></button>`
         : `<button class="builder-exit-option primary" id="builder-exit-import">${icon('check')}<span><strong data-i18n="builderMode.importIntoScene">${messageHTML("builderMode.importIntoScene", {})}</strong><small data-i18n="builderMode.addTheFigureToTheCurrentFrame">${messageHTML("builderMode.addTheFigureToTheCurrentFrame", {})}</small></span></button>`}
         <button class="builder-exit-option" id="builder-exit-discard">${icon('reset')}<span><strong data-i18n="common.discardChanges">${messageHTML("builderMode.discardChanges", {})}</strong><small data-i18n="builderMode.undoEverythingDoneInTheBuilder">${messageHTML("builderMode.undoEverythingDoneInTheBuilder", {})}</small></span></button>
       </div><div class="dialog-actions"><button type="button" class="ui-button" data-variant="ghost" id="builder-exit-cancel" data-i18n="common.keepEditing">${messageHTML("builderMode.keepEditing", {})}</button></div>`, {titleKey: edit ? "builderMode.keepChangesTo" : "builderMode.addTheNewFigureToTheScene", titleParams: {name}});
@@ -225,8 +225,8 @@ export function initBuilderMode({editor, state, host}) {
       host.closeDialog?.();
       leave();
       if (imported) editor.select(imported.unique_id);
-      host.status?.(choice === 'discard' ? interfaceText("builderMode.builderChangesDiscarded")
-        : choice === 'import-new' ? interfaceText("builderMode.importedAsANewFigure") : interfaceText("builderMode.figureUpdated"));
+      host.status?.({messageKey:choice === 'discard' ? "builderMode.builderChangesDiscarded"
+        : choice === 'import-new' ? "builderMode.importedAsANewFigure" : "builderMode.figureUpdated"});
     };
     document.getElementById('builder-exit-update')?.addEventListener('click', () => choose('update'));
     document.getElementById('builder-exit-import-new')?.addEventListener('click', () => choose('import-new'));

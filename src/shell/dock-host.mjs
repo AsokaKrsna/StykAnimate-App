@@ -807,7 +807,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
       el.setAttribute('aria-valuemin', String(bounds.min));
       el.setAttribute('aria-valuemax', String(bounds.max));
       el.setAttribute('aria-valuenow', String(bounds.now));
-      el.setAttribute('aria-valuetext', `${bounds.now} pixels`);
+      localizedAttribute(el,'aria-valuetext','dockHost.sizePixels',{count:bounds.now});
       if (name.endsWith('-islands')) {
         const side = name.split('-')[0], groups = s.regions[side].groups;
         el.style.insetBlockStart = px(groups[0].rect.height + metrics.gutter / 2);
@@ -817,9 +817,10 @@ export function createDockHost({document: doc = globalThis.document, window: win
       }
       const region = s.regions[name];
       const panels = name === 'bottom' ? ['timeline'] : region.panels.docked;
-      const label = name === 'bottom' ? interfaceText("dockHost.resizeTimeline") : panels.includes('structure') ? interfaceText("dockHost.resizeFigureStructure")
-        : panels.includes('properties') ? interfaceText("dockHost.resizePropertiesPanel") : `Resize ${panels.map(title).join(' and ')} panel`;
-      el.setAttribute('aria-label', label);
+      const labelKey = name === 'bottom' ? "dockHost.resizeTimeline" : panels.includes('structure') ? "dockHost.resizeFigureStructure"
+        : panels.includes('properties') ? "dockHost.resizePropertiesPanel" : 'dockHost.resizePanels';
+      const labelParams=labelKey==='dockHost.resizePanels'?{panels:{format:'list',value:panels.map(id=>descriptor(id)?.titleKey?{messageKey:descriptor(id).titleKey}:title(id))}}:{};
+      localizedAttribute(el,'aria-label',labelKey,labelParams);
       el.setAttribute('aria-controls', name === 'bottom' ? bottom.id : hosts[name].id || '');
       if (!hosts[name]?.id && name !== 'bottom') el.removeAttribute('aria-controls');
     }

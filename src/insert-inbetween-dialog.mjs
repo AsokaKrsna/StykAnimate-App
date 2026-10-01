@@ -1,7 +1,6 @@
 import {presentError} from './error-presentation.mjs';
 import {messageError} from './localized-error.mjs';
-import {t as interfaceText} from './localization.mjs';
-import {messageHTML, appendLocalized, localizedAttribute, localizedMarkup, messageAttributes, localizedText} from './localization-bindings.mjs';
+import {messageHTML, appendLocalized, clearTranslation, localizedAttribute, localizedMarkup, localizedText} from './localization-bindings.mjs';
 
 import {ThumbnailRenderer} from './thumbnail-renderer.mjs';
 import {icon} from './icons.mjs';
@@ -18,8 +17,8 @@ const STYLE = `
 .styk-inbetween-number input:focus-visible{outline:none}.styk-inbetween-slider{appearance:none;border:0;border-radius:9px;background:linear-gradient(to right,var(--theme-action, #0d99ff) var(--styk-ratio,50%),var(--theme-field, #dedede) var(--styk-ratio,50%))}.styk-inbetween-slider::-webkit-slider-thumb{appearance:none;width:15px;height:15px;border:2px solid var(--theme-border, #fff);border-radius:50%;background:var(--theme-action, #0d99ff);box-shadow:0 0 0 1px var(--theme-accent, #0d99ff)}.styk-inbetween-slider::-moz-range-thumb{width:12px;height:12px;border:2px solid var(--theme-border, #fff);border-radius:50%;background:var(--theme-action, #0d99ff);box-shadow:0 0 0 1px var(--theme-accent, #0d99ff)}
 `;
 const modes = ['adjacent', 'settings', 'none'];
-const progressLabels = {sampling: interfaceText("insertInbetweenDialog.preparingPoses"), 'sampling animation': interfaceText("insertInbetweenDialog.preparingAnimationPoses"), animation: interfaceText("insertInbetweenDialog.preparingAnimationTracks"), validation: interfaceText("insertInbetweenDialog.checkingFrames"), staging: interfaceText("insertInbetweenDialog.preparingFrames")};
-const modeLabels = {adjacent: interfaceText("insertInbetweenDialog.onionSkinsBeforeAfter"), settings: interfaceText("insertInbetweenDialog.onionSkinsSettings"), none: interfaceText("insertInbetweenDialog.onionSkinsOff")};
+const progressKeys = {sampling: 'insertInbetweenDialog.preparingPoses', 'sampling animation': 'insertInbetweenDialog.preparingAnimationPoses', animation: 'insertInbetweenDialog.preparingAnimationTracks', validation: 'insertInbetweenDialog.checkingFrames', staging: 'insertInbetweenDialog.preparingFrames'};
+const modeKeys = {adjacent: 'insertInbetweenDialog.onionSkinsBeforeAfter', settings: 'insertInbetweenDialog.onionSkinsSettings', none: 'insertInbetweenDialog.onionSkinsOff'};
 
 /** Read-only previews stay in the bounded thumbnail worker. Only Insert edits
  * the model, after revision/identity checks, as one atomic range command. */
@@ -55,10 +54,16 @@ export class InsertInbetweenDialog {
       <input id="styk-inbetween-ratio" class="styk-inbetween-slider" type="range" min="0" max="1" step="0.001" aria-label="Interpolation ratio" data-i18n-aria-label="insertInbetweenDialog.interpolationRatio">
       <div class="styk-inbetween-endpoints"><button type="button" data-ratio="0" data-i18n="insertInbetweenDialog.previousPose">${messageHTML("insertInbetweenDialog.previousPose", {})}</button><button type="button" data-ratio="0.5">50%</button><button type="button" data-ratio="1" data-i18n="insertInbetweenDialog.nextPose">${messageHTML("insertInbetweenDialog.nextPose", {})}</button></div>
       <p class="styk-inbetween-timing"></p><progress class="styk-inbetween-progress" aria-label="Preparing inbetween frames" hidden data-i18n-aria-label="insertInbetweenDialog.preparingInbetweenFrames"></progress><p class="styk-inbetween-error" role="alert" hidden></p></div>
-      <div class="styk-inbetween-actions"><button type="button" data-inbetween-cancel data-i18n="common.cancel">${messageHTML("insertInbetweenDialog.cancel", {})}</button><button type="button" class="primary" data-inbetween-insert disabled ${messageAttributes("insertInbetweenDialog.insert", {value: indices.length > 1 ? ` ${indices.length} frames` : ''})}>Insert${indices.length > 1 ? ` ${indices.length} frames` : ''}</button></div>`);
+      <div class="styk-inbetween-actions"><button type="button" data-inbetween-cancel data-i18n="common.cancel">${messageHTML("insertInbetweenDialog.cancel", {})}</button><button type="button" class="primary" data-inbetween-insert disabled></button></div>`);
     this.$ = selector => this.dialog.querySelector(selector);
     this.canvas = this.$('canvas'); this.applyButton = this.$('[data-inbetween-insert]');
-    this.applyLabel = this.applyButton.textContent; this.setApplying(false);
+    // Reuse one caption and one numeric suffix throughout this session: progress
+    // callbacks must not accumulate registered nodes or freeze a translated phase.
+    this.statusCaption = document.createElement('span');
+    this.statusSuffix = document.createTextNode('');
+    appendLocalized(this.$('[role=status]'), this.statusCaption);
+    this.$('[role=status]').append(this.statusSuffix);
+    this.setApplying(false);
     localizedText(this.$('[data-summary]'), "insertInbetweenDialog.selectedKeyframe", {count: indices.length});
     for (const index of indices) { const option = document.createElement('option'); option.value = String(index); localizedText(option, "insertInbetweenDialog.beforeKeyframe", {value: index + 1}); appendLocalized(this.$('select'), option); }
     this.$('select').value = String(this.previewIndex); this.$('select').hidden = indices.length < 2;
@@ -112,9 +117,9 @@ export class InsertInbetweenDialog {
     if (!this.session || this.applying) return;
     try { this.assertCurrent(); } catch (error) { this.showError(error); return; }
     this.applyButton.disabled = true; this.$('[role=alert]').hidden = true;
-    localizedText(this.$('[role=status]'), "insertInbetweenDialog.renderingPreview", {});
-    this.$('.styk-inbetween-onions span').textContent = modeLabels[this.onionMode];
-    this.$('.styk-inbetween-onions').setAttribute('aria-label', modeLabels[this.onionMode]);
+    this.setStatus('insertInbetweenDialog.renderingPreview');
+    localizedText(this.$('.styk-inbetween-onions span'), modeKeys[this.onionMode]);
+    localizedAttribute(this.$('.styk-inbetween-onions'), 'aria-label', modeKeys[this.onionMode]);
     const settings = this.getSettings() ?? {}, frames = this.editor.report.keyframes;
     const duration = frames[this.previewIndex === 0 || this.ratio > 0 ? this.previewIndex : this.previewIndex - 1].duration_raw;
     localizedText(this.$('.styk-inbetween-timing'), "insertInbetweenDialog.insertsBeforeKeyframeExistingKeyframeExposuresStayUnchanged", {value: this.previewIndex + 1, value2: duration === 0 ? {messageKey: 'insertInbetweenDialog.hiddenPose'} : {messageKey: 'counts.exposure', messageParams: {count: duration}}});
@@ -135,7 +140,7 @@ export class InsertInbetweenDialog {
           const rendered = await this.renderThumbnail(request.index, this.canvas, {signal: controller.signal, inbetween: request.inbetween});
           if (!this.session || controller.signal.aborted || request.generation !== this.sequence) continue;
           if (!rendered) throw messageError(new Error(''), "errors.insertInbetweenDialog.thePosePreviewIsUnavailableAdjustTheRatio", {});
-          this.assertCurrent(); this.applyButton.disabled = false; localizedText(this.$('[role=status]'), "insertInbetweenDialog.clickPreviewToCycleOnions", {});
+          this.assertCurrent(); this.applyButton.disabled = false; this.setStatus('insertInbetweenDialog.clickPreviewToCycleOnions');
           this.previewReady = request.generation;
         } catch (error) { if (this.session && !controller.signal.aborted && request.generation === this.sequence) this.showError(error); }
         finally { if (this.previewAbort === controller) this.previewAbort = null; }
@@ -145,31 +150,37 @@ export class InsertInbetweenDialog {
   showError(error) {
     if (!this.session) return;
     this.applyButton.disabled = true; presentError(this.$('[role=alert]'), error); this.$('[role=alert]').hidden = false;
-    this.$('[role=status]').textContent = ''; this.onError(error);
+    this.setStatus(null); this.onError(error);
+  }
+  setStatus(key, suffix = '') {
+    if (key) localizedText(this.statusCaption, key);
+    else { clearTranslation(this.statusCaption); this.statusCaption.textContent = ''; }
+    if (this.statusSuffix.nodeValue !== suffix) this.statusSuffix.nodeValue = suffix;
   }
   setApplying(active) {
     this.applying = active;
     this.dialog.setAttribute('aria-busy', String(active));
     for (const control of this.dialog.querySelectorAll('input,select,[data-ratio],.styk-inbetween-preview,.styk-inbetween-onions')) control.disabled = active;
-    this.applyButton.textContent = active ? interfaceText("insertInbetweenDialog.preparing") : this.applyLabel;
+    const count = this.session.indices.length;
+    localizedText(this.applyButton, active ? 'insertInbetweenDialog.preparing' : count > 1 ? 'insertInbetweenDialog.insertFrames' : 'insertInbetweenDialog.insert', active ? {} : count > 1 ? {count} : {value: ''});
     this.$('progress').hidden = !active;
     if (active) {
       this.applyButton.disabled = true;
       this.$('[role=alert]').hidden = true;
       this.$('progress').removeAttribute('value');
-      localizedText(this.$('[role=status]'), "insertInbetweenDialog.preparingInbetweenFrames2", {});
+      this.setStatus('insertInbetweenDialog.preparingInbetweenFrames2');
     }
   }
   updateProgress(job, progress = {}) {
     if (this.applyJob !== job || this.session !== job.session || job.controller.signal.aborted) return;
-    const label = progressLabels[progress.phase] ?? interfaceText("insertInbetweenDialog.preparingFrames");
+    const key = progressKeys[progress.phase] ?? 'insertInbetweenDialog.preparingFrames';
     const total = Number(progress.total), completed = Number(progress.completed);
     const bar = this.$('progress');
     if (Number.isFinite(total) && total > 0 && Number.isFinite(completed)) {
       bar.max = total; bar.value = Math.max(0, Math.min(total, completed));
-      this.$('[role=status]').textContent = `${label} · ${Math.round(bar.value)} / ${Math.round(total)}`;
+      this.setStatus(key, ` · ${Math.round(bar.value)} / ${Math.round(total)}`);
     } else {
-      bar.removeAttribute('value'); this.$('[role=status]').textContent = `${label}…`;
+      bar.removeAttribute('value'); this.setStatus(key, '…');
     }
   }
   async apply() {

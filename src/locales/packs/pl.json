@@ -2115,7 +2115,7 @@
     "drawingController.exposure": "{kind} · klatki {start}–{end}{hold}",
     "drawingController.drawing": "Rysunek",
     "drawingController.blank": "Pusta",
-    "drawingController.editingHold": " · edycja odcinka wyświetlania",
+    "drawingController.editingHold": " · edycja nadal wyświetlanego rysunku",
     "drawingController.noExposure": "Brak odcinka wyświetlania rysunku w tej klatce",
     "drawingController.secondColor": "Drugi kolor",
     "drawingController.color": "Kolor",
@@ -6914,6 +6914,32 @@
     "vfwExportControls.invalidCodecTable": "Tabela kodeków dla architektury {arch} jest nieprawidłowa.",
     "vfwExportControls.codecDoesNotAcceptFrames": "Ten kodek nie obsługuje klatek RGB24 o wymiarach {width} × {height}.",
     "vfwExportControls.codecCheckFailure": "Sprawdzanie kodeków Windows nie powiodło się: {details}",
-    "settings.altDragFigureRoot": "Przeciąganie punktu początkowego figury z wciśniętym klawiszem Alt"
+    "settings.altDragFigureRoot": "Przeciąganie punktu początkowego figury z wciśniętym klawiszem Alt",
+    "timelineOrganization.focus": "Tylko zaznaczone warstwy",
+    "timelineOrganization.showAll": "Pokaż wszystkie",
+    "timelineOrganization.visibleLayers": {
+      "one": "{visible} z {count} warstwy",
+      "few": "{visible} z {count} warstw",
+      "many": "{visible} z {count} warstw",
+      "other": "{visible} z {count} warstwy"
+    },
+    "vfxInspector.segmentOwner": "{name} · {joint}",
+    "app.openedTimingCached": " · {milliseconds} ms · import z pamięci podręcznej",
+    "builderMode.buildingFigure": "Edycja figury: {name} — zmiany dotyczą tylko jej definicji",
+    "dockHost.sizePixels": {
+      "one": "{count} piksel",
+      "few": "{count} piksele",
+      "many": "{count} pikseli",
+      "other": "{count} piksela"
+    },
+    "dockHost.resizePanels": "Zmień rozmiar: {panels}",
+    "rigControls.pickAnchorOnCanvas": "Wybierz zakotwiczenie {anchor} na płótnie",
+    "insertInbetweenDialog.insertFrames": {
+      "one": "Wstaw {count} klatkę pośrednią",
+      "few": "Wstaw {count} klatki pośrednie",
+      "many": "Wstaw {count} klatek pośrednich",
+      "other": "Wstaw {count} klatki pośredniej"
+    },
+    "propertyControls.enterValueBetween": "Wpisz wartość od {min} do {max}."
   }
 }

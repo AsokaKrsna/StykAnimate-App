@@ -23,7 +23,8 @@ export const MINE='mine:';
 /** A preset's glyph: its one effect's, or the group glyph. */
 export const presetTile=(preset,className)=>{const d=preset.effects.length===1&&VFX_REGISTRY[preset.effects[0].type];return d?vfxTile(d.icon,d.category,className):vfxTile('effects','Looks',className);};
 /** What a preset holds, in a few words: "Glow", "3 effects", with "animated" when it has keys. */
-export const presetSummary=preset=>{const count=preset.effects.length,animated=Object.keys(preset.keys).length>0;const summary=count===1?{messageKey:effectMessages[preset.effects[0].type]?.nameKey??'vfxPresetUi.effect'}:{messageKey:'counts.effects',messageParams:{count}};return animated?interfaceText('vfxPresetUi.animatedSummary',{summary,count}):interfaceText(summary.messageKey,summary.messageParams);};
+export const presetSummaryMessage=preset=>{const count=preset.effects.length,animated=Object.keys(preset.keys).length>0;const summary=count===1?{messageKey:effectMessages[preset.effects[0].type]?.nameKey??'vfxPresetUi.effect'}:{messageKey:'counts.effects',messageParams:{count}};return animated?{messageKey:'vfxPresetUi.animatedSummary',messageParams:{summary,count}}:summary;};
+export const presetSummary=preset=>{const summary=presetSummaryMessage(preset);return interfaceText(summary.messageKey,summary.messageParams);};
 /** The presets that can go on this kind of target (scene-only effects need the scene). */
 export const usablePresets=scene=>vfxPresetStore.presets.filter(preset=>preset.effects.every(effect=>effectAvailable(effect.type,scene)));
 
@@ -32,7 +33,7 @@ export function myPresetsSection(scene,query,{disabled=false}={}){
  const presets=usablePresets(scene).filter(p=>(p.name+' '+presetSummary(p)).toLowerCase().includes(query));
  if(query&&!presets.length)return '';
  const body=presets.length
-  ?`<div class="vfx-catalog-grid vfx-my-presets">${presets.map(p=>`<div class="vfx-my-preset"><button type="button" class="vfx-catalog-card" data-choice="${MINE}${esc(p.id)}" ${disabled?'disabled':''}>${presetTile(p,'vfx-catalog-art')}<span class="vfx-my-preset-text"><span>${esc(p.name)}</span><small>${esc(presetSummary(p))}</small></span></button><button type="button" class="ui-icon-button vfx-my-preset-more" data-size="xs" data-preset-menu="${esc(p.id)}" aria-label="${esc(p.name)} preset actions" aria-haspopup="menu" ${messageAttributes("vfxPresetUi.presetActions", {name: p.name}, "aria-label")}>${icon('more')}</button></div>`).join('')}</div>`
+  ?`<div class="vfx-catalog-grid vfx-my-presets">${presets.map(p=>{const summary=presetSummaryMessage(p);return `<div class="vfx-my-preset"><button type="button" class="vfx-catalog-card" data-choice="${MINE}${esc(p.id)}" ${disabled?'disabled':''}>${presetTile(p,'vfx-catalog-art')}<span class="vfx-my-preset-text"><span>${esc(p.name)}</span><small>${messageHTML(summary.messageKey,summary.messageParams)}</small></span></button><button type="button" class="ui-icon-button vfx-my-preset-more" data-size="xs" data-preset-menu="${esc(p.id)}" aria-label="${esc(p.name)} preset actions" aria-haspopup="menu" ${messageAttributes("vfxPresetUi.presetActions", {name: p.name}, "aria-label")}>${icon('more')}</button></div>`;}).join('')}</div>`
   :`<p class="vfx-my-presets-empty">${icon('library')}<span>${messageHTML("vfxPresetUi.saveAnEffectYouLikeWith", {})}<b data-i18n="vfxPresetUi.saveAsPreset">${messageHTML("vfxPresetUi.saveAsPreset", {})}</b>${messageHTML("vfxPresetUi.underItsSettingsAndItWaitsHereFor", {})}</span></p>`;
  return `<section class="vfx-my-presets-section"><h3 data-i18n="vfxPresetUi.myPresets">${messageHTML("vfxPresetUi.myPresets", {})}</h3>${body}</section>`;
 }

@@ -366,6 +366,258 @@ try {
   });
   check('Effect-channel picker retains focus, key IDs and document history while captions change',await page.evaluate(()=>document.activeElement===effectInput&&effectInput.dataset.channelProperty===effectProperty&&effectInput.closest('label').textContent.includes('［')&&JSON.stringify(effectEditor.report)===effectBytes&&effectEditor._undo.length===effectUndo));
   await page.evaluate(()=>{closeEffects();effectAnchor.remove();styk.localization.localization.setPseudo(null);});
+  await page.evaluate(async()=>{
+    const {Editor}=await import('/src/editor.mjs');const {createDemo}=await import('/src/demo.mjs');
+    const {rigSections}=await import('/src/rig-controls.mjs');const {renderInspector,renderRow}=await import('/src/inspector-kit.mjs');
+    const {PropertyControls}=await import('/src/property-controls.mjs');const {appendLocalized,localizedMarkup}=await import('/src/localization-bindings.mjs');
+    window.rigCaptionEditor=new Editor({demo:false}).load(createDemo());rigCaptionEditor.select(1,2);
+    const weighted=rigCaptionEditor.addWeightedJoint(0,[{joint:rigCaptionEditor.figure.segments[0].segment_id,weight:.5}]);
+    rigCaptionEditor.select(1,rigCaptionEditor.figure.segments.findIndex(segment=>segment.segment_id===weighted.segment_id));
+    window.rigCaptionProbe=document.createElement('div');rigCaptionProbe.style.cssText='position:fixed;top:40px;right:10px;width:400px;max-height:600px;overflow:auto;background:white;z-index:10';appendLocalized(document.body,rigCaptionProbe);
+    localizedMarkup(rigCaptionProbe,renderInspector({kind:'joint',sections:rigSections(rigCaptionEditor)})+[
+      {kind:'number',id:'localized-validation',key:'test_value',label:'Weight',labelKey:'rigControls.weight',value:4,min:0,max:10},
+      {kind:'stepper',id:'localized-stepper',label:'Chain',labelKey:'ikView.chain',value:2,min:1,max:3},
+      {kind:'slider',id:'localized-slider',label:'Opacity',labelKey:'inspectorView.opacity',value:40,unit:'%'},
+      {kind:'color',id:'localized-color',label:'Segment color',labelKey:'inspectorView.segmentColor',value:'#ff0000',picker:'paint'},
+      {kind:'text',id:'localized-name',label:'Name',labelKey:'common.name',value:'Artist name'},
+      {kind:'segmented',name:'localized-choice',label:'Angle',labelKey:'rigControls.angle',value:'artist',options:[
+        {value:'artist',label:'Angle',labelKey:'rigControls.angle',iconOnly:true,icon:'origin',tip:'Artist control note'},
+        {value:'joint',label:'Joint',labelKey:'rigControls.joint',iconOnly:true,icon:'origin'},
+      ]},
+    ].map(row=>renderRow(row)).join(''));
+    window.rigCaptionNodes=[...rigCaptionProbe.querySelectorAll('input,select,button')];window.rigCaptionBytes=JSON.stringify(rigCaptionEditor.report);window.rigCaptionUndo=rigCaptionEditor._undo.length;
+    window.validationEdits=[];window.validationControls=new PropertyControls(rigCaptionProbe,{preview:payload=>validationEdits.push(payload.value)});
+    window.validationInput=rigCaptionProbe.querySelector('#localized-validation');validationInput.focus();validationInput.value='12';validationInput.dispatchEvent(new Event('input',{bubbles:true}));
+    styk.localization.localization.setPseudo('rtl');
+  });
+  check('Rig and inspector factories retain accessible labels, option values, authored names and drafts during language changes',await page.evaluate(()=>{
+    const t=(key,params)=>styk.localization.t(key,params),probe=rigCaptionProbe;
+    return rigCaptionNodes.every((node,index)=>probe.querySelectorAll('input,select,button')[index]===node)
+      &&document.activeElement===validationInput&&validationInput.value==='12'&&validationEdits.length===0
+      &&probe.querySelector('#rig-weighted-weight-0').getAttribute('aria-label')===t('rigControls.anchorWeight',{value:1})
+      &&probe.querySelector('#rig-weighted-joint-0').getAttribute('aria-label')===t('rigControls.anchor',{value:1})
+      &&probe.querySelector('#localized-stepper').getAttribute('aria-label')===t('ikView.chain')
+      &&probe.querySelector('#localized-stepper').closest('.ui-stepper').querySelector('[data-kit-step="-1"]').getAttribute('aria-label')===t('inspector.decrease',{name:{messageKey:'ikView.chain'}})
+      &&probe.querySelector('#localized-slider').getAttribute('aria-label')===t('inspectorView.opacity')
+      &&probe.querySelector('#localized-color').getAttribute('aria-label')===t('inspectorView.segmentColor')
+      &&probe.querySelector('#localized-name').getAttribute('aria-label')===t('common.name')&&probe.querySelector('#localized-name').value==='Artist name'
+      &&probe.querySelector('[name="localized-choice"][value="artist"]').closest('label').dataset.tooltip==='Artist control note'
+      &&probe.querySelector('[name="localized-choice"][value="joint"]').closest('label').dataset.tooltip===t('rigControls.joint')
+      &&JSON.stringify(rigCaptionEditor.report)===rigCaptionBytes&&rigCaptionEditor._undo.length===rigCaptionUndo;
+  }));
+  check('An invalid finite numeric draft keeps its translated range error and leaves the model untouched',await page.evaluate(()=>validationInput.validationMessage===styk.localization.t('propertyControls.enterValueBetween',{min:0,max:10})&&validationInput.getAttribute('aria-invalid')==='true'&&validationEdits.length===0));
+  await page.evaluate(()=>{
+    validationInput.value='6';validationInput.dispatchEvent(new Event('input',{bubbles:true}));validationControls.cancel();styk.localization.localization.setPseudo('long');
+  });
+  check('Valid numeric input and cancellation clear the error binding so a later language change cannot revive it',await page.evaluate(()=>validationInput.validationMessage===''&&!validationInput.hasAttribute('data-i18n-validation-message')&&!validationInput.hasAttribute('aria-invalid')&&validationInput.value==='4'&&validationEdits.join(',')==='6'));
+  await page.evaluate(()=>{
+    validationInput.min='';validationInput.focus();validationInput.value='12';validationInput.dispatchEvent(new Event('input',{bubbles:true}));styk.localization.localization.setPseudo('rtl');
+  });
+  check('One-sided numeric bounds retain their original infinity value in translated validation',await page.evaluate(()=>validationInput.validationMessage===styk.localization.t('propertyControls.enterValueBetween',{min:-Infinity,max:10})&&validationInput.value==='12'));
+  await page.evaluate(()=>{validationControls.destroy();rigCaptionProbe.remove();styk.localization.localization.setPseudo(null);});
+  await page.evaluate(async()=>{
+    const {Editor}=await import('/src/editor.mjs');const {emptyDocument}=await import('/src/demo.mjs');const {Timeline}=await import('/src/timeline.mjs');
+    const {appendLocalized}=await import('/src/localization-bindings.mjs');
+    window.organizationEditor=new Editor({demo:false,layerTimeline:true}).load(emptyDocument());const artist=organizationEditor.createLayer('Artist layer',{activate:false});
+    window.organizationHost=document.createElement('div');organizationHost.className='workspace';organizationHost.dataset.mode='animate';organizationHost.style.cssText='position:fixed;top:40px;right:10px;width:760px;height:300px;background:white;z-index:10';appendLocalized(document.body,organizationHost);
+    window.organizationTimeline=new Timeline(organizationHost,organizationEditor);organizationTimeline.selectedLayers=new Set([artist.id]);organizationTimeline.selectedTrackId=artist.id;organizationTimeline.focusSelectedLayers();organizationTimeline.setLayerFilter('Artist');
+    window.organizationBytes=JSON.stringify(organizationEditor.report);window.organizationUndo=organizationEditor._undo.length;window.organizationButton=organizationTimeline.newLayerButton;window.organizationIcon=organizationButton.firstElementChild;
+    organizationTimeline._syncOrganization();organizationTimeline.layerSearch.focus();
+    if(document.activeElement!==organizationTimeline.layerSearch)throw new Error('Timeline fixture search must be visible and focused before switching language.');
+    styk.localization.localization.setPseudo('long');organizationTimeline._syncOrganization();
+  });
+  const organizationState=await page.evaluate(()=>{
+    const t=(key,params)=>styk.localization.t(key,params),timeline=organizationTimeline;
+    return {button:timeline.newLayerButton===organizationButton,icon:organizationButton.firstElementChild===organizationIcon,newLayer:organizationButton.getAttribute('aria-label')===t('timeline.newLayer'),
+      count:timeline.layerSearch.title===t('timelineOrganization.visibleLayers',{visible:timeline.visibleLayerCount,count:organizationEditor.report._styk.layers.order.length}),
+      showAll:timeline.focusLayersButton.querySelector('.ui-label').textContent===t('timelineOrganization.showAll'),
+      focus:document.activeElement===timeline.layerSearch,draft:timeline.layerSearch.value==='Artist',
+      document:JSON.stringify(organizationEditor.report)===organizationBytes,history:organizationEditor._undo.length===organizationUndo};
+  });
+  assert.ok(Object.values(organizationState).every(Boolean),JSON.stringify(organizationState));
+  check('Timeline projection refresh keeps translated layer counts and actions without changing layer order or the search draft',true);
+  await page.evaluate(()=>{organizationHost.dataset.mode='draw';organizationTimeline._syncOrganization();styk.localization.localization.setPseudo('rtl');organizationTimeline._syncOrganization();});
+  check('Draw workspace refresh retains the translated drawing-layer action in RTL',await page.evaluate(()=>organizationTimeline.newLayerButton.getAttribute('aria-label')===styk.localization.t('timeline.newDrawingLayer')&&organizationTimeline.newLayerButton.firstElementChild===organizationIcon));
+  await page.evaluate(()=>{organizationTimeline.destroy();organizationHost.remove();styk.localization.localization.setPseudo(null);});
+  await page.evaluate(async()=>{
+    const {Editor}=await import('/src/editor.mjs');const {createDemo}=await import('/src/demo.mjs');const {InsertInbetweenDialog}=await import('/src/insert-inbetween-dialog.mjs');
+    window.inbetweenCaptionEditor=new Editor({demo:false}).load(createDemo());window.inbetweenCaptionProbe=new InsertInbetweenDialog({editor:inbetweenCaptionEditor,renderThumbnail:async()=>true});inbetweenCaptionProbe.open([0,1]);
+    window.inbetweenCaptionBytes=JSON.stringify(inbetweenCaptionEditor.report);window.inbetweenCaptionUndo=inbetweenCaptionEditor._undo.length;
+  });
+  await page.waitForFunction(()=>!inbetweenCaptionProbe.applyButton.disabled);
+  await page.evaluate(()=>{
+    window.inbetweenDraft=inbetweenCaptionProbe.$('[type=number]');inbetweenDraft.focus();inbetweenDraft.value='37.5';
+    window.inbetweenCaptionNodes=[inbetweenCaptionProbe.applyButton,inbetweenCaptionProbe.statusCaption,inbetweenCaptionProbe.statusSuffix,inbetweenCaptionProbe.$('.styk-inbetween-onions span')];
+    styk.localization.localization.setPseudo('long');
+  });
+  check('Inbetween range insertion and onion captions translate in place while the ratio draft and source keyframes remain unchanged',await page.evaluate(()=>{
+    const probe=inbetweenCaptionProbe,t=(key,params)=>styk.localization.t(key,params);
+    return document.activeElement===inbetweenDraft&&inbetweenDraft.value==='37.5'&&probe.applyButton===inbetweenCaptionNodes[0]
+      &&probe.applyButton.textContent===t('insertInbetweenDialog.insertFrames',{count:2})
+      &&probe.$('.styk-inbetween-onions span').textContent===t('insertInbetweenDialog.onionSkinsBeforeAfter')
+      &&probe.$('.styk-inbetween-onions').getAttribute('aria-label')===t('insertInbetweenDialog.onionSkinsBeforeAfter')
+      &&JSON.stringify(inbetweenCaptionEditor.report)===inbetweenCaptionBytes&&inbetweenCaptionEditor._undo.length===inbetweenCaptionUndo;
+  }));
+  await page.evaluate(()=>{
+    const probe=inbetweenCaptionProbe;window.inbetweenCaptionJob={session:probe.session,controller:new AbortController()};probe.applyJob=inbetweenCaptionJob;probe.setApplying(true);
+    for(let index=0;index<1000;index++)probe.updateProgress(inbetweenCaptionJob,{phase:'sampling',completed:index,total:1000});
+    styk.localization.localization.setPseudo('rtl');
+  });
+  check('Inbetween progress reuses a bounded pair of nodes and translates its current phase without changing numeric progress',await page.evaluate(()=>{
+    const probe=inbetweenCaptionProbe;return probe.statusCaption===inbetweenCaptionNodes[1]&&probe.statusSuffix===inbetweenCaptionNodes[2]&&probe.$('[role=status]').childNodes.length===2
+      &&probe.statusCaption.textContent===styk.localization.t('insertInbetweenDialog.preparingPoses')&&probe.statusSuffix.nodeValue===' · 999 / 1000'
+      &&probe.applyButton.textContent===styk.localization.t('insertInbetweenDialog.preparing')&&probe.$('progress').value===999;
+  }));
+  await page.evaluate(()=>{inbetweenCaptionProbe.setApplying(false);inbetweenCaptionProbe.showError(new Error('External validation detail'));styk.localization.localization.setPseudo('long');});
+  check('Inbetween error clearing does not revive a stale progress phase or busy action after language switching',await page.evaluate(()=>inbetweenCaptionProbe.$('[role=status]').textContent===''&&inbetweenCaptionProbe.applyButton.textContent===styk.localization.t('insertInbetweenDialog.insertFrames',{count:2})&&JSON.stringify(inbetweenCaptionEditor.report)===inbetweenCaptionBytes));
+  await page.evaluate(()=>{inbetweenCaptionProbe.destroy();styk.localization.localization.setPseudo(null);});
+  await page.evaluate(async()=>{
+    const {Editor}=await import('/src/editor.mjs');const {createDemo}=await import('/src/demo.mjs');
+    const {vfxPresetStore}=await import('/src/vfx-user-presets.mjs');const {appendLocalized}=await import('/src/localization-bindings.mjs');
+    await vfxPresetStore.load();window.vfxPresetsBefore=vfxPresetStore.presets;
+    vfxPresetStore.presets=[{id:'localization-artist',name:'Artist preset',effects:[{id:'artist-glow',type:'glow',params:{}}],keys:{'artist-glow.radius':[]}}];
+    styk.localization.localization.setPseudo('rtl');
+    // Import under a different initial language: display captions must never
+    // become the canonical category values used to sort the catalogue.
+    const {VfxInspector}=await import('/src/vfx-inspector.mjs?initial-language-review');
+    window.vfxCaptionEditor=new Editor({demo:false}).load(createDemo());vfxCaptionEditor.select(1);vfxCaptionEditor.figure.name='Artist figure';
+    window.vfxCaptionRoot=document.createElement('div');vfxCaptionRoot.style.cssText='position:fixed;top:40px;right:10px;width:400px;height:500px;background:white;z-index:10';appendLocalized(document.body,vfxCaptionRoot);
+    window.vfxCaptionProbe=new VfxInspector({editor:vfxCaptionEditor,root:vfxCaptionRoot,beforeEdit(){},onChange(){},onError(error){throw error;}});
+    vfxCaptionProbe.visible=true;vfxCaptionProbe.sync();
+    window.vfxCaptionBytes=JSON.stringify(vfxCaptionEditor.report);window.vfxCaptionUndo=vfxCaptionEditor._undo.length;
+    window.vfxCaptionAnchor=vfxCaptionRoot.querySelector('[data-vfx-action=add]');vfxCaptionProbe.openPopup(vfxCaptionAnchor,'add');
+  });
+  check('A non-English initial language preserves the canonical generated-effects catalogue order',await page.evaluate(async()=>{
+    const {categoryMessages}=await import('/src/vfx-localization.mjs');return vfxCaptionProbe.popup.querySelector('.vfx-catalog-results h3').getAttribute('data-i18n')===categoryMessages.Generate;
+  }));
+  await page.evaluate(()=>{
+    window.vfxCaptionSearch=vfxCaptionProbe.popup.querySelector('input');vfxCaptionSearch.value='Unsubmitted search';
+    window.vfxCaptionHeading=vfxCaptionRoot.querySelector('.ui-target-name');styk.localization.localization.setPseudo('long');
+  });
+  check('VFX catalogue and suggestion captions update in place while the raw figure name and search draft stay intact',await page.evaluate(()=>
+    document.activeElement===vfxCaptionSearch&&vfxCaptionSearch.value==='Unsubmitted search'
+    &&vfxCaptionSearch.getAttribute('aria-label')===styk.localization.t('vfxInspector.searchEffects')&&vfxCaptionSearch.placeholder===styk.localization.t('vfxInspector.searchEffects')
+    &&vfxCaptionRoot.querySelector('.ui-target-name')===vfxCaptionHeading&&vfxCaptionHeading.textContent==='Artist figure'
+    &&[...vfxCaptionRoot.querySelectorAll('.vfx-suggestion-meta')].every(node=>node.textContent.includes('［'))
+    &&JSON.stringify(vfxCaptionEditor.report)===vfxCaptionBytes&&vfxCaptionEditor._undo.length===vfxCaptionUndo));
+  await page.evaluate(()=>{vfxCaptionProbe.openPopup(vfxCaptionAnchor,'presets');window.artistPresetCard=vfxCaptionProbe.popup.querySelector('[data-choice="mine:localization-artist"]');window.artistPresetSummary=artistPresetCard.querySelector('small');styk.localization.localization.setPseudo('rtl');});
+  check('My preset summaries retain nested effect translations and raw user names without changing preset IDs or document history',await page.evaluate(async()=>{
+    const {presetSummaryMessage}=await import('/src/vfx-preset-ui.mjs');const {vfxPresetStore}=await import('/src/vfx-user-presets.mjs');const summary=presetSummaryMessage(vfxPresetStore.presets[0]);
+    return artistPresetCard===vfxCaptionProbe.popup.querySelector('[data-choice="mine:localization-artist"]')&&artistPresetCard.querySelector('.vfx-my-preset-text>span').textContent==='Artist preset'
+      &&artistPresetSummary===artistPresetCard.querySelector('small')&&artistPresetSummary.textContent===styk.localization.t(summary.messageKey,summary.messageParams)
+      &&JSON.stringify(vfxCaptionEditor.report)===vfxCaptionBytes&&vfxCaptionEditor._undo.length===vfxCaptionUndo;
+  }));
+  await page.evaluate(async()=>{vfxCaptionProbe.destroy();vfxCaptionRoot.remove();const {vfxPresetStore}=await import('/src/vfx-user-presets.mjs');vfxPresetStore.presets=vfxPresetsBefore;styk.localization.localization.setPseudo(null);});
+  await page.evaluate(async()=>{
+    const {BackgroundDialog}=await import('/src/background-dialog.mjs');
+    const {appendLocalized}=await import('/src/localization-bindings.mjs');
+    window.backgroundCaptionReport={canvas_width:960,canvas_height:540,backgrounds:[
+      {background_id:11,kind:3,name:'',x1:.1,y1:.2,x2:.7,y2:.4,color_a:0x80443322,color_b:0xffeeddcc},
+      {background_id:12,kind:4,name:'Artist radial',x1:.5,y1:.5,x2:0,y2:.7,color_a:0xff443322,color_b:0xffeeddcc},
+    ]};
+    window.backgroundCaptionBytes=JSON.stringify(backgroundCaptionReport);
+    window.backgroundCaptionDialog=document.createElement('dialog');window.backgroundCaptionContent=document.createElement('div');
+    backgroundCaptionDialog.append(backgroundCaptionContent);appendLocalized(document.body,backgroundCaptionDialog);
+    window.backgroundCaptionProbe=new BackgroundDialog({dialog:backgroundCaptionDialog,content:backgroundCaptionContent,onError(error){throw error;}});
+    backgroundCaptionProbe.open({report:backgroundCaptionReport,frame:{background_id:11},onUse(){throw new Error('Unexpected application');},onCreate(){throw new Error('Unexpected application');}});
+    window.backgroundCaptionOption=backgroundCaptionProbe.$('background-library').querySelector('[value="11"]');
+    window.backgroundCaptionTrigger=backgroundCaptionProbe.paintTrigger;
+    backgroundCaptionProbe.select(12);window.backgroundCaptionDraft=backgroundCaptionProbe.$('background-name');backgroundCaptionDraft.value='Unsubmitted artist name';backgroundCaptionDraft.focus();
+    styk.localization.localization.setPseudo('rtl');
+  });
+  check('Background library selection refreshes retained paint and coordinate captions while keeping raw names and drafts',await page.evaluate(()=>{
+    const t=(key,params)=>styk.localization.t(key,params);
+    return backgroundCaptionTrigger===backgroundCaptionProbe.paintTrigger
+      &&backgroundCaptionTrigger.textContent===t('backgroundDialog.radialGradient')
+      &&backgroundCaptionContent.querySelector('[data-bg-coordinate=x1]').textContent===t('backgroundDialog.centerXPx')
+      &&backgroundCaptionOption.textContent===t('builderOutliner.partNumber',{kind:{messageKey:'backgroundDialog.background'},id:11})
+      &&backgroundCaptionProbe.$('background-library').querySelector('[value="12"]').textContent==='Artist radial'
+      &&document.activeElement===backgroundCaptionDraft&&backgroundCaptionDraft.value==='Unsubmitted artist name'
+      &&JSON.stringify(backgroundCaptionReport)===backgroundCaptionBytes;
+  }));
+  await page.evaluate(()=>{backgroundCaptionProbe.select(11);styk.localization.localization.setPseudo('long');});
+  check('Selecting a linear fill changes the caption binding without reviving radial text or changing the source background',await page.evaluate(()=>
+    backgroundCaptionTrigger.textContent===styk.localization.t('backgroundDialog.linearGradient')
+    &&backgroundCaptionContent.querySelector('[data-bg-coordinate=x1]').textContent===styk.localization.t('backgroundDialog.startXPx')
+    &&JSON.stringify(backgroundCaptionReport)===backgroundCaptionBytes));
+  await page.evaluate(()=>{backgroundCaptionDialog.close();backgroundCaptionDialog.remove();styk.localization.localization.setPseudo(null);});
+  await page.evaluate(async()=>{
+    const {Editor}=await import('/src/editor.mjs');const {createDemo}=await import('/src/demo.mjs');const {openRigTest}=await import('/src/rig-test-ui.mjs');
+    const {appendLocalized,localizedMarkup}=await import('/src/localization-bindings.mjs');
+    window.rigOptionEditor=new Editor({demo:false}).load(createDemo());rigOptionEditor.select(1,0);
+    rigOptionEditor.figure.segments[0].name='';rigOptionEditor.figure.segments[1].name='Artist control';
+    window.rigOptionBytes=JSON.stringify(rigOptionEditor.report);window.rigOptionUndo=rigOptionEditor._undo.length;
+    window.rigOptionDialog=document.createElement('dialog');appendLocalized(document.body,rigOptionDialog);
+    window.rigOptionProbe=openRigTest({editor:rigOptionEditor,showDialog(title,html){localizedMarkup(rigOptionDialog,html);rigOptionDialog.showModal();}},rigOptionEditor.serialize());
+    window.rigOption=document.querySelector('#rig-test-joint option[data-i18n="builderSurfaceUi.jointNumber"]');
+    window.rigOptionId=rigOption.value;styk.localization.localization.setPseudo('rtl');
+  });
+  check('Native rig-test options retain their generated joint captions through real SELECT parsing and locale changes',await page.evaluate(()=>
+    rigOption===document.querySelector('#rig-test-joint option[data-i18n="builderSurfaceUi.jointNumber"]')
+    &&rigOption.textContent===styk.localization.t('builderSurfaceUi.jointNumber',{id:Number(rigOptionId)})
+    &&rigOption.value===rigOptionId&&document.querySelector('#rig-test-joint option:not([data-i18n])').textContent==='Artist control'
+    &&JSON.stringify(rigOptionEditor.report)===rigOptionBytes&&rigOptionEditor._undo.length===rigOptionUndo));
+  await page.evaluate(()=>{rigOptionProbe.dispose();rigOptionDialog.close();rigOptionDialog.remove();styk.localization.localization.setPseudo(null);});
+  await page.evaluate(async()=>{
+    const {timelineTouchMethods}=await import('/src/touch/timeline-scrubber.mjs');const {appendLocalized}=await import('/src/localization-bindings.mjs');
+    window.touchCaptionRoot=document.createElement('div');appendLocalized(document.body,touchCaptionRoot);
+    window.touchCaptionProbe={...timelineTouchMethods,events:new AbortController(),header:{setActions(bar){appendLocalized(touchCaptionRoot,bar);}}};
+    touchCaptionProbe._mountTouchActions();window.touchCaptionNodes=[...touchCaptionProbe.touchButtons.values()].map(button=>[button,...button.children]);
+    styk.localization.localization.setPseudo('rtl');
+  });
+  check('Touch frame actions consume their message metadata instead of frozen English captions, preserving icons and action IDs',await page.evaluate(()=>{
+    const keys={done:'common.done',key:'timelineScrubber.addKey',shorter:'timelineScrubber.shorter',longer:'timelineScrubber.longer',left:'timelineScrubber.earlier',right:'timelineScrubber.later',copy:'common.copy',cut:'common.cut',paste:'common.paste',delete:'common.delete',easing:'timelineScrubber.easing',select:'timelineScrubber.select',more:'timelineScrubber.more'};
+    return [...touchCaptionProbe.touchButtons].every(([id,button],index)=>button.lastChild.textContent===styk.localization.t(keys[id])
+      &&button.getAttribute('aria-label')===styk.localization.t(keys[id])&&button.dataset.touchAction===id
+      &&touchCaptionNodes[index].every((node,i)=>i===0?node===button:node===button.children[i-1]));
+  }));
+  await page.evaluate(()=>{
+    touchCaptionProbe.start=1;touchCaptionProbe.end=1;touchCaptionProbe.ids=[];touchCaptionProbe.editor={getLayer(){throw new Error('No selected layers');}};
+    touchCaptionProbe._touchKeyState=()=>({layer:{id:'artist-layer'},here:true,exposure:{start:1,end:3}});
+    touchCaptionProbe._syncTouchActions();styk.localization.localization.setPseudo('long');
+  });
+  check('The touch key action retains its current removal caption and description without re-running editor commands',await page.evaluate(()=>{
+    const button=touchCaptionProbe.touchButtons.get('key');
+    return button.lastChild.textContent===styk.localization.t('timelineScrubber.remove')
+      &&button.getAttribute('aria-label')===styk.localization.t('timelineScrubber.removeKey')
+      &&button.dataset.tooltip===styk.localization.t('timelineScrubber.removeKey')&&button.dataset.touchAction==='key';
+  }));
+  await page.evaluate(()=>{touchCaptionProbe.events.abort();touchCaptionRoot.remove();styk.localization.localization.setPseudo(null);});
+  await page.evaluate(async()=>{
+    const {Editor}=await import('/src/editor.mjs');const {emptyDocument,createFrame,createObject}=await import('/src/demo.mjs');
+    const {construction}=await import('/src/rig-examples-3d.mjs');
+    const {spatialSections,installSpatialControls}=await import('/src/spatial-controls.mjs');const {renderInspector}=await import('/src/inspector-kit.mjs');
+    const {appendLocalized,localizedMarkup}=await import('/src/localization-bindings.mjs');
+    const q=construction();q.add(0,0,0,'Figure rotation');
+    const bone=(parent,origin,tip,name)=>{const turn=q.add(0,0,0,name+' turn'),pitch=q.add(0,0,0,name+' tilt'),v=tip.map((n,i)=>n-origin[i]);return q.add(parent,Math.hypot(...v),Math.atan2(v[1],v[0]),name,{control:true,rig:{spatial:{parent,origin,tip,turn,pitch}}});};
+    const chest=bone(0,[0,0,0],[0,40,0],'Chest');bone(chest,[0,40,0],[10,60,0],'Artist hair');const unnamed=bone(chest,[0,40,0],[-10,60,0],'');
+    const figure={figure_type_id:1,segments:q.segments,polyfills:[],image_assets:[],text_assets:[]};
+    window.spatialCaptionEditor=new Editor({demo:false}).load({...emptyDocument(),figure_types:[figure],keyframes:[createFrame([createObject(figure,1,200,100)])]});
+    spatialCaptionEditor.select(1,q.segments.findIndex(segment=>segment.segment_id===chest));
+    window.spatialCaptionBytes=JSON.stringify(spatialCaptionEditor.report);window.spatialCaptionUndo=spatialCaptionEditor._undo.length;
+    window.spatialCaptionRoot=document.createElement('div');spatialCaptionRoot.style.cssText='position:fixed;top:24px;right:24px;width:440px;height:640px;overflow:auto;background:white;z-index:10';appendLocalized(document.body,spatialCaptionRoot);
+    const refresh=()=>localizedMarkup(spatialCaptionRoot,renderInspector({kind:'spatial-rig',sections:spatialSections(spatialCaptionEditor).map(section=>section.id==='spatial-exact'?{...section,open:true}:section)}));
+    refresh();installSpatialControls({editor:spatialCaptionEditor,root:spatialCaptionRoot,refresh,guard:fn=>fn});
+    spatialCaptionRoot.querySelector('[data-spatial-mode=rotate]').click();
+    window.spatialCaptionNodes=[...spatialCaptionRoot.querySelectorAll('input,select,button')];
+    window.spatialCaptionDraft=spatialCaptionRoot.querySelector('#spatial-pitch-number');spatialCaptionDraft.value='17';spatialCaptionDraft.focus();
+    window.spatialCaptionOption=spatialCaptionRoot.querySelector('#spatial-joint option[data-i18n="builderSurfaceUi.jointNumber"]');window.spatialCaptionId=unnamed;
+    styk.localization.localization.setPseudo('rtl');
+  });
+  check('Spatial rig captions and nested numeric descriptions translate in retained controls while native joints, names and drafts remain intact',await page.evaluate(()=>{
+    const t=(key,params)=>styk.localization.t(key,params),root=spatialCaptionRoot;
+    return spatialCaptionNodes.every((node,index)=>node===root.querySelectorAll('input,select,button')[index])
+      &&document.activeElement===spatialCaptionDraft&&spatialCaptionDraft.value==='17'
+      &&spatialCaptionDraft.getAttribute('aria-label')===t('spatialControls.degrees',{label:{messageKey:'spatialControls.tilt'}})
+      &&root.querySelector('#spatial-camera-distance').getAttribute('aria-label')===t('spatialControls.value',{label:{messageKey:'spatialControls.distance'}})
+      &&root.querySelector('[data-spatial-mode=rotate]').textContent.trim()===t('spatialControls.rotate')
+      &&root.querySelector('[data-spatial-select="-1"]').textContent===t('spatialControls.moveFigure')
+      &&spatialCaptionOption.textContent===t('builderSurfaceUi.jointNumber',{id:spatialCaptionId})
+      &&root.querySelector('#spatial-joint').selectedOptions[0].textContent==='Chest'
+      &&[...root.querySelectorAll('#spatial-joint option')].some(option=>option.textContent==='Artist hair')
+      &&JSON.stringify(spatialCaptionEditor.report)===spatialCaptionBytes&&spatialCaptionEditor._undo.length===spatialCaptionUndo;
+  }));
+  await page.evaluate(()=>{spatialCaptionRoot.remove();styk.localization.localization.setPseudo(null);});
   check('No uncaught errors in retained dialog, menu, RTL and pseudolocalization workflows',errors.length===0);
   await writeFile(path.join(output,'report.json'),JSON.stringify({checks,errors,fontEvidence},null,2));
 } catch(e){await page.screenshot({path:path.join(output,'failure.png')});await writeFile(path.join(output,'report.json'),JSON.stringify({checks,errors,failure:e.message},null,2));throw e;}

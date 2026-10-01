@@ -28,9 +28,45 @@ import fontService from '../desktop/font-service.cjs';
 import videoService from '../desktop/video-export-service.cjs';
 import {validateAudioAsset} from '../src/audio-model.mjs';
 import {inspectorDescriptor} from '../src/inspector-view.mjs';
+import {rigSections} from '../src/rig-controls.mjs';
+import {renderInspector} from '../src/inspector-kit.mjs';
+import {VfxInspector} from '../src/vfx-inspector.mjs';
 
 const fixture=()=>new Editor({demo:false}).load(emptyDocument());
 const populatedFixture=()=>new Editor({demo:false}).load(createDemo());
+
+test('rig descriptors retain numeric captions, descriptions, anchor actions and raw authored joint names',()=>{
+ const editor=populatedFixture();editor.select(1,2);editor.enableSmartStretch(true);editor.setAngleLock('parent');
+ const walk=rows=>(rows??[]).flatMap(row=>row?[row,...walk(row.rows)]:[]);
+ const rows=walk(rigSections(editor).flatMap(section=>section.rows??[]));
+ for(const id of ['rig-rest','rig-min','rig-max','rig-lock-angle','rig-lock-multiplier','rig-lock-space']){
+  const row=rows.find(row=>row.id===id);assert.ok(row?.labelKey,id);
+ }
+ assert.equal(rows.find(row=>row.id==='rig-lock-angle').descriptionKey,'rigControls.lockedAngle');
+ const weighted=editor.addWeightedJoint(0,[{joint:editor.figure.segments[0].segment_id,weight:.5}]);
+ editor.select(1,editor.figure.segments.findIndex(segment=>segment.segment_id===weighted.segment_id));
+ const anchors=walk(rigSections(editor).flatMap(section=>section.rows??[]));
+ const first=anchors.find(row=>row.id==='rig-weighted-joint-0');
+ assert.equal(first.labelKey,'rigControls.anchor');assert.deepEqual(first.labelParams,{value:1});
+ const weight=anchors.find(row=>row.id==='rig-weighted-weight-0');
+ assert.equal(weight.descriptionKey,'rigControls.anchorWeight');assert.deepEqual(weight.descriptionParams,{value:1});
+ const bytes=JSON.stringify(editor.serialize()),undo=editor._undo.length;
+ interfaceLocalization.setPseudo('long');
+ try{
+  const html=renderInspector({kind:'joint',sections:rigSections(editor)});
+  assert.match(html,/data-i18n="rigControls.anchor"/);
+  assert.match(html,/data-i18n-aria-label="rigControls.anchorWeight"/);
+  assert.equal(JSON.stringify(editor.serialize()),bytes);assert.equal(editor._undo.length,undo);
+ }finally{interfaceLocalization.setPseudo(null);}
+ const vfx=Object.create(VfxInspector.prototype);vfx.editor=editor;
+ editor.figure.name='My authored figure';
+ const target={kind:'segment',uid:1,handleId:weighted.segment_id};
+ const name=vfx.ownerNameMessage(target);
+ assert.equal(name.messageParams.name,'My authored figure');
+ assert.equal(name.messageParams.joint.messageKey,'builderSurfaceUi.jointNumber');
+ assert.match(vfx.ownerNameHTML(target),/data-i18n="vfxInspector.segmentOwner"/);
+ assert.equal(vfx.ownerName({kind:'figure',uid:1}),'My authored figure');
+});
 
 test('model, rig, editor, range, text, SVG and font failures localize human labels without changing diagnostics or failed-edit state',async()=>{
  const editor=populatedFixture(),before=JSON.stringify(editor.serialize()),history=editor._undo.length,failures=[];
@@ -198,6 +234,7 @@ test('canonical skeleton names keep secondary part controls and localized depth 
   return q.add(parent,Math.hypot(...v),Math.atan2(v[1],v[0]),name,{control:true,rig:{spatial:{parent,origin,tip,turn,pitch}}});
  };
  const chest=bone(0,[0,0,0],[0,40,0],'Chest');bone(chest,[0,40,0],[10,60,0],'My hair');
+ const unnamed=bone(chest,[0,40,0],[-10,60,0],'');
  const figure={figure_type_id:1,segments:q.segments,polyfills:[],image_assets:[],text_assets:[]};
  const editor=new Editor({demo:false}).load({...emptyDocument(),figure_types:[figure],keyframes:[createFrame([createObject(figure,1,200,100)])]});
  editor.select(1,-1);const bytes=JSON.stringify(editor.serialize());
@@ -205,6 +242,12 @@ test('canonical skeleton names keep secondary part controls and localized depth 
  try{
   const sections=spatialSections(editor,{hotkeyLabel:()=> 'D / F'});
   assert.ok(sections.find(section=>section.id==='rig-body').rows[0].html.includes('My hair'));
+  const choices=sections.find(section=>section.id==='rig-body').rows.find(row=>row.kind==='grid').rows[0].options;
+  const fallback=choices.find(option=>option.value===q.segments.findIndex(segment=>segment.segment_id===unnamed));
+  assert.equal(fallback.labelKey,'builderSurfaceUi.jointNumber');
+  assert.deepEqual(fallback.labelParams,{id:unnamed});
+  assert.equal(fallback.label,interfaceLocalization.t(fallback.labelKey,fallback.labelParams));
+  assert.equal(choices.find(option=>option.label==='My hair').labelKey,undefined);
   const meta=sections.find(section=>section.id==='rig-pose').rows.find(row=>row.kind==='meta');
   assert.equal(meta.textParams.value.messageKey,'spatialControls.depthHint');
   assert.equal(meta.textParams.value.messageParams.key,'D');
