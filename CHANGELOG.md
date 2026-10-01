@@ -36,6 +36,7 @@ What's new in each version of StykAnimate.
 
 - Fixed multiple layer selections and searches being lost during editing.
 - Fixed figures and text staying blurry when zooming far into the canvas.
+- Fixed blur, glow, and shadow effects shifting or failing at certain positions.
 - Fixed drawings disappearing with VFX enabled or changing layer position after the first stroke.
 - Fixed onion skins disappearing behind lower layers or skipping nearby drawings in animations with many layers.
 - Fixed repeated captions in controls and panels when changing the interface language.

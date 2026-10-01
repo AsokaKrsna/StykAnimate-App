@@ -354,7 +354,7 @@ export class VfxCPU {
     };
     const blur = radius => {
       if (radius <= 0) return;
-      const factor = Math.max(1, Math.ceil(radius / 20)), ox = ((origin.x % factor) + factor) % factor, oy = ((origin.y % factor) + factor) % factor;
+      const factor = Math.max(1, Math.ceil(radius / 20)), ox = factor > 1 ? ((origin.x % factor) + factor) % factor : 0, oy = factor > 1 ? ((origin.y % factor) + factor) % factor : 0;
       const bw = Math.max(1, Math.ceil((w + ox) / factor)), bh = Math.max(1, Math.ceil((h + oy) / factor));
       if (factor > 1) pass(11, [factor, ox, oy, bh], undefined, current, bw, bh);
       const r = Math.min(128, Math.max(1, Math.round(radius / factor * 0.57735)));
