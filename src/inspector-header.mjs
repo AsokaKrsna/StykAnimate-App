@@ -1,4 +1,4 @@
-import {localizedText, localizedAttribute, appendLocalized, localizedMarkup} from './localization-bindings.mjs';
+import {localizedText, localizedAttribute, appendLocalized, localizedMarkup, clearTranslation} from './localization-bindings.mjs';
 import {messageError} from './localized-error.mjs';
 import {t as interfaceText} from './localization.mjs';
 
@@ -135,7 +135,10 @@ export function createInspectorHeader({target, head, inspector, registry = () =>
     current = descriptor;
     const info = descriptor?.target ?? {};
     const renamable = Boolean(info.rename);
-    if (!editing) setText(text, info.name ?? '');
+    if (!editing) {
+      if (info.nameKey) localizedText(text, info.nameKey, info.nameParams);
+      else { clearTranslation(text); setText(text, info.name ?? ''); }
+    }
     setAttr(text, 'tabindex', renamable ? '0' : null);
     setAttr(text, 'data-tooltip', renamable ? info.rename.tip ?? interfaceText("inspectorHeader.doubleClickToRename") : null);
     setAttr(name, 'data-renamable', renamable);

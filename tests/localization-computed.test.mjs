@@ -4,7 +4,7 @@ import english from '../src/locales/en.mjs';
 import {interfaceLocalization} from '../src/localization.mjs';
 import {Editor} from '../src/editor.mjs';
 import {construction} from '../src/rig-examples-3d.mjs';
-import {createObject,createFrame,emptyDocument} from '../src/demo.mjs';
+import {createObject,createFrame,emptyDocument,createDemo} from '../src/demo.mjs';
 import {spatialSections} from '../src/spatial-controls.mjs';
 import {cameraMotionView} from '../src/camera-motion-ui.mjs';
 import {motionRows} from '../src/camera-motion-timeline.mjs';
@@ -18,8 +18,73 @@ import {PlaybackPlanner} from '../src/playback-planning.mjs';
 import {validateOriginSupport,validateOriginObject} from '../src/animation-origin-validation.mjs';
 import {createClipboardWireDecoder} from '../src/clipboard-wire.mjs';
 import {prepareSparseClipboardPaste} from '../src/editor-clipboard-sparse.mjs';
+import {validateScene} from '../src/pivot/model.mjs';
+import {rigConstraintPlan} from '../src/rig-constraints.mjs';
+import {planFigureFrameOperation} from '../src/range-figure-operations.mjs';
+import {textOptionsWithDefaults} from '../src/text-authoring.mjs';
+import {validateSticknodesObject} from '../src/sticknodes/validation.mjs';
+import {exportSVG} from '../src/svg-export.mjs';
+import fontService from '../desktop/font-service.cjs';
+import videoService from '../desktop/video-export-service.cjs';
+import {validateAudioAsset} from '../src/audio-model.mjs';
+import {inspectorDescriptor} from '../src/inspector-view.mjs';
 
 const fixture=()=>new Editor({demo:false}).load(emptyDocument());
+const populatedFixture=()=>new Editor({demo:false}).load(createDemo());
+
+test('model, rig, editor, range, text, SVG and font failures localize human labels without changing diagnostics or failed-edit state',async()=>{
+ const editor=populatedFixture(),before=JSON.stringify(editor.serialize()),history=editor._undo.length,failures=[];
+ const capture=(message,labelKey,field)=>error=>{
+  assert.equal(error.message,message);assert.equal(error.messageParams.label.messageKey,labelKey);
+  if(field)assert.equal(error.messageParams.label.messageParams.field,field);
+  failures.push(error);return true;
+ };
+ const badTiming=emptyDocument();badTiming.frame_delay_ms=0;
+ assert.throws(()=>validateScene(badTiming),capture('Frame delay must be an integer from 1 to 65535.','errors.validationLabels.frameDelay'));
+ const badPose=structuredClone(editor.report);badPose.keyframes[0].objects[0].root_x=NaN;
+ assert.throws(()=>validateScene(badPose),capture('Object root_x must be a finite number.','errors.validationLabels.objectField','root_x'));
+ const rig=structuredClone(editor.figure);rig.segments[0]._stykRig={connector:{start:999,end:0,restLength:1}};
+ assert.throws(()=>rigConstraintPlan(rig),capture('Connector start refers to a missing joint. Remove or reconnect the rig relationship first.','errors.validationLabels.connectorStart'));
+ assert.throws(()=>editor.seek(NaN),capture('Timeline tick must be finite.','errors.validationLabels.timelineTick'));
+ assert.throws(()=>planFigureFrameOperation(editor.report,editor.frame,[editor.frame.objects[0].unique_id],{kind:'appearance',opacity:NaN}),capture('Opacity must be finite and within the native numeric range.','errors.validationLabels.opacity'));
+ assert.throws(()=>textOptionsWithDefaults({text:'Hello',fontSize:NaN}),capture('Font size must be between 1 and 2048.','errors.validationLabels.fontSize'));
+ assert.throws(()=>validateSticknodesObject({_sticknodesSprite:{ratio:NaN,pivotX:0,pivotY:0}},editor.figure),capture('Invalid Stick Nodes sprite ratio.','errors.validationLabels.spriteField','ratio'));
+ await assert.rejects(exportSVG({report:editor.report,frame:editor.frame,width:0}),capture('SVG width must be an integer from 1 to 65535.','errors.validationLabels.svgWidth'));
+ assert.throws(()=>new fontService.FontService({maxFonts:0}),capture('Invalid font limit.','desktop.fontService.labels.limit'));
+ assert.throws(()=>validateAudioAsset({id:'audio',name:'Recording',size:NaN}),error=>{
+  assert.equal(error.message,'Audio file size must be between 1 and 33554432.');
+  assert.equal(error.messageParams.name.messageKey,'errors.validationLabels.audioFileSize');failures.push(error);return true;
+ });
+ assert.throws(()=>videoService.validateConfig({format:'mp4',width:0,height:480,fps:24,totalFrames:1}),error=>{
+  assert.equal(error.message,'Video width must be an integer between 1 and 16384.');
+  assert.equal(error.messageParams.name.messageKey,'errors.validationLabels.videoWidth');failures.push(error);return true;
+ });
+ interfaceLocalization.setPseudo('long');
+ try{
+  for(const failure of failures){
+   const restored=restoreMessageError(new Error(),structuredClone(errorMessageData(failure)));
+   assert.equal(restored.message,failure.message);assert.equal(errorText(restored),interfaceLocalization.t(restored.messageKey,restored.messageParams));
+   const parameter=restored.messageParams.label??restored.messageParams.name;
+   assert.ok(errorText(restored).includes(interfaceLocalization.t(parameter.messageKey,parameter.messageParams)));
+  }
+ }finally{interfaceLocalization.setPseudo(null);}
+ assert.equal(JSON.stringify(editor.serialize()),before);assert.equal(editor._undo.length,history);
+});
+
+test('generated inspector headings carry localized references while authored names remain literal',()=>{
+ const editor=populatedFixture();editor.select(editor.frame.objects[0].unique_id,0);
+ const joint=inspectorDescriptor({editor}).target;
+ assert.equal(joint.nameKey,'builderSurfaceUi.jointNumber');assert.equal(joint.name,'Joint '+editor.figure.segments[0].segment_id);
+ const camera=inspectorDescriptor({editor,context:'camera'}).target;
+ assert.equal(camera.nameKey,'inspectorView.camera');
+ editor.figure.segments[0].name='Artist named Joint';
+ const authored=inspectorDescriptor({editor}).target;
+ assert.equal(authored.name,'Artist named Joint');assert.equal(authored.nameKey,undefined);
+ const buffering=english['appDialogs.bufferingSummary'];
+ assert.match(interfaceLocalization.t('appDialogs.bufferingSummary',{milliseconds:1,count:1}),/1 wait$/);
+ assert.match(interfaceLocalization.t('appDialogs.bufferingSummary',{milliseconds:1,count:2}),/2 waits$/);
+ assert.ok(buffering.one&&buffering.other);
+});
 
 test('origin and clipboard failures translate complete diagnostics while preserving original text and unpublished state',async()=>{
  const editor=fixture(),bytes=JSON.stringify(editor.serialize()),history=editor._undo.length,failures=[];

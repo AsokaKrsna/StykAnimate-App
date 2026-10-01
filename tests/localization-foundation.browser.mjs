@@ -82,6 +82,113 @@ try {
   await page.evaluate(()=>{captionProbe.remove();styk.localization.setLocale('en');});
   await page.evaluate(()=>onionProbe.destroy());
   await page.evaluate(()=>{localizedTask.done();taskToasts.destroy();styk.localization.localization.setPseudo(null);});
+  await page.evaluate(async()=>{
+    const {createAppDialogs}=await import('/src/app-dialogs.mjs');
+    const actions={}, state={renderSamples:[],renderer:null};
+    createAppDialogs({editor:styk.editor,state,actions,overlays:styk.ui.overlays,playbackMetrics:{snapshot:()=>({fps:null,startupMs:null,bufferingMs:12.35,bufferingEvents:1})},guarded:fn=>fn,pause(){},finishCurrentEdit(){},localization:()=>styk.localization});
+    actions.performance();
+  });
+  await page.locator('#performance-dialog[open]').waitFor();
+  check('Performance buffering uses a complete singular message',await page.locator('.metric-table tr').nth(3).locator('td').nth(1).textContent()==='12.4 ms · 1 wait');
+  await page.evaluate(()=>{window.metricNodes=[...document.querySelectorAll('.metric-table td')];styk.localization.localization.setPseudo('rtl');});
+  check('Retained performance names, initializing status and buffering summary follow the language without rebuilding the table',await page.evaluate(()=>{
+    const cells=[...document.querySelectorAll('.metric-table td')];
+    return metricNodes.every((node,index)=>node===cells[index])&&cells[0].textContent===styk.localization.t('appDialogs.renderer')
+      &&cells[1].textContent===styk.localization.t('appDialogs.initializing')
+      &&cells[7].textContent===styk.localization.t('appDialogs.bufferingSummary',{milliseconds:{format:'number',value:12.35,options:{minimumFractionDigits:1,maximumFractionDigits:1}},count:1});
+  }));
+  await page.locator('#performance-dialog .ui-dialog-close').click();
+  await page.evaluate(async()=>{
+    const {sliderMarkup}=await import('/src/drawing-sliders.mjs');
+    const {pressureCurveMarkup,refreshPressureCurve}=await import('/src/drawing-pressure-curve.mjs');
+    const {localizedMarkup,appendLocalized}=await import('/src/localization-bindings.mjs');
+    window.drawingCaptionProbe=document.createElement('section');localizedMarkup(drawingCaptionProbe,sliderMarkup('size',10)+pressureCurveMarkup([.1,.5,.4,.95]));appendLocalized(document.body,drawingCaptionProbe);
+    window.curveHandle=drawingCaptionProbe.querySelector('[data-pressure-handle]');curveHandle.focus();window.curvePosition=[curveHandle.getAttribute('cx'),curveHandle.getAttribute('cy')];
+    styk.localization.localization.setPseudo('long');
+    refreshPressureCurve(drawingCaptionProbe,[.1,.5,.4,.95]);
+  });
+  check('Drawing slider hints and pressure accessibility translate in place while graph geometry and focus stay unchanged',await page.evaluate(()=>{
+    const probe=drawingCaptionProbe,t=(key,params)=>styk.localization.t(key,params);
+    return document.activeElement===curveHandle&&curvePosition.every((value,index)=>value===curveHandle.getAttribute(index?'cy':'cx'))
+      &&probe.querySelector('.draw-slider').getAttribute('aria-label')===t('drawingSliders.size')
+      &&probe.querySelector('.draw-slider').title===t('drawingSliders.interactionHint',{name:{messageKey:'drawingSliders.size'}})
+      &&probe.querySelector('.draw-pressure-graph').getAttribute('aria-label')===t('drawingPressureCurve.graphDescription')
+      &&curveHandle.getAttribute('aria-valuetext')===t('drawingPressureCurve.handleValue',{pressure:10,response:50});
+  }));
+  await page.evaluate(()=>{drawingCaptionProbe.remove();styk.localization.localization.setPseudo(null);});
+  await page.evaluate(async()=>{
+    const {quickBarMarkup,drawingInspector}=await import('/src/drawing-view.mjs');
+    const legacy=await import('/src/inspector-legacy.mjs'),{propertyToggle}=await import('/src/property-toggle.mjs');
+    const {localizedMarkup,appendLocalized}=await import('/src/localization-bindings.mjs');
+    const drawing=Object.create(styk.drawing);Object.defineProperty(drawing,'tool',{value:'brush'});
+    window.drawingOwnerProbe=document.createElement('section');
+    localizedMarkup(drawingOwnerProbe,quickBarMarkup(drawing)+drawingInspector(drawing,{...legacy,propertyToggle})+legacy.numericField('Scale','localization-test-scale',12.5,'%','',{}, {labelKey:'inspectorView.scale',legacyField:false}));
+    appendLocalized(document.body,drawingOwnerProbe);
+    window.drawingDraft=drawingOwnerProbe.querySelector('[data-property="localization-test-scale"]');drawingDraft.value='37.25';drawingDraft.focus();
+    window.drawingProbeNodes=[...drawingOwnerProbe.querySelectorAll('input,button')];
+    styk.localization.localization.setPseudo('rtl');
+  });
+  check('Drawing tool, section, toggle, palette and numeric captions translate without replacing controls or editing their drafts',await page.evaluate(()=>{
+    const probe=drawingOwnerProbe,t=(key,params)=>styk.localization.t(key,params),nodes=[...probe.querySelectorAll('input,button')];
+    const add=probe.querySelector('.draw-quick-add');
+    return document.activeElement===drawingDraft&&drawingDraft.value==='37.25'&&drawingProbeNodes.every((node,index)=>node===nodes[index])
+      &&probe.querySelector('.draw-quick-tool span').textContent===t('drawingView.brush')
+      &&probe.querySelector('[data-i18n="drawingView.preset"]').textContent===t('drawingView.preset')
+      &&probe.querySelector('#draw-alphaLock').getAttribute('aria-label')===t('drawingView.lockAlpha')
+      &&drawingDraft.getAttribute('aria-label')===t('inspector.withUnit',{label:{messageKey:'inspectorView.scale'},unit:'%'})
+      &&(!add||add.getAttribute('aria-label')===t('drawingView.addTo',{value:styk.drawing.settings.color.toUpperCase(),where:{messageKey:'colorPicker.projectColors'}}));
+  }));
+  await page.evaluate(()=>{drawingOwnerProbe.remove();styk.localization.localization.setPseudo(null);});
+  await page.evaluate(async()=>{
+    const {HotkeySettings}=await import('/src/hotkey-settings.mjs'),{DEFAULT_HOTKEYS}=await import('/src/hotkeys.mjs');
+    const {localizedMarkup,appendLocalized}=await import('/src/localization-bindings.mjs');
+    window.hotkeyOwnerProbe=document.createElement('section');window.hotkeyProbeValues=structuredClone(DEFAULT_HOTKEYS);
+    const settings={dialog:hotkeyOwnerProbe,content:hotkeyOwnerProbe,value:{hotkeys:hotkeyProbeValues},commit(patch){this.value={...this.value,...patch};},render(){localizedMarkup(hotkeyOwnerProbe,hotkeyProbe.html());}};
+    window.hotkeyProbe=new HotkeySettings(settings);settings.render();appendLocalized(document.body,hotkeyOwnerProbe);
+    window.hotkeyReset=hotkeyOwnerProbe.querySelector('[data-hotkey-id="save"] [data-hotkey-reset]');hotkeyReset.focus();
+    hotkeyProbe.assign('save',[],true);hotkeyProbe.assign('redo',['Mod+KeyZ']);
+    window.hotkeyBindingsBefore=JSON.stringify(settings.value.hotkeys);
+    styk.localization.localization.setPseudo('long');
+  });
+  check('Shortcut captions, reset hints, assignment and conflict names follow the locale while physical bindings stay unchanged',await page.evaluate(()=>{
+    const t=(key,params)=>styk.localization.t(key,params),probe=hotkeyOwnerProbe;
+    return JSON.stringify(hotkeyProbe.settings.value.hotkeys)===hotkeyBindingsBefore
+      &&probe.querySelector('[data-hotkey-id="save"] .hotkey-name span').textContent===t('hotkeyCaptions.command.save')
+      &&probe.querySelector('[data-hotkey-id="save"] [data-hotkey-reset]').getAttribute('aria-label')===t('hotkeySettings.resetShortcut',{label:{messageKey:'hotkeyCaptions.command.save'}})
+      &&probe.querySelector('.hotkey-status').textContent===t('hotkeySettings.assignmentSummary',{label:{messageKey:'hotkeyCaptions.command.save'},bindings:{messageKey:'hotkeySettings.unassigned'}})
+      &&probe.querySelector('.hotkey-conflict p').textContent.includes(t('common.undo'))
+      &&probe.querySelector('.hotkey-group h4').textContent===t('hotkeyCaptions.category.projectEditing');
+  }));
+  await page.evaluate(()=>{hotkeyOwnerProbe.remove();styk.localization.localization.setPseudo(null);});
+  await page.evaluate(async()=>{
+    const {UpdateUI}=await import('/src/update-ui.mjs');
+    window.updateProbe=new UpdateUI({getUpdateState:async()=>({status:'idle'}),onUpdateState(){return()=>{};}});
+    await Promise.resolve();updateProbe.render({status:'downloading',version:'1.2.3',currentVersion:'1.2.2',percent:35,total:2097152,transferred:1048576});
+    window.updateProgress=updateProbe.progress;styk.localization.localization.setPseudo('rtl');
+  });
+  check('Update progress and version captions translate in place with unchanged download values',await page.evaluate(()=>updateProbe.progress===updateProgress&&updateProgress.value===35
+    &&updateProbe.title.textContent===styk.localization.t('updateUi.downloadingVersion',{version:'1.2.3'})
+    &&updateProbe.detail.textContent===styk.localization.t('updateUi.downloadingProgressWithSize',{percent:35,transferred:{format:'number',value:1,options:{minimumFractionDigits:1,maximumFractionDigits:1}},total:{format:'number',value:2,options:{minimumFractionDigits:1,maximumFractionDigits:1}}})));
+  await page.evaluate(()=>{updateProbe.element.remove();updateProbe.unsubscribe?.();styk.localization.localization.setPseudo(null);});
+  await page.evaluate(async()=>{
+    const {showTimelineMenu}=await import('/src/timeline-menu.mjs');
+    window.timelineCaptionHost={_run:fn=>fn(),scroll:document.createElement('div')};document.body.append(timelineCaptionHost.scroll);
+    window.timelineCaptionActionRan=false;
+    showTimelineMenu(timelineCaptionHost,{clientX:220,clientY:200},[[{heading:'Frames 2–4',headingKey:'layerTimeline.framesRange',headingParams:{first:2,last:4}},
+      {label:'Remove frames',labelKey:'layerTimeline.removeFrames',shortcut:'Ctrl+Delete',action:()=>{timelineCaptionActionRan=true;}}]]);
+    window.timelineCaptionRow=timelineCaptionHost.menu.element.querySelector('[role="menuitem"]');timelineCaptionRow.focus();
+    styk.localization.localization.setPseudo('rtl');
+  });
+  check('Timeline menu headings and command captions retain their keys, parameters, focus and physical shortcut',await page.evaluate(()=>{
+    const root=timelineCaptionHost.menu.element;
+    return timelineCaptionRow===root.querySelector('[role="menuitem"]')&&document.activeElement===timelineCaptionRow
+      &&root.querySelector('[data-i18n="layerTimeline.framesRange"]').textContent===styk.localization.t('layerTimeline.framesRange',{first:2,last:4})
+      &&root.querySelector('[data-i18n="layerTimeline.removeFrames"]').textContent===styk.localization.t('layerTimeline.removeFrames')
+      &&root.querySelector('kbd').textContent==='Ctrl+Delete';
+  }));
+  await page.evaluate(()=>timelineCaptionRow.click());
+  check('Localized timeline menu commands retain their action',await page.evaluate(()=>timelineCaptionActionRan));
+  await page.evaluate(()=>{timelineCaptionHost.scroll.remove();styk.localization.localization.setPseudo(null);});
   await page.locator('.brand[data-action=menu]').click();
   await page.locator('#menu [data-action=save]').focus();
   await page.evaluate(()=>{window.menuRow=document.activeElement;styk.localization.localization.setPseudo('long');});
@@ -179,6 +286,75 @@ try {
   });
   check('Support busy captions translate and restore the original submit action',supportBusy);
   await page.evaluate(()=>{supportProbe.dispose();supportRoot.remove();styk.localization.localization.setPseudo(null);});
+  for (const soundCount of [0,1,3]) {
+    await page.evaluate(async count=>{
+      const {openExportSheet}=await import('/src/export-sheet.mjs');
+      window.soundCountProbe=count;
+      window.soundOwnerSheet=openExportSheet({context:{canvasWidth:640,canvasHeight:360,totalFrames:12,fps:24,name:'Sound fixture',soundNames:Array.from({length:count},(_,index)=>index?'Sound '+index:'My sound.wav'),audioClips:Array.from({length:count},()=>({start:0,duration:1})),audioSupported:true},onExport(){}});
+      window.soundCaption=soundOwnerSheet.element.querySelector('#export-audio').previousElementSibling;
+      window.soundFilename=soundOwnerSheet.element.querySelector('#export-name');soundFilename.focus();soundFilename.value='Artist file';soundFilename.dispatchEvent(new Event('input',{bubbles:true}));soundFilename.setSelectionRange(2,5);
+      styk.localization.localization.setPseudo('long');
+    },soundCount);
+    check(`Export sound caption (${soundCount}) translates counts while retaining authored names and drafts`,await page.evaluate(()=>
+      soundCaption===soundOwnerSheet.element.querySelector('#export-audio').previousElementSibling
+      &&soundCaption.textContent===(soundCountProbe===1?'My sound.wav':styk.localization.t(soundCountProbe?'exportSheet.soundCount':'exportSheet.includeSound',{count:soundCountProbe}))
+      &&document.activeElement===soundFilename&&soundFilename.value==='Artist file'&&soundFilename.selectionStart===2&&soundFilename.selectionEnd===5&&soundOwnerSheet.request.width===640
+      &&soundOwnerSheet.element.querySelector('[for="export-width"]').textContent===styk.localization.t('exportSheet.width')));
+    await page.evaluate(async()=>{soundOwnerSheet.close();await soundOwnerSheet.closed;styk.localization.localization.setPseudo(null);});
+  }
+  await page.evaluate(async()=>{
+    const {UserLibrary}=await import('/src/user-library.mjs');
+    const {appendLocalized}=await import('/src/localization-bindings.mjs');
+    window.libraryData={id:'artist-asset',source:'public',kind:'figure',name:'My character.stkz',author:'Artist العربية',description:'An authored description'};
+    window.libraryDataBefore=JSON.stringify(libraryData);
+    window.publicCard=UserLibrary.prototype.card.call({},libraryData);
+    window.localClipCard=UserLibrary.prototype.card.call({},{path:'My clip.stykmov',kind:'movieclip',name:'My clip.stykmov'});
+    appendLocalized(document.body,publicCard);appendLocalized(document.body,localClipCard);
+    window.libraryIcon=publicCard.querySelector('svg');publicCard.focus();
+    styk.localization.localization.setPseudo('rtl');
+  });
+  check('Public library author grammar and movieclip hover instructions follow the locale while preserving authored data, focus and icons',await page.evaluate(()=>
+    publicCard.title===styk.localization.t('userLibrary.publicAssetByAuthor',{name:libraryData.name,author:libraryData.author,description:': '+libraryData.description})
+    &&localClipCard.title===styk.localization.t('userLibrary.nameDoubleClickToInsertOrDragOntoThe',{name:'My clip.stykmov',value1:{messageKey:'userLibrary.hoverToPlay2'}})
+    &&publicCard.querySelector('.library-name').textContent==='My character.stkz'&&publicCard.dataset.publicId==='artist-asset'
+    &&JSON.stringify(libraryData)===libraryDataBefore&&document.activeElement===publicCard&&publicCard.querySelector('svg')===libraryIcon));
+  await page.evaluate(()=>{publicCard.remove();localClipCard.remove();styk.localization.localization.setPseudo(null);});
+  await page.evaluate(async()=>{
+    const {createDockKeyboard}=await import('/src/shell/dock-keyboard.mjs');
+    window.dockMoves=[];window.dockSpeech=[];
+    window.dockDraft=document.createElement('input');dockDraft.value='Panel draft';document.body.append(dockDraft);dockDraft.focus();dockDraft.setSelectionRange(1,4);
+    window.dockProbe=createDockKeyboard({host:{registry:new Map([['properties',{title:'Properties',titleKey:'shell.panel.properties'}]]),canPlace:()=>true,presentation:()=> 'docked',solution:{panels:{properties:{side:'right'}}},workspace:{float:id=>dockMoves.push(['float',id]),dock:(id,target)=>dockMoves.push(['dock',id,target])},showPanel(){}},announce:text=>dockSpeech.push(text)});
+    dockProbe.startMove('properties');window.dockCaption=document.querySelector('.shell-drop .ui-drop-label');
+    styk.localization.localization.setPseudo('rtl');
+  });
+  check('Keyboard panel-move preview follows RTL in its original caption without moving the panel or disturbing focus and drafts',await page.evaluate(()=>
+    dockCaption.textContent===styk.localization.t('dockKeyboard.floatHere')&&dockMoves.length===0
+    &&document.activeElement===dockDraft&&dockDraft.value==='Panel draft'&&dockDraft.selectionStart===1&&dockDraft.selectionEnd===4));
+  await page.evaluate(()=>window.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true})));
+  check('Keyboard movement keeps physical arrow choices and announces the current localized placement',await page.evaluate(()=>
+    dockCaption===document.querySelector('.shell-drop .ui-drop-label')&&dockProbe.moving.target==='left'
+    &&dockCaption.textContent===styk.localization.t('dockKeyboard.dockLeft')&&dockSpeech.at(-1)===styk.localization.t('dockKeyboard.dockLeft')));
+  await page.evaluate(()=>window.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})));
+  check('Keyboard placement preserves the canonical panel and side while announcing its translated title',await page.evaluate(()=>
+    JSON.stringify(dockMoves)===JSON.stringify([['dock','properties','left']])
+    &&dockSpeech.at(-1)===styk.localization.t('dockKeyboard.panelLocation',{title:{messageKey:'shell.panel.properties'},place:{messageKey:'dockKeyboard.dockLeft'}})));
+  await page.evaluate(()=>{dockProbe.destroy();dockDraft.remove();styk.localization.localization.setPseudo(null);});
+  await page.evaluate(async()=>{
+    const {VfwExportControls}=await import('/src/vfw-export-controls.mjs');const {appendLocalized}=await import('/src/localization-bindings.mjs');
+    window.vfwDesktopBefore=window.stykDesktop;
+    window.vfwCapabilities={platform:'win32',codecs:[{id:'vfw:x64:00000000',label:'Artist codec (64-bit)',fourcc:'DIB ',provider:'Windows VFW',supported:false,reason:'Original English capability reason',reasonKey:'vfwExportControls.codecDoesNotAcceptFrames',reasonParams:{width:160,height:90}}],reason:'Original English check reason',reasonKey:'vfwExportControls.codecCheckFailure',reasonParams:{details:{format:'list',value:[{messageKey:'vfwExportControls.invalidCodecTable',messageParams:{arch:'x86'}},'External driver detail'],options:{type:'unit'}}}};
+    window.stykDesktop={getVfwCapabilities:async()=>structuredClone(vfwCapabilities)};
+    window.vfwDialog=document.createElement('dialog');appendLocalized(document.body,vfwDialog);vfwDialog.showModal();
+    window.vfwProbe=new VfwExportControls({container:vfwDialog,dialog:vfwDialog,getDimensions:()=>({width:160,height:90})});
+  });
+  await page.waitForFunction(()=>vfwProbe.loadedKey==='160:90'&&vfwProbe.status.getAttribute('data-i18n')==='vfwExportControls.codecCheckFailure');
+  await page.evaluate(()=>{window.vfwStatus=vfwProbe.status;window.vfwOption=vfwProbe.select.options[0];styk.localization.localization.setPseudo('rtl');});
+  check('Owned Windows codec reasons translate in retained controls while external driver details, codec names and IDs remain raw',await page.evaluate(()=>
+    vfwStatus===vfwProbe.status&&vfwStatus.textContent===styk.localization.t(vfwCapabilities.reasonKey,vfwCapabilities.reasonParams)
+    &&vfwStatus.textContent.includes('External driver detail')&&vfwOption===vfwProbe.select.options[0]
+    &&vfwOption.title===styk.localization.t('vfwExportControls.codecDoesNotAcceptFrames',{width:160,height:90})
+    &&vfwOption.textContent==='Artist codec (64-bit)'&&vfwOption.value==='vfw:x64:00000000'&&vfwOption.disabled));
+  await page.evaluate(()=>{vfwProbe.dispose();vfwDialog.close();vfwDialog.remove();window.stykDesktop=vfwDesktopBefore;styk.localization.localization.setPseudo(null);});
   await page.evaluate(async()=>{
     const {Editor}=await import('/src/editor.mjs');const {emptyDocument}=await import('/src/demo.mjs');const {vfxProperty}=await import('/src/vfx.mjs');
     const {openVfxChannelMenu}=await import('/src/vfx-key-channel-menu.mjs');

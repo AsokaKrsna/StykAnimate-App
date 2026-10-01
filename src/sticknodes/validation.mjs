@@ -1,7 +1,8 @@
+import {validationLabel} from "../validation-labels.mjs";
 import {messageError} from '../localized-error.mjs';
 /** Persisted import extensions are validated on native save/reopen as well. */
 const kinds=new Set(['segment','rounded-segment','circle','triangle','filled-circle','ellipse','trapezoid','polygon']);
-const finite=(v,label)=>{if(typeof v!=='number'||!Number.isFinite(v)||Math.abs(v)>1e12)throw messageError(new Error(''), "errors.validation.invalidStickNodes", {label: label});};
+const finite=(v,label)=>{if(typeof v!=='number'||!Number.isFinite(v)||Math.abs(v)>1e12)throw messageError(new Error(''), "errors.validation.invalidStickNodes", {label: validationLabel(label)});};
 export function validateSticknodesShape(shape){
  if(!shape||typeof shape!=='object'||Array.isArray(shape)||!kinds.has(shape.kind))throw messageError(new Error(''), "errors.validation.invalidStickNodesShape", {});
  for(const k of ['sagitta','drawRatio','drawLength','trapezoid_top_thickness_ratio','trapezoid_thickness_start','trapezoid_thickness_end','right_triangle_direction'])if(shape[k]!==undefined)finite(shape[k],k);

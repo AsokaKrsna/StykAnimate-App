@@ -6,5 +6,6 @@ const source = existsSync(path.join(__dirname, '..', 'src', 'localization.mjs'))
   ? path.join(__dirname, '..', 'src') : path.join(process.resourcesPath, 'web', 'src');
 const { Localization, normalizeLocale } = require(path.join(source, 'localization.mjs'));
 const { messageError } = require(path.join(source, 'localized-error.mjs'));
+const { validationLabel } = require(path.join(source, 'validation-labels.mjs'));
 const localization = new Localization();
-module.exports = { localization, normalizeLocale, messageError, t: (key, params) => localization.t(key, params) };
+module.exports = { validationLabel, localization, normalizeLocale, messageError, t: (key, params) => localization.t(key, params) };

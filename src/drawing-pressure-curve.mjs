@@ -1,4 +1,4 @@
-import {messageAttributes, tupleMessages, messageTuple} from './localization-bindings.mjs';
+import {messageAttributes, localizedAttribute, tupleMessages, messageTuple} from './localization-bindings.mjs';
 
 import {t as interfaceText} from './localization.mjs';
 import {LINEAR_PRESSURE} from './drawing-brush.mjs';
@@ -15,17 +15,17 @@ const same=(a,b)=>a.every((n,i)=>Math.abs(n-b[i])<.005);
 const geometry=([x1,y1,x2,y2])=>{const a=point(x1,y1),b=point(x2,y2);return {a,b,path:`M0 ${S}C${a.join(' ')} ${b.join(' ')} ${S} 0`};};
 export function pressureCurveMarkup(curve){
   const {a,b,path}=geometry(curve),presets=PRESSURE_PRESETS.map((_tuple) => {const [id,label,value] = _tuple; const _messages = tupleMessages(_tuple); return `<button type="button" data-pressure-preset="${id}" aria-pressed="${same(curve,value)}"${_messages[1] ? ' ' + messageAttributes(_messages[1].key, _messages[1].params) : ''}>${label}</button>`;}).join('');
-  const handle=(i,[cx,cy],label)=>`<circle class="draw-pressure-handle" data-pressure-handle="${i}" cx="${cx}" cy="${cy}" r="5" tabindex="0" role="slider" aria-label="${label}" aria-valuetext="${Math.round(curve[i*2]*100)}% pressure → ${Math.round(curve[i*2+1]*100)}%"></circle>`;
+  const handle=(i,[cx,cy],key)=>{const params={pressure:Math.round(curve[i*2]*100),response:Math.round(curve[i*2+1]*100)};return `<circle class="draw-pressure-handle" data-pressure-handle="${i}" cx="${cx}" cy="${cy}" r="5" tabindex="0" role="slider" aria-label="${interfaceText(key)}" ${messageAttributes(key,{},'aria-label')} aria-valuetext="${interfaceText('drawingPressureCurve.handleValue',params)}" ${messageAttributes('drawingPressureCurve.handleValue',params,'aria-valuetext')}></circle>`;};
   return `<div class="draw-pressure" data-pressure-curve>
-    <svg class="draw-pressure-graph" viewBox="-8 -8 116 116" aria-label="Pen pressure curve: pen pressure across, stroke response up">
+    <svg class="draw-pressure-graph" viewBox="-8 -8 116 116" aria-label="Pen pressure curve: pen pressure across, stroke response up" data-i18n-aria-label="drawingPressureCurve.graphDescription">
       <rect class="draw-pressure-frame" x="0" y="0" width="${S}" height="${S}"></rect>
       <path class="draw-pressure-grid" d="M25 0V${S}M50 0V${S}M75 0V${S}M0 25H${S}M0 50H${S}M0 75H${S}"></path>
       <path class="draw-pressure-diagonal" d="M0 ${S}L${S} 0"></path>
       <path class="draw-pressure-arms" d="M0 ${S}L${a.join(' ')}M${S} 0L${b.join(' ')}"></path>
       <path class="draw-pressure-line" d="${path}"></path>
-      ${handle(0,a,interfaceText("drawingPressureCurve.lightPressureHandle"))}${handle(1,b,interfaceText("drawingPressureCurve.heavyPressureHandle"))}
+      ${handle(0,a,'drawingPressureCurve.lightPressureHandle')}${handle(1,b,'drawingPressureCurve.heavyPressureHandle')}
     </svg>
-    <div class="ds-segmented draw-pressure-presets" role="group" aria-label="Pressure presets">${presets}</div>
+    <div class="ds-segmented draw-pressure-presets" role="group" aria-label="Pressure presets" data-i18n-aria-label="drawingPressureCurve.presets">${presets}</div>
   </div>`;
 }
 /** Update every editor in `root` to `curve` without re-rendering. */
@@ -34,7 +34,7 @@ export function refreshPressureCurve(root,curve){
   for(const el of root.querySelectorAll('[data-pressure-curve]')){
     el.querySelector('.draw-pressure-line')?.setAttribute('d',path);
     el.querySelector('.draw-pressure-arms')?.setAttribute('d',`M0 ${S}L${a.join(' ')}M${S} 0L${b.join(' ')}`);
-    [a,b].forEach(([cx,cy],i)=>{const h=el.querySelector(`[data-pressure-handle="${i}"]`);if(!h)return;h.setAttribute('cx',cx);h.setAttribute('cy',cy);h.setAttribute('aria-valuetext',`${Math.round(curve[i*2]*100)}% pressure → ${Math.round(curve[i*2+1]*100)}%`);});
+    [a,b].forEach(([cx,cy],i)=>{const h=el.querySelector(`[data-pressure-handle="${i}"]`);if(!h)return;h.setAttribute('cx',cx);h.setAttribute('cy',cy);localizedAttribute(h,'aria-valuetext','drawingPressureCurve.handleValue',{pressure:Math.round(curve[i*2]*100),response:Math.round(curve[i*2+1]*100)});});
     for(const button of el.querySelectorAll('[data-pressure-preset]'))button.setAttribute('aria-pressed',String(same(curve,PRESSURE_PRESETS.find(p=>p[0]===button.dataset.pressurePreset)[2])));
   }
 }

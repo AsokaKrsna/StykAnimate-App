@@ -66,10 +66,13 @@ test('presentation references and precise numbers resolve in the selected langua
 test('Build part captions follow language changes while icon IDs and authored names stay intact', async () => {
   interfaceLocalization.setPseudo('long');
   try {
-    const {partName, partGlyph} = await import('../src/builder-outliner.mjs?locale-review');
+    const {partName, partNameMessage, partGlyph} = await import('../src/builder-outliner.mjs?locale-review');
     const segment = {primitive_code:5, segment_id:12};
     assert.equal(partGlyph(segment), 'text', 'localized text is never an icon identifier');
-    assert.equal(partName(segment), `${interfaceLocalization.t('builderOutliner.text')} 12`);
+    const reference=partNameMessage(segment);
+    assert.equal(reference.messageKey,'builderOutliner.partNumber');
+    assert.deepEqual(reference.messageParams,{kind:{messageKey:'builderOutliner.text'},id:12});
+    assert.equal(partName(segment), interfaceLocalization.t(reference.messageKey,reference.messageParams));
     interfaceLocalization.setPseudo(null);
     assert.equal(partName(segment), 'Text 12', 'the caption resolves again after a language change');
     assert.equal(partName({...segment, name:'My authored text'}), 'My authored text');

@@ -1,5 +1,5 @@
 import {t as interfaceText} from '../localization.mjs';
-import {appendLocalized} from '../localization-bindings.mjs';
+import {appendLocalized, localizedText} from '../localization-bindings.mjs';
 /**
  * Keyboard paths through the shell (WCAG 2.5.7: every drag has one).
  *
@@ -15,7 +15,7 @@ import {appendLocalized} from '../localization-bindings.mjs';
  *   reaches the editor.
  */
 const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-const PLACES = Object.freeze({left: interfaceText("dockKeyboard.dockLeft"), right: interfaceText("dockKeyboard.dockRight"), float: interfaceText("dockKeyboard.floatHere")});
+const PLACE_KEYS = Object.freeze({left:'dockKeyboard.dockLeft', right:'dockKeyboard.dockRight', float:'dockKeyboard.floatHere'});
 /** A region's main collection, where focus lands before its first control. */
 export const COLLECTIONS = '[role="tree"][aria-label], [role="grid"][aria-label], [role="listbox"][aria-label]';
 
@@ -26,6 +26,10 @@ const shown = element => Boolean(element?.isConnected && element.getClientRects(
  * status (a polite live region).
  */
 export function createDockKeyboard({document: doc = globalThis.document, window: win = globalThis.window, host, announce = () => {}} = {}) {
+  const panelName = id => {
+    const panel = host.registry.get(id);
+    return panel?.titleKey ? {messageKey:panel.titleKey} : panel?.title ?? id;
+  };
   const regionList = () => {
     const {hosts, bottom, stage, viewport, band, rail, floats} = host.regions();
     const head = stage?.querySelector(':scope > .stage-head');
@@ -87,8 +91,8 @@ export function createDockKeyboard({document: doc = globalThis.document, window:
     if (zone.parentElement !== workspace) appendLocalized(workspace, zone);
     zone.dataset.target = target;
     zone.hidden = false;
-    zoneLabel.textContent = PLACES[target];
-    if (speak) announce(PLACES[target]);
+    localizedText(zoneLabel, PLACE_KEYS[target]);
+    if (speak) announce(interfaceText(PLACE_KEYS[target]));
   }
 
   function finish(commit) {
@@ -102,7 +106,7 @@ export function createDockKeyboard({document: doc = globalThis.document, window:
     const target = targets[index];
     if (target === 'float') host.workspace.float(id);
     else host.workspace.dock(id, target);
-    announce(`${host.registry.get(id)?.title ?? id}: ${PLACES[target]}`);
+    announce(interfaceText('dockKeyboard.panelLocation', {title:panelName(id), place:{messageKey:PLACE_KEYS[target]}}));
     host.showPanel(id);
   }
 
@@ -140,7 +144,7 @@ export function createDockKeyboard({document: doc = globalThis.document, window:
     win.addEventListener('pointerdown', onPointer, true);
     // One message, so the instructions are not overwritten by the first place in the same task.
     preview({announce: false});
-    announce(`Move ${host.registry.get(id)?.title ?? id}: ${PLACES[move.targets[move.index]]}. Arrow keys choose a place, Enter moves it, Escape cancels`);
+    announce(interfaceText('dockKeyboard.moveInstructions', {title:panelName(id), place:{messageKey:PLACE_KEYS[move.targets[move.index]]}}));
     return true;
   }
 

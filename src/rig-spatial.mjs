@@ -1,3 +1,4 @@
+import {validationLabel} from "./validation-labels.mjs";
 import {messageError} from './localized-error.mjs';
 /** Spatial articulation in the native rig dependency graph. Rotation still uses
  * ordinary angle channels; depth is derived, never a separate animated scene. */
@@ -17,7 +18,7 @@ export function sameSpatial(a,b){
 export function validateSpatial(s,reference,dependencies,segments,ids){
   const vector=v=>Array.isArray(v)&&v.length===3&&[0,1,2].every(i=>Number.isFinite(v[i])&&Math.abs(v[i])<=1e6);
   if(!s||typeof s!=='object'||Array.isArray(s))throw messageError(new Error(''), "errors.rigSpatial.invalidSpatialJoint", {});
-  const ref=(id,label,bone=false)=>{reference(id,label,true);dependencies.add(id);if(id&&bone&&!spatialBone(segments[ids.get(id)]))throw messageError(new Error(''), "errors.rigSpatial.mustBeAnArticulatedSpatialJoint", {label: label});};
+  const ref=(id,label,bone=false)=>{reference(id,label,true);dependencies.add(id);if(id&&bone&&!spatialBone(segments[ids.get(id)]))throw messageError(new Error(''), "errors.rigSpatial.mustBeAnArticulatedSpatialJoint", {label: validationLabel(label)});};
   if(s.bindings){
     if(Object.keys(s).some(k=>!['point','bindings','viewPoints'].includes(k))||!vector(s.point)||!Array.isArray(s.bindings)||!s.bindings.length||s.bindings.length>4)throw messageError(new Error(''), "errors.rigSpatial.aSkinPointNeedsAPositionAnd1", {});
     if(s.viewPoints!==undefined&&(!Array.isArray(s.viewPoints)||![4,8].includes(s.viewPoints.length)||Array.from({length:s.viewPoints.length},(_,i)=>i).some(i=>!vector(s.viewPoints[i]))||s.bindings.length!==1))throw messageError(new Error(''), "errors.rigSpatial.viewCorrectedSkinNeedsFourCardinalOrEight", {});

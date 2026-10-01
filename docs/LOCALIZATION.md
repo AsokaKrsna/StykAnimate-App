@@ -2,8 +2,7 @@
 
 English is the default. Settings → Interface → Language persists through the
 existing editor preference service. The browser, touch interface and Electron
-menus use the same catalog and fallback rules. Existing translations are preserved;
-Nine non-English packs have completed review of the original interface catalog. Newly extracted diagnostic details and the remaining packs are being completed in reviewed batches; current coverage and review status are recorded in [LOCALIZATION-REVIEW.md](LOCALIZATION-REVIEW.md).
+menus use the same catalog and fallback rules. Existing accurate translations are preserved. Translation and independent context review proceed in exclusive language batches; current coverage and review status are recorded in [LOCALIZATION-REVIEW.md](LOCALIZATION-REVIEW.md).
 
 ## Ownership and lookup
 
@@ -35,7 +34,9 @@ silently become Simplified Chinese, Brazilian Portuguese or Bokmål.
 Messages are plain text with named `{placeholders}`. Plurals contain `other` and
 the language's categories. Parameters can be scalars, bounded nested
 `{messageKey, messageParams}` references, or `{format: 'number'|'date', value,
-options}` display descriptors. Use full sentences rather than translated fragment
+options}` display descriptors. Display lists can use `{format: 'list', value, options}`
+with at most 256 strings or nested message references; the same eight-level nesting
+limit and bounded formatter cache apply. Use full sentences rather than translated fragment
 concatenation. `Intl` formats displayed numbers and dates, with a bounded cache;
 input parsing, document units and encoder values retain their existing contracts.
 
@@ -112,7 +113,10 @@ translations or persisting a pseudo language.
   boot smoke verifies the bridge, context isolation and codec startup. The complete
   private-sample desktop smoke requires the local sample files documented by it.
 
-The pre-existing playback-quiet browser check also fails on the unchanged baseline:
+The pre-existing inspector-header browser check expects an obsolete set of joint
+quick actions and fails identically on the unchanged committed baseline. The
+changed generated heading and retained-caption behavior have separate focused
+coverage. The pre-existing playback-quiet browser check also fails on the unchanged baseline:
 onion markers write their attributes/styles during playback. Localization's earlier
 parameter writes were removed; comparison showed only the baseline marker writers
 remaining. Catalog coverage is a completeness report, not a translation-quality

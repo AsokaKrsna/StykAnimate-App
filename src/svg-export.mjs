@@ -1,3 +1,4 @@
+import {validationLabel} from "./validation-labels.mjs";
 import {messageError} from './localized-error.mjs';
 import {parallaxResolver} from './layer-parallax.mjs';
 import {svgPaintDefinition, segmentPaint, textPaintGeometry, shapePaintBounds} from './paint.mjs';
@@ -39,7 +40,7 @@ function strokeWidth(state, requested) {
 }
 function dimension(value, label) {
   const n = Number(value);
-  if (!Number.isInteger(n) || n < 1 || n > 65535) throw messageError(new RangeError(''), "errors.svgExport.mustBeAnIntegerFrom1To65535", {label: label});
+  if (!Number.isInteger(n) || n < 1 || n > 65535) throw messageError(new RangeError(''), "errors.svgExport.mustBeAnIntegerFrom1To65535", {label: validationLabel(label)});
   return n;
 }
 async function dataURL(blob) {

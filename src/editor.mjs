@@ -1,3 +1,4 @@
+import {validationLabel} from "./validation-labels.mjs";
 import {messageError} from './localized-error.mjs';
 import {editorSpatialMethods,spatialBone,spatialSkin} from './editor-spatial.mjs';
 import {resolveInstanceFigure} from './animation-style.mjs';
@@ -70,7 +71,7 @@ const clone = value => structuredClone(value);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const rangeReportCopies = new WeakMap();
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-const finite = (value, label) => { if (!Number.isFinite(value)) throw messageError(new Error(''), "errors.editorCamera.mustBeFinite", {label: label}); return value; };
+const finite = (value, label) => { if (!Number.isFinite(value)) throw messageError(new Error(''), "errors.editorCamera.mustBeFinite", {label: validationLabel(label)}); return value; };
 function initialLoadState(report,{initialFrameIndex=0,initialTick}={},draftEnabled=false){
   let frameIndex=initialFrameIndex==='last'?report.keyframes.length-1:clamp(Math.trunc(finite(initialFrameIndex,'Initial frame')),0,report.keyframes.length-1);
   if(initialTick!==undefined)finite(initialTick,'Initial tick');

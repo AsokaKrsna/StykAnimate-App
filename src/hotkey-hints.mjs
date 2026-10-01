@@ -1,5 +1,7 @@
 import { HOTKEY_BY_ID } from './hotkeys.mjs';
 import { ariaKeyShortcut } from './ui/command-registry.mjs';
+import {hotkeyLabelMessage} from './hotkey-labels.mjs';
+import {localizedAttribute} from './localization-bindings.mjs';
 
 /**
  * The HOTKEY_COMMANDS id whose shortcut a control shows, or null. Derived from
@@ -38,11 +40,21 @@ export function refreshHotkeyHints(hotkeys, root = document) {
     const label = hotkeys.label(id), kbd = node.querySelector('kbd');
     if (kbd) { kbd.textContent = label; continue; }
     const title = node.getAttribute('title');
-    if (!node.dataset.hotkeyTitle)
-      node.dataset.hotkeyTitle = (title || node.getAttribute('aria-label') || HOTKEY_BY_ID.get(id).label).replace(/\s*(?:·.*|\([^)]*\))$/, '');
+    if (!node.dataset.hotkeyTitle) {
+      const supplied = title || node.getAttribute('aria-label');
+      if (supplied) node.dataset.hotkeyTitle = supplied.replace(/\s*(?:·.*|\([^)]*\))$/, '');
+      else {
+        const reference=hotkeyLabelMessage(id);
+        localizedAttribute(node,'data-hotkey-title',reference.key,reference.params);
+      }
+    }
     if (title !== null) node.removeAttribute('title');
-    if (!node.hasAttribute('aria-label') && !node.hasAttribute('aria-labelledby') && !node.textContent.trim())
-      node.setAttribute('aria-label', node.dataset.hotkeyTitle);
+    if (!node.hasAttribute('aria-label') && !node.hasAttribute('aria-labelledby') && !node.textContent.trim()) {
+      if (node.hasAttribute('data-i18n-hotkey-title')) {
+        const reference=hotkeyLabelMessage(id);
+        localizedAttribute(node,'aria-label',reference.key,reference.params);
+      } else node.setAttribute('aria-label', node.dataset.hotkeyTitle);
+    }
     if (node.dataset.hotkeyHint !== label) node.dataset.hotkeyHint = label;
     const bindings = hotkeys.bindings?.[id];
     if (bindings) {

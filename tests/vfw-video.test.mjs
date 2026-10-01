@@ -5,6 +5,8 @@ import {mkdir, writeFile, readdir} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import {rgbaToVfwBgr24} from '../src/vfw-pixels.mjs';
 import {getVfwCapabilities, encodeVfwVideo, configureVfwCodec} from '../src/vfw-video-export.mjs';
+import {VfwExportControls} from '../src/vfw-export-controls.mjs';
+import {interfaceLocalization, Localization} from '../src/localization.mjs';
 import service from '../desktop/vfw-export-service.cjs';
 import {missingFixture} from './helpers/local-fixtures.mjs';
 
@@ -48,6 +50,43 @@ test('non-Windows service never advertises installed VFW codecs', async () => {
   const vfw = new service.VfwExportService({platform: 'linux'});
   try { const caps = await vfw.capabilities({width: 160, height: 90}); assert.equal(caps.available, false); assert.equal(caps.codecs.length, 0); }
   finally { await vfw.dispose(); }
+});
+test('codec capability metadata translates owned reasons while preserving native names, diagnostics and architecture IDs', async () => {
+  const vfw = new service.VfwExportService({platform:'win32'});
+  vfw._command = async arch => arch === 'x86' ? {codecs:null} : {codecs:[{handler:0,name:'Artist codec',fourcc:'DIB ',supported:false}]};
+  try {
+    const caps = structuredClone(await vfw.capabilities({width:160,height:90})),codec=caps.codecs[0];
+    assert.deepEqual(caps.errors,['x86 codec table is invalid.']);
+    assert.equal(caps.reason,'x86 codec table is invalid.');
+    assert.equal(codec.name,'Artist codec');assert.equal(codec.id,'vfw:x64:00000000');
+    assert.equal(codec.reason,'This codec does not accept 160 × 90 RGB24 frames.');
+    const localization=new Localization({pseudo:'rtl'});
+    assert.match(localization.t(caps.reasonKey,caps.reasonParams),/اختبار/);
+    assert.match(localization.t(codec.reasonKey,codec.reasonParams),/اختبار/);
+    assert.deepEqual(codec.reasonParams,{width:160,height:90});
+    assert.equal(caps.reasonParams.details.value[0].messageParams.arch,'x86');
+    vfw.cache.clear();vfw._command=async arch=>{if(arch==='x86')throw new Error('External driver detail');return {codecs:[]};};
+    const external=await vfw.capabilities({width:160,height:90});
+    assert.deepEqual(external.errors,['External driver detail']);
+    assert.ok(localization.t(external.reasonKey,external.reasonParams).includes('External driver detail'));
+  } finally { await vfw.dispose(); }
+});
+test('codec numeric failures keep English diagnostic identities and typed values while display labels follow the locale', () => {
+  const controls=Object.assign(Object.create(VfwExportControls.prototype),{
+    element:{hidden:false},select:{value:'vfw:x64:00000000'},loadedKey:'160:90',getDimensions:()=>({width:160,height:90}),
+    codecs:[{id:'vfw:x64:00000000',supported:true,quality:true,keyframes:true,dataRate:true}],
+    quality:{value:'90'},keyframes:{value:'2'},bitrate:{value:'1.2'},configurations:new Map(),
+  });
+  const locale=interfaceLocalization.locale,pseudo=interfaceLocalization.pseudo;
+  try {
+    interfaceLocalization.setLocale('ar');interfaceLocalization.setPseudo('rtl');
+    assert.equal(controls.getOptions().bitrate,1200000);
+    controls.quality.value='';
+    assert.throws(()=>controls.getOptions(),error=>error.message==='Enter quality.'&&error.messageParams.value.messageKey==='vfwExportControls.quality');
+    controls.quality.value='90';controls.keyframes.value='1.5';
+    assert.throws(()=>controls.getOptions(),error=>error.message==='Keyframe interval must be a whole number from 0 to 1000000.'&&error.messageParams.label.messageKey==='vfwExportControls.keyframeInterval');
+    assert.equal(controls.keyframes.value,'1.5');assert.equal(controls.bitrate.value,'1.2');
+  } finally {interfaceLocalization.setLocale(locale);interfaceLocalization.setPseudo(pseudo);}
 });
 test('actual Windows enumeration distinguishes codec architectures and input rejection', {skip: process.platform !== 'win32'}, async () => {
   const vfw = makeService();

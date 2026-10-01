@@ -608,7 +608,8 @@ test('the scene: a meta line, Canvas, Background (Library…, Background image) 
   assertParity(today, now, {id: 'background-color'}, ['type', 'value', 'aria-label']);
   for (const action of ['background-style', 'import-background']) tag(now, {'data-action': action});
   assert.ok(now.includes('data-property-precision="0" data-property-display-precision="0"'), 'integer properties edit without decimals');
-  assert.match(now, /<div class="inspector-meta">3 figures · \d+ frames · [\d.]+ s<\/div>/);
+  assert.match(now, /<div class="inspector-meta"[^>]*>3 figures · \d+ frames · [\d.]+ s<\/div>/);
+  assert.equal(tag(now, {'class':'inspector-meta'}).attrs['data-i18n'],'inspectorView.s');
   assert.doesNotMatch(now, /<p[\s>]/);
   assertBudget(descriptor, 'scene', {headerControls: 1});
 });
@@ -664,8 +665,10 @@ test('a movieclip: Edit clip and Make unique under its name; Playback and Transf
   assert.deepEqual(sections(descriptor, 'core'), ['playback', 'transform']);
   assert.deepEqual(sections(descriptor, 'titled'), ['extend', 'bake']);
   assert.equal(tag(now, {'data-movieclip-current-frame': true}).tag, 'output');
-  assert.match(now, /<output data-movieclip-current-frame aria-label="Current movieclip frame">1 \/ 8<\/output>/);
-  assert.match(now, /<span data-movieclip-duration>8 frames · 0\.333 s · 24 fps<\/span>/);
+  assert.match(now, /<output data-movieclip-current-frame aria-label="Current movieclip frame"[^>]*>1 \/ 8<\/output>/);
+  assert.equal(tag(now, {'data-movieclip-current-frame':true}).attrs['data-i18n-aria-label'],'movieclipUi.currentMovieclipFrame');
+  assert.match(now, /<span data-movieclip-duration[^>]*>8 frames · 0\.333 s · 24 fps<\/span>/);
+  assert.equal(tag(now, {'data-movieclip-duration':true}).attrs['data-i18n'],'movieclipUi.durationSummary');
   assert.equal(nameOf(now, {'data-movieclip-field': 'offset'}), 'Movieclip start frame');
   assert.equal(nameOf(now, {'data-movieclip-field': 'speed'}), 'Movieclip speed');
   assert.equal(tag(now, {'data-action': 'movieclip-extend'}).attrs['aria-label'], 'Add to next keyframes');

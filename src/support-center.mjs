@@ -486,13 +486,15 @@ export class SupportCenter {
   }
   composer(body) {
     const form = el('form', null, 'sc-composer'); form.dataset.reply = '';
-    const placeholder = this.admin ? `Reply to ${this.thread.displayName || 'the creator'}…` : interfaceText("supportCenter.writeAReply");
+    const placeholderKey=this.admin?"supportCenter.replyTo":"supportCenter.writeAReply",placeholderParams=this.admin?{name:this.thread.displayName||{messageKey:"supportCenter.creator"}}:{};
+    const placeholder=interfaceText(placeholderKey,placeholderParams);
     localizedMarkup(form, `<label>${messageHTML("supportCenter.reply", {})}<textarea name="message" maxlength="4000" required placeholder="${placeholder.replaceAll('"', '&quot;')}"></textarea></label><details class="sc-attach"><summary data-i18n="supportCenter.attachFiles">Attach files</summary><div data-file-mount></div></details><footer><div>${this.admin ? `<label class="sc-check sc-switch"><input type="checkbox" name="internal"><span data-i18n="supportCenter.privateNote">${messageHTML("supportCenter.privateNote", {})}</span></label>` : ''}</div><button type="submit" class="sc-primary" data-i18n="supportCenter.sendMessage">Send message</button></footer>`);
+    localizedAttribute(form.elements.message,'placeholder',placeholderKey,placeholderParams);
     const draft = this.drafts[this.thread.id] || {}; this.replyId = draft.requestId || crypto.randomUUID(); form.elements.message.value = draft.message || '';
     appendLocalized(body, form); this.filePicker(form.querySelector('[data-file-mount]'));
     form.addEventListener('input', () => this.remember());
     form.elements.message.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && !this.busy) { event.preventDefault(); form.requestSubmit(); } });
-    if (this.admin) form.elements.internal.onchange = () => { form.querySelector('.sc-attach').hidden = form.elements.internal.checked; form.classList.toggle('sc-note-mode', form.elements.internal.checked); localizedText(form.querySelector('[type=submit]'), (form.elements.internal.checked ? "supportCenter.savePrivateNote" : "supportCenter.sendMessage"), (form.elements.internal.checked ? {} : {})); form.elements.message.placeholder = form.elements.internal.checked ? interfaceText("supportCenter.writeANoteOnlyYouCanSee") : placeholder; };
+    if (this.admin) form.elements.internal.onchange = () => { form.querySelector('.sc-attach').hidden = form.elements.internal.checked; form.classList.toggle('sc-note-mode', form.elements.internal.checked); localizedText(form.querySelector('[type=submit]'), (form.elements.internal.checked ? "supportCenter.savePrivateNote" : "supportCenter.sendMessage"), (form.elements.internal.checked ? {} : {})); localizedAttribute(form.elements.message,"placeholder",form.elements.internal.checked?"supportCenter.writeANoteOnlyYouCanSee":placeholderKey,form.elements.internal.checked?{}:placeholderParams); };
     form.onsubmit = event => { event.preventDefault(); void this.sendReply(form); };
   }
   syncComposerState() {

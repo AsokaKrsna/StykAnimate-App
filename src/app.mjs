@@ -1270,9 +1270,9 @@ function nudgePathFalloff(step) {
 /** The canvas tooltip for the hovered trail point names both gestures. */
 function syncPathTooltip() {
   const hover = state.hoverPathPoint;
-  if (!hover) { overlay.title = ""; return; }
-  const frame = `Frame ${hover.tick + 1}${hover.tick === editor.tick ? " (current)" : ""}`;
-  localizedAttribute(overlay, "title", (editor.motionPathFalloff() ? 'app.frameDragToReshapeMotionpathfalloffradiusFramesOfTheArc' : 'app.frameDragToReposeValue1RightDragToReshape'), (editor.motionPathFalloff() ? {frame: frame, motionPathFalloffRadius: state.settings.motionPathFalloffRadius} : {frame: frame, value1: hover.tick === editor.tick ? "" : interfaceText("app.withoutLeavingThisFrameDoubleClickToGo")}));
+  if (!hover) { clearTranslation(overlay, 'title'); overlay.title = ""; return; }
+  const frame = {messageKey:hover.tick===editor.tick?'exportSheet.currentFrame':'filmstrip.card',messageParams:{frame:hover.tick+1}};
+  localizedAttribute(overlay, "title", (editor.motionPathFalloff() ? 'app.frameDragToReshapeMotionpathfalloffradiusFramesOfTheArc' : 'app.frameDragToReposeValue1RightDragToReshape'), (editor.motionPathFalloff() ? {frame, motionPathFalloffRadius: state.settings.motionPathFalloffRadius} : {frame, value1: hover.tick === editor.tick ? "" : {messageKey:'app.withoutLeavingThisFrameDoubleClickToGo'}}));
 }
 /** Double-clicking a trail point goes to its frame. */
 function seekMotionPathTick(tick) {
@@ -2621,7 +2621,7 @@ overlay.addEventListener(
       const geometry = editor.geometry;
       editor.beginCameraDrag({
         indices: rangeFrames(),
-        label: interfaceText("app.camera", {value: camera.kind === "position" ? {messageKey: "app.move"} : camera.kind === "rotation" ? interfaceText("app.rotate") : interfaceText("app.scale")}), labelKey: "app.camera", labelParams: {value: camera.kind === "position" ? {messageKey: "app.move"} : camera.kind === "rotation" ? interfaceText("app.rotate") : interfaceText("app.scale")},
+        label: interfaceText("app.camera", {value: camera.kind === "position" ? {messageKey: "app.move"} : camera.kind === "rotation" ? {messageKey:"app.rotate"} : {messageKey:"app.scale"}}), labelKey: "app.camera", labelParams: {value: camera.kind === "position" ? {messageKey: "app.move"} : camera.kind === "rotation" ? {messageKey:"app.rotate"} : {messageKey:"app.scale"}},
       });
       state.drag = {
         kind: "camera",
@@ -3289,7 +3289,7 @@ overlay.addEventListener("pointerleave", () => {
   state.hoverHandle = null;
   state.hoverCameraHandle = null;
   state.hoverPathPoint = null;
-  overlay.title = "";
+  syncPathTooltip();
   if (!state.drag) overlay.style.cursor = '';
   requestRender();
 });
@@ -4678,7 +4678,7 @@ const actions = {
   "toggle-grid": () => editorSettings.commit({ canvasGrid: !state.settings.canvasGrid }),
   "toggle-motion-paths": () => {
     editorSettings.commit({ motionPaths: !state.motionPaths });
-    if (!state.motionPaths) state.hoverPathPoint = null;
+    if (!state.motionPaths) { state.hoverPathPoint = null; syncPathTooltip(); }
     status(state.motionPaths ? {messageKey: "app.motionPathsOn", messageParams: {}} : {messageKey: "app.motionPathsOff", messageParams: {}});
     requestRender();
   },
@@ -5992,7 +5992,7 @@ async function init() {
       state.motionPaths = next.motionPaths;
       pathControls?.sync();
       canvasGuides?.sync();
-      if (!state.motionPaths) { state.hoverPathPoint = null; overlay.title = ""; pathCache.clear(); }
+      if (!state.motionPaths) { state.hoverPathPoint = null; syncPathTooltip(); pathCache.clear(); }
       if (patch.motionPathFalloffRadius !== undefined || patch.motionPathFalloffShape !== undefined || patch.motionPaths !== undefined) syncPathFalloff();
       appLocalization.setLocale(next.locale);
       blueHandles = null;

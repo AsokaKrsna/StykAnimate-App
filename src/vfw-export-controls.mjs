@@ -1,8 +1,9 @@
 import {presentError, errorText} from './error-presentation.mjs';
-import {clearTranslation, replaceLocalized, messageHTML, appendLocalized, localizedMarkup, localizedText} from './localization-bindings.mjs';
+import {clearTranslation, replaceLocalized, messageHTML, appendLocalized, localizedMarkup, localizedText, localizedAttribute} from './localization-bindings.mjs';
 
 import {messageError} from './localized-error.mjs';
 import {t as interfaceText} from './localization.mjs';
+import english from './locales/en.mjs';
 
 import {getVfwCapabilities, configureVfwCodec} from './vfw-video-export.mjs';
 import {EXPORT_MAX_PIXELS} from './export-sampling.mjs';
@@ -16,9 +17,12 @@ const markup = `<div class="ui-dialog-row"><label class="ui-row-label" for="expo
 <div class="ui-dialog-row"><label class="ui-row-label" for="export-vfw-keyframes" data-i18n="vfwExportControls.keyframes">${messageHTML("vfwExportControls.keyframes", {})}</label><span class="ui-field" title="0 uses the codec default" data-i18n-title="vfwExportControls.message0UsesTheCodecDefault"><span class="ui-field-label" data-i18n="vfwExportControls.every">${messageHTML("vfwExportControls.every", {})}</span><input class="ui-field-input" id="export-vfw-keyframes" type="number" min="0" max="1000000" step="1" value="0" disabled><span class="ui-field-unit" data-i18n="vfwExportControls.frames">frames</span></span></div>
 <div class="ui-dialog-row"><label class="ui-row-label" for="export-vfw-bitrate" data-i18n="vfwExportControls.rate">${messageHTML("vfwExportControls.rate", {})}</label><span class="ui-field" title="0 uses the codec default" data-i18n-title="vfwExportControls.message0UsesTheCodecDefault"><input class="ui-field-input" id="export-vfw-bitrate" type="number" min="0" max="200" step="0.1" value="0" disabled><span class="ui-field-unit" data-i18n="vfwExportControls.mbitS">${messageHTML("vfwExportControls.mbitS", {})}</span></span></div>
 <p class="export-note vfw-status" role="status"><span class="vfw-status-text"></span> <span class="vfw-config-state"></span></p>`;
-const numeric = (element, min, max, label, whole = false) => {
-  if (!element.value.trim()) throw messageError(new Error(''), "errors.exportRequest.enter", {value: label.toLowerCase()});
-  const value = Number(element.value); if (!Number.isFinite(value) || value < min || value > max || (whole && !Number.isInteger(value))) throw messageError(new Error(''), "errors.exportRequest.mustBeFromTo", {label: label, value: whole ? interfaceText("vfwExportControls.aWholeNumber") : '', min: min, max: max}); return value;
+const numeric = (element, min, max, labelKey, whole = false) => {
+  if (!element.value.trim()) throw messageError(new Error(''), "errors.exportRequest.enter", {value:{messageKey:labelKey,diagnosticValue:english[labelKey].toLowerCase()}});
+  const value = Number(element.value);
+  if (!Number.isFinite(value) || value < min || value > max || (whole && !Number.isInteger(value)))
+    throw messageError(new Error(''), "errors.exportRequest.mustBeFromTo", {label:{messageKey:labelKey,diagnosticValue:english[labelKey]}, value:whole ? {messageKey:'vfwExportControls.aWholeNumber',diagnosticValue:english['vfwExportControls.aWholeNumber']} : '', min, max});
+  return value;
 };
 
 /**
@@ -79,9 +83,9 @@ export class VfwExportControls {
       if (this.disposed || generation !== this.generation || this._currentKey() !== key) return;
       if (result.platform && result.platform !== 'win32') { this.element.hidden = true; this.listed = false; if (this.button) this.button.hidden = true; this._setReady(false, interfaceText("vfwExportControls.installedWindowsCodecsAreUnavailableInThisApp")); return; }
       this.loadedKey = key; this.codecs = result.codecs ?? []; replaceLocalized(this.select);
-      for (const codec of this.codecs) { const option = document.createElement('option'); option.value = codec.id; option.textContent = codec.label; option.disabled = !codec.supported; option.title = codec.reason || `${codec.fourcc} · ${codec.provider}`; appendLocalized(this.select, option); }
+      for (const codec of this.codecs) { const option = document.createElement('option'); option.value = codec.id; option.textContent = codec.label; option.disabled = !codec.supported; option.title = codec.reason || `${codec.fourcc} · ${codec.provider}`; if(codec.reasonKey) localizedAttribute(option,'title',codec.reasonKey,codec.reasonParams); appendLocalized(this.select, option); }
       const selected = this.codecs.find(codec => codec.id === previous && codec.supported) ?? this.codecs.find(codec => codec.supported && codec.kind === 'installed') ?? this.codecs.find(codec => codec.supported);
-      if (!selected) { const option = document.createElement('option'); option.value = ''; localizedText(option, "vfwExportControls.noCompatibleCodec", {}); appendLocalized(this.select, option); this.select.value = ''; const reason = result.reason || interfaceText("vfwExportControls.noInstalledCodecAcceptsThisCanvasSize"); this._setStatus(reason); this._setReady(false, reason); return; }
+      if (!selected) { const option = document.createElement('option'); option.value = ''; localizedText(option, "vfwExportControls.noCompatibleCodec", {}); appendLocalized(this.select, option); this.select.value = ''; const reasonKey=result.reasonKey ?? (!result.reason ? 'vfwExportControls.noInstalledCodecAcceptsThisCanvasSize' : undefined),reason = result.reason || interfaceText("vfwExportControls.noInstalledCodecAcceptsThisCanvasSize"); this._setStatus(reason,reasonKey,result.reasonParams); this._setReady(false,reason,reasonKey,result.reasonParams); return; }
       this.select.value = selected.id; this.select.disabled = false; this._selection();
     } catch (error) { if (!this.disposed && generation === this.generation) { this.loadedKey = null; this._setStatus(error); this._setReady(false, errorText(error), error.messageKey, error.messageParams); } }
   }
@@ -108,9 +112,9 @@ export class VfwExportControls {
     if (this.disposed || this.element.hidden) throw messageError(new Error(''), "errors.exportRequest.installedWindowsCodecsAreUnavailableInThisApp", {});
     const codec = this.codecs.find(codec => codec.id === this.select.value);
     if (!codec?.supported || this.loadedKey !== this._currentKey() || this.configuring) throw messageError(new Error(''), "errors.exportRequest.waitForTheInstalledCodecCheckOrChoose", {});
-    return {codecId: codec.id, quality: codec.quality ? numeric(this.quality, 0, 100, interfaceText("vfwExportControls.quality")) / 100 : .9,
-      keyframeEvery: codec.keyframes ? numeric(this.keyframes, 0, 1000000, interfaceText("vfwExportControls.keyframeInterval"), true) : 0,
-      bitrate: codec.dataRate ? Math.round(numeric(this.bitrate, 0, 200, interfaceText("vfwExportControls.bitrate")) * 1000000) : 0,
+    return {codecId: codec.id, quality: codec.quality ? numeric(this.quality, 0, 100, "vfwExportControls.quality") / 100 : .9,
+      keyframeEvery: codec.keyframes ? numeric(this.keyframes, 0, 1000000, "vfwExportControls.keyframeInterval", true) : 0,
+      bitrate: codec.dataRate ? Math.round(numeric(this.bitrate, 0, 200, "vfwExportControls.bitrate") * 1000000) : 0,
       configurationId: this.configurations.get(this._configurationKey())};
   }
   /**

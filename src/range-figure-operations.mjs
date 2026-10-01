@@ -1,3 +1,4 @@
+import {validationLabel} from "./validation-labels.mjs";
 import {messageError} from './localized-error.mjs';
 /** Pure, copy-on-write plans for figure controls applied to native frame ranges.
  * Slots address joins; UIDs identify the same figure across different frames.
@@ -16,11 +17,11 @@ import {animationRotation,reflectAnimationOriginOffset} from './animation-origin
 const owns = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const finite = (value, label) => {
   if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isFinite(Math.fround(value)))
-    throw messageError(new Error(''), "errors.rangeFigureOperations.mustBeFiniteAndWithinTheNativeNumeric", {label: label});
+    throw messageError(new Error(''), "errors.rangeFigureOperations.mustBeFiniteAndWithinTheNativeNumeric", {label: validationLabel(label)});
   return value;
 };
 const integer = (value, min, max, label) => {
-  if (!Number.isInteger(value) || value < min || value > max) throw messageError(new Error(''), "errors.rangeFigureOperations.invalid", {label: label});
+  if (!Number.isInteger(value) || value < min || value > max) throw messageError(new Error(''), "errors.rangeFigureOperations.invalid", {label: validationLabel(label)});
   return value;
 };
 function validateOperation(report, operation) {

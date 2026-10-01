@@ -1,4 +1,4 @@
-const { messageError } = require('./localization.cjs');
+const { messageError, validationLabel } = require('./localization.cjs');
 "use strict";
 
 const fs = require("node:fs/promises");
@@ -92,7 +92,7 @@ const aborted = () =>
   Object.assign(messageError(new Error(''), 'desktop.videoExportService.errors.videoExportCancelled', {}), { name: "AbortError" });
 const integer = (value, min, max, name) => {
   if (!Number.isInteger(value) || value < min || value > max)
-    throw messageError(new Error(''), 'desktop.videoExportService.errors.nameMustBeAnIntegerBetweenMinAndMax', {name: name, min: min, max: max});
+    throw messageError(new Error(''), 'desktop.videoExportService.errors.nameMustBeAnIntegerBetweenMinAndMax', {name: validationLabel(name), min: min, max: max});
   return value;
 };
 const finite = (value, min, max, name) => {
@@ -102,7 +102,7 @@ const finite = (value, min, max, name) => {
     value < min ||
     value > max
   )
-    throw messageError(new Error(''), 'desktop.videoExportService.errors.nameMustBeBetweenMinAndMax', {name: name, min: min, max: max});
+    throw messageError(new Error(''), 'desktop.videoExportService.errors.nameMustBeBetweenMinAndMax', {name: validationLabel(name), min: min, max: max});
   return value;
 };
 const binary = (value) =>

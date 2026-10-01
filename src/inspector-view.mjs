@@ -36,7 +36,7 @@ import {cameraValues} from './editor-camera.mjs';
 import {builderDrawables} from './editor-builder-style.mjs';
 import {branchSegmentIndices} from './editor-builder-branch.mjs';
 import {isBuilderContext} from './builder-aids.mjs';
-import {partName, partGlyph} from './builder-outliner.mjs';
+import {partNameMessage, partGlyph} from './builder-outliner.mjs';
 import {resolveInstanceFigure} from './animation-style.mjs';
 import {ikSection} from './ik-view.mjs';
 import {propertyToggle} from './property-toggle.mjs';
@@ -167,7 +167,7 @@ function contextDescriptor({
   const figure = resolveInstanceFigure(editor.figure, object), joint = editor.selectedJoint;
   const drawingSets = drawingSetsSection(builder ? '' : joinedDrawingSetsView(editor));
   if (!builder && figure.segments.some(segment => segment._stykRig?.spatial?.origin)) {
-    return {kind: 'spatial-rig', target: {name: figure.name || interfaceText("inspectorView.figure"), rename: figureRename}, quick: {context: 'figure'}, scope, sections: [
+    return {kind: 'spatial-rig', target: {name: figure.name || interfaceText("inspectorView.figure"), ...(!figure.name?{nameKey:"inspectorView.figure"}:{}), rename: figureRename}, quick: {context: 'figure'}, scope, sections: [
       range, drawingSets, ...spatialSections(editor, {hotkeyLabel}),
       {id: 'placement', title: interfaceText("inspectorView.placement"), titleKey: "inspectorView.placement", place: 'titled', open: true, hidden: joint >= 0, rows: [{kind: 'grid', rows: [
         number('X', 'root_x', object.root_x, 'px'), number('Y', 'root_y', object.root_y, 'px'), number(interfaceText("inspectorView.scale"), 'scale', object.scale * 100, '%', {min: 0.01, labelKey: "inspectorView.scale", labelParams: {}}),
@@ -205,15 +205,15 @@ export function inspectorView(options) {
 /** Draw keeps drawing-view's own markup, edge to edge, until its tools move to descriptors (M7b). */
 function drawingDescriptor(editor, drawing, number, hotkeyLabel) {
   const o = editor.object, f = editor.figure;
-  const field = (label, key, value, unit, limits = '') => numericField(label, key, number(label, key, value).value, unit, limits);
+  const field = (label, key, value, unit, limits = '',labelKey) => numericField(label, key, number(label, key, value).value, unit, limits,{}, {labelKey});
   const pose = drawing.tool === 'transform' && o ? `<section class="inspector-section"><div class="inspector-title"><span data-i18n="inspectorView.transformDrawing">${messageHTML("inspectorView.transformDrawing", {})}</span></div>${grid(
-    field('X', 'root_x', o.root_x, 'px') + field('Y', 'root_y', o.root_y, 'px') + field(interfaceText("inspectorView.scale"), 'scale', o.scale * 100, '%', 'min="0.01"') +
-    field(interfaceText("inspectorView.angle"), 'rotation', ((o.angles[0] ?? 0) - (f.segments[0]?.angle_rad ?? 0)) * 180 / Math.PI, '°') +
-    field(interfaceText("inspectorView.opacity"), 'figure_opacity', (1 - (o.field28 ?? 0) / 255) * 100, '%', 'min="0" max="100"'))}</section>` : '';
+    field('X', 'root_x', o.root_x, 'px') + field('Y', 'root_y', o.root_y, 'px') + field(interfaceText("inspectorView.scale"), 'scale', o.scale * 100, '%', 'min="0.01"','inspectorView.scale') +
+    field(interfaceText("inspectorView.angle"), 'rotation', ((o.angles[0] ?? 0) - (f.segments[0]?.angle_rad ?? 0)) * 180 / Math.PI, '°','','inspectorView.angle') +
+    field(interfaceText("inspectorView.opacity"), 'figure_opacity', (1 - (o.field28 ?? 0) / 255) * 100, '%', 'min="0" max="100"','inspectorView.opacity'))}</section>` : '';
   const html = drawingInspector(drawing, {numericField, group, grid, heading, hotkeyLabel, esc, propertyToggle}, pose);
   // The panel's title names the tool ("Brush", "Fill"), with its glyph; drawing-view's own heading row steps aside.
-  const [, name = interfaceText("inspectorView.drawing"), glyph = 'brush'] = DRAWING_TOOLS.find(entry => entry[0] === drawing.tool) ?? [];
-  return {kind: 'drawing', target: {name, glyph}, sections: [{id: 'drawing', bare: true, rows: [{kind: 'markup', html}]}]};
+  const toolTuple=DRAWING_TOOLS.find(entry => entry[0] === drawing.tool),nameKey=toolTuple?tupleMessages(toolTuple)[1].key:"inspectorView.drawing",name=interfaceText(nameKey),glyph=toolTuple?.[2]??'brush';
+  return {kind: 'drawing', target: {name, nameKey, glyph}, sections: [{id: 'drawing', bare: true, rows: [{kind: 'markup', html}]}]};
 }
 
 function sceneDescriptor(editor, number, propertyState) {
@@ -223,7 +223,7 @@ function sceneDescriptor(editor, number, propertyState) {
   const color = typeof raw === 'string' && /^#[0-9a-f]{6}$/i.test(raw) ? raw : `#${(raw & 0xffffff).toString(16).padStart(6, '0')}`;
   const name = background?.name || interfaceText("inspectorView.white"), figures = editor.frame.objects.length, frames = editor.totalTicks ?? report.keyframes.length;
   const scopes = editor._movieclipScopes ?? [];
-  return {kind: 'scene', target: {name: scopes.length ? scopes.map(scope => scope.name).join(' › ') : interfaceText("inspectorView.scene"), glyph: scopes.length ? 'frame' : 'scene'}, sections: [
+  return {kind: 'scene', target: {name: scopes.length ? scopes.map(scope => scope.name).join(' › ') : interfaceText("inspectorView.scene"), ...(!scopes.length?{nameKey:'inspectorView.scene'}:{}), glyph: scopes.length ? 'frame' : 'scene'}, sections: [
     {id: 'summary', rows: [{kind: 'meta', text: interfaceText("inspectorView.s", {value: plural(figures, 'figure'), value2: plural(frames, 'frame'), value3: num(frames / report.fps)}), textKey: "inspectorView.s", textParams: {value: plural(figures, 'figure'), value2: plural(frames, 'frame'), value3: num(frames / report.fps)}}]},
     {id: 'canvas', title: interfaceText("inspectorView.canvas"), titleKey: "inspectorView.canvas", rows: [{kind: 'grid', rows: [
       number(interfaceText("inspectorView.width"), 'canvas_width', report.canvas_width, 'px', {min: 1, max: 16384, labelKey: "inspectorView.width", labelParams: {}}), number(interfaceText("inspectorView.height"), 'canvas_height', report.canvas_height, 'px', {min: 1, max: 16384, labelKey: "inspectorView.height", labelParams: {}}),
@@ -247,7 +247,7 @@ function sceneDescriptor(editor, number, propertyState) {
 function cameraDescriptor(editor, number) {
   const c = cameraValues((editor.evaluatedFrame || editor.frame).camera), motion = editor._cameraInspectorTab === 'motion';
   const selected = Boolean(editor.selectedObjects?.length ?? editor.object);
-  return {kind: 'camera', target: {name: 'Camera', glyph: 'camera'}, quick: {context: 'camera'}, sections: [
+  return {kind: 'camera', target: {name: interfaceText('inspectorView.camera'), nameKey:'inspectorView.camera', glyph: 'camera'}, quick: {context: 'camera'}, sections: [
     {id: 'preview', title: interfaceText("inspectorView.preview"), titleKey: "inspectorView.preview", actions: [{action: 'camera-guides', icon: 'grid', label: interfaceText("inspectorView.guides"), labelKey: "inspectorView.guides", tip: interfaceText("inspectorView.showCompositionGuides"), tipKey: "inspectorView.showCompositionGuides", pressed: true}], rows: [
       {kind: 'preview', label: interfaceText("inspectorView.liveCameraOutput"), labelKey: "inspectorView.liveCameraOutput", media: {tag: 'canvas', key: 'camera-monitor', label: interfaceText("inspectorView.liveCameraOutput"), labelKey: "inspectorView.liveCameraOutput", data: {'camera-monitor': true}},
         caption: [`${editor.report.canvas_width} × ${editor.report.canvas_height}`, {text: interfaceText("inspectorView.zoom2", {value: num(100 / c.scale)}), textKey: "inspectorView.zoom2", textParams: {value: num(100 / c.scale)}, data: {'camera-magnification': true}}]},
@@ -279,14 +279,14 @@ function cameraDescriptor(editor, number) {
 function frameDescriptor(editor, number) {
   if (editor.report._styk?.layerSheet) {
     const track = editor.report._styk.layerSheet.tracks[editor.activeLayerId], {key, next} = sheetKeyAt(track, editor.tick);
-    return {kind: 'frame', target: {name: `Frame ${editor.tick + 1}`}, sections: [
+    return {kind: 'frame', target: {name: interfaceText('filmstrip.card', {frame:editor.tick + 1}), nameKey:'filmstrip.card', nameParams:{frame:editor.tick + 1}}, sections: [
       {id: 'exposure', title: editor.getLayer(editor.activeLayerId)?.name ?? interfaceText("inspectorView.layer"),
         actions: [{action: 'add-frame', icon: glyph('frame-plus', 'plus'), label: interfaceText("inspectorView.insertKeyframeF6"), labelKey: "inspectorView.insertKeyframeF6", tip: interfaceText("inspectorView.addFrame"), tipKey: "inspectorView.addFrame"}], rows: [{kind: 'grid', rows: [
           number(interfaceText("inspectorView.exposure"), 'duration', (next?.tick ?? track?.end ?? editor.tick + 1) - (key?.tick ?? editor.tick), 'frames', {min: 1, max: 65535, labelKey: "inspectorView.exposure", labelParams: {}}),
         ]}]},
     ]};
   }
-  return {kind: 'keyframe', target: {name: interfaceText('inspectorView.keyframe', {frame: (editor.frameIndex ?? 0) + 1})}, sections: [
+  return {kind: 'keyframe', target: {name: interfaceText('inspectorView.keyframe', {frame: (editor.frameIndex ?? 0) + 1}), nameKey:'inspectorView.keyframe', nameParams:{frame:(editor.frameIndex ?? 0) + 1}}, sections: [
     {id: 'timing', title: interfaceText("inspectorView.timing"), titleKey: "inspectorView.timing", rows: [{kind: 'grid', rows: [number(interfaceText("inspectorView.duration"), 'duration', editor.frame.duration_raw ?? 1, 'ticks', {min: 0, max: 65535, labelKey: "inspectorView.duration", labelParams: {}})]}]},
   ]};
 }
@@ -312,7 +312,7 @@ function selectionDescriptor(editor, number, {bounds: b, selectionCount, range, 
   const joined = objects.some(item => item.join) || editor.frame.objects.some(part => part.join && objects.some(item => item.object_slot === part.join.target_object_slot));
   const align = [messageTuple(['left', 'align-left', interfaceText("inspectorView.alignLeft")], {2: {key: "inspectorView.alignLeft", params: {}}}), messageTuple(['center-x', 'align-horizontal-center', interfaceText("inspectorView.alignCenter")], {2: {key: "inspectorView.alignCenter", params: {}}}), messageTuple(['right', 'align-right', interfaceText("inspectorView.alignRight")], {2: {key: "inspectorView.alignRight", params: {}}}),
     messageTuple(['top', 'align-top', interfaceText("inspectorView.alignTop")], {2: {key: "inspectorView.alignTop", params: {}}}), messageTuple(['center-y', 'align-vertical-center', interfaceText("inspectorView.alignMiddle")], {2: {key: "inspectorView.alignMiddle", params: {}}}), messageTuple(['bottom', 'align-bottom', interfaceText("inspectorView.alignBottom")], {2: {key: "inspectorView.alignBottom", params: {}}})];
-  return {kind: 'figures', target: {name: interfaceText('inspectorView.selectedFigures', {count: selectionCount})}, quick: {context: 'figures'}, scope, sections: [
+  return {kind: 'figures', target: {name: interfaceText('inspectorView.selectedFigures', {count: selectionCount}), nameKey:'inspectorView.selectedFigures', nameParams:{count:selectionCount}}, quick: {context: 'figures'}, scope, sections: [
     range,
     {id: 'selection', title: interfaceText("inspectorView.selection"), titleKey: "inspectorView.selection", actions: [
       {action: 'rotate', label: interfaceText("inspectorView.rotate15"), labelKey: "inspectorView.rotate15", text: true, tip: interfaceText("inspectorView.rotateTheSelection15"), tipKey: "inspectorView.rotateTheSelection15"}, {action: 'center', label: interfaceText("inspectorView.center"), labelKey: "inspectorView.center", text: true, tip: interfaceText("inspectorView.centerSelection"), tipKey: "inspectorView.centerSelection"},
@@ -340,7 +340,7 @@ function selectionDescriptor(editor, number, {bounds: b, selectionCount, range, 
 /** A fill picked in the builder: its colour, delete, opacity, surface and order. */
 function fillDescriptor(editor, figure, number) {
   const index = editor.selectedPolygonIndex, polygon = figure.polyfills[index];
-  return {kind: 'fill', target: {name: `Fill ${index + 1}`, glyph: 'polygon'}, sections: [{id: 'fill', title: interfaceText("inspectorView.fill"), titleKey: "inspectorView.fill", rows: [
+  return {kind: 'fill', target: {name: interfaceText('inspectorView.fillNumber', {index:index + 1}), nameKey:'inspectorView.fillNumber', nameParams:{index:index + 1}, glyph: 'polygon'}, sections: [{id: 'fill', title: interfaceText("inspectorView.fill"), titleKey: "inspectorView.fill", rows: [
     {kind: 'list-row', label: interfaceText("inspectorView.polygon", {value: index + 1}), labelKey: "inspectorView.polygon", labelParams: {value: index + 1}, lead: 'polygon', actions: [
       {kind: 'swatch', picker: 'native', label: interfaceText("inspectorView.fillColor"), labelKey: "inspectorView.fillColor", value: hex(displayedColor(editor.report, figure, editor.object, polygon.color_rgb)), data: {'polygon-color': index}},
       {icon: 'trash', label: interfaceText("inspectorView.deleteFill"), labelKey: "inspectorView.deleteFill", data: {'delete-polygon': index}},
@@ -353,10 +353,10 @@ function fillDescriptor(editor, figure, number) {
 
 /** One fill of the figure: its row (colour, delete), its opacity and order, and the four order steps; keyed by data-polygon-index. */
 function fillGroup(editor, figure, object, index, order) {
-  const polygon = figure.polyfills[index], name = `Polygon ${index + 1}`;
-  return {kind: 'group', label: name, data: {'polygon-index': index}, rows: [
-    {kind: 'list-row', label: name, lead: 'polygon', actions: [
-      {kind: 'swatch', picker: 'native', value: hex(displayedColor(editor.report, figure, object, polygon.color_rgb)), label: interfaceText("inspectorView.color", {name: name}), labelKey: "inspectorView.color", labelParams: {name: name}, data: {'polygon-color': index}},
+  const polygon = figure.polyfills[index], nameMessage={messageKey:"inspectorView.polygon",messageParams:{value:index + 1}}, name=interfaceText(nameMessage.messageKey,nameMessage.messageParams);
+  return {kind: 'group', label: name, labelKey:nameMessage.messageKey,labelParams:nameMessage.messageParams, data: {'polygon-index': index}, rows: [
+    {kind: 'list-row', label: name, labelKey:nameMessage.messageKey,labelParams:nameMessage.messageParams, lead: 'polygon', actions: [
+      {kind: 'swatch', picker: 'native', value: hex(displayedColor(editor.report, figure, object, polygon.color_rgb)), label: interfaceText("inspectorView.color", {name: nameMessage}), labelKey: "inspectorView.color", labelParams: {name: nameMessage}, data: {'polygon-color': index}},
       {icon: 'trash', label: interfaceText("inspectorView.deletePolygon", {value: index + 1}), labelKey: "inspectorView.deletePolygon", labelParams: {value: index + 1}, data: {'delete-polygon': index}},
     ]},
     {kind: 'grid', rows: [
@@ -391,7 +391,7 @@ function figureDescriptor(editor, figure, number, {range, scope, drawingSets, sp
     number(interfaceText("inspectorView.angle"), 'rotation', degrees((object.angles[0] ?? 0) - (figure.segments[0]?.angle_rad ?? 0)), '°', {labelKey: "inspectorView.angle", labelParams: {}}),
     number(interfaceText("inspectorView.scale"), 'scale', object.scale * 100, '%', {min: 0.01, labelKey: "inspectorView.scale", labelParams: {}}),
   ]}]};
-  return {kind, target: {name: figure.name || interfaceText("inspectorView.figure"), glyph: kind === 'text' ? 'text' : kind === 'image' ? 'image' : 'person', rename: figureRename},
+  return {kind, target: {name: figure.name || interfaceText("inspectorView.figure"), ...(!figure.name?{nameKey:"inspectorView.figure"}:{}), glyph: kind === 'text' ? 'text' : kind === 'image' ? 'image' : 'person', rename: figureRename},
     quick: {context: builder ? 'build' : kind}, scope, sections: [
       range, drawingSets, ...spatial,
       {id: 'text', title: interfaceText("inspectorView.text"), titleKey: "inspectorView.text", hidden: kind !== 'text' && !figure.text_assets?.some(asset => asset.glyphs?.length), rows: [{kind: 'actions', items: [
@@ -417,7 +417,8 @@ function figureDescriptor(editor, figure, number, {range, scope, drawingSets, sp
       {id: 'colours', title: interfaceText("inspectorView.colours"), titleKey: "inspectorView.colours", place: 'titled', hidden: !whole, rows: [
         {kind: 'swatches', label: interfaceText("inspectorView.figureColorPalette"), labelKey: "inspectorView.figureColorPalette", hidden: !palette.length, items: palette.slice(paletteStart, paletteStart + 32).map(entry => ({
           picker: 'paint', value: entry.color, tip: entry.color.toUpperCase(), data: {'palette-color': entry.color},
-          label: interfaceText("inspectorView.replaceSegments", {value: entry.color.toUpperCase(), length: entry.segments.length, value2: entry.polygons.length ? `, ${entry.polygons.length} fills` : ''}), labelKey: "inspectorView.replaceSegments", labelParams: {value: entry.color.toUpperCase(), length: entry.segments.length, value2: entry.polygons.length ? `, ${entry.polygons.length} fills` : ''},
+          label: interfaceText(entry.polygons.length ? 'inspectorView.replaceColorSegmentsAndFills' : 'inspectorView.replaceColorSegments', {color:entry.color.toUpperCase(), segments:{messageKey:'counts.segments', messageParams:{count:entry.segments.length}}, fills:{messageKey:'counts.fills', messageParams:{count:entry.polygons.length}}}),
+          labelKey: entry.polygons.length ? 'inspectorView.replaceColorSegmentsAndFills' : 'inspectorView.replaceColorSegments', labelParams: {color:entry.color.toUpperCase(), segments:{messageKey:'counts.segments', messageParams:{count:entry.segments.length}}, fills:{messageKey:'counts.fills', messageParams:{count:entry.polygons.length}}},
         }))},
         palette.length > 32 && {kind: 'pager', label: interfaceText("inspectorView.colourPages"), labelKey: "inspectorView.colourPages", text: pageText(paletteStart, 32, palette.length),
           previous: {action: 'palette-previous', icon: 'chevron-left', label: interfaceText("inspectorView.previousColors"), labelKey: "inspectorView.previousColors", disabled: paletteStart === 0},
@@ -462,8 +463,11 @@ function jointDescriptor(editor, figure, segment, number, {range, scope, drawing
   const solid = paint.type === 'solid';
   const position = object.len_flag ? object.lengths[joint] : segment.length;
   // In Build a joint is a part, named as Structure names it ("Line 4"); in Animate it is a joint.
-  const own = builder ? partName(segment) : segment.name || `Joint ${segment.segment_id}`;
-  const title = selected.size > 1 ? `${selected.size} ${builder ? 'parts' : 'segments'}` : editor.branchSelected ? `Branch from ${own}` : own;
+  const ownMessage = builder ? partNameMessage(segment) : segment.name || {messageKey:'builderSurfaceUi.jointNumber',messageParams:{id:segment.segment_id}};
+  const titleMessage = selected.size > 1 ? {messageKey:builder?'counts.parts':'counts.segments',messageParams:{count:selected.size}}
+    : editor.branchSelected ? {messageKey:'inspectorView.branchFrom',messageParams:{name:ownMessage}} : ownMessage;
+  const title = typeof titleMessage==='string'?titleMessage:interfaceText(titleMessage.messageKey,titleMessage.messageParams);
+  const titleBinding = typeof titleMessage==='string'?{}:{nameKey:titleMessage.messageKey,nameParams:titleMessage.messageParams};
   const staticSwitch = {kind: 'field-switch', id: 'static-joint', label: interfaceText("inspectorView.static"), labelKey: "inspectorView.static", checked: isStatic(segment), tip: interfaceText("inspectorView.doesNotTurnWithItsParent"), tipKey: "inspectorView.doesNotTurnWithItsParent"};
   const colour = {kind: 'color', picker: 'paint', id: 'segment-color', label: interfaceText("inspectorView.colour"), labelKey: "inspectorView.colour", description: interfaceText("inspectorView.segmentColor"), descriptionKey: "inspectorView.segmentColor", value: solid ? hex(paint.stops[0].color) : undefined,
     paint: paintCSS(paint), caption: solid ? undefined : interfaceText('inspectorView.valueValue1Gradient', {value: {messageKey: 'colorPicker.' + paint.type}, value1: ''})};
@@ -504,7 +508,7 @@ function jointDescriptor(editor, figure, segment, number, {range, scope, drawing
     const branchParts = builderBranch && single && !editor.branchSelected ? branchSegmentIndices(figure, joint).length : 0;
     const branchScope = branchParts > 1 && !scope
       ? {label: interfaceText("inspectorView.editingTheWholeBranch", {value: plural(branchParts, 'part')}), labelKey: "inspectorView.editingTheWholeBranch", labelParams: {value: plural(branchParts, 'part')}, stop: {action: 'toggle-builder-branch', label: interfaceText("inspectorView.stop"), labelKey: "inspectorView.stop", tip: interfaceText("inspectorView.editOnlyThisPartB"), tipKey: "inspectorView.editOnlyThisPartB"}} : null;
-    return {kind: 'joint', target: {name: title, glyph: part ? 'link' : partGlyph(segment), rename: single && !editor.branchSelected && !part ? partRename : undefined},
+    return {kind: 'joint', target: {name: title, ...titleBinding, glyph: part ? 'link' : partGlyph(segment), rename: single && !editor.branchSelected && !part ? partRename : undefined},
       quick: {context: 'part'}, scope: scope ?? branchScope, sections: [
         range, drawingSets, sections.connector, sections.slider,
         {id: 'style', title: interfaceText("inspectorView.style"), titleKey: "inspectorView.style", hidden: slider, rows: [{kind: 'grid', rows: [{...colour, span: 2}, width, alpha, shapeSelect]}]},
@@ -520,7 +524,7 @@ function jointDescriptor(editor, figure, segment, number, {range, scope, drawing
         ...rigSections(editor, {hidden: slider}),
       ]};
   }
-  return {kind: 'joint', target: {name: title, glyph: part ? 'link' : 'nodes'}, quick: {context: 'joint'}, scope, sections: [
+  return {kind: 'joint', target: {name: title, ...titleBinding, glyph: part ? 'link' : 'nodes'}, quick: {context: 'joint'}, scope, sections: [
     range, drawingSets, ...spatial, sections.connector, sections.slider, sections.joint, sections.ik,
     {id: 'style', title: interfaceText("inspectorView.style"), titleKey: "inspectorView.style", hidden: slider, rows: [
       {kind: 'grid', rows: [

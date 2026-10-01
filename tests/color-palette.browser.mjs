@@ -75,7 +75,7 @@ try{
   check('+N opens the brush picker with every project colour',await picker.locator('[data-palette-swatch]').count()===10);
   await page.screenshot({path:`${output}/picker-draw.png`,clip:await picker.boundingBox()});
   await picker.locator('[data-palette-view="recent"]').click();await frame();
-  check('choosing Recent in the picker switches the rail too',await page.locator('.drawing-quickbar .draw-quick-swatches').getAttribute('aria-label')==='Recent colors');
+  check('choosing Recent in the picker switches the rail too',await page.locator('.drawing-quickbar .draw-quick-swatches').getAttribute('aria-label')===await page.evaluate(()=>styk.localization.t('colorPicker.recent')));
   await picker.locator('[data-palette-view="project"]').click();
   await page.keyboard.press('Escape');
 
@@ -97,7 +97,19 @@ try{
   await picker.locator('[data-palette-menu]').click();await picker.locator('[data-palette-new]').click();
   check('New palette asks for a name, suggested and selected',await picker.locator('[data-palette-name]').inputValue()==='My palette'
     &&await page.evaluate(()=>document.activeElement?.matches('[data-palette-name]')));
-  await page.keyboard.type('Skin tones');await page.keyboard.press('Enter');
+  await picker.locator('[data-palette-name]').fill('Skin tones');
+  await page.evaluate(()=>{
+    window.paletteDraft=document.querySelector('[data-palette-name]');paletteDraft.setSelectionRange(2,5);
+    window.paletteTitle=document.querySelector('.paint-picker header strong');
+    window.paletteFormTitle=document.querySelector('.paint-palette-form label span');
+    styk.localization.localization.setPseudo('rtl');
+  });
+  check('changing the language updates the open picker and palette form while preserving its authored name draft',await page.evaluate(()=>
+    paletteDraft===document.querySelector('[data-palette-name]')&&document.activeElement===paletteDraft&&paletteDraft.value==='Skin tones'&&paletteDraft.selectionStart===2&&paletteDraft.selectionEnd===5
+    &&paletteTitle===document.querySelector('.paint-picker header strong')&&paletteTitle.textContent===styk.localization.t('drawingController.color')
+    &&paletteFormTitle.textContent===styk.localization.t('colorPicker.newPalette')));
+  await page.evaluate(()=>styk.localization.localization.setPseudo(null));
+  await page.keyboard.press('Enter');
   check('the new palette is shown, empty, with its name on the switch',(await picker.locator('[data-palette-menu]').textContent()).trim()==='Skin tones'
     &&await picker.locator('.paint-palette-empty').count()===1&&!await picker.locator('[data-palette-add]').isDisabled());
   await picker.locator('[data-hex]').fill('F1C27D');await picker.locator('[data-hex]').press('Enter');
@@ -105,7 +117,7 @@ try{
   await picker.locator('[data-hex]').fill('C68642');await picker.locator('[data-hex]').press('Enter');
   await picker.locator('[data-palette-add]').click();
   check('+ saves colours to the personal palette, not the project',await picker.locator('[data-palette-swatch]').count()===2
-    &&(await project()).length===10&&await picker.locator('[data-palette-add]').getAttribute('title')==='#C68642 is in Skin tones');
+    &&(await project()).length===10&&await picker.locator('[data-palette-add]').getAttribute('title')===await page.evaluate(()=>styk.localization.t('colorPicker.colorAlreadyInPalette',{color:'#C68642',name:'Skin tones'})));
   await page.screenshot({path:`${output}/picker-personal.png`,clip:await picker.boundingBox()});
   await picker.locator('[data-palette-menu]').click();
   await page.screenshot({path:`${output}/picker-personal-menu.png`,clip:await picker.boundingBox()});

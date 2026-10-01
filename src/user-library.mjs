@@ -304,7 +304,20 @@ export class UserLibrary {
     if (pub) card.dataset.publicId = item.id; else card.dataset.libraryPath = item.path;
     if (item.kind === 'folder') card.dataset.libraryFolder = item.path;
     card.setAttribute('role', 'option'); card.setAttribute('aria-selected', 'false'); localizedAttribute(card, 'aria-label', 'userLibrary.assetLabel', {name:item.name, kind:{messageKey:KIND_KEYS[item.kind]??'userLibrary.figure'}});
-    localizedAttribute(card, "title", (item.kind === 'folder' ? 'userLibrary.nameDoubleClickToOpenOrDropAssetsHere' : (pub ? 'userLibrary.nameValue1Value2DoubleClickToInsertOrDrag' : 'userLibrary.nameDoubleClickToInsertOrDragOntoThe')), (item.kind === 'folder' ? {name: item.name} : (pub ? {name: item.name, value1: item.author ? ` by ${item.author}` : '', value2: item.description ? `: ${item.description}` : ''} : {name: item.name, value1: item.kind === 'movieclip' ? interfaceText("userLibrary.hoverToPlay2") : ''})));
+    let titleKey, titleParams;
+    if (item.kind === 'folder') {
+      titleKey = 'userLibrary.nameDoubleClickToOpenOrDropAssetsHere'; titleParams = {name:item.name};
+    } else if (pub && item.author) {
+      titleKey = 'userLibrary.publicAssetByAuthor';
+      titleParams = {name:item.name, author:item.author, description:item.description ? `: ${item.description}` : ''};
+    } else if (pub) {
+      titleKey = 'userLibrary.nameValue1Value2DoubleClickToInsertOrDrag';
+      titleParams = {name:item.name, value1:'', value2:item.description ? `: ${item.description}` : ''};
+    } else {
+      titleKey = 'userLibrary.nameDoubleClickToInsertOrDragOntoThe';
+      titleParams = {name:item.name, value1:item.kind === 'movieclip' ? {messageKey:'userLibrary.hoverToPlay2'} : ''};
+    }
+    localizedAttribute(card, 'title', titleKey, titleParams);
     const badge = ['movieclip', 'set'].includes(item.kind) ? `<span class="library-clip-badge" title="${label(item)}" ${messageAttributes(KIND_KEYS[item.kind]??"userLibrary.figure",{},"title")}>${icon(item.kind === 'movieclip' ? 'play' : 'duplicate')}</span>` : '';
     const clip = item.kind === 'movieclip' && !pub ? `<span class="library-preview-hint" data-i18n="userLibrary.hoverToPlay">${messageHTML("userLibrary.hoverToPlay", {})}</span><span class="library-preview-progress"></span>` : '';
     localizedMarkup(card, `<div class="library-thumbnail">${item.kind === 'folder' ? folderIcon : '<span class="library-preview-loading"></span>'}${badge}${clip}</div><div class="library-card-info"><span class="library-name">${esc(item.name)}</span><span class="library-kind">${messageHTML(KIND_KEYS[item.kind]??"userLibrary.figure")}</span></div><button type="button" class="library-more" tabindex="-1" aria-label="Actions for ${esc(item.name)}" aria-haspopup="menu" ${messageAttributes("userLibrary.actionsFor", {name: item.name}, "aria-label")}>${icon('more')}</button>`);
@@ -494,7 +507,7 @@ export class UserLibrary {
       // The library keeps PNG previews; the website's posters are WebP, so the poster is converted here.
       const thumbnail = await pngThumbnail(this.thumbnails.get(`public:${item.id}:${item.sha256}`) ?? await this.desktop.getPublicLibraryPreview(item.id));
       const result = await this.desktop.savePublicLibraryAsset({id: item.id, folder: this.folder, thumbnail});
-      this.say({messageKey:"userLibrary.notice.savedTo2",messageParams:{name: item.name, value1: this.folder ? {messageKey:'userLibrary.folderLocation',messageParams:{folder:this.folder.split('/').join(' › ')}} : interfaceText("userLibrary.myLibrary")}});
+      this.say({messageKey:"userLibrary.notice.savedTo2",messageParams:{name: item.name, value1: this.folder ? {messageKey:'userLibrary.folderLocation',messageParams:{folder:this.folder.split('/').join(' › ')}} : {messageKey:'userLibrary.myLibrary'}}});
       return result;
     } finally { this.busy = false; this.syncSelection(); }
   }

@@ -1,3 +1,4 @@
+import {validationLabel} from "./validation-labels.mjs";
 import {messageError} from './localized-error.mjs';
 /** Native Pivot figure authoring. Definition edits clone only the reusable figure. */
 import {validateScene} from './pivot/model.mjs';
@@ -30,7 +31,7 @@ export function segmentBranchIndices(segments, handleId) {
 }
 const finite = (value, label, minimum = -Infinity, maximum = Infinity) => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum || value > maximum)
-    throw messageError(new Error(''), "errors.editorBuilder.mustBeAFiniteNumberBetweenAnd", {label: label, minimum: minimum, maximum: maximum});
+    throw messageError(new Error(''), "errors.editorBuilder.mustBeAFiniteNumberBetweenAnd", {label: validationLabel(label), minimum: minimum, maximum: maximum});
   return value;
 };
 const rgb = value => {

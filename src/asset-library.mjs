@@ -1,4 +1,4 @@
-import {replaceLocalized, localizedMarkup, messageHTML, appendLocalized, localizedAttribute, localizedText} from './localization-bindings.mjs';
+import {replaceLocalized, localizedMarkup, messageHTML, appendLocalized, localizedAttribute, localizedText, clearTranslation, messageAttributes} from './localization-bindings.mjs';
 import {messageError} from './localized-error.mjs';
 import {t as interfaceText} from './localization.mjs';
 
@@ -16,14 +16,11 @@ const MAX_POLYGONS = 128;
 const MAX_IMAGE_PIXELS = 2 * 1024 * 1024;
 const MAX_TOTAL_IMAGE_PIXELS = 4 * 1024 * 1024;
 const MAX_PATH_CHARS = 160000;
-const nameOf = (figure) =>
-  String(figure.name || `Figure ${figure.figure_type_id}`);
-const kindOf = (figure) =>
-  figure._styk?.movieclip ? interfaceText("assetLibrary.movieclip") : figure.text_assets?.length
-    ? "Text"
-    : figure.image_assets?.length
-      ? interfaceText("assetLibrary.image")
-      : interfaceText("assetLibrary.figure");
+const nameMessage=figure=>figure.name||{messageKey:'assetLibrary.figureNumber',messageParams:{id:String(figure.figure_type_id)}};
+const nameOf=figure=>String(figure.name||interfaceText('assetLibrary.figureNumber',{id:String(figure.figure_type_id)}));
+// Canonical preview kinds never depend on the interface language.
+const kindOf=figure=>figure._styk?.movieclip?'Movieclip':figure.text_assets?.length?'Text':figure.image_assets?.length?'Image':'Figure';
+const kindMessage=kind=>({messageKey:{Movieclip:'assetLibrary.movieclip',Text:'inspectorView.text',Image:'assetLibrary.image',Figure:'assetLibrary.figure'}[kind]});
 const defaultUrl = (asset) =>
   asset?.asset_url ||
   asset?.data_url ||
@@ -217,8 +214,10 @@ export class AssetLibrary {
   }
 
   filter() {
+    // Keep translated kind searches while preview classification stays canonical.
+    const kinds = this.query && new Map(['Movieclip', 'Text', 'Image', 'Figure'].map(kind => [kind, interfaceText(kindMessage(kind).messageKey).toLocaleLowerCase()]));
     this.filtered = this.query
-      ? this.records.filter((record) => record.search.includes(this.query))
+      ? this.records.filter((record) => record.search.includes(this.query) || kinds.get(record.kind).includes(this.query))
       : this.records;
     this.spacer.style.height = `${this.filtered.length * ROW_HEIGHT}px`;
     this.empty.hidden = this.filtered.length > 0;
@@ -258,11 +257,11 @@ export class AssetLibrary {
       row.dataset.index = String(index);
       row.setAttribute("aria-posinset", String(index + 1));
       row.setAttribute("aria-setsize", String(this.filtered.length));
-      localizedAttribute(row, "aria-label", "assetLibrary.add", {name: record.name, value: record.kind.toLowerCase(), id: record.id});
+      localizedAttribute(row, "aria-label", "assetLibrary.add", {name:nameMessage(record.figure),value:kindMessage(record.kind),id:record.id});
       row.setAttribute("aria-selected", String(record.id === this.selectedId));
       row.tabIndex = index === this.activeIndex ? 0 : -1;
-      localizedAttribute(row, "title", "assetLibrary.add2", {name: record.name, id: record.id});
-      row.querySelector(".styk-asset-name").textContent = record.name;
+      localizedAttribute(row, "title", "assetLibrary.add2", {name:nameMessage(record.figure),id:record.id});
+      const name=row.querySelector(".styk-asset-name");if(record.figure.name){clearTranslation(name);name.textContent=record.name;}else localizedText(name,"assetLibrary.figureNumber",{id:record.id});
       localizedText(row.querySelector('.styk-asset-detail'), 'counts.segments', {count: record.segmentCount});
       const target = row.querySelector(".styk-asset-preview");
       const cached = this.previews.get(record.id);
@@ -466,7 +465,7 @@ export class AssetLibrary {
     const kind = kindOf(figure);
     span.className = "styk-asset-fallback";
     span.title = reason;
-    localizedMarkup(span, `${icon(kind === "Text" ? "text" : kind === "Image" ? "image" : "nodes")}<small>${escapeHTML(kind)}</small>`);
+    localizedMarkup(span, `${icon(kind === "Text" ? "text" : kind === "Image" ? "image" : "nodes")}<small ${messageAttributes(kindMessage(kind).messageKey)}>${escapeHTML(interfaceText(kindMessage(kind).messageKey))}</small>`);
     return span;
   }
 

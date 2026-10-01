@@ -1,4 +1,4 @@
-import {appendLocalized} from './localization-bindings.mjs';
+import {appendLocalized, localizedAttribute, messageAttributes} from './localization-bindings.mjs';
 import {t as interfaceText} from './localization.mjs';
 /** Krita-style slider fields for drawing settings: a filled bar showing the
  * label and value. Pressing or dragging sets the value (sizes on a log
@@ -45,10 +45,11 @@ const shownAt=(key,f)=>{const d=SLIDERS[key];f=clamp(f,0,1);const v=d.log?Math.e
 const round=(key,v)=>{const d=SLIDERS[key];if(d.integer)return Math.round(v);if(d.decimals)return Math.round(v*10**d.decimals)/10**d.decimals;if(d.log)return v<10?Math.round(v*10)/10:Math.round(v);return Math.round(v);};
 export const formatSlider=(key,shown)=>{const d=SLIDERS[key];const n=d.decimals?shown.toFixed(d.decimals):d.log&&shown<10?shown.toFixed(1).replace(/\.0$/,''):String(Math.round(shown));return d.unit==='°'?n+'°':d.unit?`${n} ${d.unit}`:n;};
 /** One slider field; `compact` omits the label for the quick bar's tight rows. */
-export function sliderMarkup(key,value,{label,compact=false,title}={}){
+export function sliderMarkup(key,value,{label,labelKey,compact=false,title}={}){
   const d=SLIDERS[key];if(!d)return '';
-  const shown=displayValue(key,value),pct=(fraction(key,shown)*100).toFixed(2),name=label??d.label;
-  return `<div class="draw-slider${compact?' is-compact':''}" data-draw-slider="${key}" role="slider" tabindex="0" aria-label="${name}" aria-valuemin="${d.min}" aria-valuemax="${d.max}" aria-valuenow="${shown}" aria-valuetext="${formatSlider(key,shown)}" title="${title??`${name} · drag, arrow keys or double-click to type`}"><span class="draw-slider-fill" style="width:${pct}%"></span><span class="draw-slider-label">${name}</span><span class="draw-slider-value">${formatSlider(key,shown)}</span></div>`;
+  const shown=displayValue(key,value),pct=(fraction(key,shown)*100).toFixed(2),nameKey=labelKey??(label===undefined?d.labelKey:undefined),name=nameKey?interfaceText(nameKey):label,
+    nameMessage=nameKey?{messageKey:nameKey}:name;
+  return `<div class="draw-slider${compact?' is-compact':''}" data-draw-slider="${key}" role="slider" tabindex="0" aria-label="${name}" ${nameKey?messageAttributes(nameKey,{},'aria-label'):''} aria-valuemin="${d.min}" aria-valuemax="${d.max}" aria-valuenow="${shown}" aria-valuetext="${formatSlider(key,shown)}" title="${title??interfaceText('drawingSliders.interactionHint',{name:nameMessage})}" ${title===undefined?messageAttributes('drawingSliders.interactionHint',{name:nameMessage},'title'):''}><span class="draw-slider-fill" style="width:${pct}%"></span><span class="draw-slider-label" ${nameKey?messageAttributes(nameKey):''}>${name}</span><span class="draw-slider-value">${formatSlider(key,shown)}</span></div>`;
 }
 /** Refresh every slider for `key` to the setting value. */
 export function refreshSliders(key,value,root=document){
@@ -90,7 +91,7 @@ export function installDrawingSliders(root,{get,set,end,signal,wheel=false}){
   root.addEventListener('dblclick',event=>{const el=event.target.closest?.('[data-draw-slider]');if(el)edit(el);},{signal});
   function edit(el){
     const key=el.dataset.drawSlider,d=SLIDERS[key],value=el.querySelector('.draw-slider-value');if(!value)return;
-    el.classList.add('is-editing');el.setAttribute('data-inspector-owned','');const input=document.createElement('input');input.type='number';input.className='draw-slider-input';input.min=String(d.min);input.max=String(d.max);input.step='any';input.value=String(displayValue(key,get(key)));input.setAttribute('aria-label',d.label);
+    el.classList.add('is-editing');el.setAttribute('data-inspector-owned','');const input=document.createElement('input');input.type='number';input.className='draw-slider-input';input.min=String(d.min);input.max=String(d.max);input.step='any';input.value=String(displayValue(key,get(key)));localizedAttribute(input,'aria-label',d.labelKey,{});
     value.textContent='';appendLocalized(value, input);input.focus();input.select();
     const done=apply=>{if(!el.classList.contains('is-editing'))return;el.classList.remove('is-editing');el.removeAttribute('data-inspector-owned');const n=Number(input.value);input.remove();if(apply&&Number.isFinite(n))commit(key,clamp(round(key,n),d.min,d.max),false);refreshSliders(key,get(key),el.parentElement??document);end?.(key);};
     input.addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Enter'){e.preventDefault();done(true);}else if(e.key==='Escape'){e.preventDefault();done(false);}});

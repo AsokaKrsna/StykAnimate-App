@@ -18,6 +18,7 @@ import {messageError} from '../localized-error.mjs';
  * workspace whose own hotkey scope claims a key (F10 in Build, M in Draw),
  * the general command bound to the same key shows no shortcut there.
  */
+import {hotkeyLabelMessage} from '../hotkey-labels.mjs';
 import {HOTKEY_COMMANDS, formatBinding, isMacPlatform} from '../hotkeys.mjs';
 import {COMMAND_CATALOG, COMMAND_CATEGORIES} from './command-catalog.mjs';
 import {kitText, translator} from './ui-strings.mjs';
@@ -136,7 +137,7 @@ export class CommandRegistry extends EventTarget {
     for (const entry of catalog) this.#merge(entry.id, entry);
     for (const command of hotkeyCommands)
       this.#meta.set(command.id, {label: command.label, category: HOTKEY_CATEGORY[command.category] ?? 'app', scope: command.scope,
-        ...(command.hold ? {palette: false} : {}), ...this.#meta.get(command.id), id: command.id});
+        ...(command.hold ? {palette: false} : {}), ...(hotkeyLabelMessage(command.id)?{labelKey:hotkeyLabelMessage(command.id).key,labelParams:hotkeyLabelMessage(command.id).params}:{}), ...this.#meta.get(command.id), id: command.id});
   }
 
   /** Adds or extends metadata; `run` registers an executor for an id outside `actions`. */
@@ -203,7 +204,7 @@ export class CommandRegistry extends EventTarget {
   label(id) {
     const meta = this.#meta.get(id);
     if (meta?.labelKey && this.t) {
-      const text = this.t(meta.labelKey);
+      const text = this.t(meta.labelKey,meta.labelParams);
       if (text && text !== meta.labelKey) return text;
     }
     return meta?.label ?? humanizeId(id);

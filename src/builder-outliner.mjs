@@ -48,7 +48,8 @@ const segmentKind = segment => {
   return KIND_LABEL[kind] ? kind : 'line';
 };
 /** A part's name as Structure and Properties show it in Build: its own name, else its kind and id ("Line 4"). */
-export const partName = segment => segment.name || `${interfaceText(KIND_LABEL[segmentKind(segment)] ?? 'builderOutliner.segment')} ${segment.segment_id}`;
+export const partNameMessage = segment => segment.name || {messageKey:'builderOutliner.partNumber',messageParams:{kind:{messageKey:KIND_LABEL[segmentKind(segment)] ?? 'builderOutliner.segment'},id:segment.segment_id}};
+export const partName = segment => {const message=partNameMessage(segment);return typeof message==='string'?message:interfaceText(message.messageKey,message.messageParams);};
 /** A part's glyph in Structure and Properties (line, circle, image, text, square). */
 export const partGlyph = segment => KIND_ICON[segmentKind(segment)] ?? 'line';
 
@@ -286,7 +287,7 @@ export class FigureOutliner {
       <span class="builder-indent" style="width:${entry.depth * 14}px"></span>
       <span class="builder-twisty${entry.hasChildren ? (entry.collapsed ? ' collapsed' : ' open') : ''}"></span>
       <span class="builder-row-icon">${icon(KIND_ICON[kind] ?? 'line')}</span>
-      <span class="builder-row-label">${esc(partName(segment))}</span>
+      <span class="builder-row-label" ${!segment.name?messageAttributes(partNameMessage(segment).messageKey,partNameMessage(segment).messageParams):''}>${esc(partName(segment))}</span>
       ${badges}
     </div>`;
   }

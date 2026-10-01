@@ -1,3 +1,4 @@
+import {validationLabel} from './validation-labels.mjs';
 import {messageError} from './localized-error.mjs';
 /** Serializable, immutable audio edit state. Times are seconds, never frame indices. */
 export const AUDIO_RATE = 48000;
@@ -11,7 +12,7 @@ export const MAX_AUDIO_VOICES = 32;
 export const EMPTY_AUDIO = Object.freeze({version: 1, assets: Object.freeze({}), tracks: Object.freeze([])});
 const checkedAssets = new WeakSet();
 const number = (value, min, max, name) => {
-  if (!Number.isFinite(value) || value < min || value > max) throw messageError(new Error(''), "errors.audioModel.mustBeBetweenAnd", {name: name, min: min, max: max});
+  if (!Number.isFinite(value) || value < min || value > max) throw messageError(new Error(''), "errors.audioModel.mustBeBetweenAnd", {name: validationLabel(name), min: min, max: max});
 };
 const id = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(value);
 export const audioState = report => report?._styk?.audio ?? EMPTY_AUDIO;

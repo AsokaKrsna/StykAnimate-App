@@ -22,12 +22,21 @@ try{
  await page.getByRole('button',{name:'Add to next keyframes',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('[data-movieclip-feedback]')?.textContent==='Added to 2 keyframes.');
  assert.equal(await input.inputValue(),'2');
+ await input.focus();
+ await page.evaluate(()=>{
+  window.clipFeedback=document.querySelector('[data-movieclip-feedback]');window.clipDraft=document.querySelector('[data-movieclip-next-keys]');
+  window.clipBytes=JSON.stringify(styk.editor.report);window.clipHistory=styk.editor._undo.length;
+  styk.localization.localization.setPseudo('rtl');
+ });
+ assert.ok(await page.evaluate(()=>clipFeedback===document.querySelector('[data-movieclip-feedback]')&&clipFeedback.textContent===styk.localization.t('movieclipUi.addedToKeyframes',{count:2})
+  &&document.activeElement===clipDraft&&clipDraft.value==='2'&&JSON.stringify(styk.editor.report)===clipBytes&&styk.editor._undo.length===clipHistory));
+ await page.evaluate(()=>styk.localization.localization.setPseudo(null));
  await page.getByRole('button',{name:'Add to next keyframes',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('[data-movieclip-feedback]')?.textContent==='Already present in these keyframes.');
  assert.deepEqual(await page.evaluate(()=>{const e=styk.editor;return [3,6,9].map(t=>{e.seek(t);return e.evaluatedFrame.objects.some(o=>o.unique_id===7);});}),[true,true,false]);
  await page.evaluate(()=>{styk.editor.seek(0);styk.editor.select(7);});
  await input.waitFor({state:'visible'});await input.fill('99');await page.getByRole('button',{name:'Add to next keyframes',exact:true}).click();
- await page.waitForFunction(()=>document.querySelector('[data-movieclip-feedback]')?.textContent==='Added to 1 keyframe · 2 already present.');
+ await page.waitForFunction(()=>document.querySelector('[data-movieclip-feedback]')?.textContent==='Added to 1 keyframe. Already present: 2.');
  await mkdir('artifacts/movieclip-extend',{recursive:true});await page.screenshot({path:'artifacts/movieclip-extend/inspector.png'});
  await page.getByRole('spinbutton',{name:'Movieclip start frame',exact:true}).fill('4');await page.keyboard.press('Tab');
  await page.getByRole('spinbutton',{name:'Movieclip speed',exact:true}).fill('2');await page.keyboard.press('Tab');

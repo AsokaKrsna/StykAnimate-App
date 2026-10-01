@@ -1,3 +1,4 @@
+import {validationLabel} from "./validation-labels.mjs";
 import {messageError} from './localized-error.mjs';
 import {rigConstraintPlan, clampRig, rigIKAllowed} from './rig-constraints.mjs';
 import {segmentBranchIndices} from './editor-builder.mjs';
@@ -5,7 +6,7 @@ import {animationRotation} from './animation-origin.mjs';
 
 const clone = value => structuredClone(value);
 const finite = (value,min,max,label) => {
-  if(!Number.isFinite(value)||value<min||value>max)throw messageError(new Error(''), "errors.cameraMotion.mustBeBetweenAnd", {label: label, min: min, max: max});
+  if(!Number.isFinite(value)||value<min||value>max)throw messageError(new Error(''), "errors.cameraMotion.mustBeBetweenAnd", {label: validationLabel(label), min: min, max: max});
   return value;
 };
 /** Validate a proposed shallow definition before publication. History journals

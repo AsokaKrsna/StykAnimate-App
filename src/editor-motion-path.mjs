@@ -1,3 +1,4 @@
+import {validationLabel} from "./validation-labels.mjs";
 import {messageError} from './localized-error.mjs';
 import {captureSpatialIK} from './ik-spatial.mjs';
 /** Motion-path edit sessions. A dragged trail point rewrites the pose at its own
@@ -23,7 +24,7 @@ import {sheetKeyAt} from './layer-sheet.mjs';
 
 const clone = value => structuredClone(value);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-const finite = (value, label) => { if (!Number.isFinite(value)) throw messageError(new Error(''), "errors.editorCamera.mustBeFinite", {label: label}); return value; };
+const finite = (value, label) => { if (!Number.isFinite(value)) throw messageError(new Error(''), "errors.editorCamera.mustBeFinite", {label: validationLabel(label)}); return value; };
 
 function rowForTick(rows, tick) {
   let low = 0, high = rows.length - 1;

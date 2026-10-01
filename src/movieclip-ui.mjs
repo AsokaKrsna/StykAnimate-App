@@ -41,7 +41,7 @@ export function movieclipSections(editor,{number=(label,key,value,unit='',extra=
   const object=editor.object,figure=editor.figure,p=playbackSettings(object),asset=movieclipAsset(figure),state=inspectorState(editor),remaining=nextKeys(editor);
   const sample=editor.evaluatedFrame.objects.find(value=>value.unique_id===object.unique_id)?._movieclipSample??movieclipTime(asset,p,editor.tick,editor.report.fps);
   const current=sample===null?null:Math.min(asset.duration,Math.floor(sample)+1),single=p.mode==='single';
-  const feedback=state.feedback,message=feedback?.uid===object.unique_id&&feedback.tick===editor.tick&&feedback.revision===editor.revision?feedback.message:'';
+  const feedback=state.feedback,validFeedback=feedback?.uid===object.unique_id&&feedback.tick===editor.tick&&feedback.revision===editor.revision?feedback:null,message=validFeedback?.message??'';
   const scene=Math.floor(editor.tick)+1,sets=drawingSetsView(figure,object);
   const playback=(name,label,description,value,min,max,extra={})=>({kind:'number',label,description,value,min,max,step:'any',precision:3,
     attrs:{required:true},data:{'movieclip-field':name},...extra});
@@ -50,12 +50,12 @@ export function movieclipSections(editor,{number=(label,key,value,unit='',extra=
       {kind:'select',label:interfaceText("movieclipUi.plays"), labelKey: "movieclipUi.plays",description:interfaceText("movieclipUi.movieclipPlayback"), descriptionKey: "movieclipUi.movieclipPlayback",value:p.mode,data:{'movieclip-field':'mode'},span:2,
         options:[messageTuple(['loop',interfaceText("movieclipUi.loop")], {1: {key: "movieclipUi.loop", params: {}}}),messageTuple(['hold',interfaceText("movieclipUi.playOnceHold")], {1: {key: "movieclipUi.playOnceHold", params: {}}}),messageTuple(['once',interfaceText("movieclipUi.playOnceHide")], {1: {key: "movieclipUi.playOnceHide", params: {}}}),messageTuple(['single',interfaceText("movieclipUi.singleFrame")], {1: {key: "movieclipUi.singleFrame", params: {}}})].map((_tuple) => {const [value,label] = _tuple; const _messages = tupleMessages(_tuple); return {value,label, ...(_messages[1] ? {labelKey: _messages[1].key, labelParams: _messages[1].params} : {})};})},
       {kind:'grid',rows:[
-        playback('offset',single?interfaceText("movieclipUi.hold"):interfaceText("movieclipUi.start"),single?interfaceText("movieclipUi.movieclipHoldFrame"):interfaceText("movieclipUi.movieclipStartFrame"),p.offset+1,1,10000001),
-        playback('speed',interfaceText("movieclipUi.speed"),interfaceText("movieclipUi.movieclipSpeed"),p.speed,.001,100,{unit:'×',disabled:single}),
+        playback('offset',single?interfaceText("movieclipUi.hold"):interfaceText("movieclipUi.start"),single?interfaceText("movieclipUi.movieclipHoldFrame"):interfaceText("movieclipUi.movieclipStartFrame"),p.offset+1,1,10000001,{labelKey:single?'movieclipUi.hold':'movieclipUi.start',descriptionKey:single?'movieclipUi.movieclipHoldFrame':'movieclipUi.movieclipStartFrame'}),
+        playback('speed',interfaceText("movieclipUi.speed"),interfaceText("movieclipUi.movieclipSpeed"),p.speed,.001,100,{unit:'×',disabled:single,labelKey:'movieclipUi.speed',descriptionKey:'movieclipUi.movieclipSpeed'}),
       ]},
-      {kind:'meta',parts:messageTuple([interfaceText("movieclipUi.frame"),{tag:'output',text:`${current??'—'} / ${asset.duration}`,data:{'movieclip-current-frame':true},attrs:{'aria-label':'Current movieclip frame'}},
-        ' · ',{text:interfaceText("movieclipUi.scene2", {scene: scene}), textKey: "movieclipUi.scene2", textParams: {scene: scene},className:'movieclip-scene-frame',data:{tooltip:'Current scene frame'}}], {0: {key: "movieclipUi.frame", params: {}}})},
-      {kind:'meta',parts:[{text:[interfaceText('counts.frames', {count: asset.duration}),`${seconds(asset.duration/asset.document.fps)} s`,`${asset.document.fps} fps`].join(' · '),data:{'movieclip-duration':true}}]},
+      {kind:'meta',parts:messageTuple([interfaceText("movieclipUi.frame"),{tag:'output',text:`${current??'—'} / ${asset.duration}`,data:{'movieclip-current-frame':true},attrs:{'aria-label':'Current movieclip frame'},descriptionKey:'movieclipUi.currentMovieclipFrame'},
+        ' · ',{text:interfaceText("movieclipUi.scene2", {scene: scene}), textKey: "movieclipUi.scene2", textParams: {scene: scene},className:'movieclip-scene-frame',data:{tooltip:'Current scene frame'},tipKey:'movieclipUi.currentSceneFrame'}], {0: {key: "movieclipUi.frame", params: {}}})},
+      {kind:'meta',parts:[{text:interfaceText('movieclipUi.durationSummary',{frames:{messageKey:'counts.frames',messageParams:{count:asset.duration}},seconds:seconds(asset.duration/asset.document.fps),fps:asset.document.fps}),textKey:'movieclipUi.durationSummary',textParams:{frames:{messageKey:'counts.frames',messageParams:{count:asset.duration}},seconds:seconds(asset.duration/asset.document.fps),fps:asset.document.fps},data:{'movieclip-duration':true}}]},
     ]},
     {id:'transform',title:interfaceText("movieclipUi.transform"), titleKey: "movieclipUi.transform",rows:[{kind:'grid',rows:[
       number('X','root_x',object.root_x,'px'),number('Y','root_y',object.root_y,'px'),
@@ -71,8 +71,8 @@ export function movieclipSections(editor,{number=(label,key,value,unit='',extra=
         {kind:'actions',items:[{action:'movieclip-extend',icon:'plus',label:interfaceText("movieclipUi.add"), labelKey: "movieclipUi.add",text:true,variant:'outline',disabled:!remaining,
           attrs:{'aria-label':'Add to next keyframes'},tip:interfaceText("movieclipUi.addThisClipToTheNextKeyframes"), tipKey: "movieclipUi.addThisClipToTheNextKeyframes"}]},
       ]},
-      {kind:'meta',parts:[interfaceText('movieclipUi.remainingKeys', {count: remaining})]},
-      {kind:'meta',parts:[{text:message||(!remaining?interfaceText("movieclipUi.noLaterKeyframes"):''),data:{'movieclip-feedback':true},attrs:{role:'status','aria-live':'polite','aria-atomic':'true'}}]},
+      {kind:'meta',parts:[{text:interfaceText('movieclipUi.remainingKeys', {count:remaining}),textKey:'movieclipUi.remainingKeys',textParams:{count:remaining}}]},
+      {kind:'meta',parts:[{text:message||(!remaining?interfaceText("movieclipUi.noLaterKeyframes"):''),textKey:validFeedback?.messageKey??(!remaining?'movieclipUi.noLaterKeyframes':undefined),textParams:validFeedback?.messageParams,data:{'movieclip-feedback':true},attrs:{role:'status','aria-live':'polite','aria-atomic':'true'}}]},
     ]},
     {id:'bake',title:interfaceText("movieclipUi.bakeAndExport"), titleKey: "movieclipUi.bakeAndExport",place:'titled',rows:[{kind:'actions',items:[
       {action:'movieclip-break',label:interfaceText("movieclipUi.breakApartFrame"), labelKey: "movieclipUi.breakApartFrame",text:true,variant:'outline',tip:interfaceText("movieclipUi.replaceOnlySceneFrame", {scene: scene}), tipKey: "movieclipUi.replaceOnlySceneFrame", tipParams: {scene: scene}},
@@ -128,8 +128,9 @@ export function installMovieclipUI({editor,actions,pause,finishEdit,getTimeline,
         const count=Number(input.value),available=nextKeys(editor),state=inspectorState(editor);
         const added=editor.addMovieclipToNextKeyframes(count),skipped=Math.min(count,available)-added;
         state.nextKeys=count;
-        const message=added?`Added to ${added} keyframe${added===1?'':'s'}${skipped?` · ${skipped} already present`:''}.`:available?interfaceText("movieclipUi.alreadyPresentInTheseKeyframes"):interfaceText("movieclipUi.noLaterKeyframes");
-        state.feedback={uid:editor.selectedUid,tick:editor.tick,revision:editor.revision,message};queueUI();
+        const messageKey=added?(skipped?'movieclipUi.extensionWithSkipped':'movieclipUi.addedToKeyframes'):available?'movieclipUi.alreadyPresentInTheseKeyframes':'movieclipUi.noLaterKeyframes';
+        const messageParams=skipped&&added?{added:{messageKey:'movieclipUi.addedToKeyframes',messageParams:{count:added}},skipped}:{count:added};
+        state.feedback={uid:editor.selectedUid,tick:editor.tick,revision:editor.revision,message:interfaceText(messageKey,messageParams),messageKey,messageParams};queueUI();
       }catch(error){onError(error);}
     },
   });

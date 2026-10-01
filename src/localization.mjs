@@ -91,7 +91,7 @@ export class Localization {
     const key = `${kind}:${JSON.stringify(normalized)}`;
     let formatter = this.formatters.get(key);
     if (!formatter) {
-      const Constructor = kind === 'number' ? Intl.NumberFormat : kind === 'date' ? Intl.DateTimeFormat : Intl.PluralRules;
+      const Constructor = kind === 'number' ? Intl.NumberFormat : kind === 'date' ? Intl.DateTimeFormat : kind === 'list' ? Intl.ListFormat : Intl.PluralRules;
       formatter = new Constructor(this.locale, normalized);
       if (this.formatters.size >= MAX_FORMATTERS) this.formatters.delete(this.formatters.keys().next().value);
       this.formatters.set(key, formatter);
@@ -131,6 +131,8 @@ export class Localization {
         if (owns(value, 'messageKey') && typeof value.messageKey === 'string') return this.t(value.messageKey, value.messageParams, depth + 1);
         if (value.format === 'number' && Number.isFinite(value.value)) return this.formatNumber(value.value, value.options);
         if (value.format === 'date') return this.formatDate(value.value, value.options);
+        if (value.format === 'list' && Array.isArray(value.value) && value.value.length <= 256 && value.value.every(item => typeof item === 'string' || item && typeof item.messageKey === 'string'))
+          return this.formatter('list', value.options).format(value.value.map(item => typeof item === 'string' ? item : this.t(item.messageKey,item.messageParams,depth + 1)));
       }
       return token;
     });

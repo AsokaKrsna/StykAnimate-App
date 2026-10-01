@@ -1,5 +1,5 @@
 import {t as interfaceText} from '../localization.mjs';
-import {localizedAttribute, appendLocalized, connectTranslations} from '../localization-bindings.mjs';
+import {localizedAttribute, localizedText, clearTranslation, appendLocalized, connectTranslations} from '../localization-bindings.mjs';
 /**
  * Tabs as the panels' handles (architecture §3.11.5, experience §1.5):
  *
@@ -20,8 +20,8 @@ import {localizedAttribute, appendLocalized, connectTranslations} from '../local
  */
 const SLOP = 4;
 const HANDLE = '.shell-tabs [role="tab"][data-panel], .shell-strip-button[data-panel], .shell-rail-handle';
-const LABELS = Object.freeze({left: interfaceText("dockTabs.dockLeft"), right: interfaceText("dockTabs.dockRight"), tab: interfaceText("dockTabs.addAsATab"), float: interfaceText("dockTabs.floatHere"),
-  before: interfaceText("dockTabs.stackAbove"), after: interfaceText("dockTabs.stackBelow"), 'rail-left': interfaceText("dockTabs.moveToolsLeft"), 'rail-right': interfaceText("dockTabs.moveToolsRight")});
+const LABEL_KEYS = Object.freeze({left:'dockTabs.dockLeft', right:'dockTabs.dockRight', tab:'dockTabs.addAsATab', float:'dockTabs.floatHere',
+  before:'dockTabs.stackAbove', after:'dockTabs.stackBelow', 'rail-left':'dockTabs.moveToolsLeft', 'rail-right':'dockTabs.moveToolsRight'});
 
 const inside = (rect, x, y) => rect && rect.width > 0 && rect.height > 0 && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
 const box = (left, top, width, height) => ({left, top, width, height, right: left + width, bottom: top + height});
@@ -36,6 +36,7 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
   const abort = new AbortController(), signal = abort.signal;
   const workspace = host.workspace;
   const title = id => id === 'tools' ? interfaceText("dockTabs.tools") : (host.registry.get(id)?.titleKey ? interfaceText(host.registry.get(id).titleKey) : host.registry.get(id)?.title ?? id);
+  const titleMessage = id => id === 'tools' ? {messageKey:'dockTabs.tools'} : host.registry.get(id)?.titleKey ? {messageKey:host.registry.get(id).titleKey} : title(id);
   const railHandle = doc.createElement('button');
   railHandle.type = 'button'; railHandle.className = 'shell-rail-handle'; railHandle.dataset.panel = 'tools';
   localizedAttribute(railHandle, 'aria-label', "dockTabs.moveTools", {});
@@ -49,14 +50,14 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
 
   /** The places a panel may go from where it is, as menu items. */
   function menuItems(id) {
-    if (id === 'tools') return ['left', 'right'].map(side => ({label: LABELS[`rail-${side}`],
+    if (id === 'tools') return ['left', 'right'].map(side => ({label:interfaceText(LABEL_KEYS[`rail-${side}`]), labelKey:LABEL_KEYS[`rail-${side}`],
       icon: `panel-${side}`, run: () => move(id, side)}));
     const presentation = host.presentation(id), side = host.solution?.panels[id]?.side;
     const docked = presentation === 'docked' || presentation === 'sheet';
     const items = [];
     for (const target of ['left', 'right']) {
       if (host.canPlace(id, target) && !(docked && side === target))
-        items.push({label: LABELS[target], icon: target === 'left' ? 'panel-left' : 'panel-right', run: () => move(id, target)});
+        items.push({label:interfaceText(LABEL_KEYS[target]), labelKey:LABEL_KEYS[target], icon: target === 'left' ? 'panel-left' : 'panel-right', run: () => move(id, target)});
     }
     if (host.canPlace(id, 'float') && presentation !== 'float') items.push({label: interfaceText("dockTabs.float"), labelKey: "dockTabs.float", icon: 'layout', run: () => move(id, 'float')});
     if (presentation === 'strip') items.push({label: interfaceText("dockTabs.show"), labelKey: "dockTabs.show", icon: 'maximize', run: () => host.showPanel(id)});
@@ -66,12 +67,13 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
   }
 
   function move(id, target, options = {}) {
-    if (id === 'tools') { workspace.setRail(target); announce(LABELS[`rail-${target}`]); return; }
+    if (id === 'tools') { workspace.setRail(target); announce(interfaceText(LABEL_KEYS[`rail-${target}`])); return; }
     if (target === 'float') workspace.float(id, options.rect);
     else if (target === 'strip') workspace.fold(id);
     else if (target === 'hidden') workspace.hide(id);
     else workspace.dock(id, target, options);
-    announce(`${title(id)}: ${target === 'strip' ? 'folded' : target === 'hidden' ? 'hidden' : target === 'float' ? 'floating' : LABELS[target] ?? target}`);
+    const statusKey = {strip:'dockTabs.foldedPanel',hidden:'dockTabs.hiddenPanel',float:'dockTabs.floatingPanel'}[target];
+    announce(interfaceText(statusKey ?? 'dockKeyboard.panelLocation', {title:titleMessage(id), place:LABEL_KEYS[target] ? {messageKey:LABEL_KEYS[target]} : target}));
     if (target !== 'strip' && target !== 'hidden') host.showPanel(id, {focus: false});
   }
 
@@ -86,7 +88,7 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
     if (id !== 'tools' && !host.registry.has(id)) return;
     const box = handle.getBoundingClientRect();
     const point = at && at.nodeType !== 1 ? at : {left: box.left, bottom: box.bottom, invoker: handle};
-    openMenu(menuItems(id), point, {label: interfaceText("dockTabs.panel", {value: title(id)}), labelKey: "dockTabs.panel", labelParams: {value: title(id)}});
+    openMenu(menuItems(id), point, {label: interfaceText("dockTabs.panel", {value:titleMessage(id)}), labelKey: "dockTabs.panel", labelParams: {value:titleMessage(id)}});
   }
 
   workspaceElement.addEventListener('contextmenu', event => {
@@ -198,7 +200,9 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
     Object.assign(zone.style, {left: `${Math.round(target.rect.left)}px`, top: `${Math.round(target.rect.top)}px`,
       width: `${Math.round(target.rect.width)}px`, height: `${Math.round(target.rect.height)}px`});
     zone.dataset.target = target.kind;
-    if (zoneLabel.textContent !== LABELS[target.kind]) { zoneLabel.textContent = LABELS[target.kind]; announce(LABELS[target.kind]); }
+    if (zoneLabel.getAttribute('data-i18n') !== LABEL_KEYS[target.kind]) {
+      localizedText(zoneLabel, LABEL_KEYS[target.kind]); announce(interfaceText(LABEL_KEYS[target.kind]));
+    }
     zone.hidden = false;
   }
 
@@ -210,7 +214,9 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
     press = null;
     try { handle.setPointerCapture(pointerId); } catch { /* the pointer is gone */ }
     handle.dataset.dragging = 'true';
-    ghost.textContent = title(id);
+    const name = titleMessage(id);
+    if (name?.messageKey) localizedText(ghost,name.messageKey,name.messageParams);
+    else { clearTranslation(ghost); ghost.textContent=name; }
     if (ghost.parentElement !== doc.body) appendLocalized(doc.body, ghost);
     ghost.hidden = false;
     follow(event);

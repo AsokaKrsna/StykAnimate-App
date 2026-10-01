@@ -1,4 +1,4 @@
-import {messageAttributes, descriptorAttributes} from './localization-bindings.mjs';
+import {messageAttributes, descriptorAttributes, tupleMessages} from './localization-bindings.mjs';
 import {messageError} from './localized-error.mjs';
 
 import { messageText } from './localization.mjs';
@@ -585,13 +585,14 @@ const markup = row => String(row.html ?? '');
  * for a value a module updates or a test reads by itself.
  */
 function meta(row) {
-  const part = item => {
-    if (typeof item === 'string') return escapeHTML(item);
+  const bindings=tupleMessages(row.parts);
+  const part = (item,index) => {
+    if (typeof item === 'string') return bindings[index]?`<span ${messageAttributes(bindings[index].key,bindings[index].params)}>${escapeHTML(item)}</span>`:escapeHTML(item);
     const tag = item?.tag === 'output' ? 'output' : 'span';
-    return `<${tag}${attributes({class: item.className, ...extras(item)})}>${escapeHTML(item?.text)}</${tag}>`;
+    return `<${tag}${attributes({class: item.className, ...extras(item)})}${descriptorAttributes(item,'text')}${descriptorAttributes(item,'description','aria-label')}${descriptorAttributes(item,'tip','data-tooltip')}>${escapeHTML(item?.text)}</${tag}>`;
   };
   const body = row.parts ? row.parts.map(part).join('') : escapeHTML(row.text);
-  return `<div${attributes({class: 'inspector-meta', id: id(row.id), 'data-tooltip': row.tip, ...extras(row)})}>${body}</div>`;
+  return `<div${attributes({class: 'inspector-meta', id: id(row.id), 'data-tooltip': row.tip, ...extras(row)})}${row.parts?'':descriptorAttributes(row,'text')}${descriptorAttributes(row,'tip','data-tooltip')}>${body}</div>`;
 }
 
 /** A read-only value with its row label ("Joined to  Rival · Left hand", "Fills  No fills"). */

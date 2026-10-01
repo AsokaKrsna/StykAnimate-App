@@ -1,3 +1,4 @@
+import {validationLabel} from "./validation-labels.mjs";
 import {messageError} from './localized-error.mjs';
 import {normalizePaint, segmentPaint} from './paint.mjs';
 import {usesSegmentColors} from './figure-colors.mjs';
@@ -24,7 +25,7 @@ function selectionTargets(editor, whole, polygons) {
 }
 const finite = (value, label, min = -Infinity, max = Infinity) => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max)
-    throw messageError(new Error(''), "errors.editorBuilderBranch.mustBeAFiniteNumberBetweenAnd", {label: label, min: min, max: max});
+    throw messageError(new Error(''), "errors.editorBuilderBranch.mustBeAFiniteNumberBetweenAnd", {label: validationLabel(label), min: min, max: max});
   return value;
 };
 const rgb = value => {

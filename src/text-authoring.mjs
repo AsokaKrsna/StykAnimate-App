@@ -1,3 +1,4 @@
+import {validationLabel} from "./validation-labels.mjs";
 import {messageError} from './localized-error.mjs';
 import {normalizePaint} from './paint.mjs';
 /** Portable Pivot text: every visible character is stored as embedded vector paths. */
@@ -83,7 +84,7 @@ const number = (value, label, min, max) => {
     value < min ||
     value > max
   )
-    throw messageError(new Error(''), "errors.cameraMotion.mustBeBetweenAnd", {label: label, min: min, max: max});
+    throw messageError(new Error(''), "errors.cameraMotion.mustBeBetweenAnd", {label: validationLabel(label), min: min, max: max});
   return value;
 };
 const rgb = (value, label) => {
@@ -92,7 +93,7 @@ const rgb = (value, label) => {
     value.length !== 3 ||
     value.some((n) => !Number.isInteger(n) || n < 0 || n > 255)
   )
-    throw messageError(new Error(''), "errors.textAuthoring.mustContainThreeRgbBytes", {label: label});
+    throw messageError(new Error(''), "errors.textAuthoring.mustContainThreeRgbBytes", {label: validationLabel(label)});
   return [...value];
 };
 const label = (value) =>

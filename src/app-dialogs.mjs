@@ -1,6 +1,6 @@
 import {importWarningMessage} from './import-notes-localization.mjs';
 import {presentError} from './error-presentation.mjs';
-import {replaceLocalized, messageTuple, translatedElement, appendLocalized, localizedText, localizedMarkup, localizedAttribute} from './localization-bindings.mjs';
+import {replaceLocalized, messageTuple, tupleMessages, translatedElement, appendLocalized, localizedText, localizedMarkup, localizedAttribute} from './localization-bindings.mjs';
 import {interfaceLocalization, t as interfaceText} from './localization.mjs';
 
 import {messageError} from './localized-error.mjs';
@@ -168,12 +168,13 @@ export function createAppDialogs(ctx) {
         sorted[
           Math.min(sorted.length - 1, Math.floor(sorted.length * n))
         ]?.toFixed(2) || "—";
+    const bufferingParams = {milliseconds:{format:'number', value:presentation.bufferingMs, options:{minimumFractionDigits:1, maximumFractionDigits:1}}, count:presentation.bufferingEvents};
     const rows = [
-      messageTuple([interfaceText("appDialogs.renderer"), state.renderer?.stats?.backend || interfaceText("appDialogs.initializing")], {0: {key: "appDialogs.renderer", params: {}}}),
+      messageTuple([interfaceText("appDialogs.renderer"), state.renderer?.stats?.backend || interfaceText("appDialogs.initializing")], {0: {key: "appDialogs.renderer", params: {}}, ...(!state.renderer?.stats?.backend ? {1:{key:"appDialogs.initializing", params:{}}} : {})}),
       messageTuple([interfaceText("appDialogs.playbackFpsTarget"), presentation.fps === null ? "—"
         : `${presentation.fps.toFixed(1)} / ${presentation.targetFps.toFixed(1)}`], {0: {key: "appDialogs.playbackFpsTarget", params: {}}}),
       messageTuple([interfaceText("appDialogs.playbackStartup"), presentation.startupMs === null ? "—" : `${presentation.startupMs.toFixed(1)} ms`], {0: {key: "appDialogs.playbackStartup", params: {}}}),
-      messageTuple([interfaceText("appDialogs.playbackBuffering"), `${presentation.bufferingMs.toFixed(1)} ms · ${presentation.bufferingEvents} waits`], {0: {key: "appDialogs.playbackBuffering", params: {}}}),
+      messageTuple([interfaceText("appDialogs.playbackBuffering"), interfaceText("appDialogs.bufferingSummary", bufferingParams)], {0: {key: "appDialogs.playbackBuffering", params: {}}, 1:{key:"appDialogs.bufferingSummary", params:bufferingParams}}),
       messageTuple([interfaceText("appDialogs.recentCpuFrameP50"), `${p(0.5)} ms`], {0: {key: "appDialogs.recentCpuFrameP50", params: {}}}),
       messageTuple([interfaceText("appDialogs.recentCpuFrameP95"), `${p(0.95)} ms`], {0: {key: "appDialogs.recentCpuFrameP95", params: {}}}),
       messageTuple([interfaceText("appDialogs.recentCpuFrameP99"), `${p(0.99)} ms`], {0: {key: "appDialogs.recentCpuFrameP99", params: {}}}),
@@ -200,10 +201,14 @@ export function createAppDialogs(ctx) {
     ];
     const body = document.createDocumentFragment(), table = document.createElement("table");
     table.className = "metric-table";
-    for (const [name, value] of rows) {
+    for (const values of rows) {
       const row = table.insertRow();
-      row.insertCell().textContent = name;
-      row.insertCell().textContent = String(value);
+      const messages = tupleMessages(values);
+      values.forEach((value, index) => {
+        const cell = row.insertCell(), message = messages[index];
+        if (message) localizedText(cell, message.key, message.params);
+        else cell.textContent = String(value);
+      });
     }
     appendLocalized(body, table, translatedElement(paragraph(interfaceText("appDialogs.cpuSubmissionTimingsIncludeGeometryEvaluationAndSelection"), interfaceText('appDialogs.uiDialogDescPerformanceNote')), "appDialogs.cpuSubmissionTimingsIncludeGeometryEvaluationAndSelection", {}));
     // The editor's recent activity (there is no status bar): newest first, a problem marked.
@@ -223,7 +228,7 @@ export function createAppDialogs(ctx) {
       }
       appendLocalized(body, heading, list);
     }
-    const report = () => [...rows.map(([name, value]) => `${name}: ${value}`), "", ...activity.map((entry) => `${clock(entry.time)} ${entry.error ? "! " : ""}${entry.text}`)].join("\n");
+    const report = () => [...Array.from(table.rows, row => `${row.cells[0].textContent}: ${row.cells[1].textContent}`), "", ...activity.map((entry) => `${clock(entry.time)} ${entry.error ? "! " : ""}${entry.text}`)].join("\n");
     const dialog = dialogOf({
       size: "md",
       id: "performance-dialog",
@@ -236,7 +241,7 @@ export function createAppDialogs(ctx) {
       // Copy report keeps the dialog open: the numbers and the activity, for a bug report.
       onSubmit: (value) => {
         if (value !== "copy") return undefined;
-        navigator.clipboard?.writeText(report()).then(() => dialog.setMeta(interfaceText("appDialogs.copied")), () => dialog.setMeta(interfaceText("appDialogs.couldNotCopy")));
+        navigator.clipboard?.writeText(report()).then(() => dialog.setMeta({messageKey:"appDialogs.copied"}), () => dialog.setMeta({messageKey:"appDialogs.couldNotCopy"}));
         return false;
       },
     });

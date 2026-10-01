@@ -163,6 +163,8 @@ function translateElement(element, localization) {
       try { const authored = element.getAttribute(`${binding}-params`); if (authored) attributeParams = JSON.parse(authored); } catch { /* leave invalid parameters visible */ }
       attributeParams = runtimeParameters.get(element)?.get(binding) ?? attributeParams;
       const text = localization.t(key, attributeParams);
+      if (attribute === 'aria-label' && element.dataset.hotkeyHint !== undefined && element.dataset.hotkeyTitle === element.getAttribute('aria-label'))
+        element.dataset.hotkeyTitle = text;
       if (attribute === 'title' && element.dataset.hotkeyHint !== undefined) {
         // A shortcut control (hotkey-hints.mjs): the tooltip shows this name and
         // the shortcut, so no native title. A name derived from it follows it.

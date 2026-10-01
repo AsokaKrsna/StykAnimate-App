@@ -1,3 +1,4 @@
+import {validationLabel} from "./validation-labels.mjs";
 import {messageError} from './localized-error.mjs';
 /** Native rig relationships. Definitions contain stable handle references; poses
  * retain the existing angle/length channels. A connector's length channel is its
@@ -13,7 +14,7 @@ const plans = new WeakMap();
 const EPS = 1e-8;
 export const clampRig = (n, min, max) => Math.max(min, Math.min(max, n));
 const number = (n, label, min, max) => {
-  if (!Number.isFinite(n) || n < min || n > max) throw messageError(new Error(''), "errors.cameraMotion.mustBeBetweenAnd", {label: label, min: min, max: max});
+  if (!Number.isFinite(n) || n < min || n > max) throw messageError(new Error(''), "errors.cameraMotion.mustBeBetweenAnd", {label: validationLabel(label), min: min, max: max});
 };
 export function hasRigConstraints(figure) { return figure.segments.some(s => s._stykRig); }
 export function documentHasRigConstraints(document,seen=new Set()) {
@@ -53,7 +54,7 @@ export function* rigConstraintPlanSteps(figure) {
     if((i&255)===255)yield {phase:'rig',stage:'references',completed:i+1,total:segments.length};
   }
   const reference = (id, label, root = false) => {
-    if (!Number.isInteger(id) || (!ids.has(id) && !(root && id === 0))) throw messageError(new Error(''), "errors.rigConstraints.refersToAMissingJointRemoveOrReconnect", {label: label});
+    if (!Number.isInteger(id) || (!ids.has(id) && !(root && id === 0))) throw messageError(new Error(''), "errors.rigConstraints.refersToAMissingJointRemoveOrReconnect", {label: validationLabel(label)});
   };
   for(let i=0;i<segments.length;i++) {
     const s=segments[i];

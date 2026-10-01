@@ -66,6 +66,17 @@ try {
  check('Undo restores remote pose',await page.evaluate(root=>styk.editor.report.keyframes[1].objects[0].root_x===root,grab.root));
  await page.waitForTimeout(300);await page.mouse.move(grab.x+1,grab.y);await page.mouse.move(grab.x,grab.y);await page.waitForTimeout(100);
  check('Hovering a remote point explains the gesture',await page.evaluate(()=>styk.state.hoverPathPoint?.tick===8&&/double-click/.test(document.querySelector('#overlay').title)));
+ await page.evaluate(()=>styk.localization.localization.setPseudo('long'));
+ check('Retained motion-path tooltip translates its frame and gesture references',await page.evaluate(()=>{
+   const hover=styk.state.hoverPathPoint;
+   return document.querySelector('#overlay').title===styk.localization.t('app.frameDragToReposeValue1RightDragToReshape',{frame:{messageKey:'filmstrip.card',messageParams:{frame:hover.tick+1}},value1:{messageKey:'app.withoutLeavingThisFrameDoubleClickToGo'}});
+ }));
+ await page.mouse.move(20,20);
+ await page.evaluate(()=>{styk.localization.localization.setPseudo('rtl');});
+ check('Leaving a motion-path point clears its retained tooltip before the next language change',await page.evaluate(()=>document.querySelector('#overlay').title===''&&!document.querySelector('#overlay').hasAttribute('data-i18n-title')));
+ await page.evaluate(()=>styk.localization.localization.setPseudo(null));
+ await page.mouse.move(grab.x,grab.y);
+
  await page.mouse.down();await page.mouse.move(grab.x+30,grab.y-20,{steps:3});
  check('Dragging draws the remote pose as a ghost',await page.evaluate(()=>styk.state.drag?.kind==='motion-path'&&styk.state.drag.tick!==styk.editor.tick));
  await page.screenshot({path:out+'/ghost-drag.png'});

@@ -1,3 +1,4 @@
+import {validationLabel} from "../validation-labels.mjs";
 import {messageError} from '../localized-error.mjs';
 import {validateSpatialPose,validateSpatialJoins} from '../spatial-projection.mjs';
 import {validateSurface} from './surfaces.mjs';
@@ -17,7 +18,7 @@ import {validateVfxOwner} from '../vfx.mjs';
 import {validateOriginObject,validateOriginObjectSteps,validateOriginSupportSteps} from '../animation-origin-validation.mjs';
 const finite = (value, label) => {
   if (typeof value !== "number" || !Number.isFinite(value))
-    throw messageError(new Error(''), "errors.model.mustBeAFiniteNumber", {label: label});
+    throw messageError(new Error(''), "errors.model.mustBeAFiniteNumber", {label: validationLabel(label)});
 };
 export function roundEven(value) {
   const floor = Math.floor(value),
@@ -30,16 +31,16 @@ export function roundEven(value) {
 }
 const integer = (value, min, max, label) => {
   if (!Number.isInteger(value) || value < min || value > max)
-    throw messageError(new Error(''), "errors.model.mustBeAnIntegerFromTo", {label: label, min: min, max: max});
+    throw messageError(new Error(''), "errors.model.mustBeAnIntegerFromTo", {label: validationLabel(label), min: min, max: max});
 };
 const float32 = (value, label) => {
   finite(value, label);
   if (!Number.isFinite(Math.fround(value)))
-    throw messageError(new Error(''), "errors.model.exceedsTheNativeFloat32Range", {label: label});
+    throw messageError(new Error(''), "errors.model.exceedsTheNativeFloat32Range", {label: validationLabel(label)});
 };
 const rgb = (value, label) => {
   if (!Array.isArray(value) || value.length !== 3)
-    throw messageError(new Error(''), "errors.model.needsThreeRgbBytes", {label: label});
+    throw messageError(new Error(''), "errors.model.needsThreeRgbBytes", {label: validationLabel(label)});
   for (const n of value) integer(n, 0, 255, label);
 };
 // Populated only by successful definition validation. Editor topology/style

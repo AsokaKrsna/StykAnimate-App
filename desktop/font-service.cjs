@@ -23,9 +23,15 @@ const cleanName = (value) =>
     .replace(/[\x00-\x1f\x7f]/g, "")
     .trim()
     .slice(0, 240);
+const fontValidationLabels = new Map([
+  ["font limit", {messageKey:"desktop.fontService.labels.limit", diagnosticValue:"font limit"}],
+  ["font folder depth", {messageKey:"desktop.fontService.labels.folderDepth", diagnosticValue:"font folder depth"}],
+  ["font cache budget", {messageKey:"desktop.fontService.labels.cacheBudget", diagnosticValue:"font cache budget"}],
+  ["font cache count", {messageKey:"desktop.fontService.labels.cacheCount", diagnosticValue:"font cache count"}],
+]);
 const boundedInteger = (value, minimum, maximum, label) => {
   if (!Number.isInteger(value) || value < minimum || value > maximum)
-    throw messageError(new RangeError(''), 'desktop.fontService.errors.invalidLabel', {label: label});
+    throw messageError(new RangeError(''), 'desktop.fontService.errors.invalidLabel', {label: fontValidationLabels.get(label) ?? label});
   return value;
 };
 

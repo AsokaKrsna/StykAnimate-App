@@ -46,10 +46,11 @@ function toItems(host, groups) {
   for (const group of (groups ?? []).map(rows => (rows ?? []).filter(Boolean)).filter(rows => rows.length)) {
     if (items.length) items.push(null);
     for (const row of group) {
-      if (row.heading) { items.push({label: row.heading}); continue; }
+      if (row.heading) { items.push({label: row.heading, ...(row.headingKey ? {labelKey:row.headingKey,labelParams:row.headingParams} : {})}); continue; }
       // A menu shows one key per row (the first binding); Settings lists them all.
       const item = {label: row.label, icon: row.symbol ?? row.icon ?? null, shortcut: String(row.shortcut || '').split(' / ')[0] || false,
         danger: Boolean(row.danger), disabled: Boolean(row.disabled), swatch: row.swatch};
+      if (row.labelKey) { item.labelKey=row.labelKey; item.labelParams=row.labelParams; }
       if (row.checked !== undefined) item.checked = Boolean(row.checked);
       if (row.submenu) item.submenu = toItems(host, row.submenu);
       else item.run = () => host._run(row.action);

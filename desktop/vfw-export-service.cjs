@@ -1,5 +1,5 @@
 'use strict';
-const { messageError } = require('./localization.cjs');
+const { messageError, validationLabel } = require('./localization.cjs');
 
 
 /** Windows-installed VFW codecs execute in a fixed, isolated native helper. */
@@ -11,7 +11,7 @@ const {randomUUID} = require('node:crypto');
 
 const CHUNK = 256 * 1024, MAX_FRAME = 64 * 1024 * 1024, MAX_OUTPUT = 256 * 1024 * 1024, MAX_STATE = 1024 * 1024;
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); promise.catch(() => {}); return {promise, resolve, reject}; };
-function integer(value, min, max, label) { if (!Number.isInteger(value) || value < min || value > max) throw messageError(new Error(''), 'desktop.vfwExportService.errors.labelMustBeAnIntegerFromMinToMax', {label: label, min: min, max: max}); return value; }
+function integer(value, min, max, label) { if (!Number.isInteger(value) || value < min || value > max) throw messageError(new Error(''), 'desktop.vfwExportService.errors.labelMustBeAnIntegerFromMinToMax', {label: validationLabel(label), min: min, max: max}); return value; }
 function dimensions(options = {}) {
   const width = integer(options.width ?? 640, 1, 16384, 'Video width'), height = integer(options.height ?? 480, 1, 16384, 'Video height');
   // Mirrors EXPORT_MAX_PIXELS in src/export-sampling.mjs.
@@ -63,15 +63,20 @@ class VfwExportService {
   }
   async capabilities(options = {}) {
     const size = dimensions(options), limits = {maxChunkBytes: CHUNK, maxFrameBytes: MAX_FRAME, maxBytes: MAX_OUTPUT, maxStateBytes: MAX_STATE};
-    if (this.platform !== 'win32') return {available: false, platform: this.platform, codecs: [], reason: 'Installed Video for Windows codecs require the Windows desktop app.', ...limits};
+    if (this.platform !== 'win32') return {available: false, platform: this.platform, codecs: [], reason: 'Installed Video for Windows codecs require the Windows desktop app.', reasonKey:'desktop.vfwExportService.errors.installedVideoForWindowsCodecsAreAvailableOnlyInTheWindowsDesktopApp', ...limits};
     const cacheKey = `${size.width}:${size.height}`, cached = this.cache.get(cacheKey);
     if (cached && Date.now() - cached.time < 10000) return cached.value;
     const responses = await Promise.allSettled(['x86', 'x64'].map(async arch => ({arch, data: await this._command(arch, ['--list', size.width, size.height])})));
-    const codecs = [], errors = [];
+    const codecs = [], errors = [], errorDetails = [];
     for (const response of responses) {
-      if (response.status === 'rejected') { errors.push(clean(response.reason?.message)); continue; }
+      if (response.status === 'rejected') {
+        const message=clean(response.reason?.message); errors.push(message);
+        errorDetails.push(response.reason?.messageKey ? {messageKey:response.reason.messageKey,messageParams:response.reason.messageParams} : message); continue;
+      }
       const {arch, data} = response.value;
-      if (!Array.isArray(data.codecs) || data.codecs.length > 4096) { errors.push(`${arch} codec table is invalid.`); continue; }
+      if (!Array.isArray(data.codecs) || data.codecs.length > 4096) {
+        errors.push(`${arch} codec table is invalid.`); errorDetails.push({messageKey:'vfwExportControls.invalidCodecTable',messageParams:{arch}}); continue;
+      }
       for (const entry of data.codecs) {
         const handler = typeof entry.handler === 'string' ? parseInt(entry.handler, 16) : entry.handler;
         if (!Number.isInteger(handler) || handler < 0 || handler > 0xffffffff) continue;
@@ -79,12 +84,14 @@ class VfwExportService {
         const name = clean(entry.description || entry.name || entry.fourcc), id = `vfw:${arch}:${handler.toString(16).padStart(8, '0')}`;
         codecs.push({id, arch, handler, name, label: `${name} (${arch === 'x86' ? '32' : '64'}-bit)`, fourcc: clean(entry.fourcc), supported, kind: entry.kind ?? 'installed', lossless: entry.kind === 'uncompressed',
           reason: supported ? null : clean(entry.reason || `This codec does not accept ${size.width} × ${size.height} RGB24 frames.`),
+          ...(!supported && !entry.reason ? {reasonKey:'vfwExportControls.codecDoesNotAcceptFrames',reasonParams:{width:size.width,height:size.height}} : {}),
           quality: Boolean(entry.quality ?? (flags & 1)), configure: Boolean(entry.configure ?? entry.configureAvailable), keyframes: Boolean(entry.keyframes ?? (flags & 4)), dataRate: Boolean(entry.dataRate ?? (flags & 2)),
           mimeType: 'video/x-msvideo', extension: 'avi', provider: 'Windows VFW'});
       }
     }
     const value = {available: codecs.some(codec => codec.supported), platform: 'win32', codecs, errors, width: size.width, height: size.height,
-      reason: codecs.some(codec => codec.supported) ? null : errors.length ? errors.join(' ') : 'No installed Windows codec accepts this RGB24 canvas size.', ...limits};
+      reason: codecs.some(codec => codec.supported) ? null : errors.length ? errors.join(' ') : 'No installed Windows codec accepts this RGB24 canvas size.',
+      ...(!codecs.some(codec => codec.supported) ? {reasonKey:errors.length ? 'vfwExportControls.codecCheckFailure' : 'vfwExportControls.noInstalledCodecAcceptsThisCanvasSize',reasonParams:errors.length ? {details:{format:'list',value:errorDetails,options:{style:'long',type:'unit'}}} : {}} : {}), ...limits};
     if (this.cache.size >= 16) this.cache.delete(this.cache.keys().next().value);
     this.cache.set(cacheKey, {time: Date.now(), value}); return value;
   }

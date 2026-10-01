@@ -87,9 +87,9 @@ const select = (id, label, icon, options = [], labelKey, labelParams) => {
   for (const option of options) appendLocalized(node, element('option', {value: option.value, text: option.label, textKey: option.labelKey, textParams: option.labelParams, title: option.title, titleKey: option.titleKey}));
   return {node, wrap: element('span', {className: 'ui-select'}, node, glyph(icon, 'chevron-down'))};
 };
-const switchRow = (id, label, text) => {
-  const input = element('input', {type: 'checkbox', role: 'switch', className: 'ui-switch', id, 'aria-label': label});
-  const caption = element('span', {text});
+const switchRow = (id, label, text, {labelKey, textKey, textParams} = {}) => {
+  const input = element('input', {type: 'checkbox', role: 'switch', className: 'ui-switch', id, 'aria-label': label, ariaLabelKey:labelKey});
+  const caption = element('span', {text, textKey, textParams});
   return {input, caption, wrap: element('label', {className: 'export-toggle'}, caption, input)};
 };
 /** A value in a pixel box `maxWidth × maxHeight` with the artboard's shape. */
@@ -170,11 +170,11 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
   const strip = element('div', {className: 'ui-range-strip', role: 'group', 'aria-label': interfaceText("exportSheet.framesToExport"), 'aria-labelKey': "exportSheet.framesToExport", 'aria-labelParams': {}}, ...cells.map(entry => entry.cell), startHandle, endHandle);
   const playButton = element('button', {type: 'button', className: 'ui-icon-button', id: 'export-play', dataset: {variant: 'soft', size: 'sm', shape: 'round'},
     'aria-label': interfaceText("exportSheet.playPreview"), 'aria-labelKey': "exportSheet.playPreview", 'aria-labelParams': {}, 'aria-pressed': 'false'}, glyph(icon, 'play'));
-  const frameField = (id, label, text) => {
-    const input = element('input', {className: 'ui-field-input', id, type: 'text', inputmode: 'numeric', autocomplete: 'off', 'aria-label': label});
-    return {input, wrap: element('span', {className: 'ui-field export-frame-field', dataset: {size: 'sm'}}, element('label', {className: 'ui-field-label', htmlFor: id, text}), input)};
+  const frameField = (id, label, text, labelKey, textKey) => {
+    const input = element('input', {className: 'ui-field-input', id, type: 'text', inputmode: 'numeric', autocomplete: 'off', 'aria-label': label, ariaLabelKey:labelKey});
+    return {input, wrap: element('span', {className: 'ui-field export-frame-field', dataset: {size: 'sm'}}, element('label', {className: 'ui-field-label', htmlFor: id, text, textKey}), input)};
   };
-  const fromField = frameField(FIELD.from, interfaceText("exportSheet.firstFrame"), interfaceText("exportSheet.from")), toField = frameField(FIELD.to, interfaceText("exportSheet.lastFrame"), interfaceText("exportSheet.to"));
+  const fromField = frameField(FIELD.from, interfaceText("exportSheet.firstFrame"), interfaceText("exportSheet.from"), 'exportSheet.firstFrame', 'exportSheet.from'), toField = frameField(FIELD.to, interfaceText("exportSheet.lastFrame"), interfaceText("exportSheet.to"), 'exportSheet.lastFrame', 'exportSheet.to');
   const allFrames = element('button', {type: 'button', className: 'ui-button', id: ELEMENT.allFrames, tooltipKey: 'exportSheet.entireAnimationTip', dataset: {variant: 'ghost', size: 'sm', tooltip: 'Use the entire animation'}, text: interfaceText("exportSheet.all"), textKey: "exportSheet.all"});
   const captionLabel = element('span', {className: 'export-caption-label', text: interfaceText("exportSheet.frames"), textKey: "exportSheet.frames"});
   const range = element('span', {className: 'export-caption-range'}, fromField.wrap, toField.wrap, allFrames);
@@ -209,11 +209,11 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
   const size = select(FIELD.sizePreset, interfaceText("exportSheet.size"), icon, sizeChoices.map(choice => ({value: choice.id, label: choice.label, title: choice.reason || undefined})), "exportSheet.size", {});
   sizeChoices.forEach((choice, index) => { size.node.options[index].disabled = choice.disabled; });
   const sizeRow = row(interfaceText("exportSheet.size"), size.wrap, {htmlFor: FIELD.sizePreset, labelKey: "exportSheet.size", labelParams: {}});
-  const pixelField = (id, label, text) => {
-    const input = element('input', {className: 'ui-field-input', id, type: 'text', inputmode: 'numeric', autocomplete: 'off', 'aria-label': label});
-    return {input, wrap: element('span', {className: 'ui-field'}, element('label', {className: 'ui-field-label', htmlFor: id, text}), input)};
+  const pixelField = (id, label, text, labelKey, textKey) => {
+    const input = element('input', {className: 'ui-field-input', id, type: 'text', inputmode: 'numeric', autocomplete: 'off', 'aria-label': label, ariaLabelKey:labelKey});
+    return {input, wrap: element('span', {className: 'ui-field'}, element('label', {className: 'ui-field-label', htmlFor: id, text, textKey}), input)};
   };
-  const widthField = pixelField(FIELD.width, interfaceText("exportSheet.exportWidthPx"), interfaceText("exportSheet.width")), heightField = pixelField(FIELD.height, interfaceText("exportSheet.exportHeightPx"), interfaceText("exportSheet.height"));
+  const widthField = pixelField(FIELD.width, interfaceText("exportSheet.exportWidthPx"), interfaceText("exportSheet.width"), 'exportSheet.exportWidthPx', 'exportSheet.width'), heightField = pixelField(FIELD.height, interfaceText("exportSheet.exportHeightPx"), interfaceText("exportSheet.height"), 'exportSheet.exportHeightPx', 'exportSheet.height');
   const lock = element('input', {type: 'checkbox', id: FIELD.lockRatio, className: 'export-lock-input', 'aria-label': interfaceText("exportSheet.lockRatio"), 'aria-labelKey': "exportSheet.lockRatio", 'aria-labelParams': {}});
   const lockToggle = element('label', {className: 'ui-icon-button export-lock', dataset: {size: 'sm', tooltip: 'Lock ratio: width and height change together'}, tooltipKey: 'exportSheet.lockRatioTip'}, glyph(icon, 'link'), lock);
   const customRow = row('', element('span', {className: 'export-size-custom'}, widthField.wrap, lockToggle, heightField.wrap));
@@ -229,14 +229,16 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
   quality.setAttribute('aria-describedby', qualityHint.id);
   const jpeg = element('input', {className: 'ui-field-input', id: FIELD.jpegQuality, type: 'text', inputmode: 'numeric', autocomplete: 'off', 'aria-label': interfaceText("exportSheet.jpegQuality"), 'aria-labelKey': "exportSheet.jpegQuality", 'aria-labelParams': {}});
   const jpegRow = row(interfaceText("exportSheet.quality"), element('span', {className: 'ui-field'}, jpeg, element('span', {className: 'ui-field-unit', text: '%'})), {htmlFor: FIELD.jpegQuality, labelKey: "exportSheet.quality", labelParams: {}});
-  const dither = switchRow(FIELD.dither, interfaceText("exportSheet.ditherGif"), interfaceText("exportSheet.dither"));
+  const dither = switchRow(FIELD.dither, interfaceText("exportSheet.ditherGif"), interfaceText("exportSheet.dither"), {labelKey:'exportSheet.ditherGif',textKey:'exportSheet.dither'});
   localizedAttribute(dither.wrap, 'data-tooltip', "exportSheet.smootherGradientsAndPhotographsALargerFile", {});
   const colourRow = row(interfaceText("exportSheet.colours"), dither.wrap, {labelKey: "exportSheet.colours", labelParams: {}});
   const soundNames = context.soundNames ?? [];
-  const sound = switchRow(FIELD.audio, interfaceText("exportSheet.includeSound"), soundNames.length === 1 ? soundNames[0] : soundNames.length ? `${soundNames.length} sounds` : interfaceText("exportSheet.includeSound"));
+  const sound = switchRow(FIELD.audio, interfaceText("exportSheet.includeSound"), soundNames.length === 1 ? soundNames[0] : interfaceText(soundNames.length ? "exportSheet.soundCount" : "exportSheet.includeSound", {count:soundNames.length}));
+  localizedAttribute(sound.input, 'aria-label', 'exportSheet.includeSound');
+  if (soundNames.length !== 1) localizedText(sound.caption, soundNames.length ? 'exportSheet.soundCount' : 'exportSheet.includeSound', {count:soundNames.length});
   const soundRow = row(interfaceText("exportSheet.sound"), sound.wrap, {labelKey: "exportSheet.sound", labelParams: {}});
   const smoothing = select(FIELD.smoothing, interfaceText("exportSheet.edges"), icon, EXPORT_SMOOTHING.map(option => ({value: option.value, label: option.label, title: option.description})), "exportSheet.edges", {});
-  const transparent = switchRow('export-transparent', interfaceText("exportSheet.transparentBackground"), interfaceText("exportSheet.transparent"));
+  const transparent = switchRow('export-transparent', interfaceText("exportSheet.transparentBackground"), interfaceText("exportSheet.transparent"), {labelKey:'exportSheet.transparentBackground',textKey:'exportSheet.transparent'});
   transparent.input.disabled = true;
   const transparentReason = element('p', {className: 'export-reason', id: 'export-transparent-reason'});
   transparent.input.setAttribute('aria-describedby', transparentReason.id);

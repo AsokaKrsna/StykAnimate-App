@@ -110,3 +110,16 @@ test('catalogs are immutable and preserve every translated placeholder', () => {
     }
   }
 });
+
+test('display lists resolve each current-language caption and keep formatter and nesting limits',()=>{
+  const locale=new Localization({locale:'de'}),value={format:'list',value:[{messageKey:'common.save'},{messageKey:'common.cancel'}],options:{style:'short',type:'conjunction'}};
+  assert.equal(locale.t('hotkeySettings.alreadyAssignedInThisContextReplaceThoseBindings',{value}),
+    locale.t('hotkeySettings.alreadyAssignedInThisContextReplaceThoseBindings',{value:new Intl.ListFormat('de',value.options).format([locale.t('common.save'),locale.t('common.cancel')])}));
+  locale.setLocale('ar');
+  assert.equal(locale.t('hotkeySettings.alreadyAssignedInThisContextReplaceThoseBindings',{value}),
+    locale.t('hotkeySettings.alreadyAssignedInThisContextReplaceThoseBindings',{value:new Intl.ListFormat('ar',value.options).format([locale.t('common.save'),locale.t('common.cancel')])}));
+  assert.ok(locale.formatters.size<=16);
+  const cyclic={messageKey:'hotkeySettings.assignmentSummary'};cyclic.messageParams={label:cyclic,bindings:'Ctrl+S'};
+  assert.doesNotThrow(()=>locale.t('hotkeySettings.assignmentSummary',{label:cyclic,bindings:'Ctrl+S'}));
+  assert.match(locale.t('hotkeySettings.assignmentSummary',{label:'Save',bindings:{format:'list',value:Array(257).fill('a')}}),/\{bindings\}/);
+});

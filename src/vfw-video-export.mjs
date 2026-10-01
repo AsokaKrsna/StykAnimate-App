@@ -6,7 +6,7 @@ import {EXPORT_MAX_PIXELS} from './export-sampling.mjs';
 const MAX_BYTES = 256 * 1024 * 1024;
 const cancelled = () => messageError(new DOMException('', 'AbortError'), "errors.vfwVideoExport.windowsVideoExportCancelled", {});
 export async function getVfwCapabilities(options = {}, desktop = globalThis.stykDesktop) {
-  if (typeof desktop?.getVfwCapabilities !== 'function') return {available: false, codecs: [], reason: 'Installed Video for Windows codecs require the Windows desktop app.'};
+  if (typeof desktop?.getVfwCapabilities !== 'function') return {available: false, codecs: [], reason: 'Installed Video for Windows codecs require the Windows desktop app.',reasonKey:'desktop.vfwExportService.errors.installedVideoForWindowsCodecsAreAvailableOnlyInTheWindowsDesktopApp'};
   return desktop.getVfwCapabilities(options);
 }
 export async function configureVfwCodec(options, desktop = globalThis.stykDesktop) {
