@@ -56,6 +56,8 @@ What's new in each version of StykAnimate.
 - Much smoother playback of busy animations, with fewer pauses, especially on laptops without a dedicated graphics card and in Compatibility mode.
 - Complex STK figures open faster, including figures with long chains of joints.
 - Faster color adjustments on large drawings, especially when painted areas are far apart.
+- Faster keyframe edits and figure posing in long animations with many layers.
+- Large personal libraries open faster, with more responsive selection.
 
 ## [1.2.0]
 

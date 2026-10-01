@@ -9,6 +9,9 @@ import {continuations,setContinuations} from './movieclip-presence.mjs';
 import {frameOrder,setOrder,normalizeFrame} from './pivot/structure.mjs';
 
 const cache=new WeakMap();
+// One validation index per live report. It retains only the current sheet's
+// identities; history owns its immutable track records independently.
+const validationIndices=new WeakMap();
 export const MAX_SHEET_TICKS=10000000;
 export function sheetTrack(report,id){return report._styk?.layerSheet?.tracks[id];}
 export function sheetKeyAt(track,tick){
@@ -20,36 +23,71 @@ export function sheetKeyTimes(report){
   const state=report._styk?.layerSheet;if(!state)return [];
   return [...new Set([0,...Object.values(state.tracks).flatMap(track=>track.keys.map(key=>key.tick))])].filter(t=>t<state.duration).sort((a,b)=>a-b);
 }
-export function validateLayerSheet(report){
+function sheetValidationState(report){
   const state=report._styk?.layerSheet;if(state===undefined)return report;
   if(!state||state.version!==1||!Number.isInteger(state.duration)||state.duration<1||state.duration>MAX_SHEET_TICKS||
     !Number.isSafeInteger(state.nextId)||state.nextId<1||!state.tracks||Array.isArray(state.tracks))throw messageError(new Error(''), "errors.layerSheet.invalidLayerTimeline", {});
-  const allowed=new Set(['scene','camera',...(report._styk.layers?.order??[])]),ids=new Set();let count=0,largest=0;
+  const allowed=new Set(['scene','camera',...(report._styk.layers?.order??[])]);
   if([...allowed].some(id=>!Object.hasOwn(state.tracks,id)))throw messageError(new Error(''), "errors.layerSheet.layerTimelineIsMissingAnExposureTrack", {});
-  for(const [id,track] of Object.entries(state.tracks)){
+  return {state,allowed};
+}
+function validateTrack(report,id,track,allowed,duration){
     if(!allowed.has(id)||!track||!Array.isArray(track.keys))throw messageError(new Error(''), "errors.layerSheet.layerTimelineReferencesAMissingLayer", {});
-    if(!Number.isInteger(track.end)||track.end<0||track.end>state.duration)throw messageError(new Error(''), "errors.layerSheet.invalidLayerExposureLength", {});
-    let previous=-1;
+    if(!Number.isInteger(track.end)||track.end<0||track.end>duration)throw messageError(new Error(''), "errors.layerSheet.invalidLayerExposureLength", {});
+    const ids=new Set(),sources=new Map();let previous=-1,largest=0;
+    const sourceFor=frameId=>{if(sources.has(frameId))return sources.get(frameId);const frame=poseSourceFrame(report,frameId);if(frame)sources.set(frameId,frame);return frame;};
     for(const key of track.keys){
-      if(++count>1000000||!key||typeof key.id!=='string'||!key.id||ids.has(key.id)||!Number.isInteger(key.tick)||key.tick<0||key.tick<=previous||key.tick>=track.end)
+      if(ids.size>=1000000||!key||typeof key.id!=='string'||!key.id||ids.has(key.id)||!Number.isInteger(key.tick)||key.tick<0||key.tick<=previous||key.tick>=track.end)
         throw messageError(new Error(''), "errors.layerSheet.layerKeysNeedUniqueIdentitiesAndDistinctOrdered", {});
       ids.add(key.id);previous=key.tick;validateKeyEasing(key);
       if(key.patchOnly!==undefined&&key.patchOnly!==true)throw messageError(new Error(''), "errors.layerSheet.invalidMovieclipFrameBoundary", {});
       if(key.movieclipPatches!==undefined){
         if(!Array.isArray(key.movieclipPatches)||key.movieclipPatches.length>65535)throw messageError(new Error(''), "errors.layerSheet.invalidMovieclipFrameReplacements", {});
         const replaced=new Set();
-        for(const patch of key.movieclipPatches){if(!patch||!Number.isInteger(patch.uid)||patch.uid<0||replaced.has(patch.uid)||!poseSourceFrame(report,patch.frameId)||
-          patch.replacementUid!==undefined&&!poseSourceFrame(report,patch.frameId).objects.some(object=>object.unique_id===patch.replacementUid)||
+        for(const patch of key.movieclipPatches){if(!patch||!Number.isInteger(patch.uid)||patch.uid<0||replaced.has(patch.uid)||!sourceFor(patch.frameId)||
+          patch.replacementUid!==undefined&&!sourceFor(patch.frameId).objects.some(object=>object.unique_id===patch.replacementUid)||
           patch.orderIndex!==undefined&&(!Number.isInteger(patch.orderIndex)||patch.orderIndex<0||patch.orderIndex>65535))throw messageError(new Error(''), "errors.layerSheet.invalidMovieclipFrameReplacement", {});replaced.add(patch.uid);}
       }
       if(/^cell-\d+$/.test(key.id))largest=Math.max(largest,Number(key.id.slice(5)));
       if(key.sourceTick!==undefined){if(!Number.isFinite(key.sourceTick)||key.sourceTick<0||key.sourceTick>MAX_SHEET_TICKS)throw messageError(new Error(''), "errors.layerSheet.invalidImportedLayerTiming", {});}
-      else if(key.value?.frameId!==null&&!poseSourceFrame(report,key.value?.frameId))throw messageError(new Error(''), "errors.layerSheet.layerKeyReferencesAMissingPose", {});
+      else if(key.value?.frameId!==null&&!sourceFor(key.value?.frameId))throw messageError(new Error(''), "errors.layerSheet.layerKeyReferencesAMissingPose", {});
     }
+  return {track,keys:track.keys,end:track.end,count:track.keys.length,largest,sources};
+}
+function validateSheet(report,owner,incremental){
+  if(report._styk?.layerSheet===undefined){validationIndices.delete(owner);return report;}
+  const {state,allowed}=sheetValidationState(report),known=incremental?validationIndices.get(owner):undefined,
+    previous=known&&known.nativeFrames===report.keyframes?known:undefined,tracks=new Map(),changed=new Set();
+  // Undo may remove a newly created source table without changing imported
+  // tracks. Recheck distinct source references rather than every retained key.
+  const sameSources=summary=>{for(const [id,frame] of summary.sources)if(poseSourceFrame(report,id)!==frame)return false;return true;};
+  let count=0,largest=0;
+  for(const [id,track] of Object.entries(state.tracks)){
+    const old=previous?.tracks.get(id),retained=old&&old.track===track&&old.keys===track.keys&&old.count===track.keys.length&&old.end===track.end&&sameSources(old);
+    if(!allowed.has(id))throw messageError(new Error(''), "errors.layerSheet.layerTimelineReferencesAMissingLayer", {});
+    if(retained&&track.end>state.duration)throw messageError(new Error(''), "errors.layerSheet.invalidLayerExposureLength", {});
+    const summary=retained?old:validateTrack(report,id,track,allowed,state.duration);
+    tracks.set(id,summary);if(!retained)changed.add(id);count+=summary.count;largest=Math.max(largest,summary.largest);
   }
+  if(count>1000000)throw messageError(new Error(''), "errors.layerSheet.layerKeysNeedUniqueIdentitiesAndDistinctOrdered", {});
   if(state.nextId<=largest)throw messageError(new Error(''), "errors.layerSheet.layerKeyIdentityCounterIsInvalid", {});
+  for(const id of previous?.tracks.keys()??[])if(!tracks.has(id))changed.add(id);
+  const owners=previous?.owners??new Map(),additions=previous?new Map():owners;
+  for(const id of changed)for(const key of tracks.get(id)?.keys??[]){const keyId=key.id;
+    const oldOwner=owners.get(keyId);
+    if(additions.has(keyId)||oldOwner!==undefined&&!changed.has(oldOwner))throw messageError(new Error(''), "errors.layerSheet.layerKeysNeedUniqueIdentitiesAndDistinctOrdered", {});
+    additions.set(keyId,id);
+  }
+  // Do not alter the last valid index until every candidate invariant passes.
+  for(const id of changed)for(const key of previous?.tracks.get(id)?.keys??[])owners.delete(key.id);
+  for(const [keyId,id] of additions)owners.set(keyId,id);
+  validationIndices.set(owner,{tracks,owners,nativeFrames:report.keyframes});
   return report;
 }
+export function validateLayerSheet(report){return validateSheet(report,report,false);}
+/** Internal commands copy edited keys/tracks before publication. Untrusted load
+ * and explicit validation keep the complete traversal above. */
+export function validateLayerSheetChanges(report,owner){return validateSheet(report,owner,true);}
 export function legacySheetReport(report){
   const state=report._styk.layerSheet;
   const metadata={...report._styk,animation:state.legacyAnimation};delete metadata.layerSheet;
@@ -143,9 +181,16 @@ export function sampleLayerSheet(report,tick,{sampleLegacy,sampleNative,resolveG
   if(camera===scene&&scene.objects?.every(object=>frames.get(layerIdForUid(report,object.unique_id))===scene)&&
     continuations(scene).every(step=>frames.get(layerIdForUid(report,step.uid))===scene)&&
     [...frames.values()].every(frame=>!frame||frame===scene||!frame.objects.length&&!continuations(frame).length))return scene;
+  const partitions=new Map(),steps=[];
   for(const id of report._styk.layers.order){
     const frame=frames.get(id);if(!frame)continue;
-    for(const object of ordered(frame))if(layerIdForUid(report,object.unique_id)===id)records.push({object,parent:object.join?frame.objects[object.join.target_object_slot]?.unique_id:null});
+    let groups=partitions.get(frame);
+    if(!groups){groups=new Map();partitions.set(frame,groups);
+      const groupFor=uid=>{const owner=layerIdForUid(report,uid);let group=groups.get(owner);if(!group)groups.set(owner,group={records:[],steps:[]});return group;};
+      for(const object of ordered(frame))groupFor(object.unique_id).records.push({object,parent:object.join?frame.objects[object.join.target_object_slot]?.unique_id:null});
+      for(const step of continuations(frame))groupFor(step.uid).steps.push(step);
+    }
+    const group=groups.get(id);if(group){for(const record of group.records)records.push(record);for(const step of group.steps)steps.push(step);}
   }
   const slots=new Map(records.map(({object},slot)=>[object.unique_id,slot]));
   const objects=records.map(({object,parent},slot)=>{
@@ -154,7 +199,7 @@ export function sampleLayerSheet(report,tick,{sampleLegacy,sampleNative,resolveG
     return {...object,object_slot:slot,join:joined?{...object.join,target_object_slot:parentSlot,target_unique_id:parent}:null};
   });
   const result={...template,objects,object_count:objects.length,object_draw_order:objects.map((_,i)=>i),object_draw_order_unique_ids:objects.map(o=>o.unique_id),camera:camera?.camera??{is_default:true,x:0,y:0,scale:1,angle_rad:0}};
-  setContinuations(result,[...frames].flatMap(([id,frame])=>continuations(frame).filter(step=>layerIdForUid(report,step.uid)===id)));
+  setContinuations(result,steps);
   for(const field of ['background_id','background_id_b','background_mix','background_color','_stykBackgroundColor','_stykVfx']){
     if(field in scene)result[field]=scene[field];else delete result[field];
   }

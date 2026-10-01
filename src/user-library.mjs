@@ -13,7 +13,7 @@ import {LibraryHoverPreview} from './library-hover-preview.mjs';
 import {libraryPreviewMatte, LIBRARY_MATTES} from './library-preview-core.mjs';
 import {canMoveLibraryItem} from './library-drag.mjs';
 import {openMenu} from './ui/ui-menu.mjs';
-import {setAttr, setProp, setText} from './ui/dom-write.mjs';
+import {setAttr, setFlag, setProp, setText} from './ui/dom-write.mjs';
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const folderIcon = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>';
@@ -44,6 +44,7 @@ export class UserLibrary {
     this.source = 'mine'; this.folder = ''; this.entries = []; this.selected = null; this.generation = 0; this.busy = false; this.thumbnails = new Map();
     this.publicCatalog = null; this.publicState = 'idle'; this.publicError = ''; this.publicSelected = null; this.publicGeneration = 0;
     this.filterValue = 'all'; this.background = 'auto'; this.menu = null;
+    this.cards = []; this.cardsByKey = new Map(); this.selectedCard = null; this.tabStopCard = null;
     this.hoverPreview = new LibraryHoverPreview(desktop);
     this.container = document.getElementById('user-library');
     if (!this.container) { this.container = document.createElement('section'); this.container.id = 'user-library'; this.container.hidden = true; }
@@ -82,7 +83,7 @@ export class UserLibrary {
     this.grid.addEventListener('pointerover', event => {
       const card = event.target.closest('.library-card');
       if (!card || card.contains(event.relatedTarget) || event.buttons || this.busy || this.menu || this.dialog.open || card.querySelector('input')) return;
-      const item = this.source === 'mine' ? this.entries.find(item => item.path === card.dataset.libraryPath) : null;
+      const item = this.source === 'mine' ? this.itemFor(card.dataset.libraryPath) : null;
       if (item?.kind === 'movieclip') this.hoverPreview.start(card, item);
     });
     this.grid.addEventListener('pointerout', event => {
@@ -128,23 +129,37 @@ export class UserLibrary {
       ? {menu: interfaceText("common.delete"), menuKey:"common.delete", dialog: interfaceText("userLibrary.willBeDeletedFromThisBrowserSLibrary"), dialogKey:"userLibrary.willBeDeletedFromThisBrowserSLibrary", button: interfaceText("common.delete"), buttonKey:"common.delete", done: interfaceText("userLibrary.deleted"), doneKey:"userLibrary.deleted"}
       : {menu: interfaceText("userLibrary.moveToRecycleBin"), menuKey:"userLibrary.moveToRecycleBin", dialog: interfaceText("userLibrary.willMoveToTheRecycleBin"), dialogKey:"userLibrary.willMoveToTheRecycleBin", button: interfaceText("userLibrary.moveToRecycleBin"), buttonKey:"userLibrary.moveToRecycleBin", done: interfaceText("userLibrary.movedToRecycleBin"), doneKey:"userLibrary.movedToRecycleBin"};
   }
-  get publicItems() {
-    const names = new Map((this.publicCatalog?.categories ?? []).map(category => [category.id, category.name]));
-    return (this.publicCatalog?.items ?? []).map(item => ({...item, source: 'public', categoryName: names.get(item.category) ?? ''}));
+  /** Listings are snapshots. Keep derived records and searches until the owning API replaces them. */
+  itemView(source = this.source) {
+    if (source === 'public') {
+      if (!this.publicView || this.publicView.catalog !== this.publicCatalog) {
+        const names = new Map((this.publicCatalog?.categories ?? []).map(category => [category.id, category.name]));
+        const items = (this.publicCatalog?.items ?? []).map(item => ({...item, source: 'public', categoryName: names.get(item.category) ?? ''}));
+        this.publicView = {catalog: this.publicCatalog, items, byKey: new Map(items.map(item => [item.id, item]))};
+      }
+      return this.publicView;
+    }
+    if (!this.localView || this.localView.items !== this.entries) this.localView = {items: this.entries, byKey: new Map(this.entries.map(item => [item.path, item]))};
+    return this.localView;
   }
+  get publicItems() { return this.itemView('public').items; }
   cardFrom(target) { const card = target?.closest?.('.library-card'); return card && this.grid.contains(card) && !card.classList.contains('is-skeleton') ? card : null; }
   keyOf(card) { return card?.dataset.libraryPath ?? card?.dataset.publicId ?? null; }
-  cardFor(key) { return [...this.grid.querySelectorAll('.library-card')].find(card => this.keyOf(card) === key) ?? null; }
-  itemFor(key) { return key == null ? null : this.source === 'public' ? this.publicItems.find(item => item.id === key) ?? null : this.entries.find(item => item.path === key) ?? null; }
+  cardFor(key) { return this.cardsByKey.get(key) ?? null; }
+  itemFor(key) { return key == null ? null : this.itemView().byKey.get(key) ?? null; }
   get selectedKey() { return this.source === 'public' ? this.publicSelected : this.selected; }
   /** The asset a card drags (library-drag.mjs): an asset or, in My library, a folder. */
   assetFor(card) { return this.busy ? null : this.itemFor(this.keyOf(card)); }
   dragStarted(asset) { this.hoverPreview.stop(); this.closeMenu(); this.select(asset.path ?? asset.id); }
   visibleItems() {
-    const query = this.input.value.trim().toLocaleLowerCase(), filter = this.filterValue;
+    const locale = interfaceLocalization.locale, query = this.input.value.trim().toLocaleLowerCase(locale), filter = this.filterValue;
     const kind = item => filter === 'all' || item.kind === filter || filter === 'figure' && item.kind === 'set';
-    if (this.source === 'public') return this.publicItems.filter(item => kind(item) && `${item.name} ${item.categoryName} ${item.author} ${item.tags.join(' ')} ${item.description}`.toLocaleLowerCase().includes(query));
-    return this.entries.filter(item => item.name.toLocaleLowerCase().includes(query) && (item.kind === 'folder' || kind(item)));
+    const view = this.itemView(), pub = this.source === 'public';
+    if (query && view.searchLocale !== locale) {
+      view.searchText = new Map(view.items.map(item => [item, (pub ? `${item.name} ${item.categoryName} ${item.author} ${item.tags.join(' ')} ${item.description}` : item.name).toLocaleLowerCase(locale)]));
+      view.searchLocale = locale;
+    }
+    return view.items.filter(item => (!pub && item.kind === 'folder' || kind(item)) && (!query || view.searchText.get(item).includes(query)));
   }
 
   // ---- Showing ----
@@ -218,7 +233,7 @@ export class UserLibrary {
     catch (error) { if (folder && /ENOENT/.test(error.message)) result = await this.desktop.listLibrary(''); else throw error; }
     if (generation !== this.generation || this.source !== 'mine') return;
     if (this.folder !== result.path) { this.selected = null; this.input.value = ''; }
-    this.folder = result.path; this.entries = result.entries; this.root = result.root;
+    this.folder = result.path; this.entries = result.entries; this.localView = null; this.root = result.root;
     const nav = this.container.querySelector('nav'); replaceLocalized(nav);
     let current = ''; const parts = messageTuple([interfaceText("userLibrary.library2"), ...this.folder.split('/').filter(Boolean)], {0: {key: "userLibrary.library2", params: {}}});
     for (const [i, part] of parts.entries()) {
@@ -243,7 +258,7 @@ export class UserLibrary {
     try {
       const catalog = await this.desktop.listPublicLibrary(refresh);
       if (generation !== this.publicGeneration) return;
-      this.publicCatalog = catalog; this.publicState = 'ready'; this.publicError = '';
+      this.publicCatalog = catalog; this.publicView = null; this.publicState = 'ready'; this.publicError = '';
     } catch (error) {
       if (generation !== this.publicGeneration) return;
       this.publicError = plain(error);
@@ -257,8 +272,8 @@ export class UserLibrary {
     this.showView('library');
     await this.setSource('public');
     if (!id) return;
-    let item = this.publicItems.find(item => item.id === id);
-    if (!item && this.publicState === 'ready') { await this.loadPublic({refresh: true}); item = this.publicItems.find(item => item.id === id); }
+    let item = this.itemFor(id);
+    if (!item && this.publicState === 'ready') { await this.loadPublic({refresh: true}); item = this.itemFor(id); }
     if (!item) { if (this.publicState === 'ready') this.say({messageKey:"userLibrary.notice.thatAssetIsNoLongerInTheCommunity",messageParams:{}}, true); return; }
     if (!this.visibleItems().includes(item)) { this.input.value = ''; this.setFilter('all'); }
     this.publicSelected = id; this.render();
@@ -271,11 +286,13 @@ export class UserLibrary {
   // ---- Cards ----
   render() {
     this.closeMenu(); this.hoverPreview.stop();
-    this.observer.disconnect(); replaceLocalized(this.grid);
+    this.observer.disconnect();
+    this.cards = []; this.cardsByKey = new Map(); this.selectedCard = null; this.tabStopCard = null;
     const pub = this.source === 'public', items = this.visibleItems();
     localizedAttribute(this.grid, 'aria-label', (pub ? "userLibrary.communityLibrary" : "userLibrary.myLibrary"), (pub ? {} : {}));
     this.grid.removeAttribute('aria-busy');
     if (pub && this.publicState === 'loading') {
+      replaceLocalized(this.grid);
       this.grid.setAttribute('aria-busy', 'true'); this.empty.hidden = true; this.renderLocation(0);
       for (let i = 0; i < SKELETONS; i++) this.grid.insertAdjacentHTML('beforeend', '<div class="library-card is-skeleton" aria-hidden="true"><div class="library-thumbnail"></div><div class="library-card-info"><span class="library-name"></span><span class="library-kind"></span></div></div>');
       return;
@@ -284,19 +301,28 @@ export class UserLibrary {
     this.empty.hidden = items.length > 0;
     const filtered = Boolean(this.input.value.trim() || this.filterValue !== 'all') && (pub ? this.publicItems.length : this.entries.length) > 0;
     if (!this.empty.hidden) this.renderEmpty(filtered);
+    // Build off-document, then register the completed subtree once. Registering
+    // each connected card repeatedly prunes all prior translation bindings.
+    const fragment = document.createDocumentFragment();
+    const addCard = (parent, item) => {
+      const card = this.card(item); this.cards.push(card); this.cardsByKey.set(this.keyOf(card), card); parent.append(card);
+    };
     if (pub) {
       // Grouped by the website's categories, in its order.
+      const groups = new Map();
+      for (const item of items) { const members = groups.get(item.category) ?? []; members.push(item); groups.set(item.category, members); }
       for (const category of this.publicCatalog?.categories ?? []) {
-        const members = items.filter(item => item.category === category.id); if (!members.length) continue;
+        const members = groups.get(category.id); if (!members?.length) continue;
         const group = document.createElement('div'); group.className = 'library-group'; group.setAttribute('role', 'group'); group.setAttribute('aria-label', category.name);
         localizedMarkup(group, `<div class="library-group-label"><span>${esc(category.name)}</span><span class="library-group-count">${members.length}</span></div>`);
-        for (const item of members) appendLocalized(group, this.card(item));
-        appendLocalized(this.grid, group);
+        for (const item of members) addCard(group, item);
+        fragment.append(group);
       }
-    } else for (const item of items) appendLocalized(this.grid, this.card(item));
-    for (const card of this.grid.querySelectorAll('.library-card')) if (!card.classList.contains('folder')) this.observer.observe(card);
+    } else for (const item of items) addCard(fragment, item);
+    replaceLocalized(this.grid, fragment);
+    for (const card of this.cards) if (!card.classList.contains('folder')) this.observer.observe(card);
     const key = this.selectedKey;
-    this.select(items.some(item => (item.path ?? item.id) === key) ? key : null);
+    this.select(this.cardsByKey.has(key) ? key : null);
   }
   card(item) {
     const card = document.createElement('div'), pub = item.source === 'public';
@@ -325,7 +351,7 @@ export class UserLibrary {
   }
   async loadThumbnail(card, generation) {
     if (card.dataset.publicId) return this.loadPublicPreview(card, generation);
-    const path = card.dataset.libraryPath, item = this.entries.find(item => item.path === path); if (!item) return;
+    const path = card.dataset.libraryPath, item = this.itemView('mine').byKey.get(path); if (!item) return;
     const key = `${path}:${item.modified}`;
     try {
       let url = this.thumbnails.get(key) ?? await this.desktop.getLibraryThumbnail(path);
@@ -346,7 +372,7 @@ export class UserLibrary {
     } catch { if (card.isConnected) this.showThumbnail(card, key, null, item.name); }
   }
   async loadPublicPreview(card, generation) {
-    const id = card.dataset.publicId, item = this.publicItems.find(item => item.id === id); if (!item) return;
+    const id = card.dataset.publicId, item = this.itemView('public').byKey.get(id); if (!item) return;
     const key = `public:${id}:${item.sha256}`, current = () => this.source === 'public' && card.isConnected && generation === this.generation;
     try {
       const url = this.thumbnails.get(key) ?? await this.desktop.getPublicLibraryPreview(id);
@@ -371,20 +397,21 @@ export class UserLibrary {
   }
   select(key) {
     if (this.source === 'public') this.publicSelected = key; else this.selected = key;
-    const cards = [...this.grid.querySelectorAll('.library-card:not(.is-skeleton)')];
-    let focusable = null;
-    for (const card of cards) {
-      const chosen = key != null && this.keyOf(card) === key;
-      card.classList.toggle('selected', chosen); card.setAttribute('aria-selected', String(chosen));
-      if (chosen) focusable = card;
+    const selected = this.cardFor(key);
+    if (selected !== this.selectedCard) {
+      setFlag(this.selectedCard, 'selected', false); setAttr(this.selectedCard, 'aria-selected', 'false');
+      setFlag(selected, 'selected', true); setAttr(selected, 'aria-selected', 'true');
+      this.selectedCard = selected;
     }
     // One tab stop for the whole grid: the selected card, else the first.
-    focusable ??= cards[0];
-    for (const card of cards) card.tabIndex = card === focusable ? 0 : -1;
+    const focusable = selected ?? this.cards[0] ?? null;
+    if (focusable !== this.tabStopCard) {
+      setProp(this.tabStopCard, 'tabIndex', -1); setProp(focusable, 'tabIndex', 0); this.tabStopCard = focusable;
+    }
   }
   /** Arrow keys move by what is on screen: across a row, or to the nearest card in the row above or below. */
   neighbour(card, key) {
-    const cards = [...this.grid.querySelectorAll('.library-card:not(.is-skeleton)')], index = cards.indexOf(card);
+    const cards = this.cards, index = cards.indexOf(card);
     if (key === 'Home') return cards[0]; if (key === 'End') return cards.at(-1);
     if (key === 'ArrowLeft') return cards[Math.max(0, index - 1)]; if (key === 'ArrowRight') return cards[Math.min(cards.length - 1, index + 1)];
     const from = card.getBoundingClientRect(), down = key === 'ArrowDown', x = from.left + from.width / 2;
@@ -538,7 +565,7 @@ export class UserLibrary {
   }
   rename() {
     this.hoverPreview.stop();
-    const item = this.source === 'mine' ? this.entries.find(item => item.path === this.selected) : null; if (!item || this.busy) return;
+    const item = this.source === 'mine' ? this.itemFor(this.selected) : null; if (!item || this.busy) return;
     const card = this.cardFor(item.path), name = card?.querySelector('.library-name'); if (!name || card.querySelector('input')) return;
     const input = document.createElement('input'); input.className = 'library-rename'; input.value = item.name; input.maxLength = 120; localizedAttribute(input, 'aria-label', "userLibrary.assetName", {}); name.replaceWith(input); input.focus(); input.select();
     let done = false;
@@ -562,7 +589,7 @@ export class UserLibrary {
     this.dialog.showModal(); this.dialog.querySelector('input').select();
   }
   async move() {
-    const item = this.entries.find(item => item.path === this.selected); if (!item) return;
+    const item = this.itemView('mine').byKey.get(this.selected); if (!item) return;
     localizedAttribute(this.dialog, 'aria-label', "userLibrary.moveLibraryItem", {}); let destination = ''; let sequence = 0;
     localizedMarkup(this.dialog, `<h2 ${messageAttributes("userLibrary.move", {name: item.name})}>Move ${esc(item.name)}</h2><div class="library-move-location"></div><div class="library-move-folders"></div><div role="alert" class="library-dialog-error"></div><footer><button type="button" class="ui-button" data-variant="ghost" data-cancel data-i18n="common.cancel">${messageHTML("userLibrary.cancel", {})}</button><button type="button" class="ui-button" data-variant="primary" data-move data-i18n="userLibrary.moveHere">${messageHTML("userLibrary.moveHere", {})}</button></footer>`);
     const browse = async folder => {
@@ -588,7 +615,7 @@ export class UserLibrary {
     await browse(''); this.dialog.showModal();
   }
   trash() {
-    const item = this.source === 'mine' ? this.entries.find(item => item.path === this.selected) : null; if (!item) return;
+    const item = this.source === 'mine' ? this.itemFor(this.selected) : null; if (!item) return;
     localizedAttribute(this.dialog, 'aria-label', "userLibrary.removeLibraryItem", {});
     localizedMarkup(this.dialog, `<h2 ${messageAttributes("userLibrary.remove", {name: item.name})}>Remove ${esc(item.name)}?</h2><p ${messageAttributes("userLibrary.copiesAlreadyInYourScenesStayAvailable", {value: item.kind === 'folder' ? {messageKey: "userLibrary.thisFolderAndItsContents"} : {messageKey: "userLibrary.thisAssetAndItsPreview"}, dialog: {messageKey:this.bin.dialogKey}})}>${item.kind === 'folder' ? interfaceText("userLibrary.thisFolderAndItsContents") : interfaceText("userLibrary.thisAssetAndItsPreview")} ${this.bin.dialog}. Copies already in your scenes stay available.</p><div class="library-dialog-error" role="alert"></div><footer><button type="button" class="ui-button" data-variant="ghost" data-cancel data-i18n="common.cancel">${messageHTML("userLibrary.cancel", {})}</button><button type="button" class="ui-button" data-variant="danger" data-remove>${messageHTML(this.bin.buttonKey)}</button></footer>`);
     this.dialog.querySelector('[data-cancel]').onclick = () => this.dialog.close();

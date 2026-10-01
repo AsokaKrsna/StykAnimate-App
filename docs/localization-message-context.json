@@ -7253,9 +7253,9 @@
       "src/ui/ui-dialog.mjs:299",
       "src/ui/ui-dialog.mjs:340",
       "src/ui/ui-toast.mjs:441",
-      "src/user-library.mjs:555",
-      "src/user-library.mjs:567",
-      "src/user-library.mjs:593"
+      "src/user-library.mjs:582",
+      "src/user-library.mjs:594",
+      "src/user-library.mjs:620"
     ],
     "context": "{ label: kitText(t, \"common.cancel\"), labelKey: \"common.cancel\", labelParams: {}, cancel: true, id: \"keep-editing\", variant: \"ghost\" },"
   },
@@ -7304,7 +7304,7 @@
       "src/touch/timeline-scrubber.mjs:55",
       "src/ui/command-catalog.mjs:103",
       "src/ui/quick-actions.mjs:92",
-      "src/user-library.mjs:128",
+      "src/user-library.mjs:129",
       "src/vfx-clip-inspector.mjs:126"
     ],
     "context": "item(t('common.duplicate'), 'duplicate'), item(t('common.delete'), 'delete'),"
@@ -7418,7 +7418,7 @@
   "common.rename": {
     "locations": [
       "src/background-dialog.mjs:64",
-      "src/user-library.mjs:436"
+      "src/user-library.mjs:463"
     ],
     "context": "<div class=\"text-options\"><label>${messageHTML(\"common.name\", {})}<input id=\"background-name\" maxlength=\"160\" aria-label=\"Background name\" data-i18n-aria-label="
   },
@@ -7464,7 +7464,7 @@
   "common.search": {
     "locations": [
       "src/support-center.mjs:577",
-      "src/user-library.mjs:55"
+      "src/user-library.mjs:56"
     ],
     "context": "localizedMarkup(form, `<div class=\"sc-search\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"11\" cy=\"11\" r=\"6.5\"/><path d=\"m20 20-4.4-4.4\"/></svg><inpu"
   },
@@ -7487,7 +7487,7 @@
   },
   "counts.assets": {
     "locations": [
-      "src/user-library.mjs:206"
+      "src/user-library.mjs:221"
     ],
     "context": "localizedText(this.container.querySelector('.library-count'), pub ? 'counts.assets' : 'counts.items', {count});"
   },
@@ -7539,7 +7539,7 @@
   },
   "counts.items": {
     "locations": [
-      "src/user-library.mjs:206"
+      "src/user-library.mjs:221"
     ],
     "context": "localizedText(this.container.querySelector('.library-count'), pub ? 'counts.assets' : 'counts.items', {count});"
   },
@@ -16007,7 +16007,7 @@
   "errors.editorLayerAsync.chooseFiguresPresentInThisAnimation": {
     "locations": [
       "src/editor-layer-async.mjs:98",
-      "src/editor-layer-sheet.mjs:210",
+      "src/editor-layer-sheet.mjs:222",
       "src/editor-layers.mjs:168"
     ],
     "context": "if (ids.some(uid => !this._layerUidCounts.has(uid))) throw messageError(new Error(''), \"errors.editorLayerAsync.chooseFiguresPresentInThisAnimation\", {});"
@@ -16021,7 +16021,7 @@
   "errors.editorLayerAsync.keepAtLeastOneUserLayer": {
     "locations": [
       "src/editor-layer-async.mjs:111",
-      "src/editor-layer-sheet.mjs:252",
+      "src/editor-layer-sheet.mjs:264",
       "src/editor-layers.mjs:141"
     ],
     "context": "if (state.order.length === 1) throw messageError(new Error(''), \"errors.editorLayerAsync.keepAtLeastOneUserLayer\", {});"
@@ -16101,7 +16101,7 @@
   "errors.editorLayerMigration.layerMigrationSourceMemoryBudgetMustBePositive": {
     "locations": [
       "src/editor-layer-migration.mjs:73",
-      "src/editor-layer-sheet.mjs:185"
+      "src/editor-layer-sheet.mjs:197"
     ],
     "context": "if (!(maxSourceBytes > 0)) throw messageError(new Error(''), \"errors.editorLayerMigration.layerMigrationSourceMemoryBudgetMustBePositive\", {});"
   },
@@ -16114,7 +16114,7 @@
   "errors.editorLayerMigration.thisLayerMigrationExceedsTheRetainedPoseMemory": {
     "locations": [
       "src/editor-layer-migration.mjs:92",
-      "src/editor-layer-sheet.mjs:196"
+      "src/editor-layer-sheet.mjs:208"
     ],
     "context": "throw messageError(new Error(''), \"errors.editorLayerMigration.thisLayerMigrationExceedsTheRetainedPoseMemory\", {});"
   },
@@ -16216,7 +16216,7 @@
   },
   "errors.editorLayerSheet.chooseAValidFrameCount": {
     "locations": [
-      "src/editor-layer-sheet.mjs:621"
+      "src/editor-layer-sheet.mjs:634"
     ],
     "context": "checkedTick(start);if(!Number.isInteger(count)||count<1||start+count>=MAX_SHEET_TICKS)throw messageError(new Error(''), \"errors.editorLayerSheet.chooseAValidFra"
   },
@@ -16228,33 +16228,33 @@
   },
   "errors.editorLayerSheet.copyTimelineFramesFirst": {
     "locations": [
-      "src/editor-layer-sheet.mjs:667",
+      "src/editor-layer-sheet.mjs:680",
       "src/shared-clipboard.mjs:119"
     ],
     "context": "const clipboard=this._sheetClipboard;if(!clipboard)throw messageError(new Error(''), \"errors.editorLayerSheet.copyTimelineFramesFirst\", {});"
   },
   "errors.editorLayerSheet.createEnoughDestinationLayersForThisRange": {
     "locations": [
-      "src/editor-layer-sheet.mjs:674"
+      "src/editor-layer-sheet.mjs:687"
     ],
     "context": "if(destinations.length!==clipboard.rows.length)throw messageError(new Error(''), \"errors.editorLayerSheet.createEnoughDestinationLayersForThisRange\", {});"
   },
   "errors.editorLayerSheet.drawingExposuresHoldTheirPixelsAndPoseUse": {
     "locations": [
-      "src/editor-layer-sheet.mjs:602"
+      "src/editor-layer-sheet.mjs:615"
     ],
     "context": "if(ids.some(id=>isDrawingLayer(this.getLayer(id)))&&!['constant','hold'].includes(easing.interpolation))throw messageError(new Error(''), \"errors.editorLayerShe"
   },
   "errors.editorLayerSheet.drawingLayersAcceptOneDrawingCelAtA": {
     "locations": [
-      "src/editor-layer-sheet.mjs:100"
+      "src/editor-layer-sheet.mjs:112"
     ],
     "context": "throw messageError(new Error(''), \"errors.editorLayerSheet.drawingLayersAcceptOneDrawingCelAtA\", {});"
   },
   "errors.editorLayerSheet.exposureMustBe165535Frames": {
     "locations": [
-      "src/editor-layer-sheet.mjs:516",
-      "src/editor-layer-sheet.mjs:521"
+      "src/editor-layer-sheet.mjs:529",
+      "src/editor-layer-sheet.mjs:534"
     ],
     "context": "if(!Number.isInteger(value)||value<1||value>65535)throw messageError(new Error(''), \"errors.editorLayerSheet.exposureMustBe165535Frames\", {});"
   },
@@ -16266,19 +16266,19 @@
   },
   "errors.editorLayerSheet.figuresBelongToUserLayers": {
     "locations": [
-      "src/editor-layer-sheet.mjs:207"
+      "src/editor-layer-sheet.mjs:219"
     ],
     "context": "if(!Object.hasOwn(editor.report._styk.layers.byId,id))throw messageError(new Error(''), \"errors.editorLayerSheet.figuresBelongToUserLayers\", {});"
   },
   "errors.editorLayerSheet.framesCannotMoveBeforeFrame1": {
     "locations": [
-      "src/editor-layer-sheet.mjs:726"
+      "src/editor-layer-sheet.mjs:739"
     ],
     "context": "if(!Number.isInteger(delta)||start+delta<0)throw messageError(new Error(''), \"errors.editorLayerSheet.framesCannotMoveBeforeFrame1\", {});if(!delta)return false;"
   },
   "errors.editorLayerSheet.objectIdentityCapacityReached": {
     "locations": [
-      "src/editor-layer-sheet.mjs:688",
+      "src/editor-layer-sheet.mjs:701",
       "src/editor-range-commands.mjs:73",
       "src/editor-range-commands.mjs:220",
       "src/editor.mjs:700"
@@ -16293,31 +16293,31 @@
   },
   "errors.editorLayerSheet.pastedFramesExceedTheTimelineLimit": {
     "locations": [
-      "src/editor-layer-sheet.mjs:679"
+      "src/editor-layer-sheet.mjs:692"
     ],
     "context": "if(finish>MAX_SHEET_TICKS)throw messageError(new Error(''), \"errors.editorLayerSheet.pastedFramesExceedTheTimelineLimit\", {});"
   },
   "errors.editorLayerSheet.pasteDrawingKeysIntoDrawingLayersAndFigure": {
     "locations": [
-      "src/editor-layer-sheet.mjs:675"
+      "src/editor-layer-sheet.mjs:688"
     ],
     "context": "if(clipboard.rows.some((row,i)=>Boolean(row.drawing)!==isDrawingLayer(this.getLayer(destinations[i]))))throw messageError(new Error(''), \"errors.editorLayerShee"
   },
   "errors.editorLayerSheet.pasteFramesIntoTheSameTrackKindFigures": {
     "locations": [
-      "src/editor-layer-sheet.mjs:677"
+      "src/editor-layer-sheet.mjs:690"
     ],
     "context": "throw messageError(new Error(''), \"errors.editorLayerSheet.pasteFramesIntoTheSameTrackKindFigures\", {});"
   },
   "errors.editorLayerSheet.preservingThisLayerChangeWouldExceedTheOne": {
     "locations": [
-      "src/editor-layer-sheet.mjs:184"
+      "src/editor-layer-sheet.mjs:196"
     ],
     "context": "throw messageError(new Error(''), \"errors.editorLayerSheet.preservingThisLayerChangeWouldExceedTheOne\", {});"
   },
   "errors.editorLayerSheet.sceneAndCameraCannotBeDeleted": {
     "locations": [
-      "src/editor-layer-sheet.mjs:251",
+      "src/editor-layer-sheet.mjs:263",
       "src/editor-layers.mjs:140"
     ],
     "context": "if(!Object.hasOwn(state.byId,id))throw messageError(new Error(''), \"errors.editorLayerSheet.sceneAndCameraCannotBeDeleted\", {});"
@@ -16330,31 +16330,31 @@
   },
   "errors.editorLayerSheet.selectDistinctDestinationLayers": {
     "locations": [
-      "src/editor-layer-sheet.mjs:669"
+      "src/editor-layer-sheet.mjs:682"
     ],
     "context": "if(new Set(ids).size!==ids.length)throw messageError(new Error(''), \"errors.editorLayerSheet.selectDistinctDestinationLayers\", {});"
   },
   "errors.editorLayerSheet.selectDistinctSourceLayers": {
     "locations": [
-      "src/editor-layer-sheet.mjs:651"
+      "src/editor-layer-sheet.mjs:664"
     ],
     "context": "if(new Set(ids).size!==ids.length)throw messageError(new Error(''), \"errors.editorLayerSheet.selectDistinctSourceLayers\", {});"
   },
   "errors.editorLayerSheet.selectFramesToRemove": {
     "locations": [
-      "src/editor-layer-sheet.mjs:641"
+      "src/editor-layer-sheet.mjs:654"
     ],
     "context": "const count=end-start+1;if(count<1)throw messageError(new Error(''), \"errors.editorLayerSheet.selectFramesToRemove\", {});"
   },
   "errors.editorLayerSheet.selectOneDestinationLayerOrTheSameNumber": {
     "locations": [
-      "src/editor-layer-sheet.mjs:671"
+      "src/editor-layer-sheet.mjs:684"
     ],
     "context": "if(ids.length!==1&&ids.length!==clipboard.rows.length)throw messageError(new Error(''), \"errors.editorLayerSheet.selectOneDestinationLayerOrTheSameNumber\", {});"
   },
   "errors.editorLayerSheet.theDestinationContainsKeyframesEnableReplaceKeyframesOn": {
     "locations": [
-      "src/editor-layer-sheet.mjs:732"
+      "src/editor-layer-sheet.mjs:745"
     ],
     "context": "throw messageError(new Error(''), \"errors.editorLayerSheet.theDestinationContainsKeyframesEnableReplaceKeyframesOn\", {});"
   },
@@ -16366,7 +16366,7 @@
   },
   "errors.editorLayerSheet.thisLayerChangeNeedsMoreThan10000": {
     "locations": [
-      "src/editor-layer-sheet.mjs:182"
+      "src/editor-layer-sheet.mjs:194"
     ],
     "context": "if(end>limits.maxTicks)throw messageError(new Error(''), \"errors.editorLayerSheet.thisLayerChangeNeedsMoreThan10000\", {});"
   },
@@ -16378,7 +16378,7 @@
   },
   "errors.editorLayerSheet.useDrawingKeyCopyPasteBetweenDrawingLayers": {
     "locations": [
-      "src/editor-layer-sheet.mjs:208"
+      "src/editor-layer-sheet.mjs:220"
     ],
     "context": "if(isDrawingLayer(editor.getLayer(id))||uids.some(uid=>isDrawingLayer(editor.getLayer(editor.layerForUid(uid)))))throw messageError(new Error(''), \"errors.edito"
   },
@@ -18544,67 +18544,71 @@
   },
   "errors.layerSheet.invalidImportedLayerTiming": {
     "locations": [
-      "src/layer-sheet.mjs:46"
+      "src/layer-sheet.mjs:52"
     ],
     "context": "if(key.sourceTick!==undefined){if(!Number.isFinite(key.sourceTick)||key.sourceTick<0||key.sourceTick>MAX_SHEET_TICKS)throw messageError(new Error(''), \"errors.l"
   },
   "errors.layerSheet.invalidLayerExposureLength": {
     "locations": [
-      "src/layer-sheet.mjs:31"
+      "src/layer-sheet.mjs:36",
+      "src/layer-sheet.mjs:68"
     ],
-    "context": "if(!Number.isInteger(track.end)||track.end<0||track.end>state.duration)throw messageError(new Error(''), \"errors.layerSheet.invalidLayerExposureLength\", {});"
+    "context": "if(!Number.isInteger(track.end)||track.end<0||track.end>duration)throw messageError(new Error(''), \"errors.layerSheet.invalidLayerExposureLength\", {});"
   },
   "errors.layerSheet.invalidLayerTimeline": {
     "locations": [
-      "src/layer-sheet.mjs:26"
+      "src/layer-sheet.mjs:29"
     ],
     "context": "!Number.isSafeInteger(state.nextId)||state.nextId<1||!state.tracks||Array.isArray(state.tracks))throw messageError(new Error(''), \"errors.layerSheet.invalidLaye"
   },
   "errors.layerSheet.invalidMovieclipFrameBoundary": {
     "locations": [
-      "src/layer-sheet.mjs:37"
+      "src/layer-sheet.mjs:43"
     ],
     "context": "if(key.patchOnly!==undefined&&key.patchOnly!==true)throw messageError(new Error(''), \"errors.layerSheet.invalidMovieclipFrameBoundary\", {});"
   },
   "errors.layerSheet.invalidMovieclipFrameReplacement": {
     "locations": [
-      "src/layer-sheet.mjs:43"
+      "src/layer-sheet.mjs:49"
     ],
     "context": "patch.orderIndex!==undefined&&(!Number.isInteger(patch.orderIndex)||patch.orderIndex<0||patch.orderIndex>65535))throw messageError(new Error(''), \"errors.layerS"
   },
   "errors.layerSheet.invalidMovieclipFrameReplacements": {
     "locations": [
-      "src/layer-sheet.mjs:39"
+      "src/layer-sheet.mjs:45"
     ],
     "context": "if(!Array.isArray(key.movieclipPatches)||key.movieclipPatches.length>65535)throw messageError(new Error(''), \"errors.layerSheet.invalidMovieclipFrameReplacement"
   },
   "errors.layerSheet.layerKeyIdentityCounterIsInvalid": {
     "locations": [
-      "src/layer-sheet.mjs:50"
+      "src/layer-sheet.mjs:73"
     ],
     "context": "if(state.nextId<=largest)throw messageError(new Error(''), \"errors.layerSheet.layerKeyIdentityCounterIsInvalid\", {});"
   },
   "errors.layerSheet.layerKeyReferencesAMissingPose": {
     "locations": [
-      "src/layer-sheet.mjs:47"
+      "src/layer-sheet.mjs:53"
     ],
-    "context": "else if(key.value?.frameId!==null&&!poseSourceFrame(report,key.value?.frameId))throw messageError(new Error(''), \"errors.layerSheet.layerKeyReferencesAMissingPo"
+    "context": "else if(key.value?.frameId!==null&&!sourceFor(key.value?.frameId))throw messageError(new Error(''), \"errors.layerSheet.layerKeyReferencesAMissingPose\", {});"
   },
   "errors.layerSheet.layerKeysNeedUniqueIdentitiesAndDistinctOrdered": {
     "locations": [
-      "src/layer-sheet.mjs:35"
+      "src/layer-sheet.mjs:41",
+      "src/layer-sheet.mjs:72",
+      "src/layer-sheet.mjs:78"
     ],
     "context": "throw messageError(new Error(''), \"errors.layerSheet.layerKeysNeedUniqueIdentitiesAndDistinctOrdered\", {});"
   },
   "errors.layerSheet.layerTimelineIsMissingAnExposureTrack": {
     "locations": [
-      "src/layer-sheet.mjs:28"
+      "src/layer-sheet.mjs:31"
     ],
     "context": "if([...allowed].some(id=>!Object.hasOwn(state.tracks,id)))throw messageError(new Error(''), \"errors.layerSheet.layerTimelineIsMissingAnExposureTrack\", {});"
   },
   "errors.layerSheet.layerTimelineReferencesAMissingLayer": {
     "locations": [
-      "src/layer-sheet.mjs:30"
+      "src/layer-sheet.mjs:35",
+      "src/layer-sheet.mjs:67"
     ],
     "context": "if(!allowed.has(id)||!track||!Array.isArray(track.keys))throw messageError(new Error(''), \"errors.layerSheet.layerTimelineReferencesAMissingLayer\", {});"
   },
@@ -21811,19 +21815,19 @@
   },
   "errors.userLibrary.theDocumentOrInsertionFrameChangedInsertThe": {
     "locations": [
-      "src/user-library.mjs:532"
+      "src/user-library.mjs:559"
     ],
     "context": "if (this.editor.report !== report || this.editor.tick !== tick || this.editor.activeLayerId !== layer) throw messageError(new Error(''), \"errors.userLibrary.the"
   },
   "errors.userLibrary.theSelectionChangedBeforeSavingToTheLibrary": {
     "locations": [
-      "src/user-library.mjs:493"
+      "src/user-library.mjs:520"
     ],
     "context": "const revision=this.editor.revision;await drawingBarrier(this.editor.report);if(revision!==this.editor.revision)throw messageError(new Error(''), \"errors.userLi"
   },
   "errors.userLibrary.unlockTheDestinationLayerBeforeInsertingAnAsset": {
     "locations": [
-      "src/user-library.mjs:535"
+      "src/user-library.mjs:562"
     ],
     "context": "if (this.editor.getLayer(layer)?.locked) throw messageError(new Error(''), \"errors.userLibrary.unlockTheDestinationLayerBeforeInsertingAnAsset\", {});"
   },
@@ -35975,134 +35979,134 @@
   },
   "userLibrary.actionsFor": {
     "locations": [
-      "src/user-library.mjs:323"
+      "src/user-library.mjs:349"
     ],
     "context": "localizedMarkup(card, `<div class=\"library-thumbnail\">${item.kind === 'folder' ? folderIcon : '<span class=\"library-preview-loading\"></span>'}${badge}${clip}</d"
   },
   "userLibrary.addFigures": {
     "locations": [
-      "src/user-library.mjs:186"
+      "src/user-library.mjs:201"
     ],
     "context": "localizedText(this.container.querySelector('.library-add .ui-label'), (count > 1 ? 'userLibrary.addFigures' : \"userLibrary.addSelection\"), (count > 1 ? {count} "
   },
   "userLibrary.addSelection": {
     "locations": [
-      "src/user-library.mjs:59",
-      "src/user-library.mjs:186",
-      "src/user-library.mjs:448"
+      "src/user-library.mjs:60",
+      "src/user-library.mjs:201",
+      "src/user-library.mjs:475"
     ],
     "context": "<div class=\"library-foot\"><p class=\"library-message\" role=\"status\" aria-live=\"polite\"></p><button type=\"button\" class=\"ui-button library-add\" data-variant=\"outl"
   },
   "userLibrary.addTheSelectionBelowToReuseItIn": {
     "locations": [
-      "src/user-library.mjs:202"
+      "src/user-library.mjs:217"
     ],
     "context": "else localizedMarkup(this.empty, card(interfaceText(\"userLibrary.noSavedAssetsYet\"), selection ? interfaceText(\"userLibrary.addTheSelectionBelowToReuseItIn\") : "
   },
   "userLibrary.addToLibrary": {
     "locations": [
-      "src/user-library.mjs:62"
+      "src/user-library.mjs:63"
     ],
     "context": "localizedMarkup(this.propertySave, `<button type=\"button\" class=\"button\" data-library-action=\"save\">${icon('plus')} ${messageHTML(\"userLibrary.addToLibrary\", {}"
   },
   "userLibrary.all": {
     "locations": [
-      "src/user-library.mjs:55"
+      "src/user-library.mjs:56"
     ],
     "context": "<div class=\"library-tools\"><label class=\"library-search ui-field\" data-size=\"sm\">${icon('search')}<input class=\"ui-field-input\" type=\"search\" aria-label=\"Search"
   },
   "userLibrary.assetLabel": {
     "locations": [
-      "src/user-library.mjs:306",
-      "src/user-library.mjs:339"
+      "src/user-library.mjs:332",
+      "src/user-library.mjs:365"
     ],
     "context": "card.setAttribute('role', 'option'); card.setAttribute('aria-selected', 'false'); localizedAttribute(card, 'aria-label', 'userLibrary.assetLabel', {name:item.na"
   },
   "userLibrary.assetName": {
     "locations": [
-      "src/user-library.mjs:543"
+      "src/user-library.mjs:570"
     ],
     "context": "const input = document.createElement('input'); input.className = 'library-rename'; input.value = item.name; input.maxLength = 120; localizedAttribute(input, 'ar"
   },
   "userLibrary.automatic": {
     "locations": [
-      "src/user-library.mjs:454"
+      "src/user-library.mjs:481"
     ],
     "context": "{label: interfaceText(\"userLibrary.previewBackground\"), labelKey: \"userLibrary.previewBackground\", icon: 'image', submenu: [messageTuple(['auto', interfaceText("
   },
   "userLibrary.browseStykanimateComLibrary": {
     "locations": [
-      "src/user-library.mjs:59"
+      "src/user-library.mjs:60"
     ],
     "context": "<div class=\"library-foot\"><p class=\"library-message\" role=\"status\" aria-live=\"polite\"></p><button type=\"button\" class=\"ui-button library-add\" data-variant=\"outl"
   },
   "userLibrary.browseTheCommunityLibrary": {
     "locations": [
-      "src/user-library.mjs:195"
+      "src/user-library.mjs:210"
     ],
     "context": "const browse = `<button type=\"button\" class=\"ui-button\" data-variant=\"outline\" data-size=\"sm\" data-library-source-link=\"public\" data-i18n=\"userLibrary.browseThe"
   },
   "userLibrary.cancel": {
     "locations": [
-      "src/user-library.mjs:555",
-      "src/user-library.mjs:567",
-      "src/user-library.mjs:593"
+      "src/user-library.mjs:582",
+      "src/user-library.mjs:594",
+      "src/user-library.mjs:620"
     ],
     "context": "localizedMarkup(this.dialog, `<form><h2 data-i18n=\"userLibrary.newFolder\">${messageHTML(\"userLibrary.newFolder\", {})}</h2><p ${messageAttributes(\"userLibrary.in"
   },
   "userLibrary.clearSearch": {
     "locations": [
-      "src/user-library.mjs:196"
+      "src/user-library.mjs:211"
     ],
     "context": "if (filtered) localizedMarkup(this.empty, card(interfaceText(\"userLibrary.noMatches\"), '', `<button type=\"button\" class=\"ui-button\" data-size=\"sm\" data-library-"
   },
   "userLibrary.communityLibrary": {
     "locations": [
-      "src/user-library.mjs:54",
-      "src/user-library.mjs:197",
-      "src/user-library.mjs:276"
+      "src/user-library.mjs:55",
+      "src/user-library.mjs:212",
+      "src/user-library.mjs:292"
     ],
     "context": "<div class=\"library-source ui-segmented\" data-size=\"sm\" data-fill role=\"group\" aria-label=\"Library source\" data-i18n-aria-label=\"userLibrary.librarySource\"><but"
   },
   "userLibrary.communityLibraryIsUnavailable": {
     "locations": [
-      "src/user-library.mjs:198"
+      "src/user-library.mjs:213"
     ],
     "context": "else if (pub && this.publicState === 'error') localizedMarkup(this.empty, card(interfaceText(\"userLibrary.communityLibraryIsUnavailable\"), esc(this.publicError)"
   },
   "userLibrary.copiesAlreadyInYourScenesStayAvailable": {
     "locations": [
-      "src/user-library.mjs:593"
+      "src/user-library.mjs:620"
     ],
     "context": "localizedMarkup(this.dialog, `<h2 ${messageAttributes(\"userLibrary.remove\", {name: item.name})}>Remove ${esc(item.name)}?</h2><p ${messageAttributes(\"userLibrar"
   },
   "userLibrary.createFolder": {
     "locations": [
-      "src/user-library.mjs:555"
+      "src/user-library.mjs:582"
     ],
     "context": "localizedMarkup(this.dialog, `<form><h2 data-i18n=\"userLibrary.newFolder\">${messageHTML(\"userLibrary.newFolder\", {})}</h2><p ${messageAttributes(\"userLibrary.in"
   },
   "userLibrary.dark": {
     "locations": [
-      "src/user-library.mjs:454"
+      "src/user-library.mjs:481"
     ],
     "context": "{label: interfaceText(\"userLibrary.previewBackground\"), labelKey: \"userLibrary.previewBackground\", icon: 'image', submenu: [messageTuple(['auto', interfaceText("
   },
   "userLibrary.deleted": {
     "locations": [
-      "src/user-library.mjs:128"
+      "src/user-library.mjs:129"
     ],
     "context": "? {menu: interfaceText(\"common.delete\"), menuKey:\"common.delete\", dialog: interfaceText(\"userLibrary.willBeDeletedFromThisBrowserSLibrary\"), dialogKey:\"userLibr"
   },
   "userLibrary.dragAssetsOntoThisFolderSNameAbove": {
     "locations": [
-      "src/user-library.mjs:201"
+      "src/user-library.mjs:216"
     ],
     "context": "else if (this.folder) localizedMarkup(this.empty, card(interfaceText(\"userLibrary.emptyFolder\"), interfaceText(\"userLibrary.dragAssetsOntoThisFolderSNameAbove\")"
   },
   "userLibrary.emptyFolder": {
     "locations": [
-      "src/user-library.mjs:201"
+      "src/user-library.mjs:216"
     ],
     "context": "else if (this.folder) localizedMarkup(this.empty, card(interfaceText(\"userLibrary.emptyFolder\"), interfaceText(\"userLibrary.dragAssetsOntoThisFolderSNameAbove\")"
   },
@@ -36110,22 +36114,22 @@
     "locations": [
       "src/user-library.mjs:20",
       "src/user-library.mjs:21",
-      "src/user-library.mjs:306",
-      "src/user-library.mjs:321",
-      "src/user-library.mjs:323",
-      "src/user-library.mjs:339"
+      "src/user-library.mjs:332",
+      "src/user-library.mjs:347",
+      "src/user-library.mjs:349",
+      "src/user-library.mjs:365"
     ],
     "context": "const KIND_KEYS = {folder:\"userLibrary.folder\", movieclip:\"userLibrary.movieclip\", set:\"userLibrary.figureSet\", figure:\"userLibrary.figure\"};"
   },
   "userLibrary.figures": {
     "locations": [
-      "src/user-library.mjs:55"
+      "src/user-library.mjs:56"
     ],
     "context": "<div class=\"library-tools\"><label class=\"library-search ui-field\" data-size=\"sm\">${icon('search')}<input class=\"ui-field-input\" type=\"search\" aria-label=\"Search"
   },
   "userLibrary.figuresAndMovieclipsSharedByTheCommunityAppear": {
     "locations": [
-      "src/user-library.mjs:199"
+      "src/user-library.mjs:214"
     ],
     "context": "else if (pub) localizedMarkup(this.empty, card(interfaceText(\"userLibrary.nothingHereYet\"), interfaceText(\"userLibrary.figuresAndMovieclipsSharedByTheCommunityA"
   },
@@ -36143,133 +36147,133 @@
   },
   "userLibrary.folderLocation": {
     "locations": [
-      "src/user-library.mjs:510",
-      "src/user-library.mjs:576"
+      "src/user-library.mjs:537",
+      "src/user-library.mjs:603"
     ],
     "context": "this.say({messageKey:\"userLibrary.notice.savedTo2\",messageParams:{name: item.name, value1: this.folder ? {messageKey:'userLibrary.folderLocation',messageParams:"
   },
   "userLibrary.folderName": {
     "locations": [
-      "src/user-library.mjs:555"
+      "src/user-library.mjs:582"
     ],
     "context": "localizedMarkup(this.dialog, `<form><h2 data-i18n=\"userLibrary.newFolder\">${messageHTML(\"userLibrary.newFolder\", {})}</h2><p ${messageAttributes(\"userLibrary.in"
   },
   "userLibrary.freeFiguresAndMovieclipsSharedByTheCommunity": {
     "locations": [
-      "src/user-library.mjs:197"
+      "src/user-library.mjs:212"
     ],
     "context": "else if (pub && !this.desktop?.listPublicLibrary) localizedMarkup(this.empty, card(interfaceText(\"userLibrary.communityLibrary\"), interfaceText(\"userLibrary.fre"
   },
   "userLibrary.hoverToPlay": {
     "locations": [
-      "src/user-library.mjs:322"
+      "src/user-library.mjs:348"
     ],
     "context": "const clip = item.kind === 'movieclip' && !pub ? `<span class=\"library-preview-hint\" data-i18n=\"userLibrary.hoverToPlay\">${messageHTML(\"userLibrary.hoverToPlay\""
   },
   "userLibrary.hoverToPlay2": {
     "locations": [
-      "src/user-library.mjs:318"
+      "src/user-library.mjs:344"
     ],
     "context": "titleParams = {name:item.name, value1:item.kind === 'movieclip' ? {messageKey:'userLibrary.hoverToPlay2'} : ''};"
   },
   "userLibrary.in": {
     "locations": [
-      "src/user-library.mjs:555"
+      "src/user-library.mjs:582"
     ],
     "context": "localizedMarkup(this.dialog, `<form><h2 data-i18n=\"userLibrary.newFolder\">${messageHTML(\"userLibrary.newFolder\", {})}</h2><p ${messageAttributes(\"userLibrary.in"
   },
   "userLibrary.insert": {
     "locations": [
-      "src/user-library.mjs:429",
-      "src/user-library.mjs:435"
+      "src/user-library.mjs:456",
+      "src/user-library.mjs:462"
     ],
     "context": "{label: interfaceText('userLibrary.insert'), labelKey: \"userLibrary.insert\", icon: 'plus', shortcut: 'Enter', disabled: this.busy, run: run(() => this.insert(it"
   },
   "userLibrary.library": {
     "locations": [
-      "src/user-library.mjs:570"
+      "src/user-library.mjs:597"
     ],
     "context": "localizedText(this.dialog.querySelector('.library-move-location'), \"userLibrary.library\", {value: folder ? ` › ${folder.replaceAll('/',' › ')}` : ''});"
   },
   "userLibrary.library2": {
     "locations": [
-      "src/user-library.mjs:223",
-      "src/user-library.mjs:474",
-      "src/user-library.mjs:481",
-      "src/user-library.mjs:585"
+      "src/user-library.mjs:238",
+      "src/user-library.mjs:501",
+      "src/user-library.mjs:508",
+      "src/user-library.mjs:612"
     ],
     "context": "let current = ''; const parts = messageTuple([interfaceText(\"userLibrary.library2\"), ...this.folder.split('/').filter(Boolean)], {0: {key: \"userLibrary.library2"
   },
   "userLibrary.libraryActions": {
     "locations": [
-      "src/user-library.mjs:458"
+      "src/user-library.mjs:485"
     ],
     "context": "const menu = this.menu = openMenu({items, ...(anchor ? {anchor} : {point}), icon: name => icon(name), label: options ? interfaceText(\"userLibrary.libraryOptions"
   },
   "userLibrary.libraryFolders": {
     "locations": [
-      "src/user-library.mjs:56"
+      "src/user-library.mjs:57"
     ],
     "context": "<div class=\"library-location\"><nav class=\"library-breadcrumbs ui-crumb\" aria-label=\"Library folders\" data-i18n-aria-label=\"userLibrary.libraryFolders\"></nav><sp"
   },
   "userLibrary.libraryIsAvailableInTheDesktopApp": {
     "locations": [
-      "src/user-library.mjs:200"
+      "src/user-library.mjs:215"
     ],
     "context": "else if (!this.desktop?.listLibrary) localizedMarkup(this.empty, card(interfaceText(\"userLibrary.libraryIsAvailableInTheDesktopApp\"), interfaceText(\"userLibrary"
   },
   "userLibrary.libraryOptions": {
     "locations": [
-      "src/user-library.mjs:55",
-      "src/user-library.mjs:458"
+      "src/user-library.mjs:56",
+      "src/user-library.mjs:485"
     ],
     "context": "<div class=\"library-tools\"><label class=\"library-search ui-field\" data-size=\"sm\">${icon('search')}<input class=\"ui-field-input\" type=\"search\" aria-label=\"Search"
   },
   "userLibrary.librarySource": {
     "locations": [
-      "src/user-library.mjs:54"
+      "src/user-library.mjs:55"
     ],
     "context": "<div class=\"library-source ui-segmented\" data-size=\"sm\" data-fill role=\"group\" aria-label=\"Library source\" data-i18n-aria-label=\"userLibrary.librarySource\"><but"
   },
   "userLibrary.light": {
     "locations": [
-      "src/user-library.mjs:454"
+      "src/user-library.mjs:481"
     ],
     "context": "{label: interfaceText(\"userLibrary.previewBackground\"), labelKey: \"userLibrary.previewBackground\", icon: 'image', submenu: [messageTuple(['auto', interfaceText("
   },
   "userLibrary.move": {
     "locations": [
-      "src/user-library.mjs:567"
+      "src/user-library.mjs:594"
     ],
     "context": "localizedMarkup(this.dialog, `<h2 ${messageAttributes(\"userLibrary.move\", {name: item.name})}>Move ${esc(item.name)}</h2><div class=\"library-move-location\"></di"
   },
   "userLibrary.movedToRecycleBin": {
     "locations": [
-      "src/user-library.mjs:129"
+      "src/user-library.mjs:130"
     ],
     "context": ": {menu: interfaceText(\"userLibrary.moveToRecycleBin\"), menuKey:\"userLibrary.moveToRecycleBin\", dialog: interfaceText(\"userLibrary.willMoveToTheRecycleBin\"), di"
   },
   "userLibrary.moveHere": {
     "locations": [
-      "src/user-library.mjs:567"
+      "src/user-library.mjs:594"
     ],
     "context": "localizedMarkup(this.dialog, `<h2 ${messageAttributes(\"userLibrary.move\", {name: item.name})}>Move ${esc(item.name)}</h2><div class=\"library-move-location\"></di"
   },
   "userLibrary.moveLibraryItem": {
     "locations": [
-      "src/user-library.mjs:566"
+      "src/user-library.mjs:593"
     ],
     "context": "localizedAttribute(this.dialog, 'aria-label', \"userLibrary.moveLibraryItem\", {}); let destination = ''; let sequence = 0;"
   },
   "userLibrary.moveTo": {
     "locations": [
-      "src/user-library.mjs:437"
+      "src/user-library.mjs:464"
     ],
     "context": "{label: interfaceText(\"userLibrary.moveTo\"), labelKey: \"userLibrary.moveTo\", icon: 'arrow-right', disabled: this.busy, run: run(() => this.move())},"
   },
   "userLibrary.moveToRecycleBin": {
     "locations": [
-      "src/user-library.mjs:129"
+      "src/user-library.mjs:130"
     ],
     "context": ": {menu: interfaceText(\"userLibrary.moveToRecycleBin\"), menuKey:\"userLibrary.moveToRecycleBin\", dialog: interfaceText(\"userLibrary.willMoveToTheRecycleBin\"), di"
   },
@@ -36281,296 +36285,296 @@
   },
   "userLibrary.movieclips": {
     "locations": [
-      "src/user-library.mjs:55"
+      "src/user-library.mjs:56"
     ],
     "context": "<div class=\"library-tools\"><label class=\"library-search ui-field\" data-size=\"sm\">${icon('search')}<input class=\"ui-field-input\" type=\"search\" aria-label=\"Search"
   },
   "userLibrary.myLibrary": {
     "locations": [
-      "src/user-library.mjs:54",
-      "src/user-library.mjs:58",
-      "src/user-library.mjs:187",
-      "src/user-library.mjs:276",
-      "src/user-library.mjs:499",
-      "src/user-library.mjs:510",
-      "src/user-library.mjs:555",
-      "src/user-library.mjs:577"
+      "src/user-library.mjs:55",
+      "src/user-library.mjs:59",
+      "src/user-library.mjs:202",
+      "src/user-library.mjs:292",
+      "src/user-library.mjs:526",
+      "src/user-library.mjs:537",
+      "src/user-library.mjs:582",
+      "src/user-library.mjs:604"
     ],
     "context": "<div class=\"library-source ui-segmented\" data-size=\"sm\" data-fill role=\"group\" aria-label=\"Library source\" data-i18n-aria-label=\"userLibrary.librarySource\"><but"
   },
   "userLibrary.nameDoubleClickToInsertOrDragOntoThe": {
     "locations": [
-      "src/user-library.mjs:317"
+      "src/user-library.mjs:343"
     ],
     "context": "titleKey = 'userLibrary.nameDoubleClickToInsertOrDragOntoThe';"
   },
   "userLibrary.nameDoubleClickToOpenOrDropAssetsHere": {
     "locations": [
-      "src/user-library.mjs:309"
+      "src/user-library.mjs:335"
     ],
     "context": "titleKey = 'userLibrary.nameDoubleClickToOpenOrDropAssetsHere'; titleParams = {name:item.name};"
   },
   "userLibrary.nameValue1Value2DoubleClickToInsertOrDrag": {
     "locations": [
-      "src/user-library.mjs:314"
+      "src/user-library.mjs:340"
     ],
     "context": "titleKey = 'userLibrary.nameValue1Value2DoubleClickToInsertOrDrag';"
   },
   "userLibrary.newFolder": {
     "locations": [
-      "src/user-library.mjs:56",
-      "src/user-library.mjs:447",
-      "src/user-library.mjs:555"
+      "src/user-library.mjs:57",
+      "src/user-library.mjs:474",
+      "src/user-library.mjs:582"
     ],
     "context": "<div class=\"library-location\"><nav class=\"library-breadcrumbs ui-crumb\" aria-label=\"Library folders\" data-i18n-aria-label=\"userLibrary.libraryFolders\"></nav><sp"
   },
   "userLibrary.newLibraryFolder": {
     "locations": [
-      "src/user-library.mjs:56",
-      "src/user-library.mjs:554"
+      "src/user-library.mjs:57",
+      "src/user-library.mjs:581"
     ],
     "context": "<div class=\"library-location\"><nav class=\"library-breadcrumbs ui-crumb\" aria-label=\"Library folders\" data-i18n-aria-label=\"userLibrary.libraryFolders\"></nav><sp"
   },
   "userLibrary.noFoldersHere": {
     "locations": [
-      "src/user-library.mjs:580"
+      "src/user-library.mjs:607"
     ],
     "context": "if (!list.children.length) { const none = document.createElement('p'); none.className = 'library-move-none'; localizedText(none, \"userLibrary.noFoldersHere\", {}"
   },
   "userLibrary.noMatches": {
     "locations": [
-      "src/user-library.mjs:196"
+      "src/user-library.mjs:211"
     ],
     "context": "if (filtered) localizedMarkup(this.empty, card(interfaceText(\"userLibrary.noMatches\"), '', `<button type=\"button\" class=\"ui-button\" data-size=\"sm\" data-library-"
   },
   "userLibrary.noSavedAssetsYet": {
     "locations": [
-      "src/user-library.mjs:202"
+      "src/user-library.mjs:217"
     ],
     "context": "else localizedMarkup(this.empty, card(interfaceText(\"userLibrary.noSavedAssetsYet\"), selection ? interfaceText(\"userLibrary.addTheSelectionBelowToReuseItIn\") : "
   },
   "userLibrary.nothingHereYet": {
     "locations": [
-      "src/user-library.mjs:199"
+      "src/user-library.mjs:214"
     ],
     "context": "else if (pub) localizedMarkup(this.empty, card(interfaceText(\"userLibrary.nothingHereYet\"), interfaceText(\"userLibrary.figuresAndMovieclipsSharedByTheCommunityA"
   },
   "userLibrary.notice.addedToTheScene": {
     "locations": [
-      "src/user-library.mjs:536"
+      "src/user-library.mjs:563"
     ],
     "context": "this.editor.importFigure(document, {position}); this.setTool('select'); this.say({messageKey:\"userLibrary.notice.addedToTheScene\",messageParams:{name: item.name"
   },
   "userLibrary.notice.inserting": {
     "locations": [
-      "src/user-library.mjs:527"
+      "src/user-library.mjs:554"
     ],
     "context": "this.busy = true; this.syncSelection(); this.say({messageKey:\"userLibrary.notice.inserting\",messageParams:{name: item.name}});"
   },
   "userLibrary.notice.isReadyDragItOntoTheCanvasOr": {
     "locations": [
-      "src/user-library.mjs:268"
+      "src/user-library.mjs:283"
     ],
     "context": "this.say({messageKey:\"userLibrary.notice.isReadyDragItOntoTheCanvasOr\",messageParams:{name: item.name}});"
   },
   "userLibrary.notice.movedTo": {
     "locations": [
-      "src/user-library.mjs:481"
+      "src/user-library.mjs:508"
     ],
     "context": "await this.refresh(); this.say({messageKey:\"userLibrary.notice.movedTo\",messageParams:{name: item.name, value1: folder || {messageKey:\"userLibrary.library2\"}}})"
   },
   "userLibrary.notice.movedTo2": {
     "locations": [
-      "src/user-library.mjs:585"
+      "src/user-library.mjs:612"
     ],
     "context": "try { await this.desktop.changeLibraryItem({path:item.path, folder:destination}); this.dialog.close(); this.selected = null; await this.refresh(); this.say({mes"
   },
   "userLibrary.notice.savedTo": {
     "locations": [
-      "src/user-library.mjs:499"
+      "src/user-library.mjs:526"
     ],
     "context": "this.input.value = ''; this.filterValue = 'all'; this.kindSelect.value = 'all'; await this.refresh(folder); this.select(result.path); this.say({messageKey:\"user"
   },
   "userLibrary.notice.savedTo2": {
     "locations": [
-      "src/user-library.mjs:510"
+      "src/user-library.mjs:537"
     ],
     "context": "this.say({messageKey:\"userLibrary.notice.savedTo2\",messageParams:{name: item.name, value1: this.folder ? {messageKey:'userLibrary.folderLocation',messageParams:"
   },
   "userLibrary.notice.savingArtworkAndPreview": {
     "locations": [
-      "src/user-library.mjs:490"
+      "src/user-library.mjs:517"
     ],
     "context": "this.say({messageKey:\"userLibrary.notice.savingArtworkAndPreview\",messageParams:{}});"
   },
   "userLibrary.notice.savingToMyLibrary": {
     "locations": [
-      "src/user-library.mjs:505"
+      "src/user-library.mjs:532"
     ],
     "context": "this.busy = true; this.syncSelection(); this.say({messageKey:\"userLibrary.notice.savingToMyLibrary\",messageParams:{name: item.name}});"
   },
   "userLibrary.notice.thatAssetIsNoLongerInTheCommunity": {
     "locations": [
-      "src/user-library.mjs:262"
+      "src/user-library.mjs:277"
     ],
     "context": "if (!item) { if (this.publicState === 'ready') this.say({messageKey:\"userLibrary.notice.thatAssetIsNoLongerInTheCommunity\",messageParams:{}}, true); return; }"
   },
   "userLibrary.open": {
     "locations": [
-      "src/user-library.mjs:435"
+      "src/user-library.mjs:462"
     ],
     "context": "{label: item.kind === 'folder' ? interfaceText(\"userLibrary.open\") : interfaceText('userLibrary.insert'), labelKey: (item.kind === 'folder' ? \"userLibrary.open\""
   },
   "userLibrary.openStykanimateComLibrary": {
     "locations": [
-      "src/user-library.mjs:197",
-      "src/user-library.mjs:445"
+      "src/user-library.mjs:212",
+      "src/user-library.mjs:472"
     ],
     "context": "else if (pub && !this.desktop?.listPublicLibrary) localizedMarkup(this.empty, card(interfaceText(\"userLibrary.communityLibrary\"), interfaceText(\"userLibrary.fre"
   },
   "userLibrary.previewBackground": {
     "locations": [
-      "src/user-library.mjs:454"
+      "src/user-library.mjs:481"
     ],
     "context": "{label: interfaceText(\"userLibrary.previewBackground\"), labelKey: \"userLibrary.previewBackground\", icon: 'image', submenu: [messageTuple(['auto', interfaceText("
   },
   "userLibrary.previewUnavailableForThisFile": {
     "locations": [
-      "src/user-library.mjs:358"
+      "src/user-library.mjs:384"
     ],
     "context": "if (!url) { target.insertAdjacentHTML('afterbegin', icon('person')); localizedAttribute(target, \"title\", \"userLibrary.previewUnavailableForThisFile\", {}); retur"
   },
   "userLibrary.publicAssetByAuthor": {
     "locations": [
-      "src/user-library.mjs:311"
+      "src/user-library.mjs:337"
     ],
     "context": "titleKey = 'userLibrary.publicAssetByAuthor';"
   },
   "userLibrary.refresh": {
     "locations": [
-      "src/user-library.mjs:444",
-      "src/user-library.mjs:450"
+      "src/user-library.mjs:471",
+      "src/user-library.mjs:477"
     ],
     "context": "{label: interfaceText(\"userLibrary.refresh\"), labelKey: \"userLibrary.refresh\", icon: 'rotate', disabled: !this.desktop?.listPublicLibrary, run: run(() => this.l"
   },
   "userLibrary.remove": {
     "locations": [
-      "src/user-library.mjs:593"
+      "src/user-library.mjs:620"
     ],
     "context": "localizedMarkup(this.dialog, `<h2 ${messageAttributes(\"userLibrary.remove\", {name: item.name})}>Remove ${esc(item.name)}?</h2><p ${messageAttributes(\"userLibrar"
   },
   "userLibrary.removeLibraryItem": {
     "locations": [
-      "src/user-library.mjs:592"
+      "src/user-library.mjs:619"
     ],
     "context": "localizedAttribute(this.dialog, 'aria-label', \"userLibrary.removeLibraryItem\", {});"
   },
   "userLibrary.rigExamples": {
     "locations": [
-      "src/user-library.mjs:194"
+      "src/user-library.mjs:209"
     ],
     "context": "const examples = `<button type=\"button\" class=\"ui-button\" data-variant=\"outline\" data-size=\"sm\" data-action=\"rig-examples\" data-i18n=\"userLibrary.rigExamples\">$"
   },
   "userLibrary.rigExamples2": {
     "locations": [
-      "src/user-library.mjs:455"
+      "src/user-library.mjs:482"
     ],
     "context": "{label: interfaceText(\"userLibrary.rigExamples2\"), labelKey: \"userLibrary.rigExamples2\", icon: 'person', command: 'rig-examples'});"
   },
   "userLibrary.saveFiguresAndMovieclipsThereToReuseThem": {
     "locations": [
-      "src/user-library.mjs:200"
+      "src/user-library.mjs:215"
     ],
     "context": "else if (!this.desktop?.listLibrary) localizedMarkup(this.empty, card(interfaceText(\"userLibrary.libraryIsAvailableInTheDesktopApp\"), interfaceText(\"userLibrary"
   },
   "userLibrary.saveTheSelectionInValue": {
     "locations": [
-      "src/user-library.mjs:187"
+      "src/user-library.mjs:202"
     ],
     "context": "for (const button of saves) setAttr(button, 'title', count ? interfaceText('userLibrary.saveTheSelectionInValue', {value: this.folder ? this.folder.split('/').a"
   },
   "userLibrary.saveToMyLibrary": {
     "locations": [
-      "src/user-library.mjs:430"
+      "src/user-library.mjs:457"
     ],
     "context": "{label: interfaceText(\"userLibrary.saveToMyLibrary\"), labelKey: \"userLibrary.saveToMyLibrary\", icon: 'library', disabled: this.busy || !this.desktop?.savePublic"
   },
   "userLibrary.searchLibrary": {
     "locations": [
-      "src/user-library.mjs:55"
+      "src/user-library.mjs:56"
     ],
     "context": "<div class=\"library-tools\"><label class=\"library-search ui-field\" data-size=\"sm\">${icon('search')}<input class=\"ui-field-input\" type=\"search\" aria-label=\"Search"
   },
   "userLibrary.selectFiguresOrAMovieclipAndChooseAdd": {
     "locations": [
-      "src/user-library.mjs:202"
+      "src/user-library.mjs:217"
     ],
     "context": "else localizedMarkup(this.empty, card(interfaceText(\"userLibrary.noSavedAssetsYet\"), selection ? interfaceText(\"userLibrary.addTheSelectionBelowToReuseItIn\") : "
   },
   "userLibrary.selectFiguresOrAMovieclipToAddThem": {
     "locations": [
-      "src/user-library.mjs:187"
+      "src/user-library.mjs:202"
     ],
     "context": "for (const button of saves) setAttr(button, 'title', count ? interfaceText('userLibrary.saveTheSelectionInValue', {value: this.folder ? this.folder.split('/').a"
   },
   "userLibrary.show": {
     "locations": [
-      "src/user-library.mjs:55"
+      "src/user-library.mjs:56"
     ],
     "context": "<div class=\"library-tools\"><label class=\"library-search ui-field\" data-size=\"sm\">${icon('search')}<input class=\"ui-field-input\" type=\"search\" aria-label=\"Search"
   },
   "userLibrary.showInFolder": {
     "locations": [
-      "src/user-library.mjs:438",
-      "src/user-library.mjs:451"
+      "src/user-library.mjs:465",
+      "src/user-library.mjs:478"
     ],
     "context": "...(this.desktop.revealLibrary ? [{label: interfaceText(\"userLibrary.showInFolder\"), labelKey: \"userLibrary.showInFolder\", icon: 'folder', run: run(() => this.d"
   },
   "userLibrary.stykanimateCom": {
     "locations": [
-      "src/user-library.mjs:56"
+      "src/user-library.mjs:57"
     ],
     "context": "<div class=\"library-location\"><nav class=\"library-breadcrumbs ui-crumb\" aria-label=\"Library folders\" data-i18n-aria-label=\"userLibrary.libraryFolders\"></nav><sp"
   },
   "userLibrary.thisAssetAndItsPreview": {
     "locations": [
-      "src/user-library.mjs:593"
+      "src/user-library.mjs:620"
     ],
     "context": "localizedMarkup(this.dialog, `<h2 ${messageAttributes(\"userLibrary.remove\", {name: item.name})}>Remove ${esc(item.name)}?</h2><p ${messageAttributes(\"userLibrar"
   },
   "userLibrary.thisFolderAndItsContents": {
     "locations": [
-      "src/user-library.mjs:593"
+      "src/user-library.mjs:620"
     ],
     "context": "localizedMarkup(this.dialog, `<h2 ${messageAttributes(\"userLibrary.remove\", {name: item.name})}>Remove ${esc(item.name)}?</h2><p ${messageAttributes(\"userLibrar"
   },
   "userLibrary.tryAgain": {
     "locations": [
-      "src/user-library.mjs:198"
+      "src/user-library.mjs:213"
     ],
     "context": "else if (pub && this.publicState === 'error') localizedMarkup(this.empty, card(interfaceText(\"userLibrary.communityLibraryIsUnavailable\"), esc(this.publicError)"
   },
   "userLibrary.untitledAsset": {
     "locations": [
-      "src/user-library.mjs:496"
+      "src/user-library.mjs:523"
     ],
     "context": "let name = report._styk.name.replace(/[<>:\"/\\\\|?*\\x00-\\x1f]/g,'-').replace(/^\\.+|[. ]+$/g,'').slice(0,110).trim() || interfaceText(\"userLibrary.untitledAsset\");"
   },
   "userLibrary.viewOnStykanimateCom": {
     "locations": [
-      "src/user-library.mjs:432"
+      "src/user-library.mjs:459"
     ],
     "context": "{label: interfaceText(\"userLibrary.viewOnStykanimateCom\"), labelKey: \"userLibrary.viewOnStykanimateCom\", icon: 'link', run: run(() => this.desktop.openPublicLib"
   },
   "userLibrary.willBeDeletedFromThisBrowserSLibrary": {
     "locations": [
-      "src/user-library.mjs:128"
+      "src/user-library.mjs:129"
     ],
     "context": "? {menu: interfaceText(\"common.delete\"), menuKey:\"common.delete\", dialog: interfaceText(\"userLibrary.willBeDeletedFromThisBrowserSLibrary\"), dialogKey:\"userLibr"
   },
   "userLibrary.willMoveToTheRecycleBin": {
     "locations": [
-      "src/user-library.mjs:129"
+      "src/user-library.mjs:130"
     ],
     "context": ": {menu: interfaceText(\"userLibrary.moveToRecycleBin\"), menuKey:\"userLibrary.moveToRecycleBin\", dialog: interfaceText(\"userLibrary.willMoveToTheRecycleBin\"), di"
   },
