@@ -36,6 +36,18 @@ export class EditorRasterCache {
       return resource;
     }
   }
+  /** The sharpest retained raster of the whole artwork. Navigation uses it for
+   * coverage an outgrown crop no longer has, without painting new pixels. */
+  complete(artwork,generation,contentKey='') {
+    let best;
+    for(const resource of this.variants.get(artwork)?.values() ?? []) {
+      if(resource.destroyed || resource.raster || resource.generation!==generation || (resource.contentKey??'')!==contentKey)continue;
+      if(!best || resource.resolution>best.resolution)best=resource;
+    }
+    if(!best)return undefined;
+    const entry=this.lru.get(best);this.lru.delete(best);this.lru.set(best,entry);
+    return best;
+  }
   previous(artwork) {
     const variants = this.variants.get(artwork);
     return variants?.size ? [...variants.values()].at(-1) : this.history.get(artwork);

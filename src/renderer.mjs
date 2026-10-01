@@ -2,7 +2,7 @@ import {messageError, errorMessageData} from './localized-error.mjs';
 import {vectorVfxSource,rasterizeVectorVfx} from './renderer-vfx-vector.mjs';
 import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {parallaxResolver} from './layer-parallax.mjs';
-import {rasterBounds,rasterCovers,rasterViewport} from './raster-view.mjs';
+import {rasterBounds,rasterCovers,rasterViewport,gestureProxyResolution} from './raster-view.mjs';
 import {canvasCoverageBounds,canvasBoundsOutside,canvasArtworkCropSafe,canvasArtworkPlan,canvasLayerBounds} from './renderer-canvas-plan.mjs';
 import {canvasPaint} from './paint.mjs';
 import {GpuTiming,requestInstrumentedDevice} from './gpu-timing.mjs';
@@ -512,13 +512,16 @@ class CanvasFallback {
     let resolution=moving&&cached?cached.resolution:requested;
     const visible=viewport;
     const covered=!cached?.raster||rasterCovers(cached.raster,cached.originalBounds,visible);
+    // Navigation never paints a crop: see drawObject.
+    const proxy=moving&&(!cached||!covered);
     if(!moving&&cached&&covered&&cached.resolution!==requested&&this.refineArtwork(this.onionArtwork,group.g,cached,group.items,requested,visible??canvasRasterViewport(ctx),true))resolution=cached.resolution;
-    if (cached?.resolution !== resolution || changedDrawingRaster(cached?.drawingInputs) || cached?.raster&&!rasterCovers(cached.raster,cached.originalBounds,visible)) {
+    if (proxy || cached?.resolution !== resolution || changedDrawingRaster(cached?.drawingInputs) || cached?.raster&&!rasterCovers(cached.raster,cached.originalBounds,visible)) {
       this.refinement?.releaseWorkingMemory();
       if (cached) { this.refinement?.cancel(cached);this.onionArtwork.delete(group.g); this.onionArtworkBytes -= cached.bytes; releaseCanvasArtwork(cached); }
       const originalBounds = cachedArtworkBounds(this,group.g,group.items);
       const padding=group.items.reduce((n,item)=>Math.max(n,drawableVfxPadding(item)),0);
-      const plan=canvasArtworkPlan(originalBounds,visible,resolution,{safe:Boolean(coverage)&&canvasArtworkCropSafe(group.items),padding});
+      if(proxy)resolution=gestureProxyResolution(requested,originalBounds,4096);
+      const plan=proxy?undefined:canvasArtworkPlan(originalBounds,visible,resolution,{safe:Boolean(coverage)&&canvasArtworkCropSafe(group.items),padding});
       if(plan===null)return;
       const bounds=plan??originalBounds;
       const pixelScale = vfxRasterScale(group.items,bounds,Math.min(resolution, 4096 / bounds.width, 4096 / bounds.height));
@@ -532,7 +535,7 @@ class CanvasFallback {
       drawGeometry(temp, {drawables: group.items}, this.resources);
       releaseGeometryResources(temp);
       cached = {canvas, resolution, bounds, drawingInputs, width: width / pixelScale, height: height / pixelScale, bytes: width * height * 4,
-        ...(plan?.cropped?{raster:{...plan,pixelScale},originalBounds}:{})};
+        ...(plan?.cropped?{raster:{...plan,pixelScale},originalBounds}:{}),...(proxy?{deferDensity:true}:{})};
       this.onionArtworkBytes += cached.bytes;
       this.stats.onionRasterizedObjects++;
     }
@@ -690,14 +693,19 @@ class CanvasFallback {
       visible={...viewport,x:viewport.x-dx,y:viewport.y-dy};
     }else if(cached?.raster)visible=canvasRasterViewport(ctx,group.g.root.x-source.root.x,group.g.root.y-source.root.y);
     const covered=!cached?.raster||rasterCovers(cached.raster,cached.originalBounds,visible);
+    // Navigation reached artwork its held raster does not cover. A new crop
+    // at the held density grows with every zoom-out step, so show the whole
+    // artwork at a bounded density until the settled view refines it.
+    const proxy=moving&&(!cached||!covered);
     if(!moving&&cached&&covered&&cached.resolution!==requested&&this.refineArtwork(this.artwork,source,cached,items,requested,visible??canvasRasterViewport(ctx,group.g.root.x-source.root.x,group.g.root.y-source.root.y)))resolution=cached.resolution;
-    if (cached?.resolution !== resolution || changedDrawingRaster(cached?.drawingInputs) || cached?.raster&&!rasterCovers(cached.raster,cached.originalBounds,visible)) {
+    if (proxy || cached?.resolution !== resolution || changedDrawingRaster(cached?.drawingInputs) || cached?.raster&&!rasterCovers(cached.raster,cached.originalBounds,visible)) {
       this.refinement?.releaseWorkingMemory();
       if (cached) { this.refinement?.cancel(cached);this.artwork.delete(source); this.artworkBytes -= cached.bytes; releaseCanvasArtwork(cached); }
       const originalBounds = cachedArtworkBounds(this,source,items);
       if (!(originalBounds.width > 0 && originalBounds.height > 0)) { drawGeometry(ctx, directGeometry, this.resources); return; }
       const padding=items.reduce((n,item)=>Math.max(n,drawableVfxPadding(item)),0);
-      const plan=canvasArtworkPlan(originalBounds,visible??canvasRasterViewport(ctx,group.g.root.x-source.root.x,group.g.root.y-source.root.y),resolution,
+      if(proxy)resolution=gestureProxyResolution(requested,originalBounds,4096);
+      const plan=proxy?undefined:canvasArtworkPlan(originalBounds,visible??canvasRasterViewport(ctx,group.g.root.x-source.root.x,group.g.root.y-source.root.y),resolution,
         {safe:Boolean(cachedCanvasCoverage(this,source,items))&&canvasArtworkCropSafe(items),padding});
       if(plan===null)return;
       const bounds=plan??originalBounds;
@@ -717,7 +725,7 @@ class CanvasFallback {
       drawGeometry(temp, { drawables: items,...(plan?.cropped&&items.length>=64?{clipBounds:{...bounds,guard:2/pixelScale}}:{}) }, this.resources);
       releaseGeometryResources(temp);
       cached = { canvas, resolution, bounds, drawingInputs, width: width / pixelScale, height: height / pixelScale, bytes: width * height * 4,
-        ...(plan?.cropped?{raster:{...plan,pixelScale},originalBounds}:{}) };
+        ...(plan?.cropped?{raster:{...plan,pixelScale},originalBounds}:{}),...(proxy?{deferDensity:true}:{}) };
       if (retained) this.artworkBytes += cached.bytes;
       this.stats.rasterizedObjects = (this.stats.rasterizedObjects || 0) + 1;
     }
@@ -1219,8 +1227,19 @@ class WebGPURenderer {
   rasterObject(g, items, scale, artwork = g, cache = this.rasterCache, vector = false, visible) {
     const originalBounds = this.geometryBounds(g,items), max = Math.min(8192, this.device.limits.maxTextureDimension2D);
     let bounds=originalBounds;
-    const desired = rasterResolution(scale);
+    let desired = rasterResolution(scale);
     const workingBudget = cache.maxBytes > 0 ? cache.maxBytes : previewMemoryPlan().editorRasters;
+    const drawingInputs=drawingRasterInputs(items,this.resources),contentKey=drawingRasterKey(drawingInputs);
+    if(this.gestureScale && cache===this.rasterCache){
+      // Navigation reached artwork its held raster does not cover. Painting
+      // that region at the held density costs more with every zoom-out step,
+      // so present the whole artwork from a retained raster, or one bounded
+      // proxy, until the settled paint restores the requested detail.
+      this.rasterProxies=true;
+      const retained=cache.complete(artwork,this.generation,contentKey);
+      if(retained&&sameDrawingRaster(retained.drawingInputs,drawingInputs))return retained;
+      desired=gestureProxyResolution(rasterResolution(this.gestureScale),bounds,max);visible=null;
+    }
     const detail=desired>8 || bounds.width*desired>max || bounds.height*desired>max;
     let resolution = desired * (this.previewRasterScale || 1),plan;
     if(detail && visible){
@@ -1233,7 +1252,6 @@ class WebGPURenderer {
       }
       bounds=plan;
     }else resolution=Math.min(resolution,Math.sqrt(workingBudget / 4 / Math.max(1,bounds.width*bounds.height)));
-    const drawingInputs=drawingRasterInputs(items,this.resources),contentKey=drawingRasterKey(drawingInputs);
     const regionKey=plan?.cropped?`${plan.x-g.root.x},${plan.y-g.root.y},${plan.pixelWidth},${plan.pixelHeight},${plan.pixelScale}`:'';
     const relative=rect=>({...rect,x:rect.x-g.root.x,y:rect.y-g.root.y});
     const cached = cache.get(artwork, resolution, this.generation,contentKey,regionKey) ||
@@ -1773,6 +1791,10 @@ class WebGPURenderer {
     // keep its density until input settles. Never publish the requested bucket
     // as prepared before its pixels exist: the final paint must refine it.
     const viewChanging=options.viewChanging&&!options.playing&&this.lastGeometry===geometry&&this.lastReport===report&&this.lastGeneration===this.generation&&this.backgroundKey===backgroundKey&&!onionChanged;
+    this.gestureScale=viewChanging?Math.hypot(camera[0], camera[1]) * this.dpr:0;
+    // Proxies shown during navigation are not the requested detail, even when
+    // the gesture returns to the density it started from.
+    if(this.rasterProxies&&!viewChanging){this.rasterProxies=false;this.lastRasterResolution=-1;}
     let viewResolution=viewChanging ? this.lastRasterResolution : requestedResolution;
     const textured=this.stats.textureObjects||this.stats.croppedTextureObjects;
     const outlineTransition=this.stats.outlinedVectorObjects&&viewResolution<=8;

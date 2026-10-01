@@ -113,11 +113,23 @@ export async function zoomGestureState({forceCanvas2D=false,rendererURL='../src/
     verify(cropped.length===1&&cropped[0].raster?.cropped,'High zoom starts with bounded, cropped native artwork');
     options={...optionsFor(native,64),viewChanging:true};const beforeIn=rasterCount(renderer);await submit(options);
     verify(newRasters(renderer,beforeIn)===0&&resources(renderer)[0]===cropped[0],'Zooming farther into a covered crop retains its pixels');
+    // Leaving a held crop must not paint the newly exposed region at the
+    // crop's density: that cost grows with every zoom-out step. The whole
+    // artwork is shown from a retained raster or one bounded proxy instead.
     options={...optionsFor(native,16),viewChanging:true};const beforeOut=rasterCount(renderer);await submit(options);
-    verify(newRasters(renderer,beforeOut)>0&&resources(renderer)[0]!==cropped[0],'Zooming out of retained coverage prepares newly exposed artwork');
-    const beforeMove=resources(renderer)[0];
+    const proxy=resources(renderer)[0];
+    verify(proxy!==cropped[0]&&!proxy.raster&&proxy.resolution<=16,'Zooming out of retained coverage presents the whole artwork at or below the view density',{resolution:proxy.resolution,raster:proxy.raster});
+    verify(newRasters(renderer,beforeOut)<=1,'Leaving retained coverage paints at most one bounded proxy');
+    options={...options,view:{...options.view,x:options.view.x-220}};const beforeMove=rasterCount(renderer);await submit(options);
+    verify(resources(renderer)[0]===proxy&&newRasters(renderer,beforeMove)===0,'A complete proxy covers further navigation without painting');
+    options={...optionsFor(native,32),view:options.view,viewChanging:true};const beforeReturn=rasterCount(renderer);await submit(options);
+    verify(resources(renderer)[0]===proxy&&newRasters(renderer,beforeReturn)===0,'Returning to the starting density keeps the proxy until the gesture settles');
+    await submit({...options,viewChanging:false});
+    verify(resources(renderer)[0]!==proxy&&resources(renderer)[0].raster?.cropped,'Settling at the starting density replaces the proxy with requested detail');
+    await compareFresh(options,'proxy at the starting density',{mean:.1,alphaMax:16});bounded();
+    await submit(optionsFor(native,32));
+    options={...optionsFor(native,16),viewChanging:true};await submit(options);
     options={...options,view:{...options.view,x:options.view.x-220}};await submit(options);
-    verify(resources(renderer)[0]!==beforeMove,'Moving beyond a retained crop refreshes newly exposed artwork during the gesture');
     await submit({...options,viewChanging:false});
     // Retaining a legally covered crop can shift native edge antialiasing
     // slightly versus a newly quantized crop. The no-gesture baseline has the
@@ -801,6 +813,57 @@ export async function zoomSceneCaptureNative({onProgress=()=>{},disableWebGL=fal
 
 /** A capped GPU Camera must repaint when settled generic artwork gains detail,
  * even though its camera dimensions remain unchanged throughout the gesture. */
+/** Below its size cap the GPU Camera image follows the view density, so an
+ * unheld zoom repaints and re-uploads it on every step. Navigation holds the
+ * painted density and the settled paint restores the requested one. */
+export async function zoomCameraHeldGPU({onProgress=()=>{},rendererURL='../src/renderer.mjs'}={}){
+  const gpuSourceURL=new URL('./vfx-camera-gpu.mjs',new URL(rendererURL,import.meta.url)).href;
+  const [{createRenderer},{createVfx},{CameraGpuSource}]=await Promise.all([
+    import(rendererURL),import('../src/vfx.mjs'),import(gpuSourceURL)]);
+  const width=384,height=256,checks=[],rows=[],errors=[],renderers=[],paints=new Map();
+  const verify=(condition,message,details)=>{check(condition,message,details);checks.push(message);onProgress({checks:checks.length,message});};
+  const originalPaint=CameraGpuSource.prototype.paint;
+  CameraGpuSource.prototype.paint=function(...args){paints.set(this,(paints.get(this)??0)+1);return originalPaint.apply(this,args);};
+  const make=async()=>{
+    const renderer=await createRenderer(document.createElement('canvas'),{gpuDrawing:false,sharedArtwork:false});
+    renderer.resize(width,height,1);renderers.push(renderer);
+    verify(renderer.device&&renderer.stats.backend==='WebGPU','The held Camera regression executes the real WebGPU renderer');
+    renderer.device.addEventListener('uncapturederror',event=>errors.push(event.error.message));return renderer;
+  };
+  try{
+    const s=scene({opaque:true}),figure=s.report.figure_types[0];s.report.canvas_width=800;s.report.canvas_height=400;
+    s.report._styk.layers.fixed.scene.visible=true;figure.segment_decode.global_style.u28=0;
+    for(const segment of figure.segments)Object.assign(segment,{length:52,thickness:6.3,color_rgb:[40,170,220]});
+    s.frame=createFrame([createObject(figure,1,400,200)]);s.report.keyframes=[s.frame];s.frame._stykBackgroundColor=0xff496787;
+    const blur=createVfx('blur','held-camera-scene');blur.params.radius=.75;s.frame._stykVfx={figure:[blur]};
+    s.geometry=buildGeometry(s.report,s.frame);s.target={x:400,y:200};
+    const options=scale=>({report:s.report,frame:s.frame,geometry:s.geometry,view:sceneView(scale,s.target,width,height),cameraEnabled:false,clipToCanvas:false,editorBackgroundColor:0});
+    const renderer=await make();renderer.render(options(.4));await renderer.device.queue.onSubmittedWorkDone();
+    const camera=renderer.vfxViewport.camera,source=renderer.vfxViewport.cameraSource,initialPaints=paints.get(source);
+    const contentWidth=()=>camera.filteredWidth-2*(camera.filterPad??0),initialWidth=contentWidth();
+    verify(initialPaints===1&&initialWidth===320,'The fitted view paints its Camera image below the density cap',{initialPaints,initialWidth});
+    for(let step=1;step<=16;step++){
+      renderer.render({...options(.4*Math.pow(1.6/.4,step/16)),viewChanging:true});
+      verify(paints.get(source)===initialPaints&&contentWidth()===initialWidth,`Held Camera gesture ${step}: navigation neither repaints nor resizes the Camera image`,{paints:paints.get(source),width:contentWidth()});
+    }
+    const final=options(1.6);renderer.render(final);await renderer.device.queue.onSubmittedWorkDone();
+    verify(paints.get(source)===initialPaints+1&&contentWidth()===1280,'Settlement repaints the Camera image once at the requested density',{paints:paints.get(source),width:contentWidth()});
+    const pixels=read(renderer.canvas);
+    const reference=await make();reference.render(final);await reference.device.queue.onSubmittedWorkDone();
+    const diff=difference(pixels,read(reference.canvas));
+    verify(diff.visible>100&&diff.max===0,'Settled held Camera pixels exactly match an independently prepared view',diff);
+    renderer.render({...options(.8),viewChanging:true});renderer.render(options(.8));await renderer.device.queue.onSubmittedWorkDone();
+    verify(paints.get(source)===initialPaints+2&&contentWidth()===640,'Zooming back out settles at its lower requested density',{paints:paints.get(source),width:contentWidth()});
+    const revised=createFrame([createObject(figure,1,430,210)]);revised._stykBackgroundColor=s.frame._stykBackgroundColor;revised._stykVfx=s.frame._stykVfx;
+    const moved={...options(1.2),frame:revised,geometry:buildGeometry(s.report,revised),viewChanging:true};
+    renderer.render(moved);await renderer.device.queue.onSubmittedWorkDone();
+    verify(paints.get(source)===initialPaints+3&&contentWidth()===960,'A scene change during navigation repaints the Camera image at the view density',{paints:paints.get(source),width:contentWidth()});
+    verify(errors.length===0,'Held Camera navigation produces no WebGPU validation errors',errors);
+    rows.push({name:'held GPU Camera',diff,movingPaints:0,settledPaints:1});
+    return {checks,rows,backend:'WebGPU held Camera density'};
+  }catch(error){error.partialChecks=checks;error.partialRows=rows;throw error;}
+  finally{CameraGpuSource.prototype.paint=originalPaint;for(const renderer of renderers)renderer.destroy();}
+}
 export async function zoomCameraCappedGPU({onProgress=()=>{},rendererURL='../src/renderer.mjs'}={}){
   const gpuSourceURL=new URL('./vfx-camera-gpu.mjs',new URL(rendererURL,import.meta.url)).href;
   const [{createRenderer},{createVfx},{CameraGpuSource}]=await Promise.all([

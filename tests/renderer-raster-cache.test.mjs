@@ -132,3 +132,19 @@ test('evicted recyclable textures are reused best-fit, stay bounded and are rele
   assert.equal(large.texture.destroyed, 1, 'the oldest recycled texture makes room'); assert.ok(cache.recycledBytes <= 250);
   cache.clear(); assert.equal(extra.texture.destroyed, 1); assert.equal(cache.recycledBytes, 0);
 });
+
+test('navigation finds the sharpest retained raster of the whole artwork, never a crop or stale content',()=>{
+  const cache=new EditorRasterCache({maxBytes:100}),artwork={},other={};
+  const coarse={...resource(1),contentKey:'drawing'},fitted={...resource(2.38),contentKey:'drawing'};
+  const crop={...resource(45),contentKey:'drawing',regionKey:'crop',raster:{x:0,y:0,width:30,height:30,pixelScale:45,cropped:true}};
+  const stale={...resource(8,0),contentKey:'earlier'},elsewhere={...resource(4),contentKey:'drawing'};
+  cache.set(artwork,coarse);cache.set(artwork,fitted);cache.set(artwork,crop);cache.set(artwork,stale);cache.set(other,elsewhere);
+  assert.equal(cache.complete(artwork,0,'drawing'),fitted);
+  assert.equal(cache.complete(artwork,1,'drawing'),undefined,'Another resource generation has no usable pixels.');
+  assert.equal(cache.complete({},0,'drawing'),undefined);
+  // Presenting the retained raster makes it the most recently used entry.
+  cache.maxBytes=10;cache.retain(new Set(),0);
+  assert.equal(fitted.texture.destroyed,0);assert.equal(crop.texture.destroyed,1);assert.equal(coarse.texture.destroyed,1);
+  cache.delete(fitted);assert.equal(cache.complete(artwork,0,'drawing'),undefined);
+  cache.clear();
+});

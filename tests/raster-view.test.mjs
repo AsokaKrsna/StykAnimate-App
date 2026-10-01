@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {rasterBounds,rasterCovers,rasterViewport} from '../src/raster-view.mjs';
+import {rasterBounds,rasterCovers,rasterViewport,gestureProxyResolution} from '../src/raster-view.mjs';
 import {rasterResolution} from '../src/renderer-geometry.mjs';
 
 test('preview density follows high zoom without a hard 8x ceiling',()=>{
@@ -67,4 +67,19 @@ test('effect sampling halos are retained and included in coverage and dimension 
   const limited=rasterBounds(bounds,visible,100,4096,128,30);
   assert.ok(limited.pixelWidth<=4096&&limited.pixelHeight<=4096);
   assert.ok(rasterCovers(limited,bounds,visible));
+});
+
+test('a navigation proxy covers the whole artwork within a few megapixels and never above the view density',()=>{
+  const small={x:0,y:0,width:300,height:200},large={x:-900,y:40,width:6535,height:2058};
+  // Small artwork at an ordinary view uses the view's own density: settling there needs no new raster.
+  assert.equal(gestureProxyResolution(rasterResolution(2.1),small),rasterResolution(2.1));
+  // A high-zoom view never asks the proxy for crop-level detail.
+  assert.equal(gestureProxyResolution(rasterResolution(40),small),8);
+  for(const [bounds,view,max] of [[large,rasterResolution(40),8192],[large,rasterResolution(2.1),8192],[small,rasterResolution(40),4096],[large,rasterResolution(.6),4096]]){
+    const density=gestureProxyResolution(view,bounds,max);
+    assert.ok(density>0&&density<=view&&density<=8);
+    assert.ok(bounds.width*density<=max+1e-6&&bounds.height*density<=max+1e-6);
+    assert.ok(bounds.width*bounds.height*density*density<=4*1024*1024+1e-3);
+  }
+  assert.ok(gestureProxyResolution(8,{x:0,y:0,width:0,height:0})>0);
 });

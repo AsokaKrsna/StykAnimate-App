@@ -128,9 +128,11 @@ test('connected child layer bindings invalidate retained camera content',()=>{
   }finally{camera.destroy();}
 });
 
-test('paint-backed GPU camera preparation preserves its ordinary density policy',()=>{
+test('paint-backed GPU camera preparation holds its density during navigation and restores it on settlement',()=>{
   const painted=[],camera=new CameraVfx({paint(_context,_options,width,height){painted.push([width,height]);}}),options=fixture(),resources={};
   try{run(camera,options,resources);run(camera,{...options,viewChanging:true,view:{scale:2}},resources);
+    assert.deepEqual(painted,[[320,240]],'Repainting below the size cap moves the scene through Canvas on every zoom step.');
+    run(camera,{...options,view:{scale:2}},resources);
     assert.deepEqual(painted,[[320,240],[640,480]]);
   }finally{camera.destroy();}
 });

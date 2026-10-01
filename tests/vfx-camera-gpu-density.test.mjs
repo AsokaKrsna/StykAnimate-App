@@ -76,3 +76,24 @@ test('GPU source density gate follows texture, crop and outline ownership scalar
   }
   assert.equal(reads,3);
 });
+
+test('an uncapped GPU camera holds its painted density while an unchanged scene is navigated',()=>{
+  let paints=0;
+  const camera=new CameraVfx({getPaintRevision:()=>undefined,paint(){paints++;}});
+  const options={...fixture(),frame:{objects:[],camera:{scale:1}},view:{scale:.4}},resources={};
+  try{
+    render(camera,options,resources);assert.equal(camera.canvas.width,320);assert.equal(paints,1);
+    for(let i=1;i<=16;i++)render(camera,{...options,viewChanging:true,view:{scale:.4*4**(i/16)}},resources);
+    assert.equal(paints,1,'Each zoom step below the size cap would otherwise repaint and upload the scene.');
+    assert.equal(camera.canvas.width,320);
+    render(camera,{...options,view:{scale:1.6}},resources);
+    assert.equal(paints,2);assert.equal(camera.canvas.width,1280,'The settled view restores its requested density.');
+    render(camera,{...options,viewChanging:true,view:{scale:.8}},resources);assert.equal(paints,2);
+    render(camera,{...options,view:{scale:.8}},resources);assert.equal(paints,3);assert.equal(camera.canvas.width,640);
+    // Changed content, editing and playback always paint at the density they request.
+    const revised={...options,geometry:{objects:new Map(),orderedObjects:[],drawables:[]}};
+    render(camera,{...revised,viewChanging:true,view:{scale:1.2}},resources);assert.equal(paints,4);assert.equal(camera.canvas.width,960);
+    render(camera,{...revised,viewChanging:true,liveEditing:true,view:{scale:.6}},resources);assert.equal(paints,5);assert.equal(camera.canvas.width,480);
+    render(camera,{...revised,viewChanging:true,playing:true,view:{scale:.5}},resources);assert.equal(paints,6);assert.equal(camera.canvas.width,400);
+  }finally{camera.destroy();}
+});

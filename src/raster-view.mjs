@@ -58,3 +58,12 @@ export function rasterCovers(raster, bounds, visible) {
     right-epsilon<=raster.x+raster.width-(raster.x+raster.width<bounds.x+bounds.width?guard:0) &&
     bottom-epsilon<=raster.y+raster.height-(raster.y+raster.height<bounds.y+bounds.height?guard:0);
 }
+
+/** Density of the complete raster a navigation gesture shows in place of a
+ * crop it has outgrown: never above the view's own density, an ordinary
+ * texture, or a few megapixels. It trades detail during motion for one
+ * bounded paint; the settled view restores the requested density. */
+export function gestureProxyResolution(resolution, bounds, maxDimension=8192, maxPixels=4*1024*1024) {
+  return Math.max(1e-6,Math.min(resolution,8,maxDimension/Math.max(1,bounds.width),maxDimension/Math.max(1,bounds.height),
+    Math.sqrt(maxPixels/Math.max(1,bounds.width*bounds.height))));
+}

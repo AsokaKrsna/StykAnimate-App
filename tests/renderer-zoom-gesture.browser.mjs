@@ -55,7 +55,7 @@ try{
     const reports=[];
     try{
       if(drawingCPUOnly||sceneCaptureOnly)return {reports};
-      const {zoomGestureState,zoomGestureDrawing,zoomArtworkRefinement,zoomCameraArtworkRefinement,zoomCameraDrawingArtworkRefinement,zoomCameraCappedGPU}=await import('/tests/renderer-zoom-gesture-fixture.mjs');
+      const {zoomGestureState,zoomGestureDrawing,zoomArtworkRefinement,zoomCameraArtworkRefinement,zoomCameraDrawingArtworkRefinement,zoomCameraCappedGPU,zoomCameraHeldGPU}=await import('/tests/renderer-zoom-gesture-fixture.mjs');
       if(!refinementSmall&&!cameraOnly&&!cameraDrawingOnly&&!cameraGPUOnly)for(const forceCanvas2D of [false,true]){
         await window.zoomCheckProgress({phase:'state',forceCanvas2D});
         reports.push(await zoomGestureState({forceCanvas2D}));
@@ -67,6 +67,8 @@ try{
         reports.push(await zoomCameraCappedGPU({onProgress:update=>{
           if(update.checks%10===0)void window.zoomCheckProgress({phase:'capped GPU camera',...update});
         }}));
+        await window.zoomCheckProgress({phase:'held GPU camera'});
+        reports.push(await zoomCameraHeldGPU());
       }
       if(!stateOnly&&!cameraOnly&&!cameraDrawingOnly&&!cameraGPUOnly){
         await window.zoomCheckProgress({phase:'async refinement'});

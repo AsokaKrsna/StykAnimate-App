@@ -107,6 +107,12 @@ export class CameraVfx {
       width=record.width;height=record.height;
     }
   }
+  // The GPU camera image is repainted whenever its density changes, and below
+  // its size cap that is every step of a zoom. Hold the painted density while
+  // an unchanged scene is navigated; the settled paint restores it.
+  if(this.paint&&options.viewChanging&&!options.playing&&!options.liveEditing&&unchanged&&this.report===report&&this.paintedWidth){
+    width=this.paintedWidth;height=this.paintedHeight;
+  }
   const plan=this.paint?checkSceneVfxPlan(sceneVfxPlan(frame,width,height,undefined,width/report.canvas_width),vfxSurfaceDimension()):null;
   // A capped GPU camera can keep its size while the viewport's compatibility
   // artwork sharpens. Sample that published density only after navigation;
@@ -125,7 +131,7 @@ export class CameraVfx {
    else {const drawables=cameraSceneDrawables(options);
    drawExportScene(this.context,report,frame,{...geometry,drawables},resources);}
    this.geometry=geometry;this.preparedFrame=preparedFrame;this.frame=frame;this.signature=signature;this.resources=resources;this.drawingInputs=liveDrawingInputs;
-   if(this.paint)this.paintRevision=paintRevision;
+   if(this.paint){this.paintRevision=paintRevision;this.report=report;this.paintedWidth=width;this.paintedHeight=height;}
    if(!this.paint){this.report=report;this.contentSignature=contentSignature;
     if(this.retainSource){
       // A native cold source may precede an asynchronous drawing preview.
