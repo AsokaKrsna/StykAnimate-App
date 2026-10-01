@@ -3,7 +3,7 @@
 // quit, atomic replacement, the single-instance lock, and automatic relaunch.
 import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
-import { mkdir, readFile, writeFile, copyFile, stat, rm } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, copyFile, cp, stat, rm } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -59,7 +59,11 @@ try {
   // fixture its own identity. Never resolve a fresh set of updater dependencies.
   for (const file of ['package.json', 'package-lock.json']) await copyFile(file, path.join(fixture, file));
   await run('npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: fixture });
-  for (const file of ['updates.cjs', 'appimage-updater.cjs']) await copyFile(path.join(root, 'desktop', file), path.join(fixture, file));
+  // Mirror the packaged layout: desktop modules load their messages from ../src.
+  await mkdir(path.join(fixture, 'desktop'));
+  for (const file of ['updates.cjs', 'appimage-updater.cjs', 'localization.cjs']) await copyFile(path.join(root, 'desktop', file), path.join(fixture, 'desktop', file));
+  for (const file of ['localization.mjs', 'localized-error.mjs', 'validation-labels.mjs', 'message-error-core.mjs']) await cp(path.join(root, 'src', file), path.join(fixture, 'src', file));
+  await cp(path.join(root, 'src', 'locales'), path.join(fixture, 'src', 'locales'), { recursive: true, filter: file => !path.extname(file) || file.endsWith('.mjs') });
   await writeFile(path.join(fixture, 'probe.json'), JSON.stringify({ root: probe, installed }));
   await writeFile(path.join(fixture, 'main.cjs'), `
 const { app } = require('electron');
@@ -76,9 +80,9 @@ app.whenReady().then(async () => {
     fs.writeFileSync(file('updated.json'), JSON.stringify({ version, appImage: process.env.APPIMAGE, profilePreserved: true }));
     app.quit(); return;
   }
-  const { UpdateService, updateAvailability } = require('./updates.cjs');
+  const { UpdateService, updateAvailability } = require('./desktop/updates.cjs');
   assert.equal(updateAvailability({ packaged: app.isPackaged, platform: process.platform, appImage: process.env.APPIMAGE }), '');
-  const { LinuxAppImageUpdater } = require('./appimage-updater.cjs');
+  const { LinuxAppImageUpdater } = require('./desktop/appimage-updater.cjs');
   const updater = new LinuxAppImageUpdater();
   updater.disableDifferentialDownload = true;
   const service = new UpdateService({ updater, currentVersion: version, onState: state => {
@@ -115,7 +119,7 @@ app.whenReady().then(async () => {
       electronVersion: metadata.devDependencies.electron, electronDist: path.join(root, 'node_modules', 'electron', 'dist'),
       toolsets: metadata.build.toolsets,
       directories: { app: fixture, output: version === '0.0.1' ? path.join(probe, 'baseline') : target },
-      files: ['main.cjs', 'updates.cjs', 'appimage-updater.cjs', 'probe.json', 'package.json'],
+      files: ['main.cjs', 'desktop/**/*', 'src/**/*', 'probe.json', 'package.json'],
       publish: [{ provider: 'generic', url }],
       linux: { executableName: 'styk-update-probe', category: 'Graphics', icon: path.join(root, 'desktop/assets/stykanimate.png') },
       appImage: { artifactName: 'update-test-${version}.AppImage' },

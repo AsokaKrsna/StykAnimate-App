@@ -35,10 +35,11 @@ async function open(context, { blockStorage = false } = {}) {
   const page = await context.newPage();
   const problems = [];
   page.on('pageerror', (error) => problems.push(error.message));
-  page.on('console', (message) => { if (message.type() === 'error' && !/Failed to load resource/.test(message.text())) problems.push(message.text()); });
+  page.on('console', (message) => { if (message.type() === 'error' && !/Failed to load resource|Viewport argument key "interactive-widget"/.test(message.text())) problems.push(message.text()); });
   await page.addInitScript((block) => {
     document.addEventListener('securitypolicyviolation', (event) => console.error(`CSP violation: ${event.violatedDirective} ${event.blockedURI}`));
-    if (block) window.indexedDB.open = () => { throw new DOMException('Storage is blocked.', 'SecurityError'); };
+    // Patch the prototype: WebKit can recreate the indexedDB wrapper, dropping properties set on it.
+    if (block) IDBFactory.prototype.open = () => { throw new DOMException('Storage is blocked.', 'SecurityError'); };
   }, blockStorage);
   await page.goto(site.origin, { waitUntil: 'load' });
   await page.waitForFunction(() => window.styk?.ready === true, undefined, { timeout: 90000 });
