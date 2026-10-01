@@ -3,6 +3,7 @@ import {vectorVfxSource,rasterizeVectorVfx} from './renderer-vfx-vector.mjs';
 import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {parallaxResolver} from './layer-parallax.mjs';
 import {rasterBounds,rasterCovers,rasterViewport} from './raster-view.mjs';
+import {canvasCoverageBounds,canvasBoundsOutside,canvasArtworkPlan,canvasLayerBounds} from './renderer-canvas-plan.mjs';
 import {canvasPaint} from './paint.mjs';
 import {GpuTiming,requestInstrumentedDevice} from './gpu-timing.mjs';
 import {gpuStartupBudget} from './gpu-startup.mjs';
@@ -10,10 +11,10 @@ import {normalizeMsaaCount, viewportBackingSize} from './preview-quality.mjs';
 import {ViewportVfx,hasSceneVfx} from './vfx-viewport.mjs';
 import {CameraVfx} from './vfx-camera.mjs';
 import {initVfxDevice,releaseVfxDevice} from './vfx-gpu.mjs';
-import {hasDrawableVfx,vfxRasterScale,drawableVfxPadding} from './vfx-canvas.mjs';
+import {hasDrawableVfx,vfxRasterScale,drawableVfxPadding,configureVfxSoftwareResources} from './vfx-canvas.mjs';
 import {vfxPreviewOptions,vfxPreviewGeometry} from './vfx-preview.mjs';
 import { buildGeometry, buildGeometrySteps, drawGeometry, releaseGeometryResources } from './pivot/geometry.mjs';
-import { drawBackground, backgroundBounds, sceneBackgroundColor, effectiveCamera } from './pivot/background.mjs';
+import { drawBackground, backgroundBounds, sceneBackgroundColor, effectiveCamera,releaseBackgroundResources } from './pivot/background.mjs';
 import { SHAPE, SHAPE_BYTES, SHAPE_FLOATS, shapeRecord, compileVectorObject, compileVectorObjectSteps, requiresCompatibilityTexture, adoptPreparedVectors, objectBounds, cameraMatrix, argbFloats, textureBucket, textureRegion, rasterResolution } from './renderer-geometry.mjs';
 import { PreparedFrameCache } from './prepared-frames.mjs';
 import { RasterSurfacePool } from './raster-surfaces.mjs';
@@ -206,6 +207,7 @@ function createResources(options, invalidate) {
   };
   const resources = {
     drawing: options.resources?.drawing,
+    backgroundBytes:options.resources?.backgroundBytes??options.maxBackgroundBytes??previewMemoryPlan().editorBackgrounds,
     tint(image,rgb,stamp=0){
       const key=rgb.join(',')+':'+stamp;let hit=tints.get(image);
       if(hit?.key===key)return hit.canvas;
@@ -234,11 +236,18 @@ function canvasRasterViewport(ctx,dx=0,dy=0){
 function cachedArtworkBounds(renderer,g,items){
   renderer.boundsCache??=new WeakMap();
   let entry=renderer.boundsCache.get(g);
-  if(!entry||entry.items!==items||entry.generation!==renderer.generation){
-    entry={items,generation:renderer.generation,bounds:objectBounds(items,renderer.resources)};
+  if(!entry||entry.items!==items||entry.generation!==renderer.generation||changedDrawingRaster(entry.drawingInputs)){
+    const bounds=objectBounds(items,renderer.resources);
+    entry={items,generation:renderer.generation,bounds,drawingInputs:drawingRasterInputs(items,renderer.resources)};
     renderer.boundsCache.set(g,entry);
   }
   return entry.bounds;
+}
+function cachedCanvasCoverage(renderer,g,items){
+  cachedArtworkBounds(renderer,g,items);
+  const entry=renderer.boundsCache.get(g);
+  if(!('coverage' in entry))entry.coverage=canvasCoverageBounds(items,entry.bounds);
+  return entry.coverage;
 }
 /** A Canvas fallback is explicit and never advertised as hardware WebGPU rendering. */
 class CanvasFallback {
@@ -246,6 +255,7 @@ class CanvasFallback {
     // Keep the compatibility surface independent of the failed GPU backend.
     this.canvas = canvas; this.context = canvas.getContext('2d', {willReadFrequently: true}); this.options = options;
     if (!this.context) throw messageError(new Error(''), "errors.renderer.theCompatibilityCanvasIsUnavailable", {});
+    configureVfxSoftwareResources(this.context,{maxBytes:options.maxSoftwareFilterBytes??previewMemoryPlan().editorSoftwareFilters});
     this.stats = { backend: 'Canvas 2D fallback', reason, drawCalls: 0, primitives: 0, frameMs: 0, objects: 0, textureObjects: 0 };
     this.onionArtwork = new Map(); this.onionArtworkBytes = 0;
     this.onionBudget = options.onionCache?.maxBytes ?? previewMemoryPlan().editorOnions;
@@ -259,8 +269,8 @@ class CanvasFallback {
     // outlive CPU packet eviction so presentation is one drawImage per tick.
     this.softwarePlayback = true;
     this.prepared = new Map(); this.preparedBytes = 0;
-    this.resources = createResources(options, () => { this.clearOnionArtwork(); this.clearArtwork(); if(this.vfxCamera)this.vfxCamera.frame=null; if (this.last) this.render(this.last); options.onInvalidate?.(); });
-    this.onContextLost = () => { this.contextLost = true; this.clearOnionArtwork(); this.clearArtwork(); this.clearPreparedFrames(); };
+    this.resources = createResources(options, () => { this.clearOnionArtwork(); this.clearArtwork(); releaseBackgroundResources(this.context);if(this.vfxCamera)this.vfxCamera.frame=null; if (this.last) this.render(this.last); options.onInvalidate?.(); });
+    this.onContextLost = () => { this.contextLost = true; this.clearOnionArtwork(); this.clearArtwork(); this.clearPreparedFrames(); releaseGeometryResources(this.context); };
     this.onContextRestored = () => {
       if (this.destroyed) return;
       this.contextLost = false;
@@ -273,7 +283,7 @@ class CanvasFallback {
     canvas.addEventListener?.('contextrestored', this.onContextRestored);
     this.resize(canvas.clientWidth || 1, canvas.clientHeight || 1, globalThis.devicePixelRatio || 1);
   }
-  resize(width, height, dpr = 1) { this.width = Math.max(1, width); this.height = Math.max(1, height); this.dpr = dpr; this.canvas.width = Math.max(1, Math.round(this.width * dpr)); this.canvas.height = Math.max(1, Math.round(this.height * dpr)); }
+  resize(width, height, dpr = 1) { this.clearSceneLayers();releaseGeometryResources(this.context);this.width = Math.max(1, width); this.height = Math.max(1, height); this.dpr = dpr; this.canvas.width = Math.max(1, Math.round(this.width * dpr)); this.canvas.height = Math.max(1, Math.round(this.height * dpr)); }
   prepareInitialScene(options) { return prepareInitialScene(this, options); }
   activatePreparedScene(prepared, options) { return activatePreparedScene(this, prepared, options); }
   clearOnionArtwork() {
@@ -290,11 +300,15 @@ class CanvasFallback {
     for (const item of this.artwork.values()) { item.canvas.width = 1; item.canvas.height = 1; }
     this.artwork.clear(); this.artworkBytes = 0;
     this.boundsCache=new WeakMap();
+    this.lastSceneGroups=null;
     this.clearSceneLayers();
   }
   clearSceneLayers() {
-    for (const surface of [this.sceneLayers?.below, this.sceneLayers?.above]) if (surface) surface.width = surface.height = 1;
+    for (const surface of [this.sceneLayers?.below, this.sceneLayers?.above]) if (surface) {
+      releaseGeometryResources(surface.canvas.getContext('2d'));surface.canvas.width = surface.canvas.height = 1;
+    }
     this.sceneLayers = null;
+    this.stats.sceneLayerBytes=0;
   }
   // The bitmap inside a software packet belongs to the CPU packet pool; the
   // prepared entry owns a same-size copy so LRU eviction cannot close pixels
@@ -319,21 +333,34 @@ class CanvasFallback {
     return packet.key;
   }
   hasPreparedFrame(key) { return this.prepared.has(String(key)); }
-  renderPrepared(key, { report, view = {}, hiddenUids, dragTranslations, cameraEnabled = true, hiddenKey = '' } = {}) {
+  preparedEntry(key, {report,hiddenUids,dragTranslations,cameraEnabled=true,hiddenKey=''}={}) {
     const entry = this.prepared.get(String(key));
-    if (!entry || this.destroyed || this.contextLost || entry.report !== report) return false;
-    if (entry.cameraEnabled !== (cameraEnabled !== false)) return false;
+    if (!entry || this.destroyed || this.contextLost || entry.report !== report) return null;
+    if (entry.cameraEnabled !== (cameraEnabled !== false)) return null;
     // The bitmap baked a visibility signature. Any difference re-renders live.
-    if (entry.hiddenKey !== (hiddenKey || '')) return false;
-    if (hiddenUids?.has && entry.uids) for (const uid of entry.uids) if (hiddenUids.has(uid)) return false;
-    if (dragTranslations?.size || (dragTranslations && Object.keys(dragTranslations).length)) return false;
-    const ctx = this.context;
-    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    ctx.save(); ctx.scale(this.dpr, this.dpr);
+    if (entry.hiddenKey !== (hiddenKey || '')) return null;
+    if (hiddenUids?.has && entry.uids) for (const uid of entry.uids) if (hiddenUids.has(uid)) return null;
+    if (dragTranslations?.size || (dragTranslations && Object.keys(dragTranslations).length)) return null;
+    return entry;
+  }
+  /** Borrow an admitted software frame into a caller-owned 2D presentation
+   * surface. No packet copy or geometry evaluation is needed for the monitor. */
+  renderPreparedInto(key, {report,view={},target,...options}={}) {
+    const entry=this.preparedEntry(key,{report,...options}),ctx=target?.context;
+    if(!entry||!ctx||ctx.isContextLost?.())return false;
+    const dpr=target.dpr??1;
+    ctx.save();
+    try{
+    if(target.clear!==false){ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,target.width??ctx.canvas.width,target.height??ctx.canvas.height);}
+    ctx.setTransform(dpr,0,0,dpr,0,0);
     ctx.drawImage(entry.canvas, view.x || 0, view.y || 0,
       report.canvas_width * (view.scale || 1), report.canvas_height * (view.scale || 1));
-    ctx.restore();
+    }finally{ctx.restore();}
     this.prepared.delete(String(key)); this.prepared.set(String(key), entry);
+    return true;
+  }
+  renderPrepared(key,options={}) {
+    if(!this.renderPreparedInto(key,{...options,target:{context:this.context,dpr:this.dpr}}))return false;
     Object.assign(this.stats, { mode: 'prepared playback', frameMs: 0, drawCalls: 1, objects: 0, primitives: 0 });
     return true;
   }
@@ -352,7 +379,7 @@ class CanvasFallback {
   async prepareBackgrounds() {}
   softwareRasterContext(canvas) {
     const context=canvas.getContext('2d',{willReadFrequently:true});
-    if(context&&!context.isContextLost?.())return context;
+    if(context&&!context.isContextLost?.()){configureVfxSoftwareResources(context,{owner:this.context});return context;}
     canvas.width=canvas.height=1;this.rasterRetryAt=performance.now()+1500;
     const error=Object.assign(messageError(new Error(''), "errors.renderer.aPreviewRasterCanvasIsUnavailableDrawingDirectly", {}),{telemetryCode:'device_lost',telemetryStage:'prepare'});
     this.options.onError?.(error);
@@ -360,19 +387,19 @@ class CanvasFallback {
     return null;
   }
   drawOnion(ctx, group, scale) {
+    const viewport=canvasRasterViewport(ctx),coverage=cachedCanvasCoverage(this,group.g,group.items);
+    if(canvasBoundsOutside(coverage,viewport,2/Math.max(scale,.0001))){this.stats.culledObjects++;return;}
     if(performance.now()<this.rasterRetryAt){drawGeometry(ctx,{drawables:group.items},this.resources);return;}
     let cached = this.onionArtwork.get(group.g);
     const resolution = this.last?.viewChanging && !this.last.playing && cached ? cached.resolution : rasterResolution(scale);
-    const visible=cached?.raster?canvasRasterViewport(ctx):null;
+    const visible=viewport;
     if (cached?.resolution !== resolution || changedDrawingRaster(cached?.drawingInputs) || cached?.raster&&!rasterCovers(cached.raster,cached.originalBounds,visible)) {
       if (cached) { this.onionArtwork.delete(group.g); this.onionArtworkBytes -= cached.bytes; cached.canvas.width = 1; cached.canvas.height = 1; }
       const originalBounds = cachedArtworkBounds(this,group.g,group.items);
-      let bounds=originalBounds,plan;
-      if(resolution>8||bounds.width*resolution>4096||bounds.height*resolution>4096){
-        const padding=group.items.reduce((n,item)=>Math.max(n,drawableVfxPadding(item)),0);
-        plan=rasterBounds(bounds,visible??canvasRasterViewport(ctx),resolution,4096,128,padding);
-        if(!plan)return;bounds=plan;
-      }
+      const padding=group.items.reduce((n,item)=>Math.max(n,drawableVfxPadding(item)),0);
+      const plan=canvasArtworkPlan(originalBounds,visible,resolution,{safe:Boolean(coverage),padding});
+      if(plan===null)return;
+      const bounds=plan??originalBounds;
       const pixelScale = vfxRasterScale(group.items,bounds,Math.min(resolution, 4096 / bounds.width, 4096 / bounds.height));
       const width = Math.max(1, Math.ceil(bounds.width * pixelScale)), height = Math.max(1, Math.ceil(bounds.height * pixelScale));
       const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : this.canvas.ownerDocument.createElement('canvas');
@@ -449,32 +476,34 @@ class CanvasFallback {
   // renderSource identity survives seeks and translation-only edits, so an
   // unchanged figure is one drawImage instead of re-stroking every primitive.
   drawObject(ctx, group, scale, viewport, offsetX=0, offsetY=0) {
+    const actualCoverage=cachedCanvasCoverage(this,group.g,group.items);
+    const actualVisible=viewport&&{...viewport,x:viewport.x-offsetX,y:viewport.y-offsetY};
+    if(canvasBoundsOutside(actualCoverage,actualVisible,2/Math.max(scale,.0001))){this.stats.culledObjects++;return;}
+    const directGeometry={drawables:group.items,...(actualVisible&&group.items.length>=64?{clipBounds:{...actualVisible,guard:2/Math.max(scale,.0001)}}:{})};
     // Projected meshes change each pose. Reuse this renderer's depth surface
     // instead of creating and destroying a graphics context for every raster.
-    if(group.items.some(item=>item.poly?._stykSurface?.depthTest)){drawGeometry(ctx,{drawables:group.items},this.resources);return;}
-    if(group.items.length===1&&this.resources.drawing?.(group.items[0].fig)?.store){drawGeometry(ctx,{drawables:group.items},this.resources);return;}
+    if(group.items.some(item=>item.poly?._stykSurface?.depthTest)){drawGeometry(ctx,directGeometry,this.resources);return;}
+    if(group.items.length===1&&this.resources.drawing?.(group.items[0].fig)?.store){drawGeometry(ctx,directGeometry,this.resources);return;}
     const artworkView=opacityArtwork(group.g,group.items),{source,items}=artworkView;
     if (group.items.length < 4 && !group.items.some(hasDrawableVfx) || typeof OffscreenCanvas === 'undefined' || performance.now()<this.rasterRetryAt) {
-      drawGeometry(ctx, { drawables: group.items }, this.resources); return;
+      drawGeometry(ctx, directGeometry, this.resources); return;
     }
     let cached = this.artwork.get(source), retained = true;
     const resolution = this.last?.viewChanging && !this.last.playing && cached ? cached.resolution : rasterResolution(scale);
     let visible;
     if(viewport){
-      const bounds=cachedArtworkBounds(this,source,items),dx=group.g.root.x-source.root.x+offsetX,dy=group.g.root.y-source.root.y+offsetY;
-      if(bounds.x+dx+bounds.width<viewport.x||bounds.y+dy+bounds.height<viewport.y||bounds.x+dx>viewport.x+viewport.width||bounds.y+dy>viewport.y+viewport.height)return;
+      const dx=group.g.root.x-source.root.x+offsetX,dy=group.g.root.y-source.root.y+offsetY;
       visible={...viewport,x:viewport.x-dx,y:viewport.y-dy};
     }else if(cached?.raster)visible=canvasRasterViewport(ctx,group.g.root.x-source.root.x,group.g.root.y-source.root.y);
     if (cached?.resolution !== resolution || changedDrawingRaster(cached?.drawingInputs) || cached?.raster&&!rasterCovers(cached.raster,cached.originalBounds,visible)) {
       if (cached) { this.artwork.delete(source); this.artworkBytes -= cached.bytes; cached.canvas.width = 1; cached.canvas.height = 1; }
       const originalBounds = cachedArtworkBounds(this,source,items);
-      let bounds=originalBounds,plan;
-      if (!(bounds.width > 0 && bounds.height > 0)) { drawGeometry(ctx, { drawables: group.items }, this.resources); return; }
-      if(resolution>8||bounds.width*resolution>4096||bounds.height*resolution>4096){
-        const padding=items.reduce((n,item)=>Math.max(n,drawableVfxPadding(item)),0);
-        plan=rasterBounds(bounds,visible??canvasRasterViewport(ctx,group.g.root.x-source.root.x,group.g.root.y-source.root.y),resolution,4096,128,padding);
-        if(!plan)return;bounds=plan;
-      }
+      if (!(originalBounds.width > 0 && originalBounds.height > 0)) { drawGeometry(ctx, directGeometry, this.resources); return; }
+      const padding=items.reduce((n,item)=>Math.max(n,drawableVfxPadding(item)),0);
+      const plan=canvasArtworkPlan(originalBounds,visible??canvasRasterViewport(ctx,group.g.root.x-source.root.x,group.g.root.y-source.root.y),resolution,
+        {safe:Boolean(cachedCanvasCoverage(this,source,items)),padding});
+      if(plan===null)return;
+      const bounds=plan??originalBounds;
       const pixelScale = vfxRasterScale(items,bounds,Math.min(resolution, 4096 / bounds.width, 4096 / bounds.height));
       const width = Math.max(1, Math.ceil(bounds.width * pixelScale)), height = Math.max(1, Math.ceil(bounds.height * pixelScale));
       // A scene larger than the budget must not evict rasters this frame
@@ -482,10 +511,10 @@ class CanvasFallback {
       // rasterize the whole scene again. Opaque figures draw directly instead;
       // group opacity and effects still need an (uncached) isolated raster.
       retained = this.admitArtwork(width * height * 4);
-      if (!retained && artworkView.opacity >= 1 && !group.items.some(hasDrawableVfx)) { drawGeometry(ctx, { drawables: group.items }, this.resources); return; }
+      if (!retained && artworkView.opacity >= 1 && !group.items.some(hasDrawableVfx)) { drawGeometry(ctx, directGeometry, this.resources); return; }
       const canvas = new OffscreenCanvas(width, height);
       const temp = this.softwareRasterContext(canvas);
-      if(!temp){drawGeometry(ctx,{drawables:group.items},this.resources);return;}
+      if(!temp){drawGeometry(ctx,directGeometry,this.resources);return;}
       temp.setTransform(pixelScale, 0, 0, pixelScale, -bounds.x * pixelScale, -bounds.y * pixelScale);
       const drawingInputs=drawingRasterInputs(items,this.resources);
       drawGeometry(temp, { drawables: items,...(plan?.cropped&&items.length>=64?{clipBounds:{...bounds,guard:2/pixelScale}}:{}) }, this.resources);
@@ -504,7 +533,7 @@ class CanvasFallback {
   }
   /** Paint groups [from, to) in painter order; onion runs are never split. */
   paintGroups(ctx, groups, from, to, {scale, hiddenUids, parallax, dragTranslations, walker, frame}) {
-    const visible=scale>8?canvasRasterViewport(ctx):null;
+    const visible=canvasRasterViewport(ctx);
     let primitives = 0;
     for (let i = from; i < to; i++) {
       const group = groups[i];
@@ -531,25 +560,25 @@ class CanvasFallback {
    * are composited once into a layer below and a layer above it. Layers are
    * reused while every figure outside the range is identical and the view
    * differs at most by a translation within the layer margin (panning).
-   * Drawing cels can change pixels without new geometry and keep direct paint. */
+   * Drawing presenter stamps identify pixel changes without new geometry. */
   sceneLayerPlan(groups, options, matrix, paint, clipArtboard) {
     const previous = this.lastSceneGroups, {hiddenUids, parallax, dragTranslations} = paint;
     if (previous?.length !== groups.length) return null;
-    if (groups.some(group => group.items.some(item => item.type === 'image' && this.resources.drawing?.(item.fig)))) return null;
     let first = groups.length, last = -1;
     const members = groups.map((group, i) => {
       const uid = group.g.obj.unique_id, depth = group.isOnion ? null : parallax(uid), move = group.isOnion ? null : dragTranslations?.get?.(uid);
-      if (!group.isOnion && (group.g !== previous[i] || move)) { first = Math.min(first, i); last = i; }
-      return {g: group.g, opacity: group.opacity, onionIndex: group.onionIndex, hidden: Boolean(hiddenUids?.has(uid)), x: depth?.x ?? 0, y: depth?.y ?? 0, move: move ? move.x + ',' + move.y : ''};
+      const hidden=Boolean(hiddenUids?.has(uid)),drawingInputs=hidden?null:drawingRasterInputs(group.items,this.resources);
+      if (!group.isOnion && (group.g !== previous[i].g || move || !sameDrawingRaster(previous[i].drawingInputs,drawingInputs))) { first = Math.min(first, i); last = i; }
+      return {g: group.g, opacity: group.opacity, onionIndex: group.onionIndex, hidden, x: depth?.x ?? 0, y: depth?.y ?? 0, move: move ? move.x + ',' + move.y : '',drawingInputs};
     });
     const {width, height} = this.canvas, onions = groups.some(group => group.isOnion);
-    const layer = this.sceneLayers, same = (a, b) => a.g === b.g && a.opacity === b.opacity && a.onionIndex === b.onionIndex && a.hidden === b.hidden && a.x === b.x && a.y === b.y && a.move === b.move;
-    if (layer && layer.report === options.report && layer.width === width && layer.height === height && layer.dpr === this.dpr &&
+    const layer = this.sceneLayers, same = (a, b) => a.g === b.g && a.opacity === b.opacity && a.onionIndex === b.onionIndex && a.hidden === b.hidden && a.x === b.x && a.y === b.y && a.move === b.move&&sameDrawingRaster(b.drawingInputs,a.drawingInputs);
+    if (layer && layer.members.length===members.length && layer.report === options.report && layer.width === width && layer.height === height && layer.dpr === this.dpr &&
       layer.clip === (options.clipToCanvas !== false) && [0, 1, 2, 3].every(k => layer.matrix[k] === matrix[k]) &&
       (last < 0 || (first >= layer.first && last <= layer.last))) {
       // Whole device pixels keep a panned layer sharp; the release frame repaints exactly.
-      const x = Math.round((matrix[4] - layer.matrix[4]) * this.dpr) - layer.margin, y = Math.round((matrix[5] - layer.matrix[5]) * this.dpr) - layer.margin;
-      const inside = Math.abs(x + layer.margin) <= layer.margin && Math.abs(y + layer.margin) <= layer.margin;
+      const x = Math.round((matrix[4] - layer.matrix[4]) * this.dpr), y = Math.round((matrix[5] - layer.matrix[5]) * this.dpr);
+      const inside = Math.abs(x) <= layer.margin && Math.abs(y) <= layer.margin;
       if (inside && members.every((member, i) => (i >= layer.first && i <= layer.last) || same(member, layer.members[i]))) {
         this.stats.sceneLayerReuses = (this.stats.sceneLayerReuses || 0) + 1; return {...layer, x, y};
       }
@@ -558,40 +587,91 @@ class CanvasFallback {
     // cached figures slightly differently under the offset (edges within
     // 16/255), which is invisible while the whole view moves. Layers around
     // edited figures stay pixel-exact. Onion composites are viewport-sized.
-    const margin = onions || last >= 0 ? 0 : Math.min(512, Math.round(Math.max(width, height) / 4));
-    const bytes = (width + 2 * margin) * (height + 2 * margin) * 4 * (last < 0 ? 1 : 2);
-    if (bytes > 96 * 1024 * 1024) return null;
+    let margin = onions || last >= 0 ? 0 : Math.min(512, Math.round(Math.max(width, height) / 4));
+    const live = last >= 0 ? {first, last} : {first: groups.length, last: groups.length - 1};
+    const deviceMatrix=matrix.map(value=>value*this.dpr);
+    const rangeBounds=(from,to)=>{
+      const bounds=[];
+      for(let i=from;i<to;i++){
+        const member=members[i];if(member.hidden)continue;
+        if(groups[i].isOnion){bounds.push(null);continue;}
+        const b=cachedCanvasCoverage(this,groups[i].g,groups[i].items);
+        bounds.push(b&&{...b,x:b.x+member.x,y:b.y+member.y});
+      }
+      return bounds;
+    };
+    const belowBounds=rangeBounds(0,live.first),aboveBounds=last>=0?rangeBounds(live.last+1,groups.length):null;
+    let belowRect,aboveRect,bytes;
+    const budget=96*1024*1024;
+    // Editing layers retain the destination origin for identical Canvas edge
+    // sampling, and trim only their far extents. Pan-only layers can crop both
+    // axes. Margin yields first under pressure; an oversized set paints directly.
+    for(;;){
+      belowRect=canvasLayerBounds(belowBounds,deviceMatrix,width,height,margin,last>=0);
+      aboveRect=aboveBounds&&canvasLayerBounds(aboveBounds,deviceMatrix,width,height,margin,last>=0);
+      bytes=4*(belowRect.width*belowRect.height+(aboveRect?aboveRect.width*aboveRect.height:0));
+      if(bytes<=budget)break;
+      if(!margin)return null;
+      margin=Math.floor(margin/2);
+    }
+    // Reclaim obsolete allocations before growing the replacement range, so
+    // moving artwork between the two ranges does not double the layer quota.
+    for(const [existing,rect] of [[layer?.below,belowRect],[layer?.above,aboveRect]]){
+      if(existing&&(!rect||existing.canvas.width!==rect.width||existing.canvas.height!==rect.height)){
+        releaseGeometryResources(existing.canvas.getContext('2d'));existing.canvas.width=existing.canvas.height=1;
+      }
+    }
     let primitives = 0;
-    const surface = (existing, from, to) => {
-      const canvas = existing ?? new OffscreenCanvas(1, 1);
-      if (canvas.width !== width + 2 * margin || canvas.height !== height + 2 * margin) { canvas.width = width + 2 * margin; canvas.height = height + 2 * margin; }
-      const target = canvas.getContext('2d', {willReadFrequently: true});
+    const surface = (existing, rect, from, to) => {
+      const canvas = existing?.canvas ?? new OffscreenCanvas(1, 1);
+      if (canvas.width !== rect.width || canvas.height !== rect.height) { canvas.width = rect.width; canvas.height = rect.height; }
+      const target = this.softwareRasterContext(canvas);
+      if(!target)return null;
       target.setTransform(1, 0, 0, 1, 0, 0); target.clearRect(0, 0, canvas.width, canvas.height);
-      target.translate(margin, margin); target.scale(this.dpr, this.dpr);
+      target.translate(-rect.x, -rect.y); target.scale(this.dpr, this.dpr);
       if (options.clipToCanvas !== false) clipArtboard(target);
       target.transform(...matrix);
       primitives += this.paintGroups(target, groups, from, to, paint);
-      return canvas;
+      return {canvas,bounds:rect};
     };
-    const live = last >= 0 ? {first, last} : {first: groups.length, last: groups.length - 1};
-    const below = surface(layer?.below, 0, live.first), above = last >= 0 ? surface(layer?.above, live.last + 1, groups.length) : null;
-    if (!above && layer?.above) layer.above.width = layer.above.height = 1;
+    const below = surface(layer?.below, belowRect, 0, live.first), above = last >= 0 ? surface(layer?.above, aboveRect, live.last + 1, groups.length) : null;
+    if(!below||last>=0&&!above){for(const item of [below,above])if(item)item.canvas.width=item.canvas.height=1;return null;}
+    if (!above && layer?.above) layer.above.canvas.width = layer.above.canvas.height = 1;
     this.stats.sceneLayerBuilds = (this.stats.sceneLayerBuilds || 0) + 1;
+    this.stats.sceneLayerBytes=bytes;
     this.sceneLayers = {report: options.report, width, height, dpr: this.dpr, clip: options.clipToCanvas !== false, matrix: [...matrix], margin,
       members, ...live, below, above, primitives};
-    return {...this.sceneLayers, x: -margin, y: -margin};
+    return {...this.sceneLayers, x: 0, y: 0};
   }
   /** Make room for one raster by evicting only artwork not drawn this frame. */
   admitArtwork(bytes) {
     const budget = this.artworkBudget ??= previewMemoryPlan().editorRasters;
     if (bytes > budget) return false;
-    while (this.artwork.size >= 4096 || this.artworkBytes + bytes > budget) {
-      const [key, item] = this.artwork.entries().next().value;
-      if (item.frame === this.artworkFrame) return false;
+    for(const [key,item] of this.artwork){
+      if(this.artwork.size<4096&&this.artworkBytes+bytes<=budget)break;
+      if(item.frame===this.artworkFrame)continue;
       this.artwork.delete(key); this.artworkBytes -= item.bytes;
       item.canvas.width = 1; item.canvas.height = 1;
     }
-    return true;
+    return this.artwork.size<4096&&this.artworkBytes+bytes<=budget;
+  }
+  /** Admit against the whole visible working set, rather than evicting a
+   * retained figure merely because a new figure appears earlier in painter
+   * order. The existing raster map remains the only pixel owner. */
+  protectVisibleArtwork(groups,{hiddenUids,parallax,dragTranslations,scale},matrix){
+    const visible=rasterViewport(matrix.map(value=>value*this.dpr),this.canvas.width,this.canvas.height),protectedItems=new Set();
+    for(const group of groups){
+      const uid=group.g.obj.unique_id;
+      if(group.isOnion||hiddenUids?.has(uid))continue;
+      const {source,items}=opacityArtwork(group.g,group.items),cached=this.artwork.get(source);
+      if(!cached||changedDrawingRaster(cached.drawingInputs))continue;
+      const depth=parallax(uid),move=dragTranslations?.get?.(uid),dx=group.g.root.x-source.root.x+depth.x+(move?.x||0),dy=group.g.root.y-source.root.y+depth.y+(move?.y||0);
+      const local=visible&&{...visible,x:visible.x-dx,y:visible.y-dy};
+      if(canvasBoundsOutside(cachedCanvasCoverage(this,source,items),local,2/Math.max(scale,.0001))||
+        cached.raster&&!rasterCovers(cached.raster,cached.originalBounds,local))continue;
+      cached.frame=this.artworkFrame;protectedItems.add(cached);
+    }
+    this.stats.activeArtworkBytes=[...protectedItems].reduce((bytes,item)=>bytes+item.bytes,0);
   }
   render(options) {
     options=vfxPreviewOptions(options);
@@ -602,6 +682,7 @@ class CanvasFallback {
     const { report, frame, view = {}, geometry = frame && (options.vfxEnabled===false?vfxPreviewGeometry(buildGeometry(report,frame)):buildGeometry(report,frame)), hiddenUids, dragTranslations } = options;
     if (this.onionReport !== report) { this.clearOnionArtwork(); this.clearArtwork(); this.clearPreparedFrames(); this.onionReport = report; }
     this.stats.onionRasterizedObjects = 0;
+    this.stats.culledObjects=0;
     this.stats.onionRenderedFrames = this.stats.onionFrameHits = 0;
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     if (!frame || !report) return;
@@ -626,13 +707,14 @@ class CanvasFallback {
     if (!onions.length) this.clearOnionArtwork();
     else this.onionLayers.begin(onionLayerKeys(groups),this.canvas.width,this.canvas.height);
     const paint = {scale, hiddenUids, parallax, dragTranslations, walker, frame};
+    this.protectVisibleArtwork(groups,paint,matrix);
     const layers = options.liveEditing && !walker && !hasSceneVfx(frame) ? this.sceneLayerPlan(groups, options, matrix, paint, clipArtboard) : null;
     if (!layers) this.clearSceneLayers();
-    this.lastSceneGroups = groups.map(group => group.g);
+    this.lastSceneGroups = groups.map(group => {const hidden=Boolean(hiddenUids?.has(group.g.obj.unique_id));return {g:group.g,hidden,drawingInputs:hidden?null:drawingRasterInputs(group.items,this.resources)};});
     if (layers) {
       // Unchanged figures below and above the edited ones are two cached
       // composites; a gesture repaints only its own figures.
-      const blit = surface => { ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(surface, layers.x, layers.y); ctx.restore(); };
+      const blit = surface => { ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(surface.canvas, layers.x+surface.bounds.x, layers.y+surface.bounds.y); ctx.restore(); };
       blit(layers.below);
       primitives = layers.primitives + this.paintGroups(ctx, groups, layers.first, layers.last + 1, paint);
       if (layers.above) blit(layers.above);
@@ -641,7 +723,7 @@ class CanvasFallback {
     if(generatorBatch?.incomplete)queueMicrotask(()=>this.options.onInvalidate?.());
     ctx.restore();
     if(hasSceneVfx(frame)){
-      renderPreviewVfx(this,'vfxCamera',()=>new CameraVfx(),camera=>camera.render(ctx,{...options,geometry},this.dpr,this.resources));
+      renderPreviewVfx(this,'vfxCamera',()=>{const camera=new CameraVfx();configureVfxSoftwareResources(camera.context,{owner:this.context});return camera;},camera=>camera.render(ctx,{...options,geometry},this.dpr,this.resources));
       ctx.save();ctx.scale(this.dpr,this.dpr);if(options.clipToCanvas!==false)clipArtboard();ctx.transform(...matrix);
       for(let i=0;i<groups.length;i++)if(groups[i].isOnion)i=this.drawOnionScene(ctx,groups,i,scale,hiddenUids,parallax)-1;
       ctx.restore();

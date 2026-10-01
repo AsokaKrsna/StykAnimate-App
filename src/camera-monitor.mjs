@@ -12,6 +12,8 @@ import {drawBackground, backgroundBounds} from './pivot/background.mjs';
 import {buildGeometry,drawGeometry} from './pivot/geometry.mjs';
 import {composeSceneGroups} from './scene-order.mjs';
 import {canvasGenerators,canvasGeneratorWalker} from './vfx-generator-frame.mjs';
+import {configureVfxSoftwareResources} from './vfx-canvas.mjs';
+import {previewMemoryPlan} from './playback-budget.mjs';
 import {formatPropertyValue} from './property-controls.mjs';
 const playbackGeometry=new WeakMap();
 const monitorSurfaces=new WeakMap();
@@ -41,17 +43,22 @@ function reportMonitorError(error, options) {
   else globalThis.reportError?.(error);
 }
 
-/** One small MSAA surface per renderer. During playback the monitor reuses the
- * already-prepared GPU frame instead of re-evaluating the scene on Canvas 2D. */
-class MonitorGpuSource {
+/** Borrow software pixels directly, or use one small MSAA surface for GPU
+ * presentation. Both paths reuse the renderer's admitted playback frame. */
+class MonitorPreparedSource {
   constructor(renderer){
-    this.renderer=renderer;this.canvas=new OffscreenCanvas(1,1);this.context=this.canvas.getContext('webgpu');
+    this.renderer=renderer;
+    if(renderer.softwarePlayback)return;
+    this.canvas=new OffscreenCanvas(1,1);this.context=this.canvas.getContext('webgpu');
     renderer.device?.lost.then(()=>this.destroy());
   }
-  destroy(){this.msaa?.destroy();this.msaa=null;this.context?.unconfigure();this.context=null;this.canvas.width=this.canvas.height=1;}
-  render(ctx,{key,report,view,dpr,hiddenUids}){
+  destroy(){this.msaa?.destroy();this.msaa=null;this.context?.unconfigure();this.context=null;if(this.canvas)this.canvas.width=this.canvas.height=1;}
+  render(ctx,{key,report,view,dpr,hiddenUids,hiddenKey}){
     const renderer=this.renderer;
-    if(renderer.destroyed||renderer.deviceLost||!renderer?.renderPreparedInto||!this.context)return false;
+    if(renderer.destroyed||renderer.deviceLost||!renderer?.renderPreparedInto)return false;
+    if(renderer.softwarePlayback)return renderer.renderPreparedInto(key,{report,view,cameraEnabled:true,hiddenUids,hiddenKey,
+      target:{context:ctx,dpr,clear:false}});
+    if(!this.context)return false;
     const width=Math.max(1,Math.round(report.canvas_width*view.scale*dpr)),height=Math.max(1,Math.round(report.canvas_height*view.scale*dpr));
     const samples=renderer.msaaCount>1?renderer.msaaCount:0;
     if(this.width!==width||this.height!==height||this.msaaSamples!==samples){
@@ -83,7 +90,7 @@ export function syncCameraControls(root, frame, {activeKey=null, guides=true}={}
 }
 
 /** Draw on the app's animation frame, reusing evaluated geometry and media.
- * A prepared playback packet renders through the shared GPU pipeline; other
+ * A prepared playback packet uses the renderer's presentation contract; other
  * states fall back to the Canvas 2D artwork path below. */
 export function drawCameraMonitor(canvas, options) {
   let {report,frame,geometry,resources,hiddenUids,prepared}=options;
@@ -97,12 +104,13 @@ export function drawCameraMonitor(canvas, options) {
   }
   const ctx=canvas.getContext('2d',{willReadFrequently:true}), scale=Math.min(width/report.canvas_width,height/report.canvas_height);
   if(!ctx || ctx.isContextLost?.())throw Object.assign(messageError(new Error(''), "errors.cameraMonitor.theCameraPreviewCanvasIsUnavailable", {}),{telemetryCode:'device_lost'});
+  configureVfxSoftwareResources(ctx,{maxBytes:options.maxSoftwareFilterBytes??previewMemoryPlan().editorSoftwareFilters});
   const view={scale,x:(width-report.canvas_width*scale)/2,y:(height-report.canvas_height*scale)/2};
   ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);
   if(prepared){
     let source=monitorSurfaces.get(prepared.renderer);
-    if(!source){source=new MonitorGpuSource(prepared.renderer);monitorSurfaces.set(prepared.renderer,source);}
-    if(source.render(ctx,{key:prepared.key,report,view,dpr,hiddenUids})){if(state.retryAt)options.onRecovery?.('camera','recovered');state.retryAt=0;return true;}
+    if(!source){source=new MonitorPreparedSource(prepared.renderer);monitorSurfaces.set(prepared.renderer,source);}
+    if(source.render(ctx,{key:prepared.key,report,view,dpr,hiddenUids,hiddenKey:prepared.hiddenKey})){if(state.retryAt)options.onRecovery?.('camera','recovered');state.retryAt=0;return true;}
   }
   if(!geometry) {
     let cached=playbackGeometry.get(canvas);
@@ -115,7 +123,8 @@ export function drawCameraMonitor(canvas, options) {
   if(activeVfx(vfxStack(frame)).length){
     const surface=state.effects??=new OffscreenCanvas(1,1),w=Math.max(1,Math.round(report.canvas_width*scale*dpr)),h=Math.max(1,Math.round(report.canvas_height*scale*dpr));
     if(surface.width!==w)surface.width=w;if(surface.height!==h)surface.height=h;
-    drawExportScene(surface.getContext('2d'),report,frame,{...geometry,drawables:geometry.drawables.filter(item=>!hiddenUids?.has(item.obj.unique_id)&&layerVisible(report,item.obj.unique_id))},resources);
+    const effectContext=surface.getContext('2d');configureVfxSoftwareResources(effectContext,{owner:ctx});
+    drawExportScene(effectContext,report,frame,{...geometry,drawables:geometry.drawables.filter(item=>!hiddenUids?.has(item.obj.unique_id)&&layerVisible(report,item.obj.unique_id))},resources);
     ctx.drawImage(surface,view.x,view.y,report.canvas_width*scale,report.canvas_height*scale);state.retryAt=0;return true;
   }
   ctx.save();

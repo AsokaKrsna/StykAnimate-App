@@ -346,3 +346,37 @@ tile or artwork cache.
 Scene VFX keeps onions outside the filtered camera source and redraws them over
 the finished camera overlay. Ordinary layer composition places ghosts at their
 layer boundaries; the existing Scene VFX overlay is a separate composition rule.
+
+## Compatibility interaction and resource ownership
+
+Compatibility editing uses conservative viewport bounds at every scale. Large
+partially visible figures crop on the complete artwork's pixel grid, and the
+retained raster owner protects visible entries before admitting replacements.
+Eviction searches beyond protected entries rather than repeatedly repainting an
+over-budget scene. Native brush state advances even when primitives are culled.
+Effects and unsupported bounds keep their established painter.
+
+Gesture layers retain only the useful canvas coverage. Pose and move layers
+preserve the destination origin to keep native curve sampling; pan layers may
+crop both axes with coverage margins. Published drawing dependencies and stamps
+invalidate affected ranges, including growth and erasure. Layer retirement
+releases its child resources. A compatible completed software playback frame
+can also serve the camera monitor without evaluating and repainting figures;
+camera mode and visibility signatures still gate that reuse.
+
+Overlay-only feedback does not invalidate scene artwork. Eligible native pose
+input keeps one pending target, flushes at gesture/modifier boundaries and on
+release, and preserves angular winding; cancellation discards it. Projected
+handles reuse immutable groups and repaint damaged regions in painter order.
+Complex constraints and drawing retain their existing input paths.
+
+Preview software filter surfaces share a bounded owner hierarchy and realm LRU.
+Background edge rasters cache only immutable decoded bitmaps, with at most two
+variants per context and explicit byte admission. Document replacement and
+renderer/worker teardown release owned surfaces. Unconfigured export contexts
+retain their established larger filter allowance and tile reuse; preview
+retention limits do not reduce export fidelity. These allowances do not cap all
+temporary CPU buffers or browser/driver allocations.
+
+See [Compatibility measurements](performance/compatibility-improvements-2026-10-01.md)
+for matched workloads, pixel checks and remaining synchronous work.

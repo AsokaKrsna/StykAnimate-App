@@ -87,6 +87,8 @@ import { createAppDialogs } from "./app-dialogs.mjs";
 import { dragSlop, beyondSlop, installPenMenuGuard } from "./pen-input.mjs";
 import { installCanvasPinch } from "./canvas-pinch.mjs";
 import { createWheelZoom } from "./canvas-wheel-zoom.mjs";
+import { createPoseInputQueue } from './canvas-pose-input.mjs';
+import { CanvasHandleOverlay } from './canvas-handle-overlay.mjs';
 import { installTouchMode } from "./touch/touch-mode.mjs";
 import { installTouchShell } from "./touch/touch-shell.mjs";
 import { installLongPress } from "./touch/long-press.mjs";
@@ -346,7 +348,7 @@ const stageHead = createStageHead({
   toasts: () => toasts,
   openMenu: (items, anchor, options) => showCommandMenu(items, anchor, options),
   toolOptions: () => ({ registry: commands, context: commandContext, icon: (name, className) => icon(name, className), t: kitT, overlays,
-    onChange: ({ id, value }) => { if (id === "rig-mode") { state.rigMode = value; queueUI(); } } }),
+    onChange: ({ id, value }) => { if (id === "rig-mode") { flushPoseMove(); state.rigMode = value; queueUI(); } } }),
 });
 const toasts = createToasts({
   host: $("toast"),
@@ -1172,8 +1174,8 @@ function requestRender() {
   state.dirtyRender = true;
   if (!raf) raf = requestAnimationFrame(loop);
 }
-function requestDrawingOverlay() {
-  state.dirtyDrawingOverlay = true;
+function requestOverlayRender() {
+  state.dirtyOverlay = true;
   if (!raf) raf = requestAnimationFrame(loop);
 }
 function currentFrame() {
@@ -1237,7 +1239,7 @@ function activeMotionPaths({sample = true} = {}) {
     out.push({target, entry, color: colors.get(group), strong, lead});
   });
   // Trail sampling continues across frames until every entry is complete.
-  if (sample && pending) requestRender();
+  if (sample && pending) requestOverlayRender();
   return out;
 }
 /** Trail hit test in screen space against the trails' cached projections. */
@@ -1331,6 +1333,7 @@ const isFittedView = (v = state.view) =>
   v.scale === fittedSnapshot.scale &&
   Math.abs(v.x - fittedSnapshot.x) < 0.5 && Math.abs(v.y - fittedSnapshot.y) < 0.5;
 function fit() {
+  flushPoseMove();
   state.view = fittedView();
   fittedSnapshot = { ...state.view };
   placeArtboard();
@@ -1376,6 +1379,7 @@ function adaptPreviewQuality(sample, now) {
   if (updatePreviewQuality(governor, sample, now, state.buffering)) applyPreviewQuality(governor.index);
 }
 function resize() {
+  flushPoseMove();
   const r = viewport.getBoundingClientRect(),
     d = window.devicePixelRatio || 1;
   overlay.width = Math.round(r.width * d);
@@ -1390,6 +1394,7 @@ function resize() {
   requestRender();
 }
 function zoom(factor, point) {
+  flushPoseMove();
   const r = viewport.getBoundingClientRect(),
     px = point?.x ?? r.width / 2,
     py = point?.y ?? r.height / 2,
@@ -1411,6 +1416,7 @@ const wheelZoom = createWheelZoom({
 let canvasPinch;
 function viewGestureActive() { return wheelZoom.interacting || canvasPinch?.active || drawingController?.touchNavigation?.active || state.drag?.kind === 'zoom'; }
 function fitSelection() {
+  flushPoseMove();
   const b = selectionBounds();
   if (!Number.isFinite(b.minX)) return fit();
   const points = [
@@ -1455,10 +1461,8 @@ function boundsOf(g) {
   }
   return b;
 }
-let blueHandles = null;
 // Keep one surface alive to avoid deferred GPU-context destruction on input.
-const handleSurface = new OffscreenCanvas(1, 1),
-  handleContext = handleSurface.getContext("2d");
+const canvasHandleOverlay = new CanvasHandleOverlay(new OffscreenCanvas(1, 1));
 let handleCache = null;
 const handleDescriptors = {};
 const selectionHandleCache = new WeakMap();
@@ -1523,20 +1527,6 @@ function canvasHandles(geometry, {selectStatic = false} = {}) {
   else handleCache = { geometry, key, handles };
   return handles;
 }
-function paintHandle(context, handle, delta) {
-  const point = delta
-    ? { x: handle.point.x + delta.x, y: handle.point.y + delta.y }
-    : handle.point;
-  const p = screenPoint(point);
-  context.beginPath();
-  if(handle.connector){const r=handle.screenRadius;context.moveTo(p.x,p.y-r);context.lineTo(p.x+r,p.y);context.lineTo(p.x,p.y+r);context.lineTo(p.x-r,p.y);context.closePath();}
-  else context.arc(p.x, p.y, handle.screenRadius, 0, Math.PI * 2);
-  context.fillStyle = handle.color;
-  context.strokeStyle = handle.ik ? '#0d99ff' : '#000000';
-  context.lineWidth = 1;
-  context.fill();
-  if (state.settings.outlineHandles || handle.ik) context.stroke();
-}
 function gpuHandlesEnabled() {
   return Boolean(state.renderer?.handleRenderer) && !state.playing && !state.previewing &&
     !(!editor.branchSelected && (isBuilderContext(state.tool) || builderMode?.active) && state.settings.builderHighlightSegment);
@@ -1549,34 +1539,17 @@ function drawCanvasHandles(geometry) {
     handleCache.key,
     state.view.x,
     state.view.y,
+    state.view.rotation ?? 0,
+    state.view.flip ?? false,
+    editor.report.canvas_width,
+    editor.report.canvas_height,
     currentFrame().camera?.x,
     currentFrame().camera?.y,
     currentFrame().camera?.angle_rad,
-    ...(translations?.keys() || []),
   ].join("|");
-  if (
-    !blueHandles ||
-    blueHandles.handles !== handles ||
-    blueHandles.key !== key ||
-    handleSurface.width !== overlay.width ||
-    handleSurface.height !== overlay.height
-  ) {
-    if (handleSurface.width !== overlay.width)
-      handleSurface.width = overlay.width;
-    if (handleSurface.height !== overlay.height)
-      handleSurface.height = overlay.height;
-    handleContext.setTransform(d, 0, 0, d, 0, 0);
-    handleContext.clearRect(0, 0, overlay.width / d, overlay.height / d);
-    for (const handle of handles)
-      if (!translations?.has(handle.uid)) paintHandle(handleContext, handle);
-    blueHandles = { handles, key };
-  }
-  ctx.drawImage(handleSurface, 0, 0, overlay.width / d, overlay.height / d);
-  if (translations)
-    for (const handle of handles) {
-      const delta = translations.get(handle.uid);
-      if (delta) paintHandle(ctx, handle, delta);
-    }
+  canvasHandleOverlay.draw(ctx, handles, {project: screenPoint, projectionKey: key,
+    width: overlay.width / d, height: overlay.height / d, dpr: d, translations,
+    outline: state.settings.outlineHandles});
 }
 const onionCache = new OnionSkinCache();
 let onionControls;
@@ -1874,9 +1847,10 @@ function loop(now) {
       }
     }
   }
-  if (state.dirtyRender && state.renderer) {
+  const scenePainted = Boolean(state.dirtyRender && state.renderer);
+  if (scenePainted) {
     state.dirtyRender = false;
-    state.dirtyDrawingOverlay = false;
+    state.dirtyOverlay = false;
     const start = performance.now();
     const sampled=telemetry.isForeground&&telemetry.performance.sampleFrame(),stages=sampled?{}:null;
     state.renderer.measureFrame=sampled;state.renderer.telemetryStages=null;
@@ -1977,7 +1951,7 @@ function loop(now) {
         onError:error=>telemetry.error(error,'renderer'),onInvalidate:requestRender,onRecovery:(kind,outcome)=>telemetry.performance.recovery(kind,outcome),
         report:editor.report,frame,geometry:state.playing?null:state.drag?.geometry || keyboardHandleGesture?.geometry || editor.geometry,
         resources:state.renderer.resources,hiddenUids:effectiveHidden(),
-        prepared:packet?.key!==undefined&&state.renderer?.renderPreparedInto?{renderer:state.renderer,key:packet.key}:null,
+        prepared:packet?.key!==undefined&&state.renderer?.renderPreparedInto?{renderer:state.renderer,key:packet.key,hiddenKey:packet.hiddenKey||''}:null,
       });
     }
     const elapsed = performance.now() - start;
@@ -2000,12 +1974,13 @@ function loop(now) {
       lastUI = now;
     }
   }
-  // Hovering a brush changes only tool feedback. Keep the displayed artwork
-  // and its GPU resources intact; drawing pixels still request a scene render.
-  if (state.dirtyDrawingOverlay) {
-    state.dirtyDrawingOverlay = false;
+  // Hover, previews and path sampling change only tool feedback. Keep the
+  // displayed artwork intact; document edits still request a scene render.
+  if (state.dirtyOverlay && !scenePainted) {
+    state.dirtyOverlay = false;
     if (!state.playing && !state.previewing && !state.editablePreparing) {
-      overlayRender(drawingController?.renderPreview?.geometry ?? editor.geometry);
+      overlayRender(drawingController?.renderPreview?.geometry ?? editor._drag?.motionPath?.display?.geometry ??
+        state.drag?.geometry ?? keyboardHandleGesture?.geometry ?? editor.geometry);
       drawingController?.overlayDraw(ctx);
       drawFinalOverlay();
     }
@@ -2035,7 +2010,7 @@ function loop(now) {
   if (wheelZoom.active) state.dirtyRender = true;
   // A seek/edit event can request the next frame while this callback runs.
   // Keep that request instead of starting a second animation loop.
-  if (!raf && (state.playing || state.dirtyRender || state.dirtyDrawingOverlay)) raf = requestAnimationFrame(loop);
+  if (!raf && (state.playing || state.dirtyRender || state.dirtyOverlay)) raf = requestAnimationFrame(loop);
 }
 function drawFinalOverlay() {
   ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
@@ -2869,10 +2844,28 @@ function beginFigurePointerDrag(hit, p, e, {duplicate = false} = {}) {
   }
   requestRender();
 }
-let pendingPoseMove = null;
+const poseInput = createPoseInputQueue({
+  apply: event => moveCanvasPointer(event),
+  isCurrent: (drag, gesture) => drag === state.drag && gesture === editor._drag,
+  schedule: requestRender,
+});
 function flushPoseMove() {
-  const pending=pendingPoseMove;pendingPoseMove=null;
-  if(pending&&pending.drag===state.drag&&pending.gesture===editor._drag)moveCanvasPointer(pending.event);
+  poseInput.flush();
+}
+function coalescedPoseOptions(drag) {
+  if (drag.poseInput !== undefined) return drag.poseInput;
+  if (drag.kind === 'spatial' || drag.kind === 'move' && drag.ikLive ||
+      drag.kind === 'pose' && editor.figure?.segments.some(segment => segment._stykRig?.spatial))
+    return drag.poseInput = {};
+  if (drag.kind === 'handle-edit' || drag.kind === 'rig' && !builderMode?.active) return drag.poseInput = {};
+  if (!['pose', 'bend'].includes(drag.kind) || editor._drag.before.some(hasPinnedIK) ||
+      editor.figure?.segments.some(segment => segment._stykRig) ||
+      Object.values(editor.object?._stykIK ?? {}).some(controller => controller.enabled))
+    return drag.poseInput = null;
+  const shape = editor.geometry.objects.get(editor.selectedSlot)?.segments[drag.joint];
+  const anchor = shape?.start;
+  if (!anchor) return drag.poseInput = null;
+  return drag.poseInput = {anchor};
 }
 function refreshOriginDragModifiers(event) {
   if (event.key !== 'Shift' || !['move', 'motion-path'].includes(state.drag?.kind)) return;
@@ -2906,7 +2899,7 @@ const moveCanvasPointer = guarded((e) => {
     if (!drag && state.tool === 'polygon' && builderMode?.active) {
       state.bucketPreview = e.shiftKey ? bucketRegion(editor.geometry.objects.get(editor.selectedSlot),worldPoint(e)) : null;
       overlay.style.cursor = e.shiftKey ? (state.bucketPreview ? 'copy' : 'not-allowed') : '';
-      requestRender();return;
+      requestOverlayRender();return;
     }
     if (!drag && state.tool === "chain" && construction?.active) {construction.move(worldPoint(e),e);return;}
     if (!drag) {
@@ -2920,13 +2913,13 @@ const moveCanvasPointer = guarded((e) => {
         const snap = pending.preview?.index.nearest(point,10/state.view.scale,{jointsOnly:true});
         pending.hover = pending.preview ? (snap ? {point:snap,id:snap.id} : null) : closestHandle(point);
         if(state.duplicatePlacement)overlay.style.cursor="copy";
-        requestRender();
+        requestOverlayRender();
         return;
       }
       const previousCameraHandle = state.hoverCameraHandle;
       state.hoverCameraHandle = activeCameraHandle(worldPoint(e));
       overlay.style.cursor = cameraHandleCursor(state.hoverCameraHandle, cameraViewport(editor.report,currentFrame(),state.view));
-      if (previousCameraHandle?.index !== state.hoverCameraHandle?.index) requestRender();
+      if (previousCameraHandle?.index !== state.hoverCameraHandle?.index) requestOverlayRender();
       const previousPathPoint = state.hoverPathPoint;
       state.hoverPathPoint = null;
       if (state.motionPaths && !state.hoverCameraHandle && ["select", "pose"].includes(state.tool) && !builderMode?.active) {
@@ -2938,7 +2931,7 @@ const moveCanvasPointer = guarded((e) => {
         }
       }
       if (state.hoverPathPoint || previousPathPoint) syncPathTooltip();
-      if (previousPathPoint?.tick !== state.hoverPathPoint?.tick || previousPathPoint?.key !== state.hoverPathPoint?.key) requestRender();
+      if (previousPathPoint?.tick !== state.hoverPathPoint?.tick || previousPathPoint?.key !== state.hoverPathPoint?.key) requestOverlayRender();
       const geometry = editor.geometry;
       const handle =
         state.handles && !state.hoverCameraHandle
@@ -3054,7 +3047,7 @@ const moveCanvasPointer = guarded((e) => {
     }
     if (drag.kind === "draw" || drag.kind === "marquee") {
       drag.current = drag.kind === "draw" && builderMode?.active ? construction.snap(p,e,drag.start) : p;
-      requestRender();
+      requestOverlayRender();
       return;
     }
     if (drag.kind === "motion-path") {
@@ -3131,11 +3124,23 @@ const moveCanvasPointer = guarded((e) => {
   });
 overlay.addEventListener('pointermove', e => {
   const drag=state.drag;
-  // Keep one latest sample for expensive spatial posing. Drawing and other
-  // tools retain their complete input paths; release flushes before history.
-  if(drag&&editor.dragging&&(drag.kind==='spatial'||drag.kind==='move'&&drag.ikLive||drag.kind==='pose'&&editor.figure?.segments.some(s=>s._stykRig?.spatial))){
-    pendingPoseMove={drag,gesture:editor._drag,event:e};requestRender();
-  }else moveCanvasPointer(e);
+  const options = drag && editor.dragging && coalescedPoseOptions(drag);
+  // Only absolute pose targets use this queue. Strokes, motion paths, snapping
+  // construction and accumulated figure rotations keep their complete input.
+  if (options && (drag.moved || drag.kind === 'spatial')) {
+    const point = options.anchor ? worldPoint(e) : null;
+    // The slop-crossing target is applied immediately. Start angular travel
+    // from that applied target, so a burst after a large first move retains
+    // its authored rotation winding rather than cancelling against the press.
+    const appliedPoint = drag.current ?? drag.start;
+    poseInput.enqueue({drag, gesture: editor._drag, event: e,
+      modifiers: [e.shiftKey, e.ctrlKey, e.metaKey, e.altKey, e.buttons, state.isolateHeld, state.isolateMode, state.depthHeld].join('|'),
+      initialAngle: options.anchor && appliedPoint ? Math.atan2(
+        appliedPoint.y + (drag.offset?.y ?? 0) - options.anchor.y,
+        appliedPoint.x + (drag.offset?.x ?? 0) - options.anchor.x) : null,
+      angle: point ? Math.atan2(point.y + (drag.offset?.y ?? 0) - options.anchor.y,
+        point.x + (drag.offset?.x ?? 0) - options.anchor.x) : null});
+  } else { flushPoseMove(); moveCanvasPointer(e); }
 });
 function releaseCanvasPointer() {
   const id = canvasPointerId;
@@ -3145,6 +3150,14 @@ function releaseCanvasPointer() {
 }
 function endDrag(event, {keepPointer = false} = {}) {
   flushPoseMove();
+  // A pointer release may carry a newer position than its final move event.
+  // Publish that target before the editor snapshots the one history entry.
+  const lastPointer = state.drag?.pointerEvent;
+  if (event?.type === 'pointerup' && lastPointer &&
+      (event.clientX !== lastPointer.clientX || event.clientY !== lastPointer.clientY) &&
+      ['pose', 'bend', 'rig', 'handle-edit', 'spatial', 'move'].includes(state.drag.kind))
+    moveCanvasPointer(event);
+  poseInput.clear();
   const drag = state.drag;
   if (drag?.kind === "draw" || drag?.kind === "rig") construction?.cancel();
   state.drag = null;
@@ -3240,7 +3253,7 @@ function addFrameKeepingDrag(insert) {
   }
 }
 function cancelDrag() {
-  pendingPoseMove=null;
+  poseInput.clear();
   if (state.drag?.kind === "draw" || state.drag?.kind === "rig") construction?.cancel();
   releaseCanvasPointer();
   cancelSpritePlacement();
@@ -3297,14 +3310,14 @@ overlay.addEventListener("pointerleave", () => {
     const pending = state.spritePlacement || state.duplicatePlacement;
     pending.point = null;
     pending.hover = null;
-    requestRender();
+    requestOverlayRender();
   }
   state.hoverHandle = null;
   state.hoverCameraHandle = null;
   state.hoverPathPoint = null;
   syncPathTooltip();
   if (!state.drag) overlay.style.cursor = '';
-  requestRender();
+  requestOverlayRender();
 });
 viewport.addEventListener(
   "wheel",
@@ -3321,6 +3334,7 @@ viewport.addEventListener(
     if(telemetry.isForeground)telemetry.performance.action(shouldZoom ? 'zoom' : 'pan');
     e.preventDefault();
     interruptRecovery();
+    flushPoseMove();
     const r = viewport.getBoundingClientRect();
     if (!shouldZoom) {
       state.view.x -= e.shiftKey ? e.deltaY : e.deltaX;
@@ -4697,7 +4711,7 @@ const actions = {
     requestRender();
   },
   "toggle-isolate": () => {
-    state.isolateMode = !state.isolateMode;
+    flushPoseMove(); state.isolateMode = !state.isolateMode;
     document.querySelectorAll('[data-action="toggle-isolate"]').forEach((button) => {
       button.setAttribute("aria-pressed", String(state.isolateMode));
       button.classList.toggle("active", state.isolateMode);
@@ -5201,8 +5215,8 @@ function runKeyboardCommand(id, event, modifiers = {shift: event.shiftKey}) {
   }
   if (id === 'cancel') return cancelKeyboardCommand();
   if (id === 'handle-edit-hold') { state.handleEditHeld = true; requestRender(); return; }
-  if (id === 'isolate-hold') { state.isolateHeld = true; return; }
-  if (id === 'depth-hold') { state.depthHeld = true; return; }
+  if (id === 'isolate-hold') { flushPoseMove(); state.isolateHeld = true; return; }
+  if (id === 'depth-hold') { flushPoseMove(); state.depthHeld = true; return; }
   if (id === 'play-pan') {
     state.space = true; state.spacePanned = false; viewport.classList.add('panning'); return;
   }
@@ -5226,8 +5240,8 @@ function runKeyboardCommand(id, event, modifiers = {shift: event.shiftKey}) {
 }
 function releaseKeyboardCommand(id, event) {
   if (id === 'handle-edit-hold') { state.handleEditHeld = false; requestRender(); }
-  else if (id === 'isolate-hold') state.isolateHeld = false;
-  else if (id === 'depth-hold') state.depthHeld = false;
+  else if (id === 'isolate-hold') { flushPoseMove(); state.isolateHeld = false; }
+  else if (id === 'depth-hold') { flushPoseMove(); state.depthHeld = false; }
   else if (id.startsWith('handle-')) {
     heldArrows.delete('arrow' + id.slice(7));
     if (!heldArrows.size) finishKeyboardHandle();
@@ -5582,7 +5596,7 @@ editor.addEventListener("change", (e) => {
   ) {
     invalidatePivotHandleTopology();
     handleCache = null;
-    blueHandles = null;
+    canvasHandleOverlay.clear();
     assetLibrary?.invalidate();
   }
   if (["edit", "history", "document", "frame-draft"].includes(kind))
@@ -6081,7 +6095,7 @@ async function init() {
       if (!state.motionPaths) { state.hoverPathPoint = null; syncPathTooltip(); pathCache.clear(); }
       if (patch.motionPathFalloffRadius !== undefined || patch.motionPathFalloffShape !== undefined || patch.motionPaths !== undefined) syncPathFalloff();
       appLocalization.setLocale(next.locale);
-      blueHandles = null;
+      canvasHandleOverlay.clear();
       scheduleRecovery();
       requestRender();
       queueUI();
@@ -6170,7 +6184,7 @@ async function init() {
     // The held keys the modifiers stand in for (hotkeys.mjs: hold R, hold D).
     setHeld: (command, down) => {
       if (command === "handle-edit-hold") { state.handleEditHeld = down; requestRender(); }
-      else if (command === "depth-hold") state.depthHeld = down;
+      else if (command === "depth-hold") { flushPoseMove(); state.depthHeld = down; }
     },
   });
   const shellAnnouncer = document.createElement("div");
@@ -6329,12 +6343,12 @@ async function init() {
       toggleTimeline: () => shell.togglePanel('timeline'),
     },
   });
-  construction = createConstruction({editor,state,active:()=>Boolean(builderMode?.active),render:requestRender,project:screenPoint,onError:fail,commitSettings:patch=>editorSettings.commit(patch)});
+  construction = createConstruction({editor,state,active:()=>Boolean(builderMode?.active),render:requestOverlayRender,project:screenPoint,onError:fail,commitSettings:patch=>editorSettings.commit(patch)});
   actions['chain-finish'] = () => construction.commit();
   actions['chain-cancel'] = () => construction.cancel();
   actions['toggle-builder-snap'] = () => construction.toggleSnap();
   window.styk.builder = builderMode;
-  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:requestRender,onOverlayRender:requestDrawingOverlay,onView:placeArtboard,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getImageSource:()=>({baseURL:importer.baseURL,token:importer.token}),sampleColor:(x,y,signal)=>sampleCanvasColor(x,y,signal),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard,
+  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:requestRender,onOverlayRender:requestOverlayRender,onView:placeArtboard,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getImageSource:()=>({baseURL:importer.baseURL,token:importer.token}),sampleColor:(x,y,signal)=>sampleCanvasColor(x,y,signal),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard,
     // A finger draws in the touch interface (Settings › Draw with a finger); elsewhere it pans, as before.
     // Automatic draws with a finger only in the touch interface; Always also does on a desktop layout.
     fingerDrawing:()=>{const mode=state.settings.fingerDraw;return mode==='auto'&&!touchMode?.active?'never':mode;}});
