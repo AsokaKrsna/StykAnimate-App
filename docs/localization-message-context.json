@@ -13132,124 +13132,123 @@
   },
   "errors.documentExport.chooseAPivStkStykStkzOrStykmov": {
     "locations": [
-      "src/document-export.mjs:35"
+      "src/document-export.mjs:95"
     ],
     "context": "if (!['piv', 'stk', 'styk', 'stkz', 'stykmov'].includes(format)) throw messageError(new Error(''), \"errors.documentExport.chooseAPivStkStykStkzOrStykmov\", {});"
   },
   "errors.documentExport.documentExportFailed": {
     "locations": [
-      "src/document-export.mjs:53"
+      "src/document-export.mjs:142"
     ],
     "context": "const error = restoreMessageError((event.data.error?.message ? new Error(event.data.error?.message) : messageError(new Error(''), \"errors.documentExport.documen"
   },
   "errors.documentExport.documentExportRequiresTheLocalFileServiceUrl": {
     "locations": [
-      "src/document-export.mjs:20"
+      "src/document-export.mjs:21"
     ],
     "context": "if (!baseURL) throw messageError(new Error(''), \"errors.documentExport.documentExportRequiresTheLocalFileServiceUrl\", {});"
   },
   "errors.documentExport.documentExportTimedOut": {
     "locations": [
-      "src/document-export.mjs:79"
+      "src/document-export.mjs:171"
     ],
     "context": "const timer = this.timeoutMs > 0 ? setTimeout(() => fail(Object.assign(messageError(new Error(''), \"errors.documentExport.documentExportTimedOut\", {}), { teleme"
   },
   "errors.documentExport.exportRequiresAnEditableDocument": {
     "locations": [
-      "src/document-export.mjs:34"
+      "src/document-export.mjs:94"
     ],
     "context": "if (!report || typeof report !== 'object') throw messageError(new TypeError(''), \"errors.documentExport.exportRequiresAnEditableDocument\", {});"
   },
   "errors.documentExport.theDocumentExporterHasBeenDisposed": {
     "locations": [
-      "src/document-export.mjs:33"
+      "src/document-export.mjs:93"
     ],
     "context": "if (this.disposed) throw messageError(new Error(''), \"errors.documentExport.theDocumentExporterHasBeenDisposed\", {});"
   },
   "errors.documentExport.theDocumentExportWorkerStopped": {
     "locations": [
-      "src/document-export.mjs:46"
+      "src/document-export.mjs:135"
     ],
-    "context": "worker.addEventListener('error', event => { event.preventDefault(); fail(Object.assign((event.message ? new Error(event.message) : messageError(new Error(''), \""
+    "context": "const onError = event => { event.preventDefault(); fail(Object.assign((event.message ? new Error(event.message) : messageError(new Error(''), \"errors.documentEx"
   },
   "errors.documentExport.theDocumentSnapshotCouldNotBeTransferred": {
     "locations": [
-      "src/document-export.mjs:47"
+      "src/document-export.mjs:136"
     ],
-    "context": "worker.addEventListener('messageerror', () => fail(Object.assign(messageError(new Error(''), \"errors.documentExport.theDocumentSnapshotCouldNotBeTransferred\", {"
+    "context": "const onMessageError = () => fail(Object.assign(messageError(new Error(''), \"errors.documentExport.theDocumentSnapshotCouldNotBeTransferred\", {}), { telemetryCo"
   },
   "errors.documentExport.theFileServiceReturnedNoExportedDocument": {
     "locations": [
-      "src/document-export.mjs:102"
+      "src/document-export.mjs:194"
     ],
     "context": "if (!(result.blob instanceof Blob)) throw messageError(new Error(''), \"errors.documentExport.theFileServiceReturnedNoExportedDocument\", {});"
   },
   "errors.documentExportWorker.busy": {
     "locations": [
-      "src/document-export-worker.mjs:62"
+      "src/document-export-worker.mjs:63"
     ],
     "context": "if (running) { self.postMessage({id: message.id, ok: false, error: {message: 'The document export worker is busy.', messageKey:'errors.documentExportWorker.busy"
   },
   "errors.documentExportWorker.pivotCannotPreserveConnectorsSmartStretchOrOne": {
     "locations": [
-      "src/document-export-worker.mjs:90"
+      "src/document-export-worker.mjs:94"
     ],
     "context": "if(documentHasRigConstraints(document)||documentHasSurfaces(document))throw Object.assign(messageError(new Error(''), \"errors.documentExportWorker.pivotCannotPr"
   },
   "errors.documentExportWorker.pivotCannotRetainTheseStickNodesShapesSave": {
     "locations": [
-      "src/document-export-worker.mjs:97"
+      "src/document-export-worker.mjs:101"
     ],
     "context": "if(hasSourceShapes(document))throw Object.assign(messageError(new Error(''), \"errors.documentExportWorker.pivotCannotRetainTheseStickNodesShapesSave\", {}), {tel"
   },
   "errors.documentExportWorker.pivotFilesCannotPreserveVfxSaveAsStyk": {
     "locations": [
-      "src/document-export-worker.mjs:80"
+      "src/document-export-worker.mjs:84"
     ],
     "context": "if(['piv','stk'].includes(config.format)&&documentHasVfx(document))throw Object.assign(messageError(new Error(''), \"errors.documentExportWorker.pivotFilesCannot"
   },
   "errors.documentExportWorker.pivotFilesCannotRepresentTheseGradientFillsSave": {
     "locations": [
-      "src/document-export-worker.mjs:132"
+      "src/document-export-worker.mjs:136"
     ],
     "context": "throw Object.assign(messageError(new Error(''), \"errors.documentExportWorker.pivotFilesCannotRepresentTheseGradientFillsSave\", {}), {telemetryCode: 'unsupported"
   },
   "errors.documentExportWorker.saveMovieclipsAsStykmovUseBreakApartTo": {
     "locations": [
-      "src/document-export-worker.mjs:122"
+      "src/document-export-worker.mjs:126"
     ],
     "context": "throw Object.assign(messageError(new Error(''), \"errors.documentExportWorker.saveMovieclipsAsStykmovUseBreakApartTo\", {}), {telemetryCode: 'unsupported_feature'"
   },
   "errors.documentExportWorker.selectAMovieclipToExportAsStykmov": {
     "locations": [
-      "src/document-export-worker.mjs:85"
+      "src/document-export-worker.mjs:89"
     ],
     "context": "if(config.format==='stykmov'&&!isMovieclip(document.figure_types[0]))throw messageError(new Error(''), \"errors.documentExportWorker.selectAMovieclipToExportAsSt"
   },
   "errors.documentExportWorker.theDocumentSnapshotWasNotInitialized": {
     "locations": [
-      "src/document-export-worker.mjs:74"
+      "src/document-export-worker.mjs:78"
     ],
     "context": "if (!document || !config) throw messageError(new Error(''), \"errors.documentExportWorker.theDocumentSnapshotWasNotInitialized\", {});"
   },
   "errors.documentExportWorker.theFileServiceReturnedAnInvalidSourceRecord": {
     "locations": [
-      "src/document-export-worker.mjs:34",
       "src/import-client.mjs:86",
       "src/import-worker.mjs:135",
       "src/source-record.mjs:5"
     ],
-    "context": "if (magic !== 'STYKSRC1' || buffer.byteLength < 12) throw messageError(new Error(''), \"errors.documentExportWorker.theFileServiceReturnedAnInvalidSourceRecord\","
+    "context": "request.reject(messageError(new Error(''), 'errors.documentExportWorker.theFileServiceReturnedAnInvalidSourceRecord', {}));"
   },
   "errors.documentExportWorker.theOriginalSourceIsUnavailable": {
     "locations": [
-      "src/document-export-worker.mjs:31"
+      "src/document-export-worker.mjs:33"
     ],
     "context": "if (!response.ok) throw Object.assign(messageError(new Error(''), \"errors.documentExportWorker.theOriginalSourceIsUnavailable\", {status: response.status}), {sta"
   },
   "errors.documentExportWorker.unknownDocumentExportOperation": {
     "locations": [
-      "src/document-export-worker.mjs:196"
+      "src/document-export-worker.mjs:202"
     ],
     "context": "} else throw messageError(new Error(''), \"errors.documentExportWorker.unknownDocumentExportOperation\", {});"
   },
@@ -13403,7 +13402,8 @@
   },
   "errors.drawingComposite.invalidDrawingCompositeBounds": {
     "locations": [
-      "src/drawing-composite.mjs:13"
+      "src/drawing-composite.mjs:13",
+      "src/renderer-preview-drawing-resources.mjs:9"
     ],
     "context": "if(!bounds||![bounds.x,bounds.y,bounds.width,bounds.height].every(Number.isSafeInteger)||bounds.width<1||bounds.height<1||bounds.width*bounds.height>FILL_SOURCE"
   },
@@ -13429,7 +13429,8 @@
       "src/drawing-controller.mjs:832",
       "src/drawing-fill.mjs:26",
       "src/drawing-fill.mjs:32",
-      "src/drawing-fill.mjs:95"
+      "src/drawing-fill.mjs:95",
+      "src/renderer-preview-drawing-resources.mjs:10"
     ],
     "context": "const reserve=record=>{projectedBytes+=128+Object.keys(record).length*32;if(projectedBytes>maxBytes)throw messageError(new Error(''), \"errors.drawingCompositeTr"
   },
@@ -17676,25 +17677,25 @@
   },
   "errors.geometry.chooseANonnegativeGeometryPreparationSliceDuration": {
     "locations": [
-      "src/pivot/geometry.mjs:986"
+      "src/pivot/geometry.mjs:991"
     ],
     "context": "if (!Number.isFinite(sliceMs) || sliceMs < 0) throw messageError(new Error(''), \"errors.geometry.chooseANonnegativeGeometryPreparationSliceDuration\", {});"
   },
   "errors.geometry.geometryPreparationWasCancelledOrSuperseded": {
     "locations": [
-      "src/pivot/geometry.mjs:989"
+      "src/pivot/geometry.mjs:994"
     ],
     "context": "throw messageError(new DOMException('', 'AbortError'), \"errors.geometry.geometryPreparationWasCancelledOrSuperseded\", {});"
   },
   "errors.geometry.theTemporaryDrawingCanvasIsUnavailable": {
     "locations": [
-      "src/pivot/geometry.mjs:1099"
+      "src/pivot/geometry.mjs:1104"
     ],
     "context": "if (!temp || temp.isContextLost?.()) throw Object.assign(messageError(new Error(''), \"errors.geometry.theTemporaryDrawingCanvasIsUnavailable\", {}), { telemetryC"
   },
   "errors.geometry.theTemporaryDrawingCanvasWasLostWhileRendering": {
     "locations": [
-      "src/pivot/geometry.mjs:1104"
+      "src/pivot/geometry.mjs:1109"
     ],
     "context": "if (temp.isContextLost?.()) throw Object.assign(messageError(new Error(''), \"errors.geometry.theTemporaryDrawingCanvasWasLostWhileRendering\", {}), { telemetryCo"
   },
@@ -19848,79 +19849,79 @@
   },
   "errors.playback.aPlaybackFrameExceedsTheMbPreparationBudget": {
     "locations": [
-      "src/playback.mjs:568"
+      "src/playback.mjs:585"
     ],
     "context": "closePacket(packet); const error = messageError(new Error(''), \"errors.playback.aPlaybackFrameExceedsTheMbPreparationBudget\", {value: Math.round(this.maxBytes /"
   },
   "errors.playback.aPreparedPlaybackFrameCouldNotBeTransferred": {
     "locations": [
-      "src/playback.mjs:89"
+      "src/playback.mjs:90"
     ],
     "context": "worker.addEventListener('messageerror', () => {if(this.workers[index]===client)this._fail(messageError(new Error(''), \"errors.playback.aPreparedPlaybackFrameCou"
   },
   "errors.playback.invalidRetainedPlaybackSourceId": {
     "locations": [
-      "src/playback.mjs:207"
+      "src/playback.mjs:208"
     ],
     "context": "for (const id of sourceIds) if (typeof id !== 'string' || !/^[a-z][a-z0-9-]{0,127}$/.test(id)) throw messageError(new Error(''), \"errors.playback.invalidRetaine"
   },
   "errors.playback.loadADocumentBeforeUpdatingPlayback": {
     "locations": [
-      "src/playback.mjs:202"
+      "src/playback.mjs:203"
     ],
     "context": "if (!this.report) throw messageError(new Error(''), \"errors.playback.loadADocumentBeforeUpdatingPlayback\", {});"
   },
   "errors.playback.playbackFigureUpdatesMustReferenceAFigureIn": {
     "locations": [
-      "src/playback.mjs:206"
+      "src/playback.mjs:207"
     ],
     "context": "throw messageError(new Error(''), \"errors.playback.playbackFigureUpdatesMustReferenceAFigureIn\", {});"
   },
   "errors.playback.playbackFrameUpdatesMustReferenceAFrameIn": {
     "locations": [
-      "src/playback.mjs:178",
-      "src/playback.mjs:204"
+      "src/playback.mjs:179",
+      "src/playback.mjs:205"
     ],
     "context": "throw messageError(new Error(''), \"errors.playback.playbackFrameUpdatesMustReferenceAFrameIn\", {});"
   },
   "errors.playback.playbackPreparationTimedOut": {
     "locations": [
-      "src/playback.mjs:137",
-      "src/playback.mjs:494"
+      "src/playback.mjs:138",
+      "src/playback.mjs:507"
     ],
     "context": "pending.timer=!active&&this.timeoutMs>0?setTimeout(()=>this._fail(messageError(new Error(''), \"errors.playback.playbackPreparationTimedOut\", {})),this.timeoutMs"
   },
   "errors.playback.playbackSnapshotTimedOut": {
     "locations": [
-      "src/playback.mjs:371"
+      "src/playback.mjs:373"
     ],
     "context": "const timer = this.timeoutMs > 0 ? setTimeout(() => this._fail(messageError(new Error(''), \"errors.playback.playbackSnapshotTimedOut\", {})), this.timeoutMs) : n"
   },
   "errors.playback.playbackWorkerAllowanceMustBePositive": {
     "locations": [
-      "src/playback.mjs:57"
+      "src/playback.mjs:58"
     ],
     "context": "if(!(this.maxWorkerBytes>0))throw messageError(new Error(''), \"errors.playback.playbackWorkerAllowanceMustBePositive\", {});"
   },
   "errors.playback.thePlaybackCacheHasBeenDisposed": {
     "locations": [
-      "src/playback.mjs:105",
-      "src/playback.mjs:157",
-      "src/playback.mjs:176",
-      "src/playback.mjs:201",
-      "src/playback.mjs:466"
+      "src/playback.mjs:106",
+      "src/playback.mjs:158",
+      "src/playback.mjs:177",
+      "src/playback.mjs:202",
+      "src/playback.mjs:474"
     ],
     "context": "if (this.disposed) throw messageError(new Error(''), \"errors.playback.thePlaybackCacheHasBeenDisposed\", {});"
   },
   "errors.playback.thePlaybackWorkerReturnedNoRenderPacket": {
     "locations": [
-      "src/playback.mjs:549"
+      "src/playback.mjs:566"
     ],
     "context": "if (!packet) { pending.reject(messageError(new Error(''), \"errors.playback.thePlaybackWorkerReturnedNoRenderPacket\", {})); return; }"
   },
   "errors.playback.thePlaybackWorkerStoppedUnexpectedly": {
     "locations": [
-      "src/playback.mjs:88"
+      "src/playback.mjs:89"
     ],
     "context": "worker.addEventListener('error', event => { event.preventDefault?.(); if(this.workers[index]===client)this._fail((event.message ? new Error(event.message) : mes"
   },

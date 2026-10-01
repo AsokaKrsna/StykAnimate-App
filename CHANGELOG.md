@@ -35,6 +35,10 @@ What's new in each version of StykAnimate.
 
 ### Fixed
 
+- Repeated Save commands no longer start overlapping writes, and newer edits keep the project open when closing.
+- Successful saves no longer show a failure if an old recovery copy cannot be removed.
+- Imported Pivot originals stay available for saving after other files have been imported.
+- Recovery copies are scheduled more reliably during frequent editing.
 - Fixed multiple layer selections and searches being lost during editing.
 - Fixed figures and text staying blurry when zooming far into the canvas.
 - Fixed blur, glow, and shadow effects shifting or failing at certain positions.
@@ -52,6 +56,7 @@ What's new in each version of StykAnimate.
 
 ### Performance
 
+- Quicker repeated saves for small projects and smaller exported movieclips.
 - Smoother zooming, editing, and panning in complex animations, especially in Compatibility mode.
 - Much smoother playback of busy animations, with fewer pauses, especially on laptops without a dedicated graphics card and in Compatibility mode.
 - Complex STK figures open faster, including figures with long chains of joints.
