@@ -472,9 +472,10 @@ test('visibility, transparency, summary and the primary follow the chosen type',
   assert.equal(exportTransparency('webm', {provider: 'WebCodecs'}).reason, 'Browser WebM exports do not preserve transparency.');
   assert.deepEqual([exportTransparency('gif').alpha, exportTransparency('jpeg-sequence').matte, exportTransparency('mp4').matte, exportTransparency('piv')], ['binary', 'white', 'black', null]);
   const ctx = context();
-  assert.deepEqual(exportSummary(buildExportRequest({format: 'gif', width: '1920', height: '1080'}, ctx), {fps: 24}), {size: `${(1920).toLocaleString()} × ${(1080).toLocaleString()} px`, time: '48 frames · 2s at 24 fps'});
+  // The default interface locale is English, independent of the machine's ICU locale.
+  assert.deepEqual(exportSummary(buildExportRequest({format: 'gif', width: '1920', height: '1080'}, ctx), {fps: 24}), {size: `${(1920).toLocaleString('en')} × ${(1080).toLocaleString('en')} px`, time: '48 frames · 2s at 24 fps'});
   assert.deepEqual(exportSummary(buildExportRequest({format: 'png'}, ctx), {currentFrame: 5}), {size: '960 × 540 px', time: 'Current frame · 5'});
-  assert.equal(exportSummary(buildExportRequest({format: 'mp4', to: '4800'}, ctx), {fps: 24}).time, `${(4800).toLocaleString()} frames · 3m 20s at 24 fps`);
+  assert.equal(exportSummary(buildExportRequest({format: 'mp4', to: '4800'}, ctx), {fps: 24}).time, `${(4800).toLocaleString('en')} frames · 3m 20s at 24 fps`);
   assert.deepEqual(exportSummary(buildExportRequest({format: 'piv'}, ctx)), {size: '', time: ''});
   assert.deepEqual(['mp4', 'webm', 'vfw', 'gif', 'png-sequence', 'piv'].map(format => exportPrimaryLabel({format})),
     ['Export MP4', 'Export WebM', 'Export AVI', 'Export GIF', 'Export PNG sequence', 'Export PIV']);
@@ -604,7 +605,7 @@ test('codec choices, the encoding summary and size presets give the sheet its wo
     return exportEncodingSummary(reconcileExportCodecs(request, shown), shown);
   };
   assert.equal(summary({format: 'mp4'}), 'H.264 · automatic bitrate');
-  assert.equal(summary({format: 'mp4', bitrateMode: 'manual', bitrateMbps: '4.5'}), `H.264 · ${(4.5).toLocaleString()} Mbit/s`);
+  assert.equal(summary({format: 'mp4', bitrateMode: 'manual', bitrateMbps: '4.5'}), `H.264 · ${(4.5).toLocaleString('en')} Mbit/s`);
   assert.equal(summary({format: 'avi', codecs: {avi: 'ffv1'}}), 'FFV1 (lossless)');
   assert.equal(summary({format: 'webm'}), 'VP9 with transparency · automatic bitrate');
   assert.equal(summary({format: 'gif'}), '');
