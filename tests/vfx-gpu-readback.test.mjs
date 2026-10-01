@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {VfxGPU,releaseVfxGPU} from '../src/vfx-gpu.mjs';
+import {VfxWebGPU} from '../src/vfx-webgpu.mjs';
 import {withVfx} from '../src/vfx-canvas.mjs';
 import {createVfx} from '../src/vfx.mjs';
 
@@ -85,4 +86,32 @@ test('effects painted for a destination in memory read pixels; other destination
   withVfx(destination(undefined),[blur()],()=>{},{bounds});
   assert.deepEqual(requests,[true,false,false]);
   assert.deepEqual(sources,[{willReadFrequently:true},undefined,undefined],'The source follows the destination storage.');
+});
+
+test('effect pipelines compile ahead of first use without replacing one created on demand',async t=>{
+  const names=['GPUShaderStage','GPUTextureUsage','GPUBufferUsage'],previous=names.map(name=>Object.getOwnPropertyDescriptor(globalThis,name));
+  for(const name of names)Object.defineProperty(globalThis,name,{configurable:true,writable:true,value:new Proxy({},{get:()=>1})});
+  t.after(()=>names.forEach((name,index)=>{if(previous[index])Object.defineProperty(globalThis,name,previous[index]);else delete globalThis[name];}));
+  const created=[],pending=[];
+  const empty=()=>({}),texture=()=>({createView:empty,destroy(){}});
+  const device={limits:{maxTextureDimension2D:4096},createShaderModule:empty,createBindGroupLayout:empty,createPipelineLayout:empty,createSampler:empty,createBindGroup:empty,createTexture:texture,
+    createBuffer:()=>({size:65536,destroy(){}}),
+    createRenderPipeline(descriptor){const pipeline={sync:descriptor.fragment.constants.operation};created.push(pipeline);return pipeline;},
+    createRenderPipelineAsync(descriptor){return new Promise((resolve,reject)=>pending.push({operation:descriptor.fragment.constants.operation,resolve,reject}));}};
+  const gpu=new VfxWebGPU(device);
+  const onDemand=gpu.pipeline(3);
+  gpu.prewarm();gpu.prewarm();
+  assert.equal(pending.length,27,'Every other operation is requested once.');
+  assert.ok(pending.every(request=>request.operation!==3));
+  assert.equal(gpu.pipeline(7).sync,7,'A pipeline needed before its warm copy arrives is created on demand.');
+  for(const request of pending){if(request.operation===9)request.reject(new Error('lost'));else request.resolve({warm:request.operation});}
+  await new Promise(resolve=>setTimeout(resolve,0));
+  assert.equal(gpu.pipeline(3),onDemand);assert.equal(gpu.pipeline(7).sync,7);
+  assert.equal(gpu.pipeline(16).warm,16,'A warm pipeline needs no compilation at first use.');
+  assert.equal(gpu.pipeline(9).sync,9,'A failed warm request falls back to on-demand creation.');
+  assert.equal(created.length,3);
+  const late=new VfxWebGPU(device);pending.length=0;late.prewarm();late.destroy();
+  for(const request of pending)request.resolve({warm:request.operation});
+  await new Promise(resolve=>setTimeout(resolve,0));
+  assert.equal(late.pipelines.size,0,'A destroyed executor keeps nothing that arrives late.');
 });

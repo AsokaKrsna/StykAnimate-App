@@ -93,9 +93,20 @@ export class VfxWebGPU{
   this.paintColors=new Float32Array(128);this.paintOffsets=new Float32Array(32);
   this.slots=[];this.retired=[];this.pipelines=new Map();this.stats={passes:0,bytes:0,calls:0};
  }
+ descriptor(operation){return {layout:this.pipelineLayout,vertex:{module:this.module,entryPoint:'vertex'},fragment:{module:this.module,entryPoint:'fragment',constants:{operation},targets:[{format:'rgba8unorm'}]}};}
  pipeline(operation){
   if(!Number.isInteger(operation)||operation<0||operation>27)throw messageError(new RangeError(''), "errors.vfxGpu.unknownVfxGraphicsOperation", {});
-  let entry=this.pipelines.get(operation);if(!entry){entry=this.device.createRenderPipeline({layout:this.pipelineLayout,vertex:{module:this.module,entryPoint:'vertex'},fragment:{module:this.module,entryPoint:'fragment',constants:{operation},targets:[{format:'rgba8unorm'}]}});this.pipelines.set(operation,entry);}return entry;
+  let entry=this.pipelines.get(operation);if(!entry){entry=this.device.createRenderPipeline(this.descriptor(operation));this.pipelines.set(operation,entry);}return entry;
+ }
+ /** Compile every operation ahead of the frame that first needs it. A pipeline
+  * created on demand compiles on the thread that executes this device's
+  * commands, stalling presentation the first time each effect appears;
+  * asynchronous creation does not. A pipeline needed sooner is created on
+  * demand as before, and whichever finishes first is kept. */
+ prewarm(){
+  if(this.prewarmed||!this.device.createRenderPipelineAsync)return;this.prewarmed=true;
+  for(let operation=0;operation<=27;operation++)if(!this.pipelines.has(operation))
+   this.device.createRenderPipelineAsync(this.descriptor(operation)).then(pipeline=>{if(!this.destroyed&&!this.pipelines.has(operation))this.pipelines.set(operation,pipeline);},()=>{});
  }
  slot(index,width,height){
   let slot=this.slots[index];
@@ -167,7 +178,7 @@ export class VfxWebGPU{
   return texture?{texture:current.texture,width:W,height:H}:this.canvas;
   }finally{for(const retired of this.retired)retired.destroy();this.retired.length=0;}
  }
- destroy(){for(const slot of this.slots)slot?.texture?.destroy();this.slots=[];for(const retired of this.retired)retired.destroy();this.retired=[];this.uniforms?.destroy();this.blank?.destroy();if(this.configured)this.context?.unconfigure();this.canvas.width=this.canvas.height=1;}
+ destroy(){this.destroyed=true;for(const slot of this.slots)slot?.texture?.destroy();this.slots=[];for(const retired of this.retired)retired.destroy();this.retired=[];this.uniforms?.destroy();this.blank?.destroy();if(this.configured)this.context?.unconfigure();this.canvas.width=this.canvas.height=1;}
 }
 const executors=new WeakMap();
 export function vfxWebGPUFor(device){let executor=executors.get(device);if(!executor){executor=new VfxWebGPU(device);executors.set(device,executor);}return executor;}

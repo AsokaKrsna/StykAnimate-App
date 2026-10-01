@@ -127,7 +127,11 @@ function releaseIdle(){const wait=30000-(performance.now()-lastUse);if(wait>0){i
 /** Register the renderer's WebGPU device so the shared WGSL executor can run
  * scene/drawable filters without leaving the device. Without one, callers fall
  * back to the WebGL 2 executor. */
-export function initVfxDevice(device){sharedDevice=device;device.lost.then(()=>{if(sharedDevice===device)sharedDevice=null;releaseVfxWebGPU(device);});}
+export function initVfxDevice(device){
+ sharedDevice=device;device.lost.then(()=>{if(sharedDevice===device)sharedDevice=null;releaseVfxWebGPU(device);});
+ // After startup has presented: effects then never compile during playback.
+ if(typeof setTimeout==='function'&&device.createRenderPipelineAsync)setTimeout(()=>{if(sharedDevice===device)vfxWebGPUFor(device).prewarm();},1500);
+}
 export function releaseVfxDevice(device){if(sharedDevice===device)sharedDevice=null;releaseVfxWebGPU(device);}
 let cpuFallbacks=0;
 /** Filter a canvas through the active GPU executor when possible. Any GPU

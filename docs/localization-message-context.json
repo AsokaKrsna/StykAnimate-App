@@ -22960,7 +22960,7 @@
   "errors.vfxGpu.unknownVfxGraphicsOperation": {
     "locations": [
       "src/vfx-gpu.mjs:20",
-      "src/vfx-webgpu.mjs:97"
+      "src/vfx-webgpu.mjs:98"
     ],
     "context": "if(!Number.isInteger(operation)||operation<0||operation>28)throw messageError(new RangeError(''), \"errors.vfxGpu.unknownVfxGraphicsOperation\", {});"
   },
@@ -23029,13 +23029,13 @@
   },
   "errors.vfxWebgpu.gpuArtworkMustIncludeItsEffectPadding": {
     "locations": [
-      "src/vfx-webgpu.mjs:114"
+      "src/vfx-webgpu.mjs:125"
     ],
     "context": "if(source.texture&&pad)throw messageError(new Error(''), \"errors.vfxWebgpu.gpuArtworkMustIncludeItsEffectPadding\", {});"
   },
   "errors.vfxWebgpu.vfxRequireAnAvailableWebgpuCanvasContext": {
     "locations": [
-      "src/vfx-webgpu.mjs:118"
+      "src/vfx-webgpu.mjs:129"
     ],
     "context": "if(!texture){if(this.canvas.width!==W)this.canvas.width=W;if(this.canvas.height!==H)this.canvas.height=H;if(!this.context){this.context=this.canvas.getContext('"
   },
