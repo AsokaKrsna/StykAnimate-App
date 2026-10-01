@@ -124,6 +124,58 @@ def inflate_stk(source: bytes) -> bytes | None:
     return payload
 
 
+def _stk_joint_points(segments: list) -> dict:
+    """Fit native joints without changing their authored record order.
+
+    Ordinary parent-first records finish in the first pass. Only unresolved
+    records need an ID map and an iterative parent traversal; repeatedly scanning
+    a reverse-ordered chain would make a valid figure quadratic.
+    """
+    points = {0: (0.0, 0.0)}
+    remaining = segments
+    for _ in range(2):
+        checkpoint()
+        pending = []
+        for index, segment in enumerate(remaining):
+            if index % 256 == 0:
+                checkpoint()
+            if segment["parent_id"] not in points:
+                pending.append(segment)
+                continue
+            x, y = points[segment["parent_id"]]
+            a, length, bend = segment["angle_rad"], segment["length"], segment.get("bend_rad", 0)
+            if abs(bend) < 1e-8:
+                dx, dy = length * math.cos(a), length * math.sin(a)
+            else:
+                dx = length / bend * (math.sin(a + bend) - math.sin(a))
+                dy = length / bend * (math.cos(a) - math.cos(a + bend))
+            points[segment["segment_id"]] = (x + dx, y + dy)
+        if not pending:
+            return points
+        # The parser validates modern topology. Keep the historical fitting
+        # error for legacy definitions with missing parents or cycles too.
+        by_id = {segment["segment_id"]: segment for segment in pending}
+        ordered, known = [], set(points)
+        visits = 0
+        for segment in pending:
+            cursor, chain, visiting = segment["segment_id"], [], set()
+            while cursor not in known:
+                visits += 1
+                if visits % 256 == 0:
+                    checkpoint()
+                if cursor in visiting or cursor not in by_id:
+                    raise PivError("STK contains missing parents or a cyclic topology")
+                visiting.add(cursor)
+                item = by_id[cursor]
+                chain.append(item)
+                cursor = item["parent_id"]
+            for item in reversed(chain):
+                ordered.append(item)
+                known.add(item["segment_id"])
+        remaining = ordered
+    raise PivError("STK contains missing parents or a cyclic topology")
+
+
 def stk_document(path: Path, source: bytes) -> dict:
     payload = inflate_stk(source)
     figure = None
@@ -167,27 +219,7 @@ def stk_document(path: Path, source: bytes) -> dict:
     figure["implicit"] = False
     figure["segment_count"] = len(figure["segments"])
     # Fit by translating the root, retaining the figure's authored proportions.
-    points = {0: (0.0, 0.0)}
-    remaining = list(figure["segments"])
-    for _ in range(len(remaining) + 1):
-        pending = []
-        for segment in remaining:
-            if segment["parent_id"] not in points:
-                pending.append(segment)
-                continue
-            x, y = points[segment["parent_id"]]
-            a, length, bend = segment["angle_rad"], segment["length"], segment.get("bend_rad", 0)
-            if abs(bend) < 1e-8:
-                dx, dy = length * math.cos(a), length * math.sin(a)
-            else:
-                dx = length / bend * (math.sin(a + bend) - math.sin(a))
-                dy = length / bend * (math.cos(a) - math.cos(a + bend))
-            points[segment["segment_id"]] = (x + dx, y + dy)
-        if not pending:
-            break
-        if len(pending) == len(remaining):
-            raise PivError("STK contains missing parents or a cyclic topology")
-        remaining = pending
+    points = _stk_joint_points(figure["segments"])
     x_values, y_values = zip(*points.values())
     width = max(640, math.ceil(max(x_values) - min(x_values) + 120))
     height = max(480, math.ceil(max(y_values) - min(y_values) + 120))
