@@ -1,4 +1,4 @@
-import {replaceLocalized, messageAttributes, localizedAttribute, localizedMarkup} from './localization-bindings.mjs';
+import {replaceLocalized, messageAttributes, localizedAttribute, localizedMarkup, localizedText} from './localization-bindings.mjs';
 
 import {t as interfaceText, messageText as sayTimeline} from './localization.mjs';
 
@@ -43,32 +43,39 @@ export function createLayersPopover({anchor, editor, run, view, overlays = null,
     if (event.detail?.kind === 'document') { collapsedFolders.clear(); selectedIds = new Set([editor.activeLayerId]); selectionAnchor = editor.activeLayerId; }
   }, {signal: events.signal});
   const body = element('div', null, 'tl-layers-body');
-  const tools = element('div', body, 'tl-layers-tools');
-  const filter = element('button', tools, 'ui-button'); filter.type = 'button'; filter.dataset.size = 'sm'; filter.dataset.variant = 'ghost'; filter.setAttribute('aria-haspopup', 'dialog'); filter.setAttribute('aria-expanded', 'false');
-  localizedMarkup(filter, `${icon('sliders')}<span class="ui-label" ${messageAttributes('layerFilter.title')}></span>`);
-  filter.addEventListener('click', () => {
-    filterPopover ??= createLayerFilter({anchor: filter, editor, view, overlays, topInset, selectedIds: () => [...selectedIds].filter(id => view.shown(id))});
-    filterPopover.toggle();
-  }, {signal: events.signal});
   const list = element('div', body, 'tl-layers-list');
   list.setAttribute('role', 'list');
   localizedAttribute(list, 'aria-label', "layers.list", {});
+  // The foot: New layer with its word, the rarer kinds as glyphs with tooltips, Group while several layers are
+  // selected, and Filter layers at the far end (it narrows the list instead of adding to it).
   const foot = element('div', null, 'tl-layers-foot');
-  const footButton = (glyph, label, action, _messages = {}) => {
-    const button = element('button', foot, 'ui-button');
+  const footButton = (glyph, key, action, {word = false} = {}) => {
+    const button = element('button', foot, word ? 'ui-button' : 'ui-icon-button');
     button.type = 'button';
     button.dataset.size = 'sm';
-    button.dataset.variant = 'ghost';
-    localizedMarkup(button, `${glyph ? icon(glyph) : ''}<span class="ui-label" ${_messages.label ? messageAttributes(_messages.label.key, _messages.label.params) : ''}>${label}</span>`);
+    if (word) {
+      button.dataset.variant = 'ghost';
+      localizedMarkup(button, `${icon(glyph)}<span class="ui-label" ${messageAttributes(key, {})}>${say(key)}</span>`);
+    } else {
+      localizedMarkup(button, icon(glyph));
+      localizedAttribute(button, 'aria-label', key, {});
+      localizedAttribute(button, 'data-tooltip', key, {});
+    }
     button.addEventListener('click', () => run(action), {signal: events.signal});
     return button;
   };
-  footButton('plus', say("layers.newLayer"), () => editor.selectSheetLayer(editor.createLayer().id, {contents: false}), {label: {key: "layers.newLayer", params: {}}});
-  footButton('brush', say("layers.drawingLayer"), () => editor.selectSheetLayer(editor.createDrawingLayer().id, {contents: false}), {label: {key: "layers.drawingLayer", params: {}}});
-  footButton('folder', interfaceText('layerFolders.newFolder'), () => {
+  footButton('plus', "layers.newLayer", () => editor.selectSheetLayer(editor.createLayer().id, {contents: false}), {word: true});
+  footButton('brush', "layers.drawingLayer", () => editor.selectSheetLayer(editor.createDrawingLayer().id, {contents: false}));
+  footButton('folder', 'layerFolders.newFolder', () => {
     const folder = editor.createLayerFolder(interfaceText('layerFolders.newFolder')); renameFolderId = folder.id; render(); return folder;
-  }, {label:{key:'layerFolders.newFolder',params:{}}});
-  const group = footButton('folder', interfaceText('layerFolders.group'), () => editor.createLayerFolder(interfaceText('layerFolders.newFolder'), [...selectedIds].filter(id=>editor.getLayer(id)?.kind==='layer'&&view.shown(id))), {label:{key:'layerFolders.group',params:{}}});
+  });
+  const group = footButton('folder-plus', 'layerFolders.group', () => editor.createLayerFolder(interfaceText('layerFolders.newFolder'), [...selectedIds].filter(id=>editor.getLayer(id)?.kind==='layer'&&view.shown(id))));
+  const filter = footButton('filter', 'layerFilter.title', () => {
+    filterPopover ??= createLayerFilter({anchor: filter, editor, view, overlays, topInset, selectedIds: () => [...selectedIds].filter(id => view.shown(id))});
+    filterPopover.toggle();
+  });
+  filter.classList.add('tl-layers-filter');
+  filter.setAttribute('aria-haspopup', 'dialog'); filter.setAttribute('aria-expanded', 'false');
 
   let changes = null;
   const popover = createPopover({
@@ -101,7 +108,7 @@ export function createLayersPopover({anchor, editor, run, view, overlays = null,
     selectedIds = new Set([...selectedIds].filter(id => editor.getLayer(id)?.kind === 'layer'));
     if (!selectedIds.has(editor.activeLayerId) && editor.getLayer(editor.activeLayerId)?.kind === 'layer') selectedIds = new Set([editor.activeLayerId]);
     filter.dataset.active = String(view.active);
-    group.disabled = ![...selectedIds].some(id => view.shown(id));
+    group.hidden = [...selectedIds].filter(id => view.shown(id)).length < 2;
     const active = editor.activeLayerId, focused = list.contains(document.activeElement) ? document.activeElement : null;
     const refocus = focused && {id: focused.closest('[data-layer-id]')?.dataset.layerId, index: [...focused.parentElement.children].indexOf(focused),
       pick: focused.matches('.tl-layers-pick')};

@@ -139,8 +139,10 @@
   .sheet-label-head > .sheet-focus[aria-pressed="true"] { --_bg: var(--accent-soft); --_bg-hover: var(--accent-soft-hover); color: var(--accent-text-strong); }
   .sheet-label-head > .sheet-new-layer > .ui-split-more { block-size: var(--control-sm); }
   .sheet-label-head { container: layer-heading / inline-size; }
-  .sheet-label-head:has(:where(.sheet-search:not([hidden]))) > :is(.sheet-new-folder, .sheet-layer-filter) { display: none; }
-  .sheet-layer-filter:where([data-active="true"]), .tl-layers-tools > .ui-button:where([data-active="true"]) { background: var(--accent-soft); color: var(--accent-text-strong); }
+  .sheet-label-head:has(:where(.sheet-search:not([hidden]))) > .sheet-layer-filter { display: none; }
+  /* What adds rows (New layer) sits apart from what narrows them (Filter layers, Find layers). */
+  .sheet-label-head > .sheet-layer-filter { margin-inline-start: var(--space-1); }
+  :is(.sheet-layer-filter, .tl-layers-filter):where([data-active="true"]) { background: var(--accent-soft); color: var(--accent-text-strong); }
   @container layer-heading (max-width: 240px) {
     .sheet-label-head > .sheet-focus { --_px: 0; inline-size: var(--control-sm); }
     .sheet-focus > .ui-label { display: none; }
@@ -163,11 +165,12 @@
   /* ---- Go to frame ---- */
   .tl-goto { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); inline-size: 220px; }
   .tl-goto > .tl-goto-meta { grid-column: 1 / -1; font: var(--type-small); color: var(--text-3); font-variant-numeric: tabular-nums; }
-  .tl-playback-range-form { display: grid; gap: var(--space-3); inline-size: min(320px, calc(100vw - 48px)); }
+  .tl-playback-range-form { display: grid; gap: var(--space-2); inline-size: min(300px, calc(100vw - 48px)); }
   .tl-playback-range-fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
   .tl-playback-range-help { margin: 0; color: var(--text-3); font: var(--type-small); white-space: normal; }
-  .tl-playback-range-actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-1); }
-  .tl-playback-range-actions > [type="submit"] { grid-column: 1 / -1; justify-self: end; }
+  .tl-playback-range-meta { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-block-size: var(--control-sm); }
+  .tl-playback-range-meta > .ui-button { flex: none; margin-inline-end: calc(-1 * var(--space-1)); }
+  .tl-playback-range-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); inline-size: 100%; }
 
   /* ==== The Simple timeline ==== */
   /* The frame card: the thumbnail, framed as today on a white rounded card (the current and the selected cards
@@ -349,9 +352,9 @@
   .tl-layers-pick[aria-pressed="true"] > .ui-list-row-label { font-weight: var(--weight-semibold); }
   .tl-layers-pick > .tl-layers-kind { inline-size: var(--icon-sm); block-size: var(--icon-sm); flex: none; color: var(--text-3); }
   .tl-layers-popover .ui-popover-foot { justify-content: flex-start; gap: var(--space-1); }
-  .tl-layers-foot { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+  .tl-layers-foot { display: flex; align-items: center; gap: var(--space-0-5); inline-size: 100%; }
+  .tl-layers-foot > .tl-layers-filter { margin-inline-start: auto; }
   .tl-layers-body { display: grid; gap: var(--space-1); }
-  .tl-layers-tools { display: flex; padding-inline: var(--space-1); }
   .tl-layers-row:where([data-selected="true"]) { background: var(--accent-soft); }
   .tl-layers-rename { min-inline-size: 0; inline-size: 100%; block-size: var(--control-md); padding-inline: var(--space-2); border: 1px solid var(--accent-line); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-1); font: var(--type-ui); }
 

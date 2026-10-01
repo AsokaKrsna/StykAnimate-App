@@ -39,11 +39,12 @@ try {
     styk.editor.createLayer('Floor'); styk.editor.createLayer('Reference'); styk.editor.createLayerFolder('Character', ['layer-2', 'layer-3']);
   }); await settle();
 
-  await page.getByRole('button', {name: 'New folder', exact: true}).click(); await settle();
+  await page.getByRole('button', {name: 'More layer types', exact: true}).click();
+  await page.getByRole('menuitem', {name: 'New folder', exact: true}).click(); await settle();
   const rename = page.getByRole('textbox', {name: /Rename New folder/});
   await rename.fill('Empty shot'); await rename.press('Enter'); await settle();
   assert.equal(await page.evaluate(() => styk.editor.getLayerFolders().at(-1).name), 'Empty shot');
-  checks.push('Advanced one-click folder creation immediately offers rename');
+  checks.push('Advanced folder creation from New layer ▾ immediately offers rename');
   let before = await snapshot();
   await open();
   await check('Body').uncheck(); await settle();
@@ -167,7 +168,7 @@ try {
     await settle(); const measured = await headingBounds();
     assert.equal(measured.width, width, 'the divider reaches the tested column width');
     assert.ok(measured.buttons.every(button => button.fits), `${width}px heading, focus ${focused}: ${JSON.stringify(measured)}`);
-    for (const name of ['New folder', 'Filter layers']) assert.ok(measured.buttons.some(button => button.name === name), `${name} remains visible`);
+    for (const name of ['New layer', 'Filter layers']) assert.ok(measured.buttons.some(button => button.name === name), `${name} remains visible`);
     if (focused) assert.ok(measured.buttons.some(button => button.name === 'Show all layers'));
     headingChecks.push({width, focused, touch: false, ...measured});
     await screenshot(`heading-${width}-${focused ? 'focus' : 'all'}`);
@@ -180,7 +181,7 @@ try {
     const measured = await headingBounds();
     assert.equal(measured.width, 148, 'phone touch uses the tested names column width');
     assert.ok(measured.buttons.every(button => button.fits), `148px phone-touch heading, focus ${focused}: ${JSON.stringify(measured)}`);
-    for (const name of ['New folder', 'Filter layers']) assert.ok(measured.buttons.some(button => button.name === name), `phone touch keeps ${name}`);
+    assert.ok(measured.buttons.some(button => button.name === 'Filter layers'), 'phone touch keeps Filter layers');
     headingChecks.push({width: 148, focused, touch: true, ...measured});
     await screenshot(`heading-phone-${focused ? 'focus' : 'all'}`);
   }

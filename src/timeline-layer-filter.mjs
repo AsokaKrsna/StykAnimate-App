@@ -28,7 +28,7 @@ export function createLayerFilter({anchor, editor, view, overlays = null, topIns
   const foot = element('div', null, 'tl-layer-filter-foot');
   const reset = element('button', foot, 'ui-button'); reset.type = 'button'; reset.dataset.variant = 'ghost'; localizedText(reset, 'layerFilter.reset');
   const done = element('button', foot, 'ui-button'); done.type = 'button'; localizedText(done, 'common.done');
-  let rows = [], changes;
+  let rows = [], changes, paintedStart = -1;
   const popover = createPopover({anchor, titleKey: 'layerFilter.title', body, foot, className: 'tl-layer-filter-popover',
     placement: 'top-start', overlays, topInset, keyboardScope: true, icon,
     onOpen() {
@@ -62,7 +62,8 @@ export function createLayerFilter({anchor, editor, view, overlays = null, topIns
   }
   function paint(focusId) {
     const focused = focusId ?? (spacer.contains(document.activeElement) ? document.activeElement.dataset.filterId : null);
-    const start = Math.max(0, Math.floor(viewport.scrollTop / ROW) - 2), end = Math.min(rows.length, start + Math.ceil((viewport.clientHeight || 288) / ROW) + 4);
+    const start = firstRow(), end = Math.min(rows.length, start + Math.ceil((viewport.clientHeight || 288) / ROW) + 4);
+    paintedStart = start;
     const nodes = rows.slice(start, end).map((row, offset) => {
       const item = element('div', null, 'tl-layer-filter-item'); item.style.top = `${(start + offset) * ROW}px`;
       item.setAttribute('role', 'listitem'); item.setAttribute('aria-posinset', String(start + offset + 1)); item.setAttribute('aria-setsize', String(rows.length));
@@ -73,7 +74,7 @@ export function createLayerFilter({anchor, editor, view, overlays = null, topIns
       check.checked = state.checked; check.indeterminate = state.mixed; check.setAttribute('aria-checked', state.mixed ? 'mixed' : String(state.checked));
       localizedAttribute(check, 'aria-label', 'layerFilter.show', {name: row.name});
       if (row.kind === 'folder' || ['camera', 'scene'].includes(row.kind)) localizedMarkup(element('span', label, 'tl-layer-filter-icon'), icon(row.kind));
-      else { const dot = element('span', label, 'ui-dot'); dot.style.setProperty('--dot', LAYER_COLORS[row.color] ?? 'var(--text-3)'); dot.setAttribute('aria-hidden', 'true'); }
+      else { const dot = element('span', label, 'ui-dot'); dot.style.setProperty('--dot', LAYER_COLORS[row.color] ?? 'var(--sheet-layer)'); dot.setAttribute('aria-hidden', 'true'); }
       const name = element('span', label, 'tl-layer-filter-name'); name.textContent = row.name; name.title = row.name;
       if (row.kind === 'folder') { const n = element('span', label, 'tl-layer-filter-folder-count'); n.textContent = String(row.layerIds.length); }
       check.addEventListener('change', () => view.setShown(row.id, check.checked));
@@ -88,13 +89,16 @@ export function createLayerFilter({anchor, editor, view, overlays = null, topIns
     replaceLocalized(spacer, ...nodes);
     if (focused) spacer.querySelector(`[data-filter-id="${CSS.escape(focused)}"]`)?.focus({preventScroll: true});
   }
+  function firstRow() { return Math.max(0, Math.floor(viewport.scrollTop / ROW) - 2); }
   function focusRow(index) {
     const top = index * ROW;
     if (top < viewport.scrollTop) viewport.scrollTop = top;
     else if (top + ROW > viewport.scrollTop + viewport.clientHeight) viewport.scrollTop = top + ROW - viewport.clientHeight;
     paint(rows[index]?.id);
   }
-  viewport.addEventListener('scroll', () => paint(), {signal: events.signal});
+  // A scroll rebuilds the rows only when it changes their window, so a row under the keyboard survives the scroll
+  // that brought it into view.
+  viewport.addEventListener('scroll', () => { if (firstRow() !== paintedStart) paint(); }, {signal: events.signal});
   search.addEventListener('input', () => { viewport.scrollTop = 0; refresh(); }, {signal: events.signal});
   search.addEventListener('keydown', event => { if (event.key === 'ArrowDown' && rows.length) { event.preventDefault(); focusRow(0); } }, {signal: events.signal});
   selected.addEventListener('click', () => view.showOnly(selectedIds()), {signal: events.signal});

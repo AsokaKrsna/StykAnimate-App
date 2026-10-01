@@ -51,7 +51,8 @@ export class Timeline{
     this.root.toggleAttribute('data-touch',this._touch());
     this.main=element('div',this.root,'sheet-main');
     // The layer list's header: its title (Find layers' field takes its place while it has focus or text),
-    // Focus selected layers (from two layers), New layer (a split: + and the other kind) and Find layers.
+    // Show all while a focus is on, New layer (a split: + and a menu of everything the list can add, folders
+    // included), then the two ways to narrow the list: Filter layers and Find layers.
     const head=this.labelHead=element('div',this.main,'sheet-label-head');
     this.labelTitle=translatedElement(element('span',head,'sheet-label-title',sayTimeline(null,'timeline.layers')), 'timeline.layers', {});
     const search=this.searchField=element('label',head,'sheet-search');localizedMarkup(search, icon('search'));search.hidden=true;
@@ -68,13 +69,13 @@ export class Timeline{
     this.newLayerButton=this._headButton(add,'plus',sayTimeline(null,'timeline.newLayer'),()=>this.newLayer(this._drawWorkspace()?'drawing':'layer'));
     localizedAttribute(this.newLayerButton,'aria-label','timeline.newLayer');
     this.newLayerMore=element('button',add,'ui-split-more');this.newLayerMore.type='button';localizedMarkup(this.newLayerMore, icon('chevron-down'));localizedAttribute(this.newLayerMore, 'aria-label', 'timeline.moreLayerTypes', {});this.newLayerMore.setAttribute('aria-haspopup','menu');this.newLayerMore.setAttribute('aria-expanded','false');
-    this._on(this.newLayerMore,'click',()=>{const other=this._drawWorkspace()?'layer':'drawing';if(menuFor(this.newLayerMore))return menuFor(this.newLayerMore).close('toggle');
+    this._on(this.newLayerMore,'click',()=>{if(menuFor(this.newLayerMore))return menuFor(this.newLayerMore).close('toggle');
+      const row=(labelKey,glyph,action)=>({label:interfaceText(labelKey),labelKey,labelParams:{},icon:glyph,run:()=>this._run(action)});
+      const grouped=this.ids.some(id=>this.editor.getLayer(id)?.kind==='layer');
       openMenu({anchor:this.newLayerMore,overlays:this.overlays??null,icon:name=>icon(name),label:sayTimeline(null,'timeline.moreLayerTypes'), labelKey: 'timeline.moreLayerTypes', labelParams: {},
-        items:[{label:sayTimeline(null,other==='drawing'?'timeline.newDrawingLayer':'timeline.newLayer'), labelKey: other==='drawing'?'timeline.newDrawingLayer':'timeline.newLayer', labelParams: {},icon:other==='drawing'?'brush':'plus',run:()=>this._run(()=>this.newLayer(other))}]});});
-    this.newFolderButton=this._headButton(head,'folder',interfaceText('layerFolders.newFolder'),()=>this.newLayerFolder());
-    localizedAttribute(this.newFolderButton,'aria-label','layerFolders.newFolder');localizedAttribute(this.newFolderButton,'data-tooltip','layerFolders.newFolder');
-    this.newFolderButton.classList.add('sheet-new-folder');
-    this.filterButton=this._headButton(head,'sliders',interfaceText('layerFilter.title'),()=>{
+        items:[row('timeline.newLayer','plus',()=>this.newLayer('layer')),row('timeline.newDrawingLayer','brush',()=>this.newLayer('drawing')),null,
+          row('layerFolders.newFolder','folder',()=>this.newLayerFolder()),...(grouped?[row('layerFolders.group','folder-plus',()=>this.newLayerFolder(true))]:[])]});});
+    this.filterButton=this._headButton(head,'filter',interfaceText('layerFilter.title'),()=>{
       this.layerFilterPopover??=createLayerFilter({anchor:this.filterButton,editor,view:this.layerView,overlays:this.overlays??null,selectedIds:()=>this.ids});
       this.layerFilterPopover.toggle();
     });this.filterButton.classList.add('sheet-layer-filter');this.filterButton.setAttribute('aria-haspopup','dialog');this.filterButton.setAttribute('aria-expanded','false');

@@ -309,9 +309,10 @@ export function createTimelineHeader(ctx, host) {
           run: action('toggle-range-edit')},
         null);
     }
+    // Playback range is a row here only while its button beside Loop is folded away.
+    if (!playbackLimits.getClientRects().length)
+      items.push({label: say("timeline.playbackRange"), labelKey: "timeline.playbackRange", icon: 'stretch-horizontal', run: openPlaybackRange}, null);
     items.push(
-      {label: say("timeline.playbackRange"), labelKey: "timeline.playbackRange", icon: 'stretch-horizontal', run: openPlaybackRange},
-      null,
       {label: say("timeline.lastFrame"), labelKey: "timeline.lastFrame", labelParams: {}, icon: 'last', shortcut: shortcut('last-frame'), run: action('last-frame')},
       {label: say("timeline.previousKey"), labelKey: "timeline.previousKey", labelParams: {}, icon: 'chevron-left', shortcut: shortcut('previous-keyframe'), run: action('previous-keyframe')},
       {label: say("timeline.nextKey"), labelKey: "timeline.nextKey", labelParams: {}, icon: 'chevron-right', shortcut: shortcut('next-keyframe'), run: action('next-keyframe')},
@@ -394,28 +395,33 @@ export function createTimelineHeader(ctx, host) {
       };
       rangeFirst = field('timeline.playbackRangeFrom');
       rangeLast = field('timeline.playbackRangeTo');
-      rangeTotal = element('p', form, 'tl-playback-range-help');
-      translatedElement(element('p', form, 'tl-playback-range-help', say('timeline.playbackRangeHelp')), 'timeline.playbackRangeHelp');
-      const actions = element('div', form, 'tl-playback-range-actions');
-      rangeSelection = translatedElement(element('button', actions, 'ui-button', say('timeline.playbackRangeSelection')), 'timeline.playbackRangeSelection');
+      // One line under the fields: what the numbers count, and the selection as a shortcut to them.
+      const meta = element('div', form, 'tl-playback-range-meta');
+      rangeTotal = element('span', meta, 'tl-playback-range-help');
+      rangeSelection = translatedElement(element('button', meta, 'ui-button', say('timeline.playbackRangeSelection')), 'timeline.playbackRangeSelection');
       rangeSelection.type = 'button';
+      rangeSelection.dataset.size = 'sm';
+      rangeSelection.dataset.variant = 'ghost';
       rangeSelection.addEventListener('click', () => {
         const selection = host.timeline?.selectedTimeRange;
         if (selection) applyPlaybackRange(playbackRangeFromFrames(selection.start + 1, selection.end, ctx.editor.totalTicks));
       });
+      form.id = 'playback-range-form';
+      const actions = element('div', null, 'tl-playback-range-actions');
       const entire = translatedElement(element('button', actions, 'ui-button', say('timeline.playbackRangeEntire')), 'timeline.playbackRangeEntire');
       entire.type = 'button';
       entire.dataset.variant = 'ghost';
       entire.addEventListener('click', () => applyPlaybackRange(null));
       const submit = translatedElement(element('button', actions, 'ui-button', say('timeline.playbackRangeApply')), 'timeline.playbackRangeApply');
       submit.type = 'submit';
+      submit.setAttribute('form', form.id);
       submit.dataset.variant = 'primary';
       form.addEventListener('submit', event => {
         event.preventDefault();
         const range = playbackRangeFromFrames(rangeFirst.valueAsNumber, rangeLast.valueAsNumber, ctx.editor.totalTicks);
         if (range) applyPlaybackRange(range);
       });
-      playbackRangePopover = createPopover({...menuOptions(), anchor: playbackLimits, placement: 'top-start', title: say('timeline.playbackRange'), titleKey: 'timeline.playbackRange', body: form,
+      playbackRangePopover = createPopover({...menuOptions(), anchor: playbackLimits, placement: 'top-start', title: say('timeline.playbackRange'), titleKey: 'timeline.playbackRange', body: form, foot: actions,
         keyboardScope: true, className: 'tl-playback-range-popover'});
     }
     const {start, end} = normalizePlaybackRange(ctx.state.loopRange, ctx.editor.totalTicks);

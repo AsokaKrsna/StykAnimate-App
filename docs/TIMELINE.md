@@ -121,7 +121,8 @@ engine acceptance checks.
 
 ## Playback range
 
-Both timelines expose **Playback range** beside Loop and in Timeline ⋯. Enter
+Both timelines expose **Playback range** beside Loop; Timeline ⋯ lists it only
+while that button is folded away in a narrow header. Enter
 inclusive output-frame limits (50–100 plays all 51 frames), or **Use selection**.
 Simple selections include each selected card's full exposure and inbetweens.
 Limits remain independent of later editing selections; Loop repeats them, and

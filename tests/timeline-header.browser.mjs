@@ -83,7 +83,7 @@ try {
   // Timeline ⋯ holds the rare rows.
   await page.locator('#timeline-menu-button').click();
   const rows = await page.evaluate(() => [...document.querySelectorAll('.ui-menu [role^="menuitem"]')].map(item => item.querySelector('span')?.textContent.trim()));
-  assert.deepEqual(rows, ['Playback range', 'Last frame', 'Previous key', 'Next key', 'Default height'], 'Timeline ⋯ rows at rest');
+  assert.deepEqual(rows, ['Last frame', 'Previous key', 'Next key', 'Default height'], 'Timeline ⋯ rows at rest: Playback range stays beside Loop');
   await page.getByRole('menuitem', {name: 'Last frame'}).click(); await settle();
   check('Timeline ⋯ › Last frame goes to the last frame', await page.evaluate(() => styk.editor.tick === styk.editor.totalTicks - 1));
 
@@ -111,6 +111,8 @@ try {
   await page.getByRole('button', {name: 'Show all layers', exact: true}).click(); await settle(); await settle();
   check('Show all ends the focus and leaves', await page.evaluate(() => !styk.timeline.focusedLayerIds && styk.timeline.focusLayersButton.hidden));
   await page.getByRole('button', {name: 'More layer types', exact: true}).click();
+  assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.ui-menu [role^="menuitem"]')].map(item => item.querySelector('span')?.textContent.trim())),
+    ['New layer', 'New drawing layer', 'New folder', 'Group selected layers in folder'], 'New layer ▾ lists everything the layer list can add');
   await page.getByRole('menuitem', {name: 'New drawing layer'}).click();
   await page.locator('.sheet-layer-rename').waitFor();
   await page.keyboard.press('Escape'); await settle();

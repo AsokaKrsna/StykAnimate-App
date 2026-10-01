@@ -4,12 +4,14 @@ Advanced layer menus group folder commands and stacking commands under
 **Organize**, with separate **Focus**, **Visibility and lock**, and **Add layer**
 submenus. Ctrl/Cmd-click toggles individual layer rows; Shift-click extends or
 shrinks a range from the original selected row, skipping folder and effect rows.
-One selected layer remains active. The folder button beside Layers creates an
-empty folder and opens its name for editing. Double-click a folder name to
+One selected layer remains active. The menu beside New layer in the list header
+holds everything the list can add: a layer, a drawing layer, **New folder** (an
+empty folder whose name opens for editing) and **Group selected layers in folder**. Double-click a folder name to
 rename it; its disclosure collapses its children. A layer name can be dragged
 onto a folder. The Simple timeline's Layers popover shows the same folders and
-supports the same modifier selection, can group selected layers, and offers
-**New folder** with immediate naming. F2 renames a focused folder.
+supports the same modifier selection. Its foot keeps New layer as a word and
+the drawing layer, **New folder** (with immediate naming) and Filter layers as
+icons; the group button appears once two or more layers are selected. F2 renames a focused folder.
 
 Folders contain user layers, including drawings. Scene and Camera remain fixed
 tracks. Folders have one level, with no pose keys of their own. Collapsing a
