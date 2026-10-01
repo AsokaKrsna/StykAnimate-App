@@ -43,6 +43,7 @@ What's new in each version of StykAnimate.
 - Recovery copies are scheduled more reliably during frequent editing.
 - Fixed multiple layer selections and searches being lost during editing.
 - Fixed figures and text staying blurry when zooming far into the canvas.
+- Fixed long freezes when zooming out of a close-up in animations with effects.
 - Fixed blur, glow, and shadow effects shifting or failing at certain positions.
 - Fixed drawings disappearing with VFX enabled or changing layer position after the first stroke.
 - Fixed onion skins disappearing behind lower layers or skipping nearby drawings in animations with many layers.
@@ -61,7 +62,7 @@ What's new in each version of StykAnimate.
 - Smoother scrolling through long layer lists in the timeline.
 - Quicker repeated saves for small projects and smaller exported movieclips.
 - Smoother zooming and panning, fewer pauses, and more responsive joints and selection when editing complex animations in Compatibility mode.
-- Much smoother playback of busy animations, with fewer pauses, especially on laptops without a dedicated graphics card and in Compatibility mode.
+- Much smoother playback of busy animations and scenes with effects, with fewer pauses, especially on laptops without a dedicated graphics card and in Compatibility mode.
 - Complex STK figures open faster, including figures with long chains of joints.
 - Faster color adjustments on large drawings, especially when painted areas are far apart.
 - Faster keyframe edits and figure posing in long animations with many layers.
