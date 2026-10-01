@@ -29,7 +29,7 @@ async function fetchOriginalSource() {
   const headers = config.jobId ? {'X-Styk-Job-Id': config.jobId} : {};
   if (config.token) headers.Authorization = `Bearer ${config.token}`;
   const response = await codecRequest(config, `/api/source?id=${encodeURIComponent(config.sourceId)}`, {headers});
-  if (response.status === 422 || response.status === 404) return null;
+  if (response.status === 422) return null;
   if (!response.ok) throw Object.assign(messageError(new Error(''), "errors.documentExportWorker.theOriginalSourceIsUnavailable", {status: response.status}), {status: response.status});
   const {metadata: meta, bytes} = await decodeSourceRecord(await response.arrayBuffer());
   return {meta, bytes};
