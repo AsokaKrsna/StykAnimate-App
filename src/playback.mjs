@@ -10,13 +10,14 @@ import {storedFrameReport} from './pivot-frame-draft.mjs';
 import {PlaybackBitmapPool,packetFootprint,closePacketBitmaps} from './playback-bitmap-pool.mjs';
 import {playbackMemoryBudget, playbackWorkerMemoryPlan, playbackWorkerCount, playbackWorkerAdmissionBudget, playbackWorkerAdmission} from './playback-budget.mjs';
 import {playbackRetentionSnapshot,unchangedPlaybackTicks} from './playback-retention.mjs';
+import {softwareFrameSize} from './playback-software-size.mjs';
 
 const MAX_WORKER_RESTARTS = 2;
 // Workers take runs of consecutive ticks. Adjacent frames share retained
 // geometry, artwork identities and rasters within one worker's caches; strict
 // tick parity made every worker rebuild what its neighbor had just prepared.
 export const PLAYBACK_LANE_TICKS = 8;
-export const playbackLane = (tick, count) => Math.floor(tick / PLAYBACK_LANE_TICKS) % count;
+export const playbackLane = (tick, count, laneTicks = PLAYBACK_LANE_TICKS) => Math.floor(tick / laneTicks) % count;
 const abortError = message => { const error = new Error(message); error.name = 'AbortError'; return error; };
 const closePacket = closePacketBitmaps;
 const yieldToInput = () => globalThis.scheduler?.yield ? scheduler.yield() : new Promise(resolve => {
@@ -41,7 +42,7 @@ export class PlaybackCache {
     this._mirrorAvailable = false; this._frameUpdates = new Map(); this._protectedTick = null; this._prefetchRanks = null;
     this._mirrorSources = new Map(); this._sourceUpdates = new Map(); this._figureUpdates = new Map();
     this._mirrorTables = null; this._patchPending = false;
-    this._packetSizes = new Map(); this._sizeLimit = Math.max(256, maxFrames * 4, maxPending * 4); this._recentPacketBytes = 0;
+    this._packetSizes = new Map(); this._sizeLimit = Math.max(256, maxFrames * 4, maxPending * 4); this._recentPacketBytes = 0; this._recentPacketSoftware = false;
     this.bitmapPool=new PlaybackBitmapPool();this._packetFootprints=new Map();this._footprintBytes=0;this._recentShared=false;
     this.stats = { backend: 'Worker prepared playback', revision: 0, readyFrames: 0, pendingFrames: 0, bytes: 0,bitmapResources:0,footprintBytes:0,
       maxBytes, maxFrames, hits: 0, misses: 0, evictions: 0, preparedFrames: 0, compileMs: 0, lastCompileMs: 0, loadMs: 0,
@@ -281,7 +282,8 @@ export class PlaybackCache {
     for (const tick of this._packetFootprints.keys()) if (!this.cache.has(tick)) this._packetFootprints.delete(tick);
     this._footprintBytes = [...this._packetFootprints.values()].reduce((sum, entry) => sum + entry.metadataBytes, 0);
     const latest = [...this.cache.values()].at(-1);
-    this._recentPacketBytes = latest?.byteLength || 0; this._recentShared = Boolean(latest?.compatibility?.some(entry => entry.artworkKey !== undefined));
+    this._recentPacketBytes = latest?.byteLength || 0; this._recentPacketSoftware = Boolean(latest?.softwareFrames);
+    this._recentShared = Boolean(latest?.compatibility?.some(entry => entry.artworkKey !== undefined));
     for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(abortError('Playback preparation was invalidated by a document change.')); }
     this.pending.clear();
     Object.assign(this.stats, { revision: this.revision, bytes: this.bitmapPool.bytes, readyFrames: this.cache.size, retainedFrames: this.cache.size,
@@ -416,16 +418,21 @@ export class PlaybackCache {
   }
   _feasiblePrefetch(ticks) {
     const feasible = [],seen=new Set(); let estimatedBytes = 0,probed=false;
+    // Whole-frame software pixels have an exact cold footprint. Measurements
+    // take over after pressure lowers worker quality; packet-format provenance
+    // prevents an inherited vector estimate from seeding software admission.
+    const coldBytes=this.softwareFrames?softwareFrameSize(this.report,{scale:this.scale}).byteLength:0;
+    const recentBytes=this._recentPacketSoftware===Boolean(this.softwareFrames)?this._recentPacketBytes:0;
     for (const tick of ticks) {
-      const footprint=this._packetFootprints.get(tick);
-      const bytes=footprint?footprint.base+footprint.resources.reduce((n,[key,bytes])=>n+(seen.has(key)?0:bytes),0):this._recentPacketBytes;
-      // Always admit the next exact tick. Unknown future sizes use the latest
-      // packet until their own measurements become available.
+      const storedFootprint=this._packetFootprints.get(tick),footprint=Boolean(storedFootprint?.softwareFrames)===Boolean(this.softwareFrames)?storedFootprint:undefined;
+      const bytes=footprint?footprint.base+footprint.resources.reduce((n,[key,bytes])=>n+(seen.has(key)?0:bytes),0):recentBytes||coldBytes;
+      // Always admit the next exact tick. Later unknown sizes follow the most
+      // recent measurement for their format until their own packet arrives.
       if(feasible.length>=this.maxFrames)break;
       if(feasible.length&&estimatedBytes+bytes>this.maxBytes){
         // Discover one unknown frame's overlap. Its actual packet still passes
         // admission/eviction checks; a known non-fitting frame is not reprobed.
-        if(!footprint&&this._recentShared&&!probed){feasible.push(tick);probed=true;}
+        if(!footprint&&this._recentShared&&this._recentPacketSoftware===Boolean(this.softwareFrames)&&!probed){feasible.push(tick);probed=true;}
         break;
       }
       feasible.push(tick); estimatedBytes += bytes;
@@ -450,17 +457,18 @@ export class PlaybackCache {
     // Explicit requests outside the speculative window retain their queue slots.
     this._retainWorkerTicks([...new Set([...feasible, ...this.pending.keys()])]);
   }
-  /** Queue-retention lists partition by tick lane so each worker only keeps
-   * the ticks it was asked to prepare; the worker endpoint stays unchanged. */
+  /** Pending requests retain their assigned owner when software windows change
+   * lane length. GPU packets keep their established eight-tick routing. */
   _retainWorkerTicks(ticks) {
     const count = this.workers.length;
     for (const client of this.workers)
       client.worker.postMessage({ type: 'retain', revision: this.revision,
-        ticks: count > 1 ? ticks.filter(tick => playbackLane(tick, count) === client.index) : ticks });
+        ticks: count > 1 ? ticks.filter(tick => (this.pending.get(tick)?.workerIndex ??
+          (this.softwareFrames ? -1 : playbackLane(tick, count))) === client.index) : ticks });
   }
   _workerTicks(ticks, index) {
     const count = this.workers.length;
-    return count > 1 ? ticks.filter(tick => playbackLane(tick, count) === index) : ticks;
+    return count > 1 ? ticks.filter(tick => this.pending.get(tick)?.workerIndex === index) : ticks;
   }
   async prepareRange(ticks, { replacePending = false } = {}) {
     if (this.disposed) throw messageError(new Error(''), "errors.playback.thePlaybackCacheHasBeenDisposed", {});
@@ -483,6 +491,11 @@ export class PlaybackCache {
       this._retainWorkerTicks([...keep]);
     }
     const requests = [], promises = [];
+    // Large software frames often admit fewer ticks than a legacy lane. Short
+    // consecutive runs use the admitted CPU workers in that real window while
+    // keeping neighboring artwork in each worker when several ticks fit.
+    const laneTicks=this.softwareFrames?Math.max(1,Math.min(PLAYBACK_LANE_TICKS,
+      Math.floor(this._feasiblePrefetch([...new Set(ticks)]).length/this.workers.length))):PLAYBACK_LANE_TICKS;
     for (const tick of new Set(ticks)) {
       if (!Number.isInteger(tick) || tick < 0 || tick >= this.totalTicks) continue;
       if (this.has(tick)) continue;
@@ -493,7 +506,7 @@ export class PlaybackCache {
         const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
         const timer = this.timeoutMs > 0 && !this.interactionActive ? setTimeout(() => this._fail(messageError(new Error(''), "errors.playback.playbackPreparationTimedOut", {})), this.timeoutMs) : null;
         const measured=this.diagnostics?.enabled&&Math.random()<1/30;
-        pending = { promise, resolve, reject, timer,...(measured?{measuredAt:performance.now(),context:this.diagnostics.context(),diagnosticGeneration:this.diagnostics.generation}: {}) }; this.pending.set(tick, pending); requests.push(tick);
+        pending = { promise, resolve, reject, timer,workerIndex:playbackLane(tick,this.workers.length,laneTicks),...(measured?{measuredAt:performance.now(),context:this.diagnostics.context(),diagnosticGeneration:this.diagnostics.generation}: {}) }; this.pending.set(tick, pending); requests.push(tick);
       }
       promises.push(pending.promise);
     }
@@ -536,6 +549,10 @@ export class PlaybackCache {
     }
     const pending = this.pending.get(message.tick);
     if (!pending) { closePacket(message.packet); return; }
+    // A cancelled window may request the same tick on a different software
+    // lane before an obsolete transfer arrives. Only its current owner can
+    // settle that request; the producer still receives its delivery ACK.
+    if(pending.workerIndex!==undefined&&pending.workerIndex!==client.index){closePacket(message.packet);return;}
     clearTimeout(pending.timer); this.pending.delete(message.tick); this.stats.pendingFrames = this.pending.size;
     if (message.type === 'error') { const error = restoreMessageError(new Error(message.message), message); if (message.code) error.code = message.code; pending.reject(error); this.onError?.(error); return; }
     const packet = message.packet;
@@ -552,8 +569,8 @@ export class PlaybackCache {
     // Packet keys/revisions identify immutable compilation results. An epoch
     // identifies shared pixel ownership across explicitly retained revisions.
     packet.cacheEpoch = this.cacheEpoch;
-    this._packetSizes.delete(packet.tick); this._packetSizes.set(packet.tick, packet.byteLength); this._recentPacketBytes = packet.byteLength;
-    const footprint=packetFootprint(packet);footprint.metadataBytes=32+footprint.resources.reduce((n,[key])=>n+32+key.length*2,0);
+    this._packetSizes.delete(packet.tick); this._packetSizes.set(packet.tick, packet.byteLength); this._recentPacketBytes = packet.byteLength; this._recentPacketSoftware = Boolean(packet.softwareFrames);
+    const footprint=packetFootprint(packet);footprint.softwareFrames=Boolean(packet.softwareFrames);footprint.metadataBytes=32+footprint.resources.reduce((n,[key])=>n+32+key.length*2,0);
     this._footprintBytes-=this._packetFootprints.get(packet.tick)?.metadataBytes||0;
     this._packetFootprints.delete(packet.tick);this._packetFootprints.set(packet.tick,footprint);this._footprintBytes+=footprint.metadataBytes;
     this._recentShared=footprint.resources.length>0;

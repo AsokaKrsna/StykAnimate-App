@@ -532,12 +532,17 @@ function sampleClips(report,frame,tick,retainedSamples=false){
 }
 const withRuntimeTime=(report,frame,tick)=>frameWithCameraTime(report,frameWithVfxTime(report,frame,tick),tick);
 export function evaluatedFrame(report, index, t = 0, absoluteTick, {tweenCache,skipMovieclips=false,skipMovieclipPatches=false} = {}) {
+  // The cache belongs to the immutable worker snapshot, including virtual
+  // native spans used by authored tracks. Endpoint and definition identities
+  // still decide reuse inside the one native evaluator.
+  const sampleNative = tweenCache ? (source, index, t, _cache, requestedUids) =>
+    evaluatedNativeFrame(source, index, t, tweenCache, requestedUids) : evaluatedNativeFrame;
   if(report._styk?.layerSheet){
     const row=timeline(report)[index],tick=absoluteTick??((row?.start??0)+t*(row?.count??0));
-    let frame=sampleLayerSheet(report,tick,{resolveGeometry:buildGeometry,skipMovieclipPatches,sampleNative:evaluatedNativeFrame,sampleLegacy:(source,time)=>{
+    let frame=sampleLayerSheet(report,tick,{resolveGeometry:buildGeometry,skipMovieclipPatches,sampleNative,sampleLegacy:(source,time)=>{
       let rows=authoredTimelines.get(source);if(!rows){rows=timeline(source);authoredTimelines.set(source,rows);}
       let low=0,high=rows.length-1;while(low<high){const mid=(low+high+1)>>>1;if(rows[mid].start<=time)low=mid;else high=mid-1;}
-      const current=rows[low];return evaluatedFrame(source,low,current?.count?(time-current.start)/current.count:0,time,{skipMovieclips:true});
+      const current=rows[low];return evaluatedFrame(source,low,current?.count?(time-current.start)/current.count:0,time,{tweenCache,skipMovieclips:true});
     }});
     if(!skipMovieclips&&movieclipTypes(report).size)frame=sampleClips(report,frame,tick);
     return withRuntimeTime(report,applyLayerOrder(report,frame),tick);
@@ -553,7 +558,7 @@ export function evaluatedFrame(report, index, t = 0, absoluteTick, {tweenCache,s
       const finish=b?._styk?.movieclipSourceTick??start+(timeline(report)[index]?.count??1),sourceTick=start+(finish-start)*Math.max(0,Math.min(1,t));
       let rows=authoredTimelines.get(source);if(!rows){rows=timeline(source);authoredTimelines.set(source,rows);}
       let low=0,high=rows.length-1;while(low<high){const mid=Math.ceil((low+high)/2);if(rows[mid].start<=sourceTick)low=mid;else high=mid-1;}
-      const row=rows[low];frame={...evaluatedFrame(source,low,row.count?(sourceTick-row.start)/row.count:0,sourceTick,{skipMovieclips}),duration_raw:a.duration_raw,_styk:a._styk};
+      const row=rows[low];frame={...evaluatedFrame(source,low,row.count?(sourceTick-row.start)/row.count:0,sourceTick,{tweenCache,skipMovieclips}),duration_raw:a.duration_raw,_styk:a._styk};
       // Captured local poses carry the phase at the crop's beginning. Retained
       // source evaluation supplies exact curves; local authoring keeps its own
       // clock origin when those source spans are later materialized or edited.
@@ -566,7 +571,7 @@ export function evaluatedFrame(report, index, t = 0, absoluteTick, {tweenCache,s
     if (!entries) authoredTimelines.set(report, entries = timeline(report));
     const entry = entries[index];
     const tick = absoluteTick ?? ((entry?.start || 0) + Math.max(0, t) * (entry?.count || 0));
-    frame = composePoseChannels(report, frame, tick, { sampleNative: evaluatedNativeFrame, resolveGeometry: buildGeometry });
+    frame = composePoseChannels(report, frame, tick, { sampleNative, resolveGeometry: buildGeometry });
     frame = composeAnimationChannels(report, frame, tick, { resolveGeometry: buildGeometry });
   }
   if(!skipMovieclips&&movieclipTypes(report).size){
