@@ -88,7 +88,8 @@ try {
   assert.ok(await page.locator('.sheet-empty-layers').isHidden(), 'reset restores valid rows and removes the empty-list notice');
   await unchanged(fixedBefore, 'fixed-only and completely empty row filters preserve document data and undo history'); await done();
 
-  await page.locator('.sheet-scroll').evaluate(node => { node.scrollTop = node.scrollHeight; }); await settle();
+  // The last row at the grid's foot (the sheet also scrolls past it, into the room under the last layer).
+  await page.evaluate(() => { const t = styk.timeline; t.scroll.scrollTop = Math.max(0, t.layout.header + t.layout.height - t.height); }); await settle();
   await row('Body').click(); await row('Sparks').click({modifiers: ['Control']}); await settle();
   before = await snapshot();
   await open(); await filter().getByRole('button', {name: 'Only selected', exact: true}).click(); await settle();

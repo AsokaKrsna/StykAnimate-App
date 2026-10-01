@@ -36,6 +36,10 @@ import {TOUCH_ZOOM,timelineTouchMethods} from './touch/timeline-scrubber.mjs';
 export {ROW,HEADER};
 const MAX_SCROLL=8000000;
 const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
+/** A wheel event's zoom factor: a mouse notch is about 16%, a trackpad's small deltas zoom gently and continuously. */
+export const wheelZoom=event=>Math.exp(-clamp((event.deltaMode===1?event.deltaY*33:event.deltaY),-240,240)*.0015);
+/** How fast a drag held `depth` px inside a 28px edge zone scrolls the grid, in px per frame. */
+const EDGE=28,edgeSpeed=depth=>Math.round(clamp(depth/EDGE,0,1)*18)+2;
 const element=(tag,parent,className,text)=>{const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=text;parent?.append(node);return node;};
 /** Adobe-style exposure grid. Painting and DOM size depend only on viewport,
  * not the number of frames, layers, instances or nested clip frames. */
@@ -96,7 +100,7 @@ export class Timeline{
     this._on(this.scroll,'dblclick',event=>this._doubleClick(event));
     this._on(this.main,'pointerleave',()=>{if(!this.gesture){this.hover=null;this.update();}});
     this._on(this.scroll,'keydown',event=>this._keyDown(event));this._on(this.labelViewport,'wheel',event=>{event.preventDefault();this.scroll.scrollTop+=event.deltaY;},{passive:false});
-    this._on(this.scroll,'wheel',event=>{if(event.ctrlKey||event.metaKey){event.preventDefault();this.setZoom(clamp(this.pxPerTick*(event.deltaY<0?1.15:.87),1,36),event.clientX-this.scroll.getBoundingClientRect().left);}else if(event.shiftKey){event.preventDefault();this.scroll.scrollLeft+=event.deltaY||event.deltaX;}},{passive:false});
+    this._on(this.scroll,'wheel',event=>{if(event.ctrlKey||event.metaKey){event.preventDefault();this.setZoom(this.pxPerTick*wheelZoom(event),event.clientX-this.scroll.getBoundingClientRect().left);}else if(event.shiftKey){event.preventDefault();this.scroll.scrollLeft+=event.deltaY||event.deltaX;}},{passive:false});
     this._on(this.divider,'pointerdown',event=>{this._columnDrag={x:event.clientX,width:this.labelViewport.getBoundingClientRect().width||this.labelWidth};this.divider.setPointerCapture(event.pointerId);});
     this._on(this.divider,'pointermove',event=>{if(this._columnDrag){this.labelWidth=clamp(this._columnDrag.width+event.clientX-this._columnDrag.x,140,420);this.root.style.setProperty('--sheet-label',`${this.labelWidth}px`);this.resize();}});this._on(this.divider,'pointerup',()=>{this._columnDrag=null;});
     this.divider.tabIndex=0;this.divider.setAttribute('aria-orientation','vertical');
@@ -108,7 +112,7 @@ export class Timeline{
       if(d.kind==='vfx-selection'||d.kind==='vfx-target'||d.kind==='selection'&&editor._vfxTimelineVisible||d.kind==='document'||d.structural||d.layers||d.timing||d.layerSheet)this._reindex();
       else if(this.motionState!==editor.report._styk.cameraMotion)this._refreshMotionRows();
       this._syncLayerSelection(d);
-      if(d.kind==='seek'&&!this.gesture&&!this.selecting){if(!this.touchRange)this.start=this.end=Math.floor(editor.tick);this._centerSoon();}this.update(this._changeNeedsPaint(d));});
+      if(d.kind==='seek'&&!this.gesture&&!this.selecting){if(!this.touchRange)this.start=this.end=Math.floor(editor.tick);this._seekFollow=true;this._centerSoon();}this.update(this._changeNeedsPaint(d));});
     this._on(this.layerView,'change',()=>{this._cancelGesture();this.anchor=this.hover=null;this._reindex();this.scroll.scrollTop=0;this.update();});
     this._on(window,'styk-theme-change',()=>this.resize());onFontsReady(()=>this.update(),{signal:this.events.signal});
     this.observer=new ResizeObserver(()=>this.resize());this.observer.observe(this.root);this._reindex();this.resize();
@@ -156,7 +160,10 @@ export class Timeline{
     const layout=this._layoutRows();
     this.audioTop=layout.header+layout.height;
     // Touch: room before frame 1 and after the end, so the centred playhead reaches every frame (timeline-scrubber.mjs).
-    this.logicalWidth=Math.max(this.width,(Math.max(this.editor.totalTicks,this.end+1)+(this._touch()?8:60))*this.pxPerTick)+2*this._pad();this.logicalHeight=Math.max(this.height,this.audioTop+(this.audio?.contentHeight??0));
+    this.logicalWidth=Math.max(this.width,(Math.max(this.editor.totalTicks,this.end+1)+(this._touch()?8:60))*this.pxPerTick)+2*this._pad();
+    // Room under the last row once the rows no longer fit: the bottom layers scroll clear of the grid's foot (its scrollbar, the fade and "N more").
+    const content=this.audioTop+(this.audio?.contentHeight??0);
+    this.logicalHeight=content>this.height?content+Math.round(Math.min(3*layout.row,this.height/3)):this.height;
     const width=`${Math.min(MAX_SCROLL,this.logicalWidth)}px`,height=`${Math.min(MAX_SCROLL,this.logicalHeight)}px`;
     if(this.spacer.style.width!==width)this.spacer.style.width=width;if(this.spacer.style.height!==height)this.spacer.style.height=height;
   }
@@ -199,7 +206,13 @@ export class Timeline{
     this.font=token('--font-ui')||css.fontFamily;
     this.update();
   }
-  setZoom(value,anchor=this.width/2){const old=this.pxPerTick,center=(this._offsetX()+anchor)/old,range=this.zoomRange;this.pxPerTick=clamp(Number(value)||14,range.min,range.max);this.header?.setZoom(this.pxPerTick);this._extent();this._scrollToX(center*this.pxPerTick-anchor);this.audio?.update();}
+  /** Zooms to `value` px per frame. `anchor` (px from the grid's left) keeps the frame under it in place, as the wheel does
+   * under the pointer. Without one (the slider, the keys) the playhead is the anchor: it stays where it is, or comes
+   * to the middle when it was out of view. */
+  setZoom(value,anchor){const old=this.pxPerTick,range=this.zoomRange;let center;
+    if(anchor===undefined){const tick=Math.floor(this.editor.tick)+.5,x=tick*old-this._offsetX();anchor=this._touch()||x<0||x>this.width?this.width/2:x;center=tick;}
+    else center=(this._offsetX()+anchor)/old;
+    this.pxPerTick=clamp(Number(value)||14,range.min,range.max);this.header?.setZoom(this.pxPerTick);this._extent();this._scrollToX(center*this.pxPerTick-anchor);this.audio?.update();}
   setPaused(value){const resumed=this.paused&&!value;this.paused=value;this.update(Boolean(resumed));if(resumed)this._centerSoon();}
   update(dirty=true){
     this.dirty||=dirty;if(this.disposed||this.raf)return;
@@ -216,13 +229,26 @@ export class Timeline{
       !detail.camera&&!detail.motionPath);
   }
   render(){this.update();}
+  /** Keeps the playhead in view after a seek: stepping, the transport and Go to frame always bring it back; playback
+   * pages the grid only while the playhead was in view, so scrolling away to look at other frames is left alone.
+   * A drag scrolls by its own edge (_edgeScroll) and the touch timeline keeps its playhead centred. */
+  _followPlayhead(tick){
+    const x=(tick+.5)*this.pxPerTick-this.offsetX(),inView=x>=0&&x<=this.width,follow=this._seekFollow&&(!this.paused||this._playheadInView);
+    this._seekFollow=false;
+    if(inView||!follow||this.gesture||this._touch()){this._playheadInView=inView;return;}
+    // Forward, and whenever playing (a loop restarts behind the view): a new page with the playhead near its left.
+    // A step back: the playhead near the right, with the frames before it in view.
+    this._scrollToX(x>this.width||this.paused?tick*this.pxPerTick-40:(tick+1)*this.pxPerTick-this.width+60);
+    this._cachedOffsetX=undefined;this._playheadInView=true;
+  }
   _syncPlayhead(){
     this.onionRange?.update();
     this.audio?.update(false);
     // The offset changes only on scroll or when _extent resizes the content;
     // both clear this cache. Reading it after other widgets wrote to the DOM
     // would force a layout on every seek.
-    const tick=Math.floor(this.pendingScrub??this.editor.tick),x=(tick+.5)*this.pxPerTick-this.offsetX();this.playhead.style.transform=`translateX(${x}px)`;
+    const tick=Math.floor(this.pendingScrub??this.editor.tick);this._followPlayhead(tick);
+    const x=(tick+.5)*this.pxPerTick-this.offsetX();this.playhead.style.transform=`translateX(${x}px)`;
     setText(this.playheadLabel,String(tick+1));
 
   }
@@ -591,7 +617,25 @@ export class Timeline{
     else if(g.kind==='select'){if(Math.abs(event.clientX-g.x)+Math.abs(event.clientY-g.y)>4){this.pendingCell={...hit,row:clamp(hit.row,0,this.tracks.length-1)};this.update();}}
     else if(g.kind==='resize'){g.delta=Math.max(g.span.start+1-g.span.end,Math.round((event.clientX-g.x)/this.pxPerTick));this.update();}
     else if(Math.abs(event.clientX-g.x)+Math.abs(event.clientY-g.y)>4){g.delta=Math.max(-this.start,hit.tick-g.hit.tick);g.rowDelta=clamp(hit.row,0,this.tracks.length-1)-g.hit.row;this.update();}
-    const rect=this.scroll.getBoundingClientRect();if(event.clientX>rect.right-20)this.scroll.scrollLeft+=12;if(event.clientX<rect.left+20)this.scroll.scrollLeft-=12;
+    this._edgeScroll(event,bounds);
+  }
+  /** A drag near the grid's edge scrolls it, faster the closer the pointer is, for as long as it stays there: a range,
+   * a scrub or moved frames reach what is past the view, the bottom layers included. */
+  _edgeScroll(event,bounds){
+    const right=bounds.left+this.scroll.clientWidth,bottom=bounds.top+this.scroll.clientHeight,top=bounds.top+this.bodyTop,x=event.clientX,y=event.clientY;
+    const dx=x>right-EDGE?edgeSpeed(x-right+EDGE):x<bounds.left+EDGE?-edgeSpeed(bounds.left+EDGE-x):0;
+    // The ruler scrubs time only; rows scroll while the pointer is over the grid's foot or just under the pinned rows.
+    const dy=this.gesture?.kind==='scrub'?0:y>bottom-EDGE?edgeSpeed(y-bottom+EDGE):y<top+EDGE&&y>=top?-edgeSpeed(top+EDGE-y):0;
+    this._edge=dx||dy?{dx,dy,event}:null;
+    if(this._edge&&!this._edgeFrame)this._edgeFrame=requestAnimationFrame(()=>this._edgeStep());
+  }
+  _edgeStep(){
+    this._edgeFrame=0;const edge=this._edge;
+    if(!edge||!this.gesture||this.disposed){this._edge=null;return;}
+    const left=this.scroll.scrollLeft,up=this.scroll.scrollTop;
+    this.scroll.scrollLeft+=edge.dx;this.scroll.scrollTop+=edge.dy;
+    if(this.scroll.scrollLeft===left&&this.scroll.scrollTop===up){this._edge=null;return;}
+    this._cachedOffsetX=undefined;this._pointerMove(edge.event);
   }
   _pointerUp(event){
     if(this._motionUp())return;

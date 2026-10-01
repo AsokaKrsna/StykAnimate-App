@@ -24,6 +24,7 @@ What's new in each version of StykAnimate.
 ### Changed
 
 - Shorter layer menus with related commands grouped into submenus.
+- Easier timeline navigation: zooming stays on the playhead, the view follows it, and there is room below the last layer.
 - Layer focus stays active until you turn it off, with support for multiple layers and Focus and lock to protect other artwork while you work.
 - Zooming the canvas with the mouse wheel is smooth and easier to control.
 - Complete interface translations for all 26 supported non-English languages, with right-to-left layouts and clearer text in narrow windows.

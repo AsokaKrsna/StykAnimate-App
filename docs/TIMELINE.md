@@ -119,6 +119,29 @@ tables; reading six visible rows requests six cached tables. This evidence cover
 timeline-to-engine commands; composition and output-pose equivalence are separate
 engine acceptance checks.
 
+## Navigation and zoom
+
+The zoom slider and any zoom without a pointer position keep the playhead where
+it is; when the playhead is out of view the zoom brings it to the middle of the
+grid. Ctrl/Cmd-wheel zooms under the pointer in proportion to the wheel delta, so
+a mouse notch is about 16% and a trackpad zooms continuously. Shift-wheel and
+middle-drag pan.
+
+A seek outside a drag keeps the playhead in view: stepping, the transport and Go
+to frame page the grid forward (playhead near the left) or back (playhead near
+the right). Playback pages forward only while the playhead was in view, so
+scrolling away to inspect other frames is left alone. The touch timeline keeps
+its centred playhead instead.
+
+A drag held within 28 pixels of the grid's edge scrolls it for as long as the
+pointer stays there, faster nearer the edge: sideways for every drag, and up or
+down for ranges and moved frames (a ruler scrub scrolls time only). Once the rows
+no longer fit, they
+scroll up to three row heights past the last layer, so the bottom layers clear
+the scrollbar and the "N more" button.
+
+Run `node tests/timeline-navigation.browser.mjs`.
+
 ## Playback range
 
 Both timelines expose **Playback range** beside Loop; Timeline ⋯ lists it only
