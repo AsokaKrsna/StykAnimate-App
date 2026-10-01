@@ -1,12 +1,11 @@
 import {messageError} from './localized-error.mjs';
-import {t as interfaceText} from './localization.mjs';
-import {localizedMarkup, appendLocalized} from './localization-bindings.mjs';
+import {localizedMarkup, appendLocalized, localizedAttribute, localizedText} from './localization-bindings.mjs';
 import {EASING_MODES, DEFAULT_BEZIER, keyEasing, easedProgress} from './keyframe-easing.mjs';
 
 /** Shared easing controls for document frames and independent channel keys. */
 export function createEasingControls(container, {initial, discrete = false, onChange = () => {}, onSelect = () => {}} = {}) {
   localizedMarkup(container, `<div class="styk-easing-options" role="radiogroup" aria-label="Easing mode" data-i18n-aria-label="keyframeEasingView.easingMode"></div>
-    <svg class="styk-easing-curve" viewBox="0 0 280 160" aria-label="Easing curve preview" role="img">
+    <svg class="styk-easing-curve" viewBox="0 0 280 160" aria-label="Keyframe easing" data-i18n-aria-label="keyframeEasingPopover.keyframeEasing" role="img">
       <path d="M30 10V140H260 M30 140L260 10" fill="none" stroke="#dce3eb"/>
       <path data-curve fill="none" stroke="#0d99ff" stroke-width="3"/>
       <g data-handles stroke="#8499af"><path data-guides fill="none" stroke-dasharray="3 3"/>
@@ -16,16 +15,16 @@ export function createEasingControls(container, {initial, discrete = false, onCh
   let mode = initial?.interpolation ?? null, points = [...(initial?.bezier ?? DEFAULT_BEZIER)];
   const options = container.querySelector('.styk-easing-options');
   const svg = container.querySelector('svg'), fields = container.querySelector('.styk-easing-points');
-  const inputs = [interfaceText("keyframeEasingView.control1X"), interfaceText("keyframeEasingView.control1Y"), interfaceText("keyframeEasingView.control2X"), interfaceText("keyframeEasingView.control2Y")].map((name, index) => {
-    const label = document.createElement('label'); label.textContent = [interfaceText("keyframeEasingView.x"),interfaceText("keyframeEasingView.y"),interfaceText("keyframeEasingView.x2"),interfaceText("keyframeEasingView.y2")][index];
+  const inputs = ["keyframeEasingView.control1X", "keyframeEasingView.control1Y", "keyframeEasingView.control2X", "keyframeEasingView.control2Y"].map((nameKey, index) => {
+    const label = document.createElement('label'); localizedText(label, ["keyframeEasingView.x","keyframeEasingView.y","keyframeEasingView.x2","keyframeEasingView.y2"][index]);
     const input = document.createElement('input'); input.type = 'number'; input.min = '0'; input.max = '1'; input.step = 'any'; input.value = points[index];
-    input.setAttribute('aria-label', name); input.required = true;
+    localizedAttribute(input, 'aria-label', nameKey); input.required = true;
     input.addEventListener('input', () => { points[index] = input.valueAsNumber; render(); });
     appendLocalized(label, input); appendLocalized(fields, label); return input;
   });
   const buttons = EASING_MODES.map(item => {
-    const button = document.createElement('button'); button.type = 'button'; button.textContent = item.label;
-    button.setAttribute('aria-label', item.label);
+    const button = document.createElement('button'); button.type = 'button'; localizedText(button, item.labelKey);
+    localizedAttribute(button, 'aria-label', item.labelKey);
     button.setAttribute('role', 'radio'); button.dataset.easing = item.id; button.disabled = discrete && item.id !== 'constant';
     button.addEventListener('click', () => { mode = item.id; render(); onSelect(mode); });
     button.addEventListener('keydown', event => {

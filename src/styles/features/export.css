@@ -21,6 +21,7 @@
    * separates the presets from the settings they filled in. */
   .ui-export-form .ui-segmented { block-size: auto; min-block-size: var(--control-md); }
   .ui-export-form .ui-segmented-item { padding-block: var(--space-1); line-height: 1.25; min-inline-size: 0; white-space: normal; overflow-wrap: anywhere; block-size: auto; min-block-size: var(--control-sm); }
+  :where(#export-format) .ui-segmented-item { flex-basis: auto; }
   .export-preset-section {
     display: grid; gap: var(--space-2); padding-block-end: var(--space-3); margin-block-end: var(--space-0-5);
     border-block-end: 1px solid var(--line-1);

@@ -1,4 +1,4 @@
-import {localizedText, replaceLocalized, messageTuple, translatedElement, appendLocalized, localizedAttribute} from '../localization-bindings.mjs';
+import {localizedText, replaceLocalized, messageTuple, tupleMessages, clearTranslation, translatedElement, appendLocalized, localizedAttribute} from '../localization-bindings.mjs';
 
 import {t as interfaceText} from '../localization.mjs';
 
@@ -19,8 +19,8 @@ import {installRovingFocus} from '../ui/roving-focus.mjs';
 import {presetArrangement, presetsFor} from './layout-schema.mjs';
 import {bandBottom} from './topbar.mjs';
 
-const POSITION = Object.freeze({left: interfaceText("layoutPopover.left"), right: interfaceText("layoutPopover.right"), with: interfaceText("layoutPopover.withProperties"), float: interfaceText("layoutPopover.floating"), hidden: interfaceText("layoutPopover.hidden")});
-const SAVE_REASONS = Object.freeze({limit: interfaceText("layoutPopover.message8PresetsSavedDeleteOneFirst"), budget: interfaceText("layoutPopover.presetStorageIsFullDeleteOneFirst")});
+const POSITION_KEYS = Object.freeze({left: "layoutPopover.left", right: "layoutPopover.right", with: "layoutPopover.withProperties", float: "layoutPopover.floating", hidden: "layoutPopover.hidden"});
+const SAVE_REASON_KEYS = Object.freeze({limit: "layoutPopover.message8PresetsSavedDeleteOneFirst", budget: "layoutPopover.presetStorageIsFullDeleteOneFirst"});
 /** Each workspace's presets, its default first (experience §1.6). */
 const ORDER = Object.freeze({animate: ['animate', 'timing', 'focus', 'review'], draw: ['draw', 'focus'], rig: ['build', 'build-timeline', 'focus']});
 
@@ -234,7 +234,7 @@ export function createLayoutPopover({host, document: doc = globalThis.document, 
 
   async function saveAs() {
     const allowed = workspace.canSaveLayout();
-    if (!allowed.ok) { notify(SAVE_REASONS[allowed.reason]); return; }
+    if (!allowed.ok) { notify(interfaceText(SAVE_REASON_KEYS[allowed.reason])); return; }
     popover.hide('replace');
     const name = await prompt({title: interfaceText("layoutPopover.saveLayoutAsPreset"), titleKey: "layoutPopover.saveLayoutAsPreset", label: interfaceText("common.name"), labelKey: "common.name", placeholder: interfaceText("layoutPopover.fightSetup"), placeholderKey: "layoutPopover.fightSetup", confirmLabel: interfaceText("layoutPopover.savePreset"), confirmLabelKey: "layoutPopover.savePreset", confirmLabelParams: {}, maxLength: 48,
       validate: value => (value.trim() ? null : interfaceText("layoutPopover.nameThePresetFirst"))});
@@ -267,10 +267,14 @@ export function createLayoutPopover({host, document: doc = globalThis.document, 
     selects[key] = {row, select};
   }
   const setOptions = (select, options, value) => {
-    const key = options.map(([id, text]) => `${id}:${text}`).join('|');
+    const key = options.map(tuple => `${tuple[0]}:${tupleMessages(tuple)[1]?.key ?? tuple[1]}`).join('|');
     if (select.dataset.options !== key) {
       select.dataset.options = key;
-      replaceLocalized(select, ...options.map(([id, text]) => new Option(text, id)));
+      replaceLocalized(select, ...options.map(tuple => {
+        const [id, text] = tuple, caption = tupleMessages(tuple)[1], option = new Option(text, id);
+        if (caption) localizedText(option, caption.key, caption.params);
+        return option;
+      }));
     }
     if (select.value !== value) select.value = value;
   };
@@ -283,7 +287,7 @@ export function createLayoutPopover({host, document: doc = globalThis.document, 
     return workspace.dock(id, value);
   };
   selectRow('properties', 'layoutPopover.properties', 'layoutPopover.propertiesPosition', value => place('properties', value));
-  selectRow('vfx', 'VFX', interfaceText("layoutPopover.vfxPosition"), value => place('vfx', value));
+  selectRow('vfx', 'chrome.vfx', 'layoutPopover.vfxPosition', value => place('vfx', value));
   selectRow('library', 'layoutPopover.library', 'layoutPopover.libraryPosition', value => place('library', value));
   selectRow('timeline', 'layoutPopover.timeline', 'layoutPopover.timelineWidth', value => workspace.setTimelineSpan(value));
   selectRow('rail', 'layoutPopover.tools', 'layoutPopover.toolsSide', value => workspace.setRail(value));
@@ -293,7 +297,7 @@ export function createLayoutPopover({host, document: doc = globalThis.document, 
     const can = (id, target) => host.canPlace(id, target);
     const properties = record('properties');
     const sideOf = item => (item?.dock === 'hidden' ? 'hidden' : item?.dock === 'float' ? 'float' : item?.side ?? 'right');
-    setOptions(selects.properties.select, ['right', 'left', ...(can('properties', 'hidden') ? ['hidden'] : [])].map(id => [id, POSITION[id]]),
+    setOptions(selects.properties.select, ['right', 'left', ...(can('properties', 'hidden') ? ['hidden'] : [])].map(id => messageTuple([id, interfaceText(POSITION_KEYS[id])], {1: {key: POSITION_KEYS[id]}})),
       sideOf(properties));
     for (const id of ['vfx', 'library']) {
       const item = record(id);
@@ -303,14 +307,15 @@ export function createLayoutPopover({host, document: doc = globalThis.document, 
       const other = propertiesSide() === 'right' ? 'left' : 'right';
       const options = ['with', other, ...(can(id, 'float') ? ['float'] : []), ...(can(id, 'hidden') ? ['hidden'] : [])];
       const where = sideOf(item);
-      setOptions(select, options.map(value => [value, POSITION[value]]), where === propertiesSide() ? 'with' : where);
+      setOptions(select, options.map(value => messageTuple([value, interfaceText(POSITION_KEYS[value])], {1: {key: POSITION_KEYS[value]}})), where === propertiesSide() ? 'with' : where);
     }
     setOptions(selects.timeline.select, [messageTuple(['full', interfaceText("layoutPopover.fullWidth")], {1: {key: "layoutPopover.fullWidth", params: {}}}), messageTuple(['stage', interfaceText("layoutPopover.underStage")], {1: {key: "layoutPopover.underStage", params: {}}})], current.bottomSpan ?? 'full');
     setOptions(selects.rail.select, [messageTuple(['left', interfaceText("layoutPopover.left")], {1: {key: "layoutPopover.left", params: {}}}), messageTuple(['right', interfaceText("layoutPopover.right")], {1: {key: "layoutPopover.right", params: {}}})], current.rail ?? 'left');
     const allowed = workspace.canSaveLayout();
     save.setAttribute('aria-disabled', String(!allowed.ok));
     note.hidden = allowed.ok;
-    note.textContent = allowed.ok ? '' : SAVE_REASONS[allowed.reason];
+    if (allowed.ok) { clearTranslation(note); note.textContent = ''; }
+    else localizedText(note, SAVE_REASON_KEYS[allowed.reason]);
     if (!allowed.ok) save.setAttribute('aria-describedby', note.id || (note.id = 'layout-popover-note'));
     else save.removeAttribute('aria-describedby');
   }

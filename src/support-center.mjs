@@ -121,7 +121,7 @@ export class SupportCenter {
     if (row.unread) card.classList.add('sc-unread');
     card.dataset.priority = row.priority || 'normal';
     const priority = el('span', SUPPORT_PRIORITIES[card.dataset.priority], 'sc-priority sc-card-priority'); priority.dataset.priority = card.dataset.priority;
-    localizedAttribute(priority, 'aria-label', "supportCenter.priority", {textContent: priority.textContent});
+    localizedAttribute(priority, 'aria-label', "supportCenter.priority", {textContent: SUPPORT_PRIORITIES[card.dataset.priority]});
     const open = button(row.title, () => { void this.setLayout('list').then(() => this.openThread(row.id)); }, 'sc-card-title'); if (row.unread) { const dot = el('i', null, 'sc-dot'); localizedAttribute(dot, 'aria-label', "supportCenter.unreadReply", {}); open.prepend(dot); }
     const meta = el('div', null, 'sc-card-meta'); appendLocalized(meta, el('span', SUPPORT_CATEGORIES[row.category]), el('span', row.displayName || {messageKey:"supportCenter.creator",messageParams:{}}), el('time',{messageKey:'supportMessages.date',messageParams:{date:dateValue(row.createdAt)}}));
     const tags = el('div', null, 'sc-card-tags');

@@ -97,9 +97,9 @@ function layerSelect(editor, extra = {}) {
 }
 
 /** A builder order's four steps for one drawable. */
-const orderActions = (kind, index, label) => ({kind: 'actions', label, items: [
+const orderActions = (kind, index, labelKey) => ({kind: 'actions', label: interfaceText(labelKey), labelKey, items: [
   messageTuple(['back', 'send-to-back', interfaceText("inspectorView.sendToBack")], {2: {key: "inspectorView.sendToBack", params: {}}}), messageTuple(['down', STEP_DOWN, interfaceText("inspectorView.sendBackward")], {2: {key: "inspectorView.sendBackward", params: {}}}), messageTuple(['up', STEP_UP, interfaceText("inspectorView.bringForward")], {2: {key: "inspectorView.bringForward", params: {}}}), messageTuple(['front', 'bring-to-front', interfaceText("inspectorView.bringToFront")], {2: {key: "inspectorView.bringToFront", params: {}}}),
-].map(([direction, icon, name]) => ({action: 'builder-order', icon, label: `${name} · ${kind}`, data: {kind, index, direction}}))});
+].map(tuple => {const [direction, icon, label] = tuple, caption = tupleMessages(tuple)[2]; return {action: 'builder-order', icon, label, labelKey: caption.key, data: {kind, index, direction}};})});
 
 /**
  * The scope line while Edit together is on: the frames an edit reaches
@@ -347,7 +347,7 @@ function fillDescriptor(editor, figure, number) {
     ]},
     {kind: 'grid', rows: [number(interfaceText("inspectorView.opacity"), `polygon_${index}_opacity`, polygonOpacity(polygon), '%', {min: 0, max: 100, labelKey: "inspectorView.opacity", labelParams: {}})]},
     {kind: 'markup', html: polygonSurfaceView(editor, index)},
-    orderActions('polygon', index, interfaceText("inspectorView.fillOrder")),
+    orderActions('polygon', index, 'inspectorView.fillOrder'),
   ]}]};
 }
 
@@ -363,7 +363,7 @@ function fillGroup(editor, figure, object, index, order) {
       {kind: 'number', key: `polygon_${index}_opacity`, label: interfaceText("inspectorView.opacity"), labelKey: "inspectorView.opacity", unit: '%', value: polygonOpacity(polygon), min: 0, max: 100, precision: 3},
       {kind: 'number', key: `polygon_${index}_z_order`, label: interfaceText("inspectorView.order"), labelKey: "inspectorView.order", precision: 0, value: order.get(`polygon:${index}`), min: 1, max: order.size},
     ]},
-    orderActions('polygon', index, `${name} order`),
+    orderActions('polygon', index, 'inspectorView.fillOrder'),
   ]};
 }
 
@@ -476,7 +476,7 @@ function jointDescriptor(editor, figure, segment, number, {range, scope, drawing
     {min: 0, max: 100, id: 'segment-opacity', field: false, description: interfaceText("inspectorView.primaryColorOpacity"), descriptionKey: "inspectorView.primaryColorOpacity", labelKey: (secondary ? "inspectorView.primaryOpacity" : "inspectorView.opacity"), labelParams: (secondary ? {} : {})});
   const shapeSelect = {kind: 'select', id: 'segment-shape', label: interfaceText("inspectorView.shape"), labelKey: "inspectorView.shape", description: interfaceText("inspectorView.segmentShape"), descriptionKey: "inspectorView.segmentShape", value: shape, disabled: fixed, span: 2, options: [
     messageTuple(['line', interfaceText("inspectorView.roundLine")], {1: {key: "inspectorView.roundLine", params: {}}}), messageTuple(['squareLine', interfaceText("inspectorView.squareLine")], {1: {key: "inspectorView.squareLine", params: {}}}), messageTuple(['circle', interfaceText("inspectorView.whiteCircle")], {1: {key: "inspectorView.whiteCircle", params: {}}}), messageTuple(['circleFill', interfaceText("inspectorView.filledCircle")], {1: {key: "inspectorView.filledCircle", params: {}}}), messageTuple(['circleClear', interfaceText("inspectorView.clearCircle")], {1: {key: "inspectorView.clearCircle", params: {}}}),
-    ...(fixed ? [[shape, shape]] : []),
+    ...(fixed ? [messageTuple([shape, interfaceText(shape === 'image' ? 'builderOutliner.image' : 'inspectorView.text')], {1: {key: shape === 'image' ? 'builderOutliner.image' : 'inspectorView.text'}})] : []),
   ].map((_tuple) => {const [value, label] = _tuple; const _messages = tupleMessages(_tuple); return {value, label, ...(_messages[1] ? {labelKey: _messages[1].key, labelParams: _messages[1].params} : {})};})};
   const sections = {
     connector: {id: 'connector', title: interfaceText("inspectorView.connector", {segment_id: segment.segment_id}), titleKey: "inspectorView.connector", titleParams: {segment_id: segment.segment_id}, place: 'titled', open: true, hidden: !part, rows: [

@@ -618,6 +618,86 @@ try {
       &&JSON.stringify(spatialCaptionEditor.report)===spatialCaptionBytes&&spatialCaptionEditor._undo.length===spatialCaptionUndo;
   }));
   await page.evaluate(()=>{spatialCaptionRoot.remove();styk.localization.localization.setPseudo(null);});
+  await page.evaluate(()=>{
+    styk.actions['layout-menu']();
+    window.layoutCaptionRoot=document.querySelector('#layout-popover');
+    window.layoutCaptionControls=[...layoutCaptionRoot.querySelectorAll('select')];
+    window.layoutCaptionOptions=layoutCaptionControls.flatMap(select=>[...select.options]);
+    window.layoutCaptionValues=layoutCaptionControls.map(select=>select.value);
+    window.layoutCaptionDraft=layoutCaptionRoot.querySelector('[data-layout-position=vfx]');layoutCaptionDraft.focus();
+    window.layoutCaptionBytes=JSON.stringify(styk.editor.report);window.layoutCaptionUndo=styk.editor._undo.length;
+    styk.localization.localization.setPseudo('rtl');
+  });
+  check('Layout position captions and retained options use actual catalog keys without losing focus, selection or authored data',await page.evaluate(()=>{
+    const root=layoutCaptionRoot,t=(key,params)=>styk.localization.t(key,params);
+    return layoutCaptionControls.every((select,index)=>select===root.querySelectorAll('select')[index]&&select.value===layoutCaptionValues[index])
+      &&layoutCaptionOptions.every(option=>option===option.parentElement.options[option.index]&&option.textContent===t(option.dataset.i18n))
+      &&root.querySelector('[data-layout-position=vfx]').getAttribute('aria-label')===t('layoutPopover.vfxPosition')
+      &&root.querySelector('[data-layout-position=vfx]').closest('.ui-row').querySelector('.ui-row-label').textContent===t('chrome.vfx')
+      &&document.activeElement===layoutCaptionDraft&&JSON.stringify(styk.editor.report)===layoutCaptionBytes&&styk.editor._undo.length===layoutCaptionUndo;
+  }));
+  await page.evaluate(()=>{styk.actions['layout-menu']();styk.localization.localization.setPseudo(null);});
+  await page.evaluate(async()=>{
+    const {createEasingControls}=await import('/src/keyframe-easing-view.mjs');
+    const {appendLocalized}=await import('/src/localization-bindings.mjs');
+    window.easingCaptionRoot=document.createElement('section');easingCaptionRoot.style.cssText='position:fixed;top:100px;left:20px;background:white;z-index:10';appendLocalized(document.body,easingCaptionRoot);
+    window.easingCaptionControls=createEasingControls(easingCaptionRoot,{initial:{interpolation:'bezier',bezier:[.42,0,.58,1]}});
+    window.easingCaptionInputs=[...easingCaptionRoot.querySelectorAll('input')];
+    window.easingCaptionButtons=[...easingCaptionRoot.querySelectorAll('button')];
+    window.easingCaptionValues=easingCaptionControls.read();window.easingCaptionPath=easingCaptionRoot.querySelector('[data-curve]').getAttribute('d');
+    easingCaptionInputs[0].focus();easingCaptionInputs[0].value='0.23';styk.localization.localization.setPseudo('long');
+  });
+  check('Easing preview and control captions refresh without rebuilding the curve, selected mode or an unfinished numeric draft',await page.evaluate(()=>{
+    const root=easingCaptionRoot,t=(key,params)=>styk.localization.t(key,params);
+    return root.querySelector('svg').getAttribute('aria-label')===t('keyframeEasingPopover.keyframeEasing')
+      &&easingCaptionInputs.every((input,index)=>input===root.querySelectorAll('input')[index]&&input.getAttribute('aria-label')===t(input.dataset.i18nAriaLabel))
+      &&easingCaptionButtons.every((button,index)=>button===root.querySelectorAll('button')[index]&&button.textContent===t(button.dataset.i18n)&&button.getAttribute('aria-label')===t(button.dataset.i18nAriaLabel))
+      &&document.activeElement===easingCaptionInputs[0]&&easingCaptionInputs[0].value==='0.23'
+      &&JSON.stringify(easingCaptionControls.read())===JSON.stringify(easingCaptionValues)
+      &&root.querySelector('[data-curve]').getAttribute('d')===easingCaptionPath&&root.querySelector('[data-easing=bezier]').getAttribute('aria-checked')==='true';
+  }));
+  await page.evaluate(()=>{easingCaptionRoot.remove();styk.localization.localization.setPseudo(null);});
+  await page.evaluate(async()=>{
+    const {createAppDialogs}=await import('/src/app-dialogs.mjs');
+    window.untitledCaptionEditor={dirty:true,name:''};
+    window.untitledCaptionPrompts=createAppDialogs({editor:untitledCaptionEditor,state:{},actions:{},overlays:styk.ui.overlays,guarded:fn=>fn,finishCurrentEdit(){},localization:()=>styk.localization});
+    window.untitledCaptionAnswer=untitledCaptionPrompts.confirmReplace();
+    window.untitledCaptionTitle=document.querySelector('dialog[open] .ui-dialog-title');styk.localization.localization.setPseudo('rtl');
+  });
+  check('Save confirmation translates a missing project name through a nested display reference without writing a document name',await page.evaluate(()=>untitledCaptionTitle.textContent===styk.localization.t('appDialogs.saveChangesTo',{value:{messageKey:'app.untitled'}})&&untitledCaptionEditor.name===''));
+  await page.locator('#keep-editing').click();
+  check('Cancelling the translated unnamed-project confirmation preserves its unsaved state',await page.evaluate(async()=>await untitledCaptionAnswer===false&&untitledCaptionEditor.dirty&&untitledCaptionEditor.name===''));
+  await page.evaluate(()=>styk.localization.localization.setPseudo(null));
+  await page.evaluate(async()=>{
+    const {UserLibrary}=await import('/src/user-library.mjs');
+    const {SupportCenter}=await import('/src/support-center.mjs');
+    const {appendLocalized}=await import('/src/localization-bindings.mjs');
+    window.libraryEmptyCaptionRoot=document.createElement('section');appendLocalized(document.body,libraryEmptyCaptionRoot);
+    window.libraryEmptyCaptionProbe=Object.create(UserLibrary.prototype);Object.assign(libraryEmptyCaptionProbe,{editor:{selectedObjects:[]},desktop:{listLibrary(){}},source:'mine',folder:'',empty:libraryEmptyCaptionRoot});libraryEmptyCaptionProbe.renderEmpty(false);
+    window.supportPriorityCaptionProbe=Object.create(SupportCenter.prototype);
+    window.supportPriorityCaptionRow={id:'local-caption-fixture',priority:'urgent',title:'Artist report',status:'new',category:'bug',displayName:'Artist',createdAt:'2026-09-01T12:00:00Z'};
+    window.supportPriorityCaptionBytes=JSON.stringify(supportPriorityCaptionRow);
+    window.supportPriorityCaptionCard=supportPriorityCaptionProbe.boardCard(supportPriorityCaptionRow,'2026-10-01');appendLocalized(document.body,supportPriorityCaptionCard);
+    styk.localization.localization.setPseudo('rtl');
+  });
+  check('Retained library guidance and support priority descriptions resolve nested current-language labels while raw report data stays intact',await page.evaluate(()=>{
+    const t=(key,params)=>styk.localization.t(key,params),priority=supportPriorityCaptionCard.querySelector('.sc-card-priority');
+    return libraryEmptyCaptionRoot.querySelector('.ui-empty-text').textContent===t('userLibrary.selectFiguresOrAMovieclipAndChooseAdd')
+      &&priority.textContent===t('supportMessages.priorities.urgent')&&priority.getAttribute('aria-label')===t('supportCenter.priority',{textContent:{messageKey:'supportMessages.priorities.urgent'}})
+      &&supportPriorityCaptionCard.dataset.priority==='urgent'&&supportPriorityCaptionCard.querySelector('.sc-card-title').textContent==='Artist report'
+      &&JSON.stringify(supportPriorityCaptionRow)===supportPriorityCaptionBytes;
+  }));
+  await page.evaluate(async()=>{
+    const {appendLocalized}=await import('/src/localization-bindings.mjs');
+    window.libraryFolderCaptionDialog=document.createElement('dialog');appendLocalized(document.body,libraryFolderCaptionDialog);
+    libraryEmptyCaptionProbe.dialog=libraryFolderCaptionDialog;libraryEmptyCaptionProbe.newFolder();
+    window.libraryFolderCaptionInput=libraryFolderCaptionDialog.querySelector('input');
+    window.libraryFolderInitialCaption=libraryFolderCaptionInput.value;
+    libraryFolderCaptionInput.focus();libraryFolderCaptionInput.value='Artist folder العربية';styk.localization.localization.setPseudo('long');
+  });
+  check('New library folders start with a translated editable name and keep the artist draft when the language changes',await page.evaluate(()=>libraryFolderInitialCaption.includes('اختبار')&&libraryFolderCaptionInput.value==='Artist folder العربية'&&document.activeElement===libraryFolderCaptionInput&&libraryFolderCaptionInput.getAttribute('aria-label')===styk.localization.t('userLibrary.folderName')));
+  await page.locator('dialog[open] [data-cancel]').click();
+  await page.evaluate(()=>{libraryFolderCaptionDialog.remove();libraryEmptyCaptionRoot.remove();supportPriorityCaptionCard.remove();styk.localization.localization.setPseudo(null);});
   check('No uncaught errors in retained dialog, menu, RTL and pseudolocalization workflows',errors.length===0);
   await writeFile(path.join(output,'report.json'),JSON.stringify({checks,errors,fontEvidence},null,2));
 } catch(e){await page.screenshot({path:path.join(output,'failure.png')});await writeFile(path.join(output,'report.json'),JSON.stringify({checks,errors,failure:e.message},null,2));throw e;}

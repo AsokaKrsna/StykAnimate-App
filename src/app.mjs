@@ -3365,7 +3365,8 @@ async function acceptImport(
   if (kind === "stk" || kind === "stkz" || kind === "stykmov") {
     finishCurrentEdit();
     editor.importFigure(report);
-    notify(interfaceText("app.imported", {value: result.filename || name || "figure"}), "app.imported", {value: result.filename || name || "figure"});
+    const importedName = result.filename || name || {messageKey: "app.figure"};
+    notify(interfaceText("app.imported", {value: importedName}), "app.imported", {value: importedName});
   } else {
     const approvalCurrent =
       replaceApproved &&

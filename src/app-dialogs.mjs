@@ -88,9 +88,10 @@ export function createAppDialogs(ctx) {
   async function confirmReplace() {
     finishCurrentEdit();
     if (!editor.dirty) return true;
+    const projectName = editor.name || {messageKey: "app.untitled"};
     const dialog = dialogOf({
       size: "sm",
-      title: interfaceText("appDialogs.saveChangesTo", {value: editor.name || "Untitled"}), titleKey: "appDialogs.saveChangesTo", titleParams: {value: editor.name || "Untitled"},
+      title: interfaceText("appDialogs.saveChangesTo", {value: projectName}), titleKey: "appDialogs.saveChangesTo", titleParams: {value: projectName},
       body: interfaceText("appDialogs.yourChangesWillBeLostIfYouDon"), bodyKey: "appDialogs.yourChangesWillBeLostIfYouDon",
       actions: [
         { label: interfaceText("appDialogs.donTSave"), labelKey: "appDialogs.donTSave", value: "discard", id: "discard-changes", variant: "ghost", tone: "danger" },
