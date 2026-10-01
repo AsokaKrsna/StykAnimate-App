@@ -73,11 +73,12 @@ export async function drawingWorkerOperation(data){
       self.postMessage({id,mask},mask?[mask.mask.buffer]:[]);return;
     }
     if(kind==='filter'){
-      if(!validRect(data.bounds))throw messageError(new Error(''), "errors.drawingPixels.invalidFilterBounds", {});
-      const store=storeOf(data),before=beforeOf(store,data.bounds);
-      filterTiles(store,{...data.options,bounds:data.bounds});
+      const blur=data.options?.kind==='blur';
+      if(blur&&!validRect(data.bounds))throw messageError(new Error(''), "errors.drawingPixels.invalidFilterBounds", {});
+      const store=storeOf(data),before=blur?beforeOf(store,data.bounds):new Map();
+      filterTiles(store,{...data.options,bounds:data.bounds,before});
       // Filtering transparent regions writes empty tiles: they equal absent ones.
-      store.prune();changesReply(id,store,before);return;
+      if(blur)store.prune();changesReply(id,store,before);return;
     }
     if(kind==='fill-mask'){
       const m=data.mask;if(!m||!validRect(m)||!(m.mask instanceof Uint8Array)||m.mask.length!==m.width*m.height)throw messageError(new Error(''), "errors.drawingLasso.invalidSelectionMask", {});

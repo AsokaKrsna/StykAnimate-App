@@ -55,6 +55,7 @@ What's new in each version of StykAnimate.
 - Smoother zooming, editing, and panning in complex animations, especially in Compatibility mode.
 - Much smoother playback of busy animations, with fewer pauses, especially on laptops without a dedicated graphics card and in Compatibility mode.
 - Complex STK figures open faster, including figures with long chains of joints.
+- Faster color adjustments on large drawings, especially when painted areas are far apart.
 
 ## [1.2.0]
 

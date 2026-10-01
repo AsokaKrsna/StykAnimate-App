@@ -414,36 +414,103 @@ export function fillMaskTiles(store,{mask,color}){
   }
 }
 
-const rgbToHsl=(r,g,b)=>{r/=255;g/=255;b/=255;const max=Math.max(r,g,b),min=Math.min(r,g,b),l=(max+min)/2;if(max===min)return [0,0,l];const d=max-min,s=l>.5?d/(2-max-min):d/(max+min);let h=max===r?(g-b)/d+(g<b?6:0):max===g?(b-r)/d+2:(r-g)/d+4;return [h/6,s,l];};
 const hue2rgb=(p,q,t)=>{if(t<0)t+=1;if(t>1)t-=1;return t<1/6?p+(q-p)*6*t:t<.5?q:t<2/3?p+(q-p)*(2/3-t)*6:p;};
-const hslToRgb=(h,s,l)=>{if(!s)return [l*255,l*255,l*255];const q=l<.5?l*(1+s):l+s-l*s,p=2*l-q;return [hue2rgb(p,q,h+1/3)*255,hue2rgb(p,q,h)*255,hue2rgb(p,q,h-1/3)*255];};
+/** Keep the HSL arithmetic and final mask blend in their original order,
+ * without allocating RGB/HSL tuples for every painted pixel. */
+function filterHslTile(source,out,x0,y0,x1,y1,ox,oy,mask,hue,saturation,lightness){
+  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
+    const i=(y*TILE+x)*4,w=mask?maskValue(mask,x+ox,y+oy):1;
+    if(!w||!source[i+3])continue;
+    let r=source[i]/255,g=source[i+1]/255,b=source[i+2]/255;
+    const max=Math.max(r,g,b),min=Math.min(r,g,b),l=(max+min)/2;
+    let h=0,s=0;
+    if(max!==min){
+      const d=max-min;s=l>.5?d/(2-max-min):d/(max+min);
+      h=(max===r?(g-b)/d+(g<b?6:0):max===g?(b-r)/d+2:(r-g)/d+4)/6;
+    }
+    h=((h+hue/360)%1+1)%1;s=clamp(s*(1+saturation/100));
+    const nextL=clamp(lightness>=0?l+(1-l)*lightness/100:l*(1+lightness/100));
+    if(!s)r=g=b=nextL*255;
+    else{
+      const q=nextL<.5?nextL*(1+s):nextL+s-nextL*s,p=2*nextL-q;
+      r=hue2rgb(p,q,h+1/3)*255;g=hue2rgb(p,q,h)*255;b=hue2rgb(p,q,h-1/3)*255;
+    }
+    out[i]=Math.round(source[i]+(clamp(r,0,255)-source[i])*w);
+    out[i+1]=Math.round(source[i+1]+(clamp(g,0,255)-source[i+1])*w);
+    out[i+2]=Math.round(source[i+2]+(clamp(b,0,255)-source[i+2])*w);
+  }
+}
 /** One horizontal-then-vertical box blur pass over premultiplied RGBA floats. */
-function boxBlur(src,dst,width,height,r){
-  const tmp=new Float32Array(src.length),w=2*r+1;
+function boxBlur(src,dst,tmp,width,height,r){
+  const w=2*r+1;
   for(let y=0;y<height;y++)for(let c=0;c<4;c++){let sum=0;const row=y*width;for(let x=-r;x<=r;x++)sum+=src[(row+Math.min(width-1,Math.max(0,x)))*4+c];for(let x=0;x<width;x++){tmp[(row+x)*4+c]=sum/w;sum+=src[(row+Math.min(width-1,x+r+1))*4+c]-src[(row+Math.max(0,x-r))*4+c];}}
   for(let x=0;x<width;x++)for(let c=0;c<4;c++){let sum=0;for(let y=-r;y<=r;y++)sum+=tmp[(Math.min(height-1,Math.max(0,y))*width+x)*4+c];for(let y=0;y<height;y++){dst[(y*width+x)*4+c]=sum/w;sum+=tmp[(Math.min(height-1,y+r+1)*width+x)*4+c]-tmp[(Math.max(0,y-r)*width+x)*4+c];}}
+}
+/** Blur owns its bounded dense surfaces independently of sparse point filters. */
+function blurTiles(store,bounds,mask,radius){
+  if(bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw messageError(new Error(''), "errors.drawingPixels.invalidFilterBounds", {});
+  const {x:bx,y:by,width,height}=bounds,source=store.readRect(bx,by,width,height),out=new Uint8ClampedArray(source);
+  const weight=(x,y)=>{if(!mask)return 1;return maskValue(mask,x+bx,y+by);};
+  const r=Math.max(1,Math.round(clamp(radius,1,64)/Math.sqrt(3))),pre=new Float32Array(source.length),next=new Float32Array(source.length),scratch=new Float32Array(source.length);
+  for(let i=0;i<source.length;i+=4){const a=source[i+3]/255;pre[i]=source[i]*a;pre[i+1]=source[i+1]*a;pre[i+2]=source[i+2]*a;pre[i+3]=source[i+3];}
+  boxBlur(pre,next,scratch,width,height,r);boxBlur(next,pre,scratch,width,height,r);boxBlur(pre,next,scratch,width,height,r);
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++){const w=weight(x,y);if(!w)continue;const i=(y*width+x)*4,a=next[i+3];
+    const b=a>0?[next[i]*255/a,next[i+1]*255/a,next[i+2]*255/a,a]:[0,0,0,0];for(let c=0;c<4;c++)out[i+c]=Math.round(source[i+c]+(b[c]-source[i+c])*w);}
+  store.writeRect(bx,by,width,height,out);
+}
+function assertFilterBounds(bounds){
+  if(!bounds||![bounds.x,bounds.y,bounds.width,bounds.height,bounds.x+bounds.width,bounds.y+bounds.height].every(Number.isSafeInteger)||bounds.width<1||bounds.height<1)throw messageError(new Error(''), "errors.drawingPixels.invalidFilterBounds", {});
+}
+/** Point filters visit only existing tile intersections. Their pixel limit
+ * follows occupied work, so distant paint does not allocate its empty bounds. */
+export function pointFilterWork(store,bounds){
+  assertFilterBounds(bounds);let pixels=0,bytes=0;
+  for(const tile of store){
+    const x=tile.tx*TILE,y=tile.ty*TILE,width=Math.min(x+TILE,bounds.x+bounds.width)-Math.max(x,bounds.x),height=Math.min(y+TILE,bounds.y+bounds.height)-Math.max(y,bounds.y);
+    if(width>0&&height>0){pixels+=width*height;bytes+=TILE_BYTES;}
+  }
+  return {pixels,bytes};
 }
 /** Drawing filters over `bounds`, weighted by an optional selection mask:
  * blur (three box passes ≈ Gaussian, premultiplied so transparent pixels
  * never darken edges), hue/saturation/lightness, brightness/contrast and
  * invert. Pixels outside the mask keep their exact bytes. */
-export function filterTiles(store,{bounds,kind,mask=null,radius=4,hue=0,saturation=0,lightness=0,brightness=0,contrast=0}){
-  if(!bounds||!(bounds.width>0&&bounds.height>0)||bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw messageError(new Error(''), "errors.drawingPixels.invalidFilterBounds", {});
+export function filterTiles(store,{bounds,kind,mask=null,radius=4,hue=0,saturation=0,lightness=0,brightness=0,contrast=0,before}){
+  assertFilterBounds(bounds);
   if(!['blur','hsl','brightness','invert'].includes(kind))throw messageError(new Error(''), "errors.drawingController.unknownDrawingFilter", {});
-  const {x:bx,y:by,width,height}=bounds,source=store.readRect(bx,by,width,height),out=new Uint8ClampedArray(source);
-  const weight=(x,y)=>{if(!mask)return 1;return maskValue(mask,x+bx,y+by);};
-  if(kind==='blur'){
-    const r=Math.max(1,Math.round(clamp(radius,1,64)/Math.sqrt(3))),pre=new Float32Array(source.length),next=new Float32Array(source.length);
-    for(let i=0;i<source.length;i+=4){const a=source[i+3]/255;pre[i]=source[i]*a;pre[i+1]=source[i+1]*a;pre[i+2]=source[i+2]*a;pre[i+3]=source[i+3];}
-    boxBlur(pre,next,width,height,r);boxBlur(next,pre,width,height,r);boxBlur(pre,next,width,height,r);
-    for(let y=0;y<height;y++)for(let x=0;x<width;x++){const w=weight(x,y);if(!w)continue;const i=(y*width+x)*4,a=next[i+3];
-      const b=a>0?[next[i]*255/a,next[i+1]*255/a,next[i+2]*255/a,a]:[0,0,0,0];for(let c=0;c<4;c++)out[i+c]=Math.round(source[i+c]+(b[c]-source[i+c])*w);}
-  }else for(let y=0;y<height;y++)for(let x=0;x<width;x++){
-    const w=weight(x,y),i=(y*width+x)*4;if(!w||!source[i+3])continue;let r=source[i],g=source[i+1],b=source[i+2];
-    if(kind==='invert'){r=255-r;g=255-g;b=255-b;}
-    else if(kind==='hsl'){const [h,s,l]=rgbToHsl(r,g,b);[r,g,b]=hslToRgb(((h+hue/360)%1+1)%1,clamp(s*(1+saturation/100)),clamp(lightness>=0?l+(1-l)*lightness/100:l*(1+lightness/100)));}
-    else{const k=clamp(1+contrast/100,0,4),o=brightness*2.55;r=(r-128)*k+128+o;g=(g-128)*k+128+o;b=(b-128)*k+128+o;}
-    out[i]=Math.round(source[i]+(clamp(r,0,255)-source[i])*w);out[i+1]=Math.round(source[i+1]+(clamp(g,0,255)-source[i+1])*w);out[i+2]=Math.round(source[i+2]+(clamp(b,0,255)-source[i+2])*w);
+  if(kind!=='blur'){
+    if(pointFilterWork(store,bounds).pixels>DRAWING_MAX_PIXELS)throw messageError(new Error(''), "errors.drawingPixels.invalidFilterBounds", {});
+    const k=clamp(1+contrast/100,0,4),o=brightness*2.55;
+    // Each channel has only 256 possible inputs. Keep the original floating
+    // arithmetic in the table so fractional masks and half-byte ties agree.
+    const brightnessValues=kind==='brightness'?Float64Array.from({length:256},(_,value)=>clamp((value-128)*k+128+o,0,255)):null;
+    const brightnessBytes=brightnessValues&&!mask?Uint8ClampedArray.from(brightnessValues,(value,i)=>Math.round(i+(value-i))):null;
+    for(const tile of store){
+      const ox=tile.tx*TILE,oy=tile.ty*TILE,x0=Math.max(0,bounds.x-ox),y0=Math.max(0,bounds.y-oy),x1=Math.min(TILE,bounds.x+bounds.width-ox),y1=Math.min(TILE,bounds.y+bounds.height-oy),source=tile.pixels;
+      if(x0>=x1||y0>=y1)continue;
+      const out=source.slice();
+      if(!mask&&(kind==='invert'||brightnessBytes)){
+        // Unmasked byte transforms need no per-pixel mask arithmetic.
+        for(let y=y0;y<y1;y++)for(let i=(y*TILE+x0)*4,end=(y*TILE+x1)*4;i<end;i+=4)if(source[i+3]){
+          if(brightnessBytes){out[i]=brightnessBytes[source[i]];out[i+1]=brightnessBytes[source[i+1]];out[i+2]=brightnessBytes[source[i+2]];}
+          else{out[i]=255-source[i];out[i+1]=255-source[i+1];out[i+2]=255-source[i+2];}
+        }
+      }else if(kind==='hsl')filterHslTile(source,out,x0,y0,x1,y1,ox,oy,mask,hue,saturation,lightness);
+      else for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
+        const i=(y*TILE+x)*4,w=mask?maskValue(mask,x+ox,y+oy):1;if(!w||!source[i+3])continue;
+        let r=source[i],g=source[i+1],b=source[i+2];
+        if(kind==='invert'){r=255-r;g=255-g;b=255-b;}
+        else{r=brightnessValues[r];g=brightnessValues[g];b=brightnessValues[b];}
+        r=Math.round(source[i]+(clamp(r,0,255)-source[i])*w);g=Math.round(source[i+1]+(clamp(g,0,255)-source[i+1])*w);b=Math.round(source[i+2]+(clamp(b,0,255)-source[i+2])*w);
+        out[i]=r;out[i+1]=g;out[i+2]=b;
+      }
+      // A changed tile usually differs in its first few bytes. Checking once
+      // here keeps per-pixel work simple while preserving no-op tile identity.
+      const a=source.byteOffset%4===0?new Uint32Array(source.buffer,source.byteOffset,TILE*TILE):source,b=a===source?out:new Uint32Array(out.buffer);
+      let changed=false;for(let i=0;i<a.length;i++)if(a[i]!==b[i]){changed=true;break;}
+      if(changed){const key=tileKey(tile.tx,tile.ty);if(before&&!before.has(key))before.set(key,source);store.adopt(tile.tx,tile.ty,out);}
+    }
+    return;
   }
-  store.writeRect(bx,by,width,height,out);
+  blurTiles(store,bounds,mask,radius);
 }

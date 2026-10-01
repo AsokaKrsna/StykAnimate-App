@@ -13,7 +13,7 @@ import {recentColors,setRecentColors,rememberColor as rememberRecentColor,saveCo
 import {SLIDERS,installDrawingSliders,refreshSliders,formatSlider,displayValue} from './drawing-sliders.mjs';
 import {WetInk} from './drawing-wet-ink.mjs';
 import {installPressureCurve} from './drawing-pressure-curve.mjs';
-import {tileChanges,maskValue,lassoMask,tileAlignedRect,DrawingStroke,rectPoints,ellipsePoints,combineMasks,invertMask,rectMask,maskEdges} from './drawing-pixels.mjs';
+import {tileChanges,maskValue,lassoMask,tileAlignedRect,DrawingStroke,rectPoints,ellipsePoints,combineMasks,invertMask,rectMask,maskEdges,pointFilterWork} from './drawing-pixels.mjs';
 import {BrushStroke,normalizeBrush,dabRadius,BRUSH_DEFAULTS,BRUSH_KEYS,BRUSH_LENGTHS,LINEAR_PRESSURE} from './drawing-brush.mjs';
 import {drawingMetadata,migrateDrawingFigure,isDrawingLayer,drawingPixelMatrix,inversePoint,transformPoint,DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {TILE,tileKey,parseTileKey,TileStore} from './drawing-tiles.mjs';
@@ -531,8 +531,13 @@ export class DrawingController {
       surface.pinned=true;
       try{
         op.reserve(surface,op.owner.hardBudget);const bounds=payload.bounds??payload.mask;
-        const scratch=bounds.width*bounds.height*(kind==='filter'?72:16)+(payload.mask?.mask?.byteLength??payload.options?.mask?.mask?.byteLength??0);
-        if(scratch+surface.store.bytes*3>op.maxBytes)throw messageError(new Error(''), "errors.drawingController.theOperationExceedsTheDrawingWorkingMemoryLimit", {});
+        const pointFilter=kind==='filter'&&payload.options.kind!=='blur',maskBytes=payload.mask?.mask?.byteLength??payload.options?.mask?.mask?.byteLength??0;
+        const work=pointFilter?pointFilterWork(surface.store,bounds):null;
+        if(work&&work.pixels>DRAWING_MAX_PIXELS)throw messageError(new Error(''), "errors.drawingController.selectASmallerAreaTheFilterExceeds16", {});
+        // Point filters retain the transferred originals for history and
+        // allocate at most one replacement for each occupied input tile.
+        const bytes=work?work.bytes*2+maskBytes:bounds.width*bounds.height*(kind==='filter'?72:16)+maskBytes+surface.store.bytes*3;
+        if(bytes>op.maxBytes)throw messageError(new Error(''), "errors.drawingController.theOperationExceedsTheDrawingWorkingMemoryLimit", {});
         const tiles=await this.copyWorkerTiles(surface,op,t=>tileIntersects(t,bounds));
         const result=await op.owner.worker.request(kind,{...payload,tiles},{signal:op.abort.signal,transfer:tiles.map(t=>t.pixels)});
         op.check();op.received(result.tiles);return await this.commitPixels(target,result.tiles,label,op);
@@ -883,7 +888,7 @@ export class DrawingController {
     const base=clip?{x:clip.x,y:clip.y,width:clip.width,height:clip.height}:surface.store.bounds;if(!base)return;
     // Blur spreads paint: read and write a margin around the content.
     const pad=kind==='blur'?Math.ceil(st.filterRadius*2)+2:0,bounds={x:base.x-pad,y:base.y-pad,width:base.width+2*pad,height:base.height+2*pad};
-    if(bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw messageError(new Error(''), "errors.drawingController.selectASmallerAreaTheFilterExceeds16", {});
+    if(kind==='blur'&&bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw messageError(new Error(''), "errors.drawingController.selectASmallerAreaTheFilterExceeds16", {});
     return this.pixelTool(target,surface,'filter',{bounds,options:{kind,mask:clip,radius:st.filterRadius,hue:st.hue,saturation:st.saturation,lightness:st.lightness,brightness:st.brightness,contrast:st.contrast}},FILTER_LABELS[kind],`drawingController.filter.${kind}`);
   }
   /** The selection outline is the canonical selection: a pixel mask on one

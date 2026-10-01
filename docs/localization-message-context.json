@@ -9852,7 +9852,7 @@
   },
   "drawingController.alreadyDrawing": {
     "locations": [
-      "src/drawing-controller.mjs:970"
+      "src/drawing-controller.mjs:975"
     ],
     "context": "if(action==='blank')return e.drawingKey(ids,e.tick,{blank:true});if(action==='copy-key'){if(!e.drawingKey(ids))this.onStatus(interfaceText('drawingController.al"
   },
@@ -9870,7 +9870,7 @@
   },
   "drawingController.brushSaved": {
     "locations": [
-      "src/drawing-controller.mjs:965"
+      "src/drawing-controller.mjs:970"
     ],
     "context": "const preset={id:'custom-'+(Date.now()).toString(36)+n,name:base+' '+n,description:interfaceText('drawingController.savedBrush'),...tip};this.library.presets=[."
   },
@@ -9882,7 +9882,7 @@
   },
   "drawingController.copyingPixels": {
     "locations": [
-      "src/drawing-controller.mjs:976"
+      "src/drawing-controller.mjs:981"
     ],
     "context": "if(['copy-pixels','cut-pixels'].includes(action)){await this.ensureFloating();return this.pixelOperation({messageKey:'drawingController.copyingPixels'},async op"
   },
@@ -9894,7 +9894,7 @@
   },
   "drawingController.deleteSelection": {
     "locations": [
-      "src/drawing-controller.mjs:974"
+      "src/drawing-controller.mjs:979"
     ],
     "context": "if(action==='delete-pixels'){const s=await this.ensureFloating();if(!s)return;return this.commitSelection(s,'Delete selected pixels',{remove:true,labelKey:'draw"
   },
@@ -9931,31 +9931,31 @@
   },
   "drawingController.filled": {
     "locations": [
-      "src/drawing-controller.mjs:839"
+      "src/drawing-controller.mjs:844"
     ],
     "context": "op.check();op.received(result.tiles);await this.commitPixels(target,result.tiles,'Fill drawing',op);this.onStatus(interfaceText('drawingController.filled'), 'dr"
   },
   "drawingController.fillingDrawing": {
     "locations": [
-      "src/drawing-controller.mjs:812"
+      "src/drawing-controller.mjs:817"
     ],
     "context": "fill(target,surface,point){return this.pixelOperation({messageKey:'drawingController.fillingDrawing'},async op=>{"
   },
   "drawingController.fillSelection": {
     "locations": [
-      "src/drawing-controller.mjs:958"
+      "src/drawing-controller.mjs:963"
     ],
     "context": "const surface=await this.owner.surface(target.figure);return this.pixelTool(target,surface,'fill-mask',{mask:m.mask,color:[...this.settings.color.slice(1).match"
   },
   "drawingController.fillShape": {
     "locations": [
-      "src/drawing-controller.mjs:548"
+      "src/drawing-controller.mjs:553"
     ],
     "context": "return this.pixelTool(g.target,g.surface,'fill-mask',{mask:clip,color:[...this.settings.color.slice(1).match(/../g).map(n=>parseInt(n,16)),Math.round(this.setti"
   },
   "drawingController.finishingStroke": {
     "locations": [
-      "src/drawing-controller.mjs:739"
+      "src/drawing-controller.mjs:744"
     ],
     "context": "const pending=this.pixelOperation({messageKey:'drawingController.finishingStroke'},async op=>{"
   },
@@ -9979,19 +9979,19 @@
   },
   "drawingController.pastingPixels": {
     "locations": [
-      "src/drawing-controller.mjs:992"
+      "src/drawing-controller.mjs:997"
     ],
     "context": "if(action==='paste-pixels')return this.pixelOperation({messageKey:'drawingController.pastingPixels'},op=>this.getClipboard().paste('drawing-pixels',async()=>{"
   },
   "drawingController.resampled": {
     "locations": [
-      "src/drawing-controller.mjs:1020"
+      "src/drawing-controller.mjs:1025"
     ],
     "context": "this.onStatus(interfaceText('drawingController.resampled'), 'drawingController.resampled');"
   },
   "drawingController.resamplingDrawing": {
     "locations": [
-      "src/drawing-controller.mjs:1014"
+      "src/drawing-controller.mjs:1019"
     ],
     "context": "return this.pixelOperation({messageKey:'drawingController.resamplingDrawing'},async op=>{"
   },
@@ -10009,13 +10009,13 @@
   },
   "drawingController.sameResolution": {
     "locations": [
-      "src/drawing-controller.mjs:1012"
+      "src/drawing-controller.mjs:1017"
     ],
     "context": "if(ratio===1){this.onStatus(interfaceText('drawingController.sameResolution'), 'drawingController.sameResolution');return;}"
   },
   "drawingController.savedBrush": {
     "locations": [
-      "src/drawing-controller.mjs:965"
+      "src/drawing-controller.mjs:970"
     ],
     "context": "const preset={id:'custom-'+(Date.now()).toString(36)+n,name:base+' '+n,description:interfaceText('drawingController.savedBrush'),...tip};this.library.presets=[."
   },
@@ -10027,19 +10027,19 @@
   },
   "drawingController.selected": {
     "locations": [
-      "src/drawing-controller.mjs:853"
+      "src/drawing-controller.mjs:858"
     ],
     "context": "s.presenter=selectionPresenter(s,owner);this.selection=s;if(outline)this.marquee=outline;else this.setMarquee(g.target,g.surface,g.mask??{...bounds,points:g.poi"
   },
   "drawingController.selectingPixels": {
     "locations": [
-      "src/drawing-controller.mjs:846"
+      "src/drawing-controller.mjs:851"
     ],
     "context": "return this.pixelOperation({messageKey:'drawingController.selectingPixels'},async op=>{"
   },
   "drawingController.transformSelection": {
     "locations": [
-      "src/drawing-controller.mjs:876"
+      "src/drawing-controller.mjs:881"
     ],
     "context": "applySelection(){const s=this.selection;if(!s)return;if(s.committing)return s.committing;if(!moved(s)){this.cancelSelection();return;}return this.commitSelectio"
   },
@@ -10535,7 +10535,7 @@
   },
   "drawingView.custom": {
     "locations": [
-      "src/drawing-controller.mjs:964",
+      "src/drawing-controller.mjs:969",
       "src/drawing-view.mjs:165"
     ],
     "context": "const base=interfaceText(brushMessages[this.settings.preset]?.nameKey??'drawingView.custom'),n=this.library.presets.length+1,tip=Object.fromEntries(brushKeys.fi"
@@ -13425,8 +13425,8 @@
       "src/drawing-composite-transport.mjs:43",
       "src/drawing-composite-worker.mjs:12",
       "src/drawing-composite.mjs:26",
-      "src/drawing-controller.mjs:821",
-      "src/drawing-controller.mjs:827",
+      "src/drawing-controller.mjs:826",
+      "src/drawing-controller.mjs:832",
       "src/drawing-fill.mjs:26",
       "src/drawing-fill.mjs:32",
       "src/drawing-fill.mjs:95"
@@ -13441,7 +13441,7 @@
   },
   "errors.drawingController.copySelectedPixelsFirst": {
     "locations": [
-      "src/drawing-controller.mjs:993"
+      "src/drawing-controller.mjs:998"
     ],
     "context": "const clip=e._drawingPixelClipboard;if(!clip)throw messageError(new Error(''), \"errors.drawingController.copySelectedPixelsFirst\", {});validatePixelClipboard(cl"
   },
@@ -13453,8 +13453,8 @@
   },
   "errors.drawingController.drawingInputExceededTheQueueLimit": {
     "locations": [
-      "src/drawing-controller.mjs:566",
-      "src/drawing-controller.mjs:750"
+      "src/drawing-controller.mjs:571",
+      "src/drawing-controller.mjs:755"
     ],
     "context": "if(queue.length>=MAX_STROKE_SAMPLES)throw messageError(new Error(''), \"errors.drawingController.drawingInputExceededTheQueueLimit\", {});"
   },
@@ -13466,62 +13466,63 @@
   },
   "errors.drawingController.paintADrawingBeforeFilteringIt": {
     "locations": [
-      "src/drawing-controller.mjs:881"
+      "src/drawing-controller.mjs:886"
     ],
     "context": "const e=this.editor,target=e.drawingTarget();if(!target.figure)throw messageError(new Error(''), \"errors.drawingController.paintADrawingBeforeFilteringIt\", {});"
   },
   "errors.drawingController.paintADrawingBeforeResamplingIt": {
     "locations": [
-      "src/drawing-controller.mjs:1010"
+      "src/drawing-controller.mjs:1015"
     ],
     "context": "const target=e.drawingTarget();if(!target.figure)throw messageError(new Error(''), \"errors.drawingController.paintADrawingBeforeResamplingIt\", {});"
   },
   "errors.drawingController.paintADrawingBeforeSelectingItsPixels": {
     "locations": [
-      "src/drawing-controller.mjs:949"
+      "src/drawing-controller.mjs:954"
     ],
     "context": "await this.settleFloating();const target=e.drawingTarget();if(!target.figure)throw messageError(new Error(''), \"errors.drawingController.paintADrawingBeforeSele"
   },
   "errors.drawingController.sampleAllLayersSupportsFillRegionsUpTo": {
     "locations": [
-      "src/drawing-controller.mjs:819"
+      "src/drawing-controller.mjs:824"
     ],
     "context": "if(bounds.width*bounds.height>FILL_SOURCE_MAX_PIXELS)throw messageError(new Error(''), \"errors.drawingController.sampleAllLayersSupportsFillRegionsUpTo\", {});"
   },
   "errors.drawingController.selectASmallerAreaTheFilterExceeds16": {
     "locations": [
-      "src/drawing-controller.mjs:886"
+      "src/drawing-controller.mjs:536",
+      "src/drawing-controller.mjs:891"
     ],
-    "context": "if(bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw messageError(new Error(''), \"errors.drawingController.selectASmallerAreaTheFilterExceeds16\", {});"
+    "context": "if(work&&work.pixels>DRAWING_MAX_PIXELS)throw messageError(new Error(''), \"errors.drawingController.selectASmallerAreaTheFilterExceeds16\", {});"
   },
   "errors.drawingController.selectionChanged": {
     "locations": [
-      "src/drawing-controller.mjs:861",
-      "src/drawing-controller.mjs:867"
+      "src/drawing-controller.mjs:866",
+      "src/drawing-controller.mjs:872"
     ],
     "context": "if(this.selection!==s)throw messageError(new DOMException('', 'AbortError'), \"errors.drawingController.selectionChanged\", {});"
   },
   "errors.drawingController.selectPixelsBeforeFillingTheSelection": {
     "locations": [
-      "src/drawing-controller.mjs:956"
+      "src/drawing-controller.mjs:961"
     ],
     "context": "await this.settleFloating();const m=this.marquee;if(!m)throw messageError(new Error(''), \"errors.drawingController.selectPixelsBeforeFillingTheSelection\", {});"
   },
   "errors.drawingController.selectPixelsToFlip": {
     "locations": [
-      "src/drawing-controller.mjs:960"
+      "src/drawing-controller.mjs:965"
     ],
     "context": "if(action==='flip-selection-x'||action==='flip-selection-y'){const s=await this.ensureFloating();if(!s)throw messageError(new Error(''), \"errors.drawingControll"
   },
   "errors.drawingController.selectPixelsWithTheLassoFirst": {
     "locations": [
-      "src/drawing-controller.mjs:977"
+      "src/drawing-controller.mjs:982"
     ],
     "context": "const s=this.selection;if(!s)throw messageError(new Error(''), \"errors.drawingController.selectPixelsWithTheLassoFirst\", {});"
   },
   "errors.drawingController.strokeCancelled": {
     "locations": [
-      "src/drawing-controller.mjs:803"
+      "src/drawing-controller.mjs:808"
     ],
     "context": "cancel({navigation=true}={}){if(navigation)this.touchNavigation?.cancel();this.operation?.abort.abort();this.previewQueued=false;this.sequence++;const pending=t"
   },
@@ -13534,26 +13535,26 @@
   "errors.drawingController.theOperationExceedsTheDrawingWorkingMemoryLimit": {
     "locations": [
       "src/drawing-controller.mjs:183",
-      "src/drawing-controller.mjs:535"
+      "src/drawing-controller.mjs:540"
     ],
     "context": "if((op.copiedBytes??0)+bytes.byteLength>op.maxBytes)throw messageError(new Error(''), \"errors.drawingController.theOperationExceedsTheDrawingWorkingMemoryLimit\""
   },
   "errors.drawingController.theSelectionBelongsToAnotherDrawing": {
     "locations": [
-      "src/drawing-controller.mjs:957"
+      "src/drawing-controller.mjs:962"
     ],
     "context": "const target=e.drawingTarget();if(!this.marqueeOn(target))throw messageError(new Error(''), \"errors.drawingController.theSelectionBelongsToAnotherDrawing\", {});"
   },
   "errors.drawingController.theSelectionChangedCopyItAgain": {
     "locations": [
-      "src/drawing-controller.mjs:982"
+      "src/drawing-controller.mjs:987"
     ],
     "context": "op.check();if(this.selection!==s)throw messageError(new DOMException('', 'AbortError'), \"errors.drawingController.theSelectionChangedCopyItAgain\", {});"
   },
   "errors.drawingController.theStrokeExceedsTheDrawingWorkingMemoryLimit": {
     "locations": [
-      "src/drawing-controller.mjs:607",
-      "src/drawing-controller.mjs:609",
+      "src/drawing-controller.mjs:612",
+      "src/drawing-controller.mjs:614",
       "src/drawing-gpu.mjs:756",
       "src/drawing-pixels.mjs:88",
       "src/drawing-stroke-engine.mjs:24",
@@ -13565,20 +13566,20 @@
   },
   "errors.drawingController.unknownDrawingFilter": {
     "locations": [
-      "src/drawing-controller.mjs:880",
-      "src/drawing-pixels.mjs:432"
+      "src/drawing-controller.mjs:885",
+      "src/drawing-pixels.mjs:480"
     ],
     "context": "if(!FILTER_LABELS[kind])throw messageError(new Error(''), \"errors.drawingController.unknownDrawingFilter\", {});await this.settleFloating();"
   },
   "errors.drawingController.waitForTheDrawingToFinishLoading": {
     "locations": [
-      "src/drawing-controller.mjs:804"
+      "src/drawing-controller.mjs:809"
     ],
     "context": "async barrier(options){await this.settle({selection:true});if(this.loading)throw messageError(new Error(''), \"errors.drawingController.waitForTheDrawingToFinish"
   },
   "errors.drawingController.zoomInBeforeSelectingTheAreaExceeds16": {
     "locations": [
-      "src/drawing-controller.mjs:912"
+      "src/drawing-controller.mjs:917"
     ],
     "context": "if(!bounds)return;if(bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw messageError(new Error(''), \"errors.drawingController.zoomInBeforeSelectingTheAreaExcee"
   },
@@ -13762,7 +13763,7 @@
   "errors.drawingLasso.invalidSelectionMask": {
     "locations": [
       "src/drawing-lasso.mjs:92",
-      "src/drawing-worker-operations.mjs:83"
+      "src/drawing-worker-operations.mjs:84"
     ],
     "context": "if(!(mask.mask instanceof Uint8Array)||mask.mask.length!==mask.width*mask.height)throw messageError(new Error(''), \"errors.drawingLasso.invalidSelectionMask\", {"
   },
@@ -13870,10 +13871,12 @@
   },
   "errors.drawingPixels.invalidFilterBounds": {
     "locations": [
-      "src/drawing-pixels.mjs:431",
-      "src/drawing-worker-operations.mjs:76"
+      "src/drawing-pixels.mjs:451",
+      "src/drawing-pixels.mjs:462",
+      "src/drawing-pixels.mjs:482",
+      "src/drawing-worker-operations.mjs:77"
     ],
-    "context": "if(!bounds||!(bounds.width>0&&bounds.height>0)||bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw messageError(new Error(''), \"errors.drawingPixels.invalidFil"
+    "context": "if(bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw messageError(new Error(''), \"errors.drawingPixels.invalidFilterBounds\", {});"
   },
   "errors.drawingPixels.invertedSelectionExceedsThe16MegapixelMaskLimit": {
     "locations": [
@@ -14244,7 +14247,7 @@
   },
   "errors.drawingWorkerOperations.invalidDrawingResample": {
     "locations": [
-      "src/drawing-worker-operations.mjs:108"
+      "src/drawing-worker-operations.mjs:109"
     ],
     "context": "if(!Number.isFinite(ratio)||ratio<=0)throw messageError(new Error(''), \"errors.drawingWorkerOperations.invalidDrawingResample\", {});"
   },
@@ -14256,7 +14259,7 @@
   },
   "errors.drawingWorkerOperations.unknownDrawingWorkerOperation": {
     "locations": [
-      "src/drawing-worker-operations.mjs:131"
+      "src/drawing-worker-operations.mjs:132"
     ],
     "context": "throw messageError(new Error(''), \"errors.drawingWorkerOperations.unknownDrawingWorkerOperation\", {});"
   },
@@ -19217,74 +19220,74 @@
   },
   "errors.nativeContainer.aFileMustContainReusableFiguresAndOne": {
     "locations": [
-      "src/native-container.mjs:573"
+      "src/native-container.mjs:640"
     ],
     "context": "throw Object.assign(messageError(new Error(''), \"errors.nativeContainer.aFileMustContainReusableFiguresAndOne\", {kind: kind}), {code: 'invalid_native_figure'});"
   },
   "errors.nativeContainer.aStykmovFileMustContainOneMovieclip": {
     "locations": [
-      "src/native-container.mjs:586"
+      "src/native-container.mjs:653"
     ],
     "context": "throw Object.assign(messageError(new Error(''), \"errors.nativeContainer.aStykmovFileMustContainOneMovieclip\", {}), {code: 'invalid_movieclip'});"
   },
   "errors.nativeContainer.corruptedEmbeddedOriginalSource": {
     "locations": [
-      "src/native-container.mjs:598",
-      "src/native-container.mjs:599"
+      "src/native-container.mjs:665",
+      "src/native-container.mjs:666"
     ],
     "context": "try { bytes = base64ToBytes(encoded); } catch { throw messageError(new Error(''), \"errors.nativeContainer.corruptedEmbeddedOriginalSource\", {}); }"
   },
   "errors.nativeContainer.embeddedOriginalSourceFingerprintDoesNotMatch": {
     "locations": [
-      "src/native-container.mjs:602"
+      "src/native-container.mjs:669"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.embeddedOriginalSourceFingerprintDoesNotMatch\", {});"
   },
   "errors.nativeContainer.figureSetJoinsMustStayInsideTheSaved": {
     "locations": [
-      "src/native-container.mjs:582"
+      "src/native-container.mjs:649"
     ],
     "context": "throw Object.assign(messageError(new Error(''), \"errors.nativeContainer.figureSetJoinsMustStayInsideTheSaved\", {}), {code: 'invalid_native_figure'});"
   },
   "errors.nativeContainer.invalidEmbeddedOriginalSource": {
     "locations": [
-      "src/native-container.mjs:596"
+      "src/native-container.mjs:663"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.invalidEmbeddedOriginalSource\", {});"
   },
   "errors.nativeContainer.projectDataMustBeAJsonObject": {
     "locations": [
-      "src/native-container.mjs:614"
+      "src/native-container.mjs:681"
     ],
     "context": "throw Object.assign(messageError(new Error(''), \"errors.nativeContainer.projectDataMustBeAJsonObject\", {}), {code: 'invalid_document'});"
   },
   "errors.nativeContainer.theFigureMustBeSelfContained": {
     "locations": [
-      "src/native-container.mjs:577"
+      "src/native-container.mjs:644"
     ],
     "context": "throw Object.assign(messageError(new Error(''), \"errors.nativeContainer.theFigureMustBeSelfContained\", {kind: kind}), {code: 'invalid_native_figure'});"
   },
   "errors.nativeContainer.theNativeDocumentExceedsTheUncompressedSizeLimit": {
     "locations": [
-      "src/native-container.mjs:160",
-      "src/native-container.mjs:214",
-      "src/native-container.mjs:242",
-      "src/native-container.mjs:247",
-      "src/native-container.mjs:270",
-      "src/native-container.mjs:276"
+      "src/native-container.mjs:177",
+      "src/native-container.mjs:231",
+      "src/native-container.mjs:259",
+      "src/native-container.mjs:264",
+      "src/native-container.mjs:287",
+      "src/native-container.mjs:293"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.theNativeDocumentExceedsTheUncompressedSizeLimit\", {});"
   },
   "errors.nativeContainer.theNativeFileExceedsTheCompressedSizeLimit": {
     "locations": [
-      "src/native-container.mjs:171",
-      "src/native-container.mjs:514"
+      "src/native-container.mjs:188",
+      "src/native-container.mjs:580"
     ],
     "context": "if (bytes.byteLength > MAX_BYTES) throw messageError(new Error(''), \"errors.nativeContainer.theNativeFileExceedsTheCompressedSizeLimit\", {});"
   },
   "errors.nativeContainer.theStykanimateDocumentContainsNonFiniteNumbers": {
     "locations": [
-      "src/native-container.mjs:273"
+      "src/native-container.mjs:290"
     ],
     "context": "if (!Number.isFinite(item)) throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateDocumentContainsNonFiniteNumbers\", {});"
   },
@@ -19292,97 +19295,97 @@
     "locations": [
       "src/native-container.mjs:48",
       "src/native-container.mjs:58",
-      "src/native-container.mjs:469",
-      "src/native-container.mjs:499"
+      "src/native-container.mjs:534",
+      "src/native-container.mjs:565"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateDocumentExceedsTheUncompressedSizeLimit\", {});"
   },
   "errors.nativeContainer.theStykanimateFileHasAnUnknownSectionKind": {
     "locations": [
-      "src/native-container.mjs:202"
+      "src/native-container.mjs:219"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateFileHasAnUnknownSectionKind\", {});"
   },
   "errors.nativeContainer.theStykanimateFileIsDamagedChecksumMismatch": {
     "locations": [
-      "src/native-container.mjs:184",
-      "src/native-container.mjs:217",
-      "src/native-container.mjs:222"
+      "src/native-container.mjs:201",
+      "src/native-container.mjs:234",
+      "src/native-container.mjs:239"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateFileIsDamagedChecksumMismatch\", {});"
   },
   "errors.nativeContainer.theStykanimateFileIsDamagedInvalidArraySection": {
     "locations": [
-      "src/native-container.mjs:257"
+      "src/native-container.mjs:274"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateFileIsDamagedInvalidArraySection\", {});"
   },
   "errors.nativeContainer.theStykanimateFileIsDamagedInvalidPayloadLength": {
     "locations": [
-      "src/native-container.mjs:132",
-      "src/native-container.mjs:137",
-      "src/native-container.mjs:144"
+      "src/native-container.mjs:149",
+      "src/native-container.mjs:154",
+      "src/native-container.mjs:161"
     ],
     "context": "if (bytes.byteLength !== rawLength) throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateFileIsDamagedInvalidPayloadLength\", {});"
   },
   "errors.nativeContainer.theStykanimateFileIsDamagedInvalidPayloadSection": {
     "locations": [
-      "src/native-container.mjs:286"
+      "src/native-container.mjs:303"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateFileIsDamagedInvalidPayloadSection\", {});"
   },
   "errors.nativeContainer.theStykanimateFileIsDamagedMalformedSectionMarker": {
     "locations": [
-      "src/native-container.mjs:300",
-      "src/native-container.mjs:331"
+      "src/native-container.mjs:317",
+      "src/native-container.mjs:348"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateFileIsDamagedMalformedSectionMarker\", {});"
   },
   "errors.nativeContainer.theStykanimateFileIsTruncatedOrHasAn": {
     "locations": [
-      "src/native-container.mjs:151",
-      "src/native-container.mjs:188",
-      "src/native-container.mjs:193"
+      "src/native-container.mjs:168",
+      "src/native-container.mjs:205",
+      "src/native-container.mjs:210"
     ],
     "context": "if (bytes.byteLength < HEADER) throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateFileIsTruncatedOrHasAn\", {});"
   },
   "errors.nativeContainer.theStykanimateFileIsTruncatedOrHasAn2": {
     "locations": [
-      "src/native-container.mjs:208"
+      "src/native-container.mjs:225"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateFileIsTruncatedOrHasAn2\", {});"
   },
   "errors.nativeContainer.theStykanimateFileIsTruncatedOrHasTrailing": {
     "locations": [
-      "src/native-container.mjs:181",
-      "src/native-container.mjs:212"
+      "src/native-container.mjs:198",
+      "src/native-container.mjs:229"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateFileIsTruncatedOrHasTrailing\", {});"
   },
   "errors.nativeContainer.theStykanimateFileTypeDoesNotMatchIts": {
     "locations": [
-      "src/native-container.mjs:154"
+      "src/native-container.mjs:171"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateFileTypeDoesNotMatchIts\", {});"
   },
   "errors.nativeContainer.thisProjectUsesZstdCompressionThisBuildCannot": {
     "locations": [
-      "src/native-container.mjs:142"
+      "src/native-container.mjs:159"
     ],
     "context": "if (!z) throw Object.assign(messageError(new Error(''), \"errors.nativeContainer.thisProjectUsesZstdCompressionThisBuildCannot\", {}), {code: 'codec_unavailable'}"
   },
   "errors.nativeContainer.unsupportedStykanimateFileVersionUpdateTheAppTo": {
     "locations": [
-      "src/native-container.mjs:147",
-      "src/native-container.mjs:157",
-      "src/native-container.mjs:204",
-      "src/native-container.mjs:502"
+      "src/native-container.mjs:164",
+      "src/native-container.mjs:174",
+      "src/native-container.mjs:221",
+      "src/native-container.mjs:568"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.unsupportedStykanimateFileVersionUpdateTheAppTo\", {});"
   },
   "errors.nativeContainer.unsupportedStykanimateProjectVersion": {
     "locations": [
-      "src/native-container.mjs:610"
+      "src/native-container.mjs:677"
     ],
     "context": "throw Object.assign(messageError(new Error(''), \"errors.nativeContainer.unsupportedStykanimateProjectVersion\", {}), {code: 'invalid_native_version'});"
   },

@@ -193,8 +193,13 @@ replacing the document discards stale capture replies and releases temporary
 surfaces. Lasso input remains bounded to 8,192 vertices and the working memory
 budget. Rectangles, ellipses and flipped selections use the same sparse
 preview and commit path. Add/subtract/invert masks, magic wand, filled shapes,
-and filters retain a 16-megapixel region limit and share the
-transaction gate; rejected or cancelled operations leave the cel untouched.
+and blur retain a 16-megapixel region limit. Invert, brightness/contrast and
+hue/saturation/lightness visit occupied tile intersections instead of allocating
+the whole coordinate span, with a 16-megapixel occupied-work limit and the same
+working-memory budget. Unchanged tiles retain their pixels and encoded data;
+changed tile originals become the undo record without another snapshot copy.
+Blur reuses one scratch surface across its three passes. All these operations
+share the transaction gate; rejected or cancelled operations leave the cel untouched.
 
 `drawing-transform.mjs` is the shared affine kernel for selection commits,
 paste and resolution changes. It plans output tiles from occupied source

@@ -5,6 +5,7 @@ import {restoreClipboard} from '../src/shared-clipboard.mjs';
 import {DrawingResources} from '../src/drawing-resources.mjs';
 import {createDrawingFigure} from '../src/drawing-model.mjs';
 import {TILE_BYTES,TileStore} from '../src/drawing-tiles.mjs';
+import {filterTiles,tileChanges} from '../src/drawing-pixels.mjs';
 
 function fixture(){
   const d=Object.create(DrawingController.prototype),holds=new Map();
@@ -106,4 +107,53 @@ test('sample-all publication can reserve memory before fill owns the remaining b
   }});
   try{await assert.rejects(d.fill({figure},surface,{x:0,y:0}),/Publication completed/);assert.ok(entered);assert.equal(owner.workingBytes,0);}
   finally{owner.dispose();}
+});
+
+test('point filters reserve only intersecting tile replacements beside a larger cel',async()=>{
+  const d=fixture(),store=new TileStore(),mask={x:-60,y:7,width:4,height:5,max:255,mask:new Uint8Array(20).fill(128)};
+  store.set(-1,0,new Uint8ClampedArray([20,40,60,255]));
+  for(let tx=5;tx<25;tx++)store.set(tx,0,new Uint8ClampedArray([70,90,110,255]));
+  const surface={store},budget=2*TILE_BYTES+mask.mask.byteLength;
+  Object.assign(d.owner,{hardBudget:store.bytes+budget,stats:{bytes:store.bytes,historyBytes:0,deferredBytes:0,workingBytes:0},reserve:()=>{},discard:()=>{},worker:{request:async(kind,data)=>{
+    assert.equal(kind,'filter');assert.equal(data.tiles.length,1);assert.equal(data.tiles[0].tx,-1);
+    const privateStore=new TileStore(),before=new Map();
+    for(const tile of data.tiles)privateStore.adopt(tile.tx,tile.ty,new Uint8ClampedArray(tile.pixels));
+    filterTiles(privateStore,{...data.options,bounds:data.bounds,before});
+    return {tiles:tileChanges(privateStore,before)};
+  }}});
+  let committed;
+  d.commitPixels=async(target,tiles,label,op)=>{op.check();committed=tiles;return true;};
+  const result=await d.pixelTool({figure:{}},surface,'filter',{bounds:mask,options:{kind:'invert',mask}},'Invert colours');
+  assert.equal(result,true);assert.equal(committed.length,1);assert.equal(committed[0].tx,-1);
+  assert.deepEqual(store.pixel(-60,7),[20,40,60,255],'the worker cannot change live pixels before commit');
+  assert.equal(d.holds.size,0);assert.equal(surface.pinned,false);assert.equal(d.operation,null);
+});
+
+test('point filters reject unavailable replacement memory before copying or requesting work',async()=>{
+  const d=fixture(),store=new TileStore();store.set(0,0,new Uint8ClampedArray([20,40,60,255]));
+  const surface={store};let requested=false,copied=false;
+  Object.assign(d.owner,{hardBudget:2*TILE_BYTES-1,stats:{bytes:store.bytes,historyBytes:0,deferredBytes:0,workingBytes:0},reserve:()=>{},discard:()=>{},worker:{request:()=>{requested=true;}}});
+  d.copyWorkerTiles=()=>{copied=true;};
+  await assert.rejects(d.pixelTool({figure:{}},surface,'filter',{bounds:{x:0,y:0,width:64,height:64},options:{kind:'invert'}},'Invert colours'),/working memory/);
+  assert.equal(requested,false);assert.equal(copied,false);assert.equal(surface.pinned,false);assert.equal(d.holds.size,0);
+});
+
+test('whole-cel point filters accept sparse distant paint while blur keeps the dense area limit',async()=>{
+  const d=fixture(),store=new TileStore();store.set(-100000,0,new Uint8ClampedArray([20,40,60,255]));store.set(100000,0,new Uint8ClampedArray([20,40,60,255]));
+  const target={figure:{}};d.editor.drawingTarget=()=>target;d.owner.surface=async()=>({store});d.settings={filterRadius:4};d.marqueeOn=()=>false;d.settleFloating=async()=>{};
+  let bounds;
+  d.pixelTool=async(t,s,kind,payload)=>{bounds=payload.bounds;return true;};
+  assert.equal(await d.applyFilter('invert'),true);assert.equal(bounds.width,12800064);
+  await assert.rejects(d.applyFilter('blur'),/smaller area/);
+});
+
+test('cancelled point filters reject a late worker reply and retain the original cel',async()=>{
+  const d=fixture(),gate=deferred(),store=new TileStore();store.set(0,0,new Uint8ClampedArray([20,40,60,255]));
+  const surface={store};let committed=false,requested=false;
+  Object.assign(d.owner,{hardBudget:4*TILE_BYTES,stats:{bytes:store.bytes,historyBytes:0,deferredBytes:0,workingBytes:0},reserve:()=>{},discard:()=>{},worker:{request:async()=>{requested=true;return gate.promise;}}});
+  d.commitPixels=()=>{committed=true;};
+  const pending=d.pixelTool({figure:{}},surface,'filter',{bounds:{x:0,y:0,width:64,height:64},options:{kind:'invert'}},'Invert colours');
+  while(!requested)await Promise.resolve();d.cancel();gate.resolve({tiles:[{tx:0,ty:0,before:new Uint8ClampedArray([20,40,60,255]),after:new Uint8ClampedArray([235,215,195,255])}]});
+  await assert.rejects(pending,{name:'AbortError'});assert.equal(committed,false);assert.deepEqual(store.pixel(0,0),[20,40,60,255]);
+  assert.equal(surface.pinned,false);assert.equal(d.holds.size,0);assert.equal(d.operation,null);
 });
