@@ -11,6 +11,9 @@ import {offsetGeneratorBatch,generatorSchedule,scheduleWalker} from './vfx-gener
  * primitive buffers and textures; own only one camera surface and MSAA target. */
 export class CameraGpuSource {
  constructor(renderer){this.renderer=renderer;this.canvas=new OffscreenCanvas(1,1);this.context=this.canvas.getContext('webgpu');if(!this.context)throw messageError(new Error(''), "errors.vfxCameraGpu.cameraVfxRequireAnOffscreenGraphicsContext", {});}
+ /** Density already published by the viewport layout. Vector-only sources
+  * retain their existing key, without inspecting primitives or textures. */
+ paintRevision(){const r=this.renderer;return r.stats.textureObjects||r.stats.croppedTextureObjects||r.stats.outlinedVectorObjects?r.lastRasterResolution:undefined;}
  paint(target,options,width,height,plan){
   const r=this.renderer,{report,frame}=options,scale=plan.outputSize.width/report.canvas_width;
   const samples=r.msaaCount>1?r.msaaCount:0;

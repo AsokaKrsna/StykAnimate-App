@@ -79,19 +79,20 @@ export function resolvedVfx(effect){let value=resolved.get(effect);if(!value){va
 /** Filters only: generators draw through vfx-generators.mjs, never a filter executor. */
 export function activeVfx(stack){return stack?.length?stack.filter(e=>e.enabled&&!isGeneratorType(e.type)).map(resolvedVfx).filter(e=>!neutralVfx(e)):empty;}
 export function neutralVfx({type,params:p}){return p.effectStrength===0?true:type==='turbulence'?p.amount===0:type==='tint'?p.mix===0:type==='glow'?p.intensity===0&&p.coreMix===0:type==='outline'?(p.width===0||p.opacity===0)&&!p.only:type==='blur'?p.radius===0:type==='shadow'?p.opacity===0:type==='grade'?p.exposure===0&&p.contrast===1&&p.saturation===1&&p.temperature===0&&!p.tint&&!p.shadows&&!p.highlights&&p.gamma===1:type==='pixelate'?p.size<=1&&(p.linked||p.sizeY<=1):type==='noise'||type==='vignette'?p.amount===0:type==='dissolve'?p.progress===0:type==='rgbSplit'?p.amount===0:type==='wave'||type==='shockwave'?p.strength===0:type==='bloom'||type==='lightSweep'?p.intensity===0:type==='crt'?!p.amount&&!p.curvature&&!p.chromatic:false;}
-function blurPadding(radius){
+function blurPadding(radius,sampling=false){
  if(radius<=0)return 0;
  // Match the executors' three box passes, minimum one-pixel kernel, and
  // downsample/upsample interpolation footprint, even at subpixel scales.
  const factor=Math.max(1,Math.ceil(radius/20)),kernel=Math.min(128,Math.max(1,Math.round(radius/factor*.57735)));
- return Math.max(radius*3,3*kernel*factor+(factor>1?2*factor:0));
+ const footprint=3*kernel*factor+(factor>1?2*factor:0);
+ return sampling?footprint:Math.max(radius*3,footprint);
 }
-export function vfxPadding(stack,scale=1,extent=0){
+function stackPadding(stack,scale,extent,sampling){
  let n=0;
  for(const {type,params:p} of activeVfx(stack)){
   let pad=0;
   if(['blur','glow','bloom','shadow'].includes(type)){
-   pad=type==='blur'&&p.mode?p.radius*3*scale:blurPadding(p.radius*scale);
+   pad=type==='blur'&&p.mode?p.radius*scale*(sampling?1:3)+(sampling?2:0):blurPadding(p.radius*scale,sampling);
    pad+=(p.spread??0)*scale;
    if(type==='shadow')pad+=Math.max(Math.abs(p.offsetX),Math.abs(p.offsetY))*scale;
   }else if(type==='outline')pad=p.width*scale;
@@ -103,6 +104,37 @@ export function vfxPadding(stack,scale=1,extent=0){
   n+=Math.ceil(pad);
  }
  return n;
+}
+export function vfxPadding(stack,scale=1,extent=0){return stackPadding(stack,scale,extent,false);}
+/** A source sampling halo, rather than expanded artwork bounds. Three box
+ * kernels at the executor's downsample factor plus its interpolation footprint
+ * cover every Gaussian tap; directional/radial taps span at most one radius.
+ * Artwork bounds and public preview/export policy retain their existing halo. */
+export function vfxSamplingPadding(stack,scale=1,extent=0){
+ // Native CRT sampling warps owner coordinates. Preserve its existing mixed
+ // stack coverage until that separate policy supplies the owner's extent.
+ if(activeVfx(stack).some(({type,params:p})=>type==='crt'&&p.curvature!==0))return vfxPadding(stack,scale,extent);
+ return stackPadding(stack,scale,extent,true);
+}
+/** Native executor slot families for one filtered surface. Passes alternate
+ * slots 1/2; saved originals/masks live only in 4/5/7.
+ * Every ordinary original/mask is current or a saved slot, so slot 3 is never
+ * required by these schedules. Returned indices describe retained owners,
+ * allowing a serial capture to bound each role at its largest source size. */
+export function vfxWorkingSlots(stack){
+ const active=activeVfx(stack);if(!active.length)return {gpu:[],cpu:[]};
+ const gpu=new Set([0,1]),cpu=new Set([0,1]);
+ let multiple=active.length>1;
+ for(const {type,params:p} of active){
+  if(p.effectStrength<1){gpu.add(7);cpu.add(7);multiple=true;}
+  if(['glow','shadow','outline','bloom'].includes(type)){gpu.add(4);cpu.add(4);multiple=true;}
+  if(type==='outline'&&p.mode===2){gpu.add(5);cpu.add(5);}
+  if(type==='blur'&&!p.mode||['glow','shadow','bloom'].includes(type)){
+   multiple=true;
+  }
+ }
+ if(multiple){gpu.add(2);cpu.add(2);}
+ return {gpu:[...gpu],cpu:[...cpu]};
 }
 export function documentHasVfx(report){
  const pending=[report],seen=new Set();while(pending.length){const doc=pending.pop();if(!doc||seen.has(doc))continue;seen.add(doc);

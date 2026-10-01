@@ -437,8 +437,7 @@ const editablePreparation = new EditableScenePreparation(editor, {
   diagnostics:telemetry.performance,
   onPending(pending) {
     state.editablePreparing=pending;
-    thumbnailRenderer?.setPaused(pending||state.playing||state.scrubbing||editingGestureActive()||document.hidden);
-    playback.setInteractionActive(pending||editingGestureActive()||state.scrubbing||document.hidden);
+    syncBackgroundInteraction(Boolean(viewGestureActive()));
     if(!pending){
       timelineUI?.setPaused?.(state.playing||document.hidden);
       state.editablePreparationStats=editablePreparation.stats;
@@ -1751,6 +1750,12 @@ function overlayRender(geometry) {
     ctx.restore();
   }
 }
+function syncBackgroundInteraction(viewChanging) {
+  const viewRefining=!state.playing&&!state.previewing&&state.renderer?.artworkRefining;
+  const interacting=Boolean(viewChanging||viewRefining||editingGestureActive()||state.scrubbing||state.editablePreparing||document.hidden);
+  playback.setInteractionActive(interacting);
+  thumbnailRenderer?.setPaused(interacting||state.playing);
+}
 function loop(now) {
   flushPoseMove();
   canvasGuides?.render();
@@ -1761,8 +1766,7 @@ function loop(now) {
   commitPreviewQuality();
   if (state.playing) syncPlayback();
   const viewChanging=!state.playing&&!state.previewing&&Boolean(viewGestureActive());
-  playback.setInteractionActive(Boolean(viewChanging||editingGestureActive()||state.scrubbing||state.editablePreparing||document.hidden));
-  thumbnailRenderer?.setPaused(Boolean(viewChanging||editingGestureActive()||state.playing||state.scrubbing||state.editablePreparing||document.hidden));
+  syncBackgroundInteraction(viewChanging);
   let advancedPlayback = false;
   if (!$("renderer-error").hidden) return;
   if (state.playing) {
@@ -1925,6 +1929,9 @@ function loop(now) {
         clipToCanvas: false,
         dragTranslations: state.drag?.translations,
       });
+      // This paint can start or cancel the last capture. Reconcile both
+      // directions before yielding; cancellation may leave no further RAF.
+      syncBackgroundInteraction(viewChanging);
       state.lastEditingPresentation = {tick:editor.tick,revision:editor.revision,at:performance.now(),
         sequence:(state.lastEditingPresentation?.sequence ?? 0)+1};
       if (advancedPlayback) recordPlaybackPresentation();
@@ -2025,6 +2032,7 @@ async function play() {
   editablePreparation.cancel();
   state.previewing = false;
   if (editor.totalTicks < 1) return;
+  state.renderer?.cancelArtworkRefinement?.();
   cancelDrag();
   // Optionally fit once on transport start; subsequent zoom and pan remain user-controlled.
   if (state.settings.fitViewOnPlayback) fit();
@@ -3333,6 +3341,9 @@ viewport.addEventListener(
     const shouldZoom = state.settings.canvasZoomGesture === 'scroll' || e.ctrlKey || e.metaKey;
     if(telemetry.isForeground)telemetry.performance.action(shouldZoom ? 'zoom' : 'pan');
     e.preventDefault();
+    // Notify preparation before the first projection/RAF; a busy graphics
+    // process can delay that RAF while an awaited background preload resumes.
+    if(!state.playing&&!state.previewing)syncBackgroundInteraction(true);
     interruptRecovery();
     flushPoseMove();
     const r = viewport.getBoundingClientRect();
@@ -3362,6 +3373,7 @@ canvasPinch = installCanvasPinch({
     interruptRecovery();
     pause();
     if (state.drag) cancelDrag();
+    syncBackgroundInteraction(true);
   },
   onEnd: requestRender,
 });
@@ -5481,8 +5493,7 @@ document.addEventListener('visibilitychange', () => {
     timelineUI?.setPaused?.(true);
     return;
   }
-  playback.setInteractionActive(Boolean(editingGestureActive()||state.scrubbing||state.editablePreparing));
-  thumbnailRenderer?.setPaused(Boolean(editingGestureActive()||state.playing||state.editablePreparing));
+  syncBackgroundInteraction(Boolean(viewGestureActive()));
   timelineUI?.setPaused?.(Boolean(state.playing||state.editablePreparing));
   // A warm-up skipped while hidden still owes the playhead its neighbors.
   warmPlayback();
@@ -6348,7 +6359,7 @@ async function init() {
   actions['chain-cancel'] = () => construction.cancel();
   actions['toggle-builder-snap'] = () => construction.toggleSnap();
   window.styk.builder = builderMode;
-  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:requestRender,onOverlayRender:requestOverlayRender,onView:placeArtboard,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getImageSource:()=>({baseURL:importer.baseURL,token:importer.token}),sampleColor:(x,y,signal)=>sampleCanvasColor(x,y,signal),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard,
+  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:()=>{if(!state.playing&&!state.previewing)syncBackgroundInteraction(Boolean(viewGestureActive()));requestRender();},onOverlayRender:requestOverlayRender,onView:placeArtboard,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getImageSource:()=>({baseURL:importer.baseURL,token:importer.token}),sampleColor:(x,y,signal)=>sampleCanvasColor(x,y,signal),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard,
     // A finger draws in the touch interface (Settings › Draw with a finger); elsewhere it pans, as before.
     // Automatic draws with a finger only in the touch interface; Always also does on a desktop layout.
     fingerDrawing:()=>{const mode=state.settings.fingerDraw;return mode==='auto'&&!touchMode?.active?'never':mode;}});

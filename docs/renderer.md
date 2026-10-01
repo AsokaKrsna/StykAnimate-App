@@ -1,5 +1,105 @@
 # Rendering architecture
 
+Canvas zoom settlement streams evaluated covered artwork through the existing
+`DrawingWorker` request and acknowledged snapshot transport. One serial
+`CanvasRasterRefinement` queue holds immutable input references and reserves
+working pixels from the existing artwork owner's spare allowance. The renderer
+keeps the previous covered raster until a transferable bitmap replaces it;
+`whenArtworkReady()` resolves after installation, and `onInvalidate` requests
+presentation. The app keeps editing available and pauses background speculation
+and thumbnails while this work is pending.
+
+Native paths, text and published version-two drawing cels use the same painter
+and effects. Drawing eligibility reads the live owner's revision and publication
+stamp; pinned selections and unpublished strokes retain immediate painting.
+The worker prepares sparse cels through the existing drawing provider, counts
+decoded tiles, mipmaps, encoded overlap and presenter scratch before allocation,
+and disposes that provider before transferring the completed bitmap.
+Single filtered cels retain their native destination dimensions and exact
+device transform, rather than rounding their effect scale to an artwork bucket.
+Their existing artwork entry reprojects covered pixels during input and copies
+the settled bitmap on the device pixel grid. Live edits and unsupported
+projections retain direct painting; publication stamps invalidate stale pixels.
+Drawing captures use the existing image-surface policy, preserving native
+compositing over other translucent layers and avoiding accelerated-source
+readback. Path-only captures keep their software surface policy. The worker
+borrows the prepared drawing owner's existing surface pool and releases it
+before publication. Exact viewport drawing captures require the full native
+domain; they reject insufficient allowance before allocating pixels.
+Captures first admit the complete native canvas domain and effect halos. When
+effect scratch cannot fit, bounded tiles partition
+the original pixel grid with integer translations and sampling guards; the
+complete output, snapshot, painter scratch, filter buffers and software regions
+are admitted before large allocations. Effect admission counts the native
+executor's retained slots. A capture owns private effect executors and releases
+graphics storage before software fallback, so both executor lifetimes do not
+overlap. Remaining private worker tile failures propagate instead of retrying
+with a larger, unadmitted surface; the admitted GPU-to-software filter fallback
+remains available. Each capture releases pixel storage before replying. Its private
+graphics context and bounded shader programs can remain warm until idle
+disposal; they retain no scene or captured pixels. Path-only captures preserve
+the complete canvas domain, since subdividing native strokes can change their
+antialiasing. Capture admission also limits repeated painting to 64 tiles. The existing
+artwork/onion maps own and close adopted bitmaps; no second pixel cache exists.
+View, scene, revision, playback, editing, resize, context loss and disposal reject
+obsolete results. Immediate painting can release and restart a running capture
+before allocating replacement pixels. A transient worker error retries once;
+exhausted or permanent failure uses the existing fresh-paint path rather than
+leaving the unchanged view blurry indefinitely. Media, depth surfaces and
+unpublished drawing resources retain their immediate resource-aware paths.
+Cold artwork from previous frames yields its existing LRU allowance before
+background capture; visible owners stay protected. `asyncArtwork:false`
+selects the synchronous reference path for independent pixel verification.
+Starting playback and successful prepared-frame presentation cancel editing
+refinement; borrowing a packet for the camera monitor preserves it. The app
+reconciles background suspension after rendering in both directions, since
+cancelling the last capture can leave an otherwise idle view with no next paint.
+
+Unchanged camera effects with native artwork and published version-two drawing
+cels retain their completed scene during navigation and refine its settled
+density through the same queue. Hidden figure images do not block this path. The existing
+artwork map owns that source; `CameraVfx` borrows its canvas or bitmap and native
+dimensions. Missing or disposed ownership forces fresh native painting. Cold
+paints, editing and playback keep their existing warm scratch allocations;
+accepted background work releases those pixels before reserving worker scratch.
+Eviction, replacement and disposal end the old source lifetime.
+
+GPU camera sources also track the settled layout's raster density when that
+layout contains compatibility textures or native outline artwork. Reaching the
+camera source size cap does not make later layout textures equivalent: the
+source is repainted once when their settled density changes. Navigation keeps
+the captured revision, and vector-only layouts and prepared playback do not
+read this dependency.
+
+A cold drawing scene retains live presentation dependencies, since its derived
+preview may still be incomplete. Covered navigation can compare unchanged
+published tiles while holding those pixels. Settlement requests a complete
+published capture after a live-preview change even at unchanged dimensions;
+only worker adoption makes publication the retained source authority. Derived
+preview completions then leave that source valid. Changed pixels, publication,
+revision, ownership, loading state or pinned selections invalidate it immediately.
+
+Camera captures transfer evaluated visible primitives and a small resolved
+camera/background/effect recipe, then call the existing `drawExportScene` on its
+original accelerated canvas domain, including existing internal scene tiles.
+Admission traces native source clamps and
+the maximum live painting, filtering and transfer phases. One-shot captures
+release completed object scratch before final scene filtering. After the full
+native padded scene is painted, the worker also ends its drawing-provider and
+tint lifetimes; decoded drawing pixels and presenter scratch are charged only
+to the object-paint phase. Root and padded scene pixels remain live through
+filtering and capture transfer. The complete resource owner is still disposed
+before bitmap publication. Captures release
+temporary software source contexts after readback. Software filtering owns
+private capture pixels within the same phase allowance and releases them before
+publication. Ordinary export and main painting use no early-release callback and
+retain their original resource and scratch policies. The scene job precedes queued
+component upgrades without preempting running work. Active generators, visible
+unsupported images, depth, native diamond brushes and nonzero parallax keep
+native preparation.
+Insufficient allowance rejects a full-domain scene before pixel allocation.
+See [Compatibility refinement measurements](performance/zoom-refinement-performance.md).
+
 Onion opacity applies once to each completed ghost frame, after its figures have
 composited at their own intrinsic opacity. Each frame is faded separately; tint,
 before/after ordering, hidden figures, parallax and Show on top still apply.
@@ -99,7 +199,7 @@ Playback shares identical glyph content across definitions and can crop large ma
 
 Preview workers rasterize path-only scratch surfaces of any size on a software-oriented Canvas context; image compositing retains acceleration. Accelerated worker canvases all flush through the single GPU-service thread that also presents frames, and on integrated GPUs large path flushes stalled playback for 100+ ms; software surfaces rasterize in parallel on the worker threads. Routing depends only on content, so an object keeps one antialiasing route as it grows or shrinks. On the 13 representative `svr_uriel.piv` ticks this differs from accelerated rasters only on antialiased edges (mean ≤ 0.008/255, no interior mismatches). Two reusable scratch contexts own no retained packet pixels, release storage between captures, and are disposed with the worker resources. Export keeps its existing accelerated/original-resolution policy.
 
-Foreground editing, scrubbing and editable-frame preparation suspend queued playback compilation and its request timeouts; work resumes afterward. Superseded revisions still cancel and close partial packets. Cooperative scheduling between frames uses scheduler/MessageChannel tasks rather than clamped timers. Playback starts with about 100 ms of nearby packets (2–12 ticks), restricted to the active range and the measured cache capacity, so a one-frame cache cannot deadlock waiting for two frames. No ticks are skipped to improve measured FPS. See [the general optimization measurements](performance/PERFORMANCE-OPTIMIZATION-2026-09-11.md) for full-animation, generated-scene, editing and pixel checks and their limits.
+Foreground editing, navigation, scrubbing and editable-frame preparation suspend queued playback compilation and its request timeouts; work resumes afterward. Navigation input pauses background work before its first animation frame. Worker preparation checks cancellation after image preloads and bitmap copies, and yields through scheduler/MessageChannel tasks before its first raster capture and native camera pass. Cached raster copies also take that checkpoint; vector-only packets keep their existing path. Superseded revisions cancel and close partial packets while interaction suspension preserves the mirror and requeues the exact tick. A graphics call already executing cannot be interrupted. Playback starts with about 100 ms of nearby packets (2–12 ticks), restricted to the active range and the measured cache capacity, so a one-frame cache cannot deadlock waiting for two frames. No ticks are skipped to improve measured FPS. See [the general optimization measurements](performance/PERFORMANCE-OPTIMIZATION-2026-09-11.md) for full-animation, generated-scene, editing and pixel checks and their limits.
 
 The Canvas 2D fallback requests a software-oriented surface (`willReadFrequently: true`) so it does not depend on the same accelerated drawing path that failed WebGPU initialization. Context loss suspends drawing and clears the onion, live-artwork and prepared-surface caches; restoration repaints the latest scene and invalidates the editor even when idle. Destroying the renderer removes these listeners. `tests/compatibility-canvas.browser.mjs` checks visible pixels after import, saved-file reopening, seeking, playback, pause, and simulated context restoration, with both missing WebGPU and a rejected `requestDevice()`.
 

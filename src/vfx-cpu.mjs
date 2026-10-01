@@ -335,10 +335,11 @@ export class VfxCPU {
   /** Mirror of VfxGPU.run: same pass schedule, same slot roles, same math.
    * `source` is a {width,height} canvas or {pixels} buffer (premultiplied);
    * returns the final premultiplied {pixels,width,height} surface. */
-  runPixels(pixels, w, h, stack, { scale = 1, origin = { x: 0, y: 0 }, outputSize } = {}) {
+  runPixels(pixels, w, h, stack, { scale = 1, origin = { x: 0, y: 0 }, outputSize, ownedPixels = false } = {}) {
     stack = activeVfx(stack); if (!stack.length) return { pixels, width: w, height: h };
-    const input = this.slot(0, w, h);
-    input.pixels.set(pixels);
+    this.releaseInput();
+    const input = ownedPixels ? (this.slots[0] = { width: w, height: h, pixels, borrowed: true }) : this.slot(0, w, h);
+    if (!ownedPixels) input.pixels.set(pixels);
     this.stats.passes = 0;
     let current = input;
     let brushType = 0, brushAngle = 0, brushStops = 1;
@@ -418,21 +419,26 @@ export class VfxCPU {
   run(source, stack, options = {}) {
     stack = activeVfx(stack); if (!stack.length) return source;
     const w = source.width, h = source.height;
+    // A private worker readback replaces its previous borrowed input. End that
+    // reference before acquiring another plane, including repeated native tiles.
+    if (options.ownedPixels) this.releaseInput();
     let pixels;
     if (source.pixels) pixels = new Uint8ClampedArray(source.pixels);
     else pixels = this.premultiply(source.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data);
     const result = this.runPixels(pixels, w, h, stack, options);
     const canvas = this.canvas ??= new OffscreenCanvas(w, h);
     if (canvas.width !== w) canvas.width = w; if (canvas.height !== h) canvas.height = h;
-    const straight = new Uint8ClampedArray(result.pixels.length);
+    const straight = options.ownedPixels ? result.pixels : new Uint8ClampedArray(result.pixels.length);
     for (let i = 0; i < result.pixels.length; i += 4) {
       const a = result.pixels[i + 3];
       straight[i + 3] = a;
       if (a) { straight[i] = Math.min(255, Math.round(result.pixels[i] * 255 / a)); straight[i + 1] = Math.min(255, Math.round(result.pixels[i + 1] * 255 / a)); straight[i + 2] = Math.min(255, Math.round(result.pixels[i + 2] * 255 / a)); }
+      else if (options.ownedPixels) straight[i] = straight[i + 1] = straight[i + 2] = 0;
     }
     canvas.getContext('2d').putImageData(new ImageData(straight, w, h), 0, 0);
     return canvas;
   }
+  releaseInput() { if (this.slots[0]?.borrowed) this.slots[0] = undefined; }
   destroy() { this.slots = []; this._screen = null; this._line = null; this._deque = null; if (this.canvas) this.canvas.width = this.canvas.height = 1; this.canvas = null; }
 }
 
@@ -445,3 +451,4 @@ export function filterVfxCPU(source, stack, options) {
   return executor.run(source, stack, options);
 }
 export function releaseVfxCPU() { executor?.destroy(); executor = null; }
+export function releaseVfxCPUInput() { executor?.releaseInput(); }

@@ -16,7 +16,9 @@ export class CanvasRasterRefinement {
     if(previous?.signature===description.signature)return true;
     if(!previous&&this.jobs.size>=this.maxJobs)return false;
     if(previous&&previous===this.running){previous.controller.abort();}
-    this.jobs.set(key,{...description,key,controller:new AbortController()});this.stats.pending=this.jobs.size;
+    if(this.priority===previous)this.priority=null;
+    const job={...description,key,controller:new AbortController()};
+    this.jobs.set(key,job);if(job.priority)this.priority=job;this.stats.pending=this.jobs.size;
     if(!this.completion)this.completion=new Promise(resolve=>{this.resolve=resolve;});
     if(!this.pumping){this.pumping=true;void this.pump();}
     return true;
@@ -24,12 +26,12 @@ export class CanvasRasterRefinement {
   cancel(key){
     if(arguments.length){
       const job=this.jobs.get(key);if(!job)return;
-      this.jobs.delete(key);this.stats.cancelled++;this.stats.pending=this.jobs.size;
+      this.jobs.delete(key);if(this.priority===job)this.priority=null;this.stats.cancelled++;this.stats.pending=this.jobs.size;
       if(job===this.running){job.controller.abort();this.worker.dispose();this.stats.bytes=0;}
       return;
     }
     if(!this.jobs.size)return;
-    this.stats.cancelled+=this.jobs.size;this.jobs.clear();this.stats.pending=0;this.running?.controller.abort();
+    this.stats.cancelled+=this.jobs.size;this.jobs.clear();this.priority=null;this.stats.pending=0;this.running?.controller.abort();
     // Cancellation terminates the worker before interactive painting can use
     // the reservation again. A late transferred bitmap is still closed below.
     if(this.running)this.worker.dispose();this.stats.bytes=0;
@@ -38,22 +40,37 @@ export class CanvasRasterRefinement {
     const job=this.running;
     if(!job||this.jobs.get(job.key)!==job)return;
     job.controller.abort();this.worker.dispose();this.stats.bytes=0;
-    this.jobs.set(job.key,{...job,controller:new AbortController()});
+    const replacement={...job,controller:new AbortController()};this.jobs.set(job.key,replacement);if(job.priority)this.priority=replacement;
   }
   async pump(){
     await yieldSceneTask();
     try{
       while(this.jobs.size&&!this.closed){
-        const job=this.jobs.values().next().value;this.running=job;
-        let bitmap;
+        // Capture the displayed scene before upgrading its component rasters,
+        // whose completed pixels would otherwise consume its working allowance.
+        // Ordinary owners retain FIFO order; a running capture is never preempted.
+        const job=this.priority&&this.jobs.get(this.priority.key)===this.priority?this.priority:this.jobs.values().next().value;
+        if(this.priority===job)this.priority=null;this.running=job;
+        let bitmap,snapshotPending=false;
         try{
           if(!job.valid())continue;
-          const maxBytes=job.allowance();
+          let maxBytes=job.allowance();
           if(!(maxBytes>=job.bytes))throw Object.assign(new RangeError('Preview refinement exceeds the existing artwork allowance.'),{code:'preview_raster_budget'});
           this.stats.bytes=maxBytes;
           const check=()=>{if(job.controller.signal.aborted||this.jobs.get(job.key)!==job||!job.valid())throw new DOMException('Artwork refinement superseded.','AbortError');};
+          snapshotPending=true;
           await sendDrawingComposite(this.worker,job.items,{signal:job.controller.signal,check,maxBytes});check();
-          const result=await this.worker.request('preview-raster',{...job.capture,maxBytes},{signal:job.controller.signal});bitmap=result.bitmap;check();
+          if(job.preflightBudget!==undefined){
+            const plan=await this.worker.request('preview-raster-plan',{...job.capture,maxBytes:job.preflightBudget},{signal:job.controller.signal});check();
+            if(!Number.isSafeInteger(plan.requiredBytes)||plan.requiredBytes<job.bytes||plan.requiredBytes>job.preflightBudget)throw new Error('Invalid preview refinement working allowance.');
+            // The worker retains the acknowledged snapshot. Reclaim only the
+            // additional cold pixels its native plan requires, without another
+            // transfer or evicting the artwork displayed by this frame.
+            maxBytes=job.allowance(plan.requiredBytes);
+            if(!(maxBytes>=plan.requiredBytes&&maxBytes<=job.preflightBudget))throw Object.assign(new RangeError('Preview refinement exceeds the existing artwork allowance.'),{code:'preview_raster_budget'});
+            this.stats.bytes=maxBytes;
+          }
+          const result=await this.worker.request('preview-raster',{...job.capture,maxBytes},{signal:job.controller.signal});snapshotPending=false;bitmap=result.bitmap;check();
           if(!bitmap||bitmap.width!==job.capture.width||bitmap.height!==job.capture.height)throw new Error('Invalid preview refinement bitmap.');
           // Capture releases scratch and effect executors before replying.
           // Move its bitmap out of the working reservation and into the
@@ -65,12 +82,16 @@ export class CanvasRasterRefinement {
             this.stats.pending=this.jobs.size;this.onInvalidate();
           }
         }catch(error){
+          // A rejected admission can leave the acknowledged snapshot in the
+          // worker. Release it before surrendering the reservation or asking
+          // the renderer to recover through immediate painting.
+          if(snapshotPending)this.worker.dispose();
           // Recovery can synchronously paint replacement artwork. Rejected
           // incoming pixels must be closed before that callback allocates.
-          bitmap?.close();bitmap=null;
+          bitmap?.close();bitmap=null;this.stats.bytes=0;
           if(error.name!=='AbortError'&&this.jobs.get(job.key)===job){
             if(job.retries>0&&!['preview_raster_budget','vfx_surface_budget'].includes(error.code)){
-              this.worker.dispose();this.jobs.set(job.key,{...job,retries:job.retries-1,controller:new AbortController()});
+              if(!snapshotPending)this.worker.dispose();const replacement={...job,retries:job.retries-1,controller:new AbortController()};this.jobs.set(job.key,replacement);if(job.priority)this.priority=replacement;
             }else{this.stats.failed++;job.failed?.(error);this.onError(error);}
           }
         }finally{

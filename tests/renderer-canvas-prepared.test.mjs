@@ -13,7 +13,7 @@ function canvas(){
 }
 
 test('compatibility prepared surfaces borrow owned pixels and preserve caller state',async()=>{
-  const surface=canvas(),renderer=await createRenderer(surface,{forceCanvas2D:true});
+  const surface=canvas(),renderer=await createRenderer(surface,{forceCanvas2D:true,asyncArtwork:false});
   const report={canvas_width:640,canvas_height:480},bitmap={width:320,height:240};
   try{
     assert.equal(renderer.prepareFrame({key:'1:2',softwareFrames:true,cameraEnabled:true,hiddenKey:'hidden',uids:Uint32Array.of(1),compatibility:[{bitmap}]},{report}),'1:2');
@@ -33,7 +33,7 @@ test('compatibility prepared surfaces borrow owned pixels and preserve caller st
 });
 
 test('Canvas admission skips protected artwork and evicts later obsolete owners',async()=>{
-  const renderer=await createRenderer(canvas(),{forceCanvas2D:true});
+  const renderer=await createRenderer(canvas(),{forceCanvas2D:true,asyncArtwork:false});
   const current={bytes:20,frame:2,canvas:canvas()},obsolete={bytes:10,frame:1,canvas:canvas()},a={},b={};
   try{
     renderer.artworkBudget=30;renderer.artworkFrame=2;renderer.artwork.set(a,current);renderer.artwork.set(b,obsolete);renderer.artworkBytes=30;
@@ -42,8 +42,26 @@ test('Canvas admission skips protected artwork and evicts later obsolete owners'
   }finally{renderer.destroy();}
 });
 
+test('native camera repaint preserves backing allocation while eviction and bitmap disposal end ownership',async()=>{
+  const renderer=await createRenderer(canvas(),{forceCanvas2D:true,asyncArtwork:false}),camera={},native=canvas();
+  const bytes=320*240*4;let releases=0,closes=0;
+  native.width=320;native.height=240;
+  const retain=extra=>{const entry={bytes,frame:0,release:()=>{releases++;},...extra};renderer.artwork.set(camera,entry);renderer.artworkBytes=bytes;return entry;};
+  try{
+    retain({canvas:native});renderer.releaseCameraArtwork(camera,{repaint:true});
+    assert.equal(native.width,320);assert.equal(native.height,240);
+    assert.equal(releases,0,'Immediate native repaint keeps the same warm root and child scratch.');
+    assert.equal(renderer.artworkBytes,0);assert.equal(renderer.artwork.size,0);
+    renderer.artworkBudget=bytes;renderer.artworkFrame=1;retain({canvas:native});
+    assert.equal(renderer.admitArtwork(bytes),true);assert.equal(releases,1);
+    assert.equal(native.width,1);assert.equal(native.height,1);
+    retain({bitmap:{close(){closes++;}}});renderer.releaseCameraArtwork(camera);renderer.releaseCameraArtwork(camera);
+    assert.equal(releases,2);assert.equal(closes,1);assert.equal(renderer.artworkBytes,0);
+  }finally{renderer.destroy();}
+});
+
 test('Canvas protects the complete visible raster working set before new allocations',async()=>{
-  const renderer=await createRenderer(canvas(),{forceCanvas2D:true}),figure=defaultFigure();
+  const renderer=await createRenderer(canvas(),{forceCanvas2D:true,asyncArtwork:false}),figure=defaultFigure();
   const frame=createFrame([createObject(figure,1,180,220),createObject(figure,2,4000,4000)]),report={figure_types:[figure]};
   const geometry=buildGeometry(report,frame),groups=geometry.orderedObjects.map(g=>({g,items:g.drawables}));
   const visible={bytes:40,frame:1,canvas:canvas()},outside={bytes:60,frame:1,canvas:canvas()};
@@ -54,8 +72,26 @@ test('Canvas protects the complete visible raster working set before new allocat
   }finally{renderer.destroy();}
 });
 
+test('removing scene effects releases obsolete camera pixels and scratch before further work',async()=>{
+  const renderer=await createRenderer(canvas(),{forceCanvas2D:true,asyncArtwork:false}),source=canvas();
+  const frame=createFrame([]),report={figure_types:[]},geometry=buildGeometry(report,frame),cancelled=[];
+  let releases=0;
+  const camera={destroy(){}},entry={canvas:source,bytes:320*240*4,release(){releases++;}};
+  source.width=320;source.height=240;
+  try{
+    renderer.vfxCamera=camera;renderer.artwork.set(camera,entry);renderer.artworkBytes=entry.bytes;
+    renderer.refinement={cancel(item){cancelled.push(item);},dispose(){}};
+    // Ownership must end even if the destination cannot currently paint.
+    renderer.contextLost=true;renderer.render({report,frame,geometry});
+    assert.ok(cancelled.includes(entry));assert.equal(releases,1);
+    assert.equal(renderer.artwork.size,0);assert.equal(renderer.artworkBytes,0);
+    assert.equal(source.width,1);assert.equal(source.height,1);
+    renderer.render({report,frame,geometry});assert.equal(releases,1);
+  }finally{renderer.destroy();}
+});
+
 test('hidden drawing layer snapshots never request presenters and disposal drops dependency owners',async()=>{
-  const renderer=await createRenderer(canvas(),{forceCanvas2D:true}),fig=createDrawingFigure({figureTypeId:2,celId:'cel-hidden'});
+  const renderer=await createRenderer(canvas(),{forceCanvas2D:true,asyncArtwork:false}),fig=createDrawingFigure({figureTypeId:2,celId:'cel-hidden'});
   const g={obj:{unique_id:2},fig},items=[{type:'image',fig}],report={},matrix=[1,0,0,1,0,0];
   const member={g,opacity:1,onionIndex:undefined,hidden:true,x:0,y:0,move:'',drawingInputs:null};
   try{

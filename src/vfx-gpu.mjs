@@ -1,10 +1,10 @@
 import {messageError} from './localized-error.mjs';
-import {activeVfx} from './vfx.mjs';
+import {activeVfx,vfxPadding,vfxSamplingPadding} from './vfx.mjs';
 import {vfxPaint} from './vfx-paint.mjs';
 import {vfxVertex as vertex,vfxFragment as fragment} from './vfx-shaders.mjs';
 import {vfxWebGPUFor,releaseVfxWebGPU} from './vfx-webgpu.mjs';
 import {fitsVfxSurface,vfxSurfaceError,VFX_MAX_DIMENSION} from './vfx-surface.mjs';
-import {filterVfxCPU} from './vfx-cpu.mjs';
+import {filterVfxCPU,releaseVfxCPU,releaseVfxCPUInput} from './vfx-cpu.mjs';
 export class VfxGPU {
  constructor(){
   this.canvas=new OffscreenCanvas(1,1);const gl=this.gl=this.canvas.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:false,depth:false,stencil:false,preserveDrawingBuffer:true});
@@ -76,9 +76,37 @@ export class VfxGPU {
   }
   pass(0,undefined,undefined,current,w,h,true);gl.flush();this.stats.calls++;this.stats.bytes=(w*h+this.slots.reduce((n,s)=>n+(s?s.width*s.height:0),0))*4;return this.canvas;
  }
+ /** A completed worker capture releases pixels while keeping its bounded shader
+  * programs warm. Detach framebuffer and sampler references before deleting
+  * textures so no retained binding can extend a large surface's lifetime. */
+ releasePixels(){
+  const gl=this.gl;
+  gl.bindFramebuffer(gl.FRAMEBUFFER,this.framebuffer);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,null,0);gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  for(let unit=0;unit<3;unit++){gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,null);}gl.activeTexture(gl.TEXTURE0);
+  for(const slot of this.slots)if(slot)gl.deleteTexture(slot.texture);this.slots=[];
+  this.canvas.width=this.canvas.height=1;this.stats.bytes=4;gl.flush();
+ }
  destroy(){for(const slot of this.slots)if(slot)this.gl.deleteTexture(slot.texture);this.slots=[];this.gl.deleteFramebuffer(this.framebuffer);for(const {program} of this.programs.values())this.gl.deleteProgram(program);this.programs.clear();this.gl.deleteShader(this.vertexShader);this.gl.getExtension('WEBGL_lose_context')?.loseContext();this.canvas.width=this.canvas.height=1;}
 }
-let executor,idleTimer,lastUse=0,sharedDevice=null;
+let executor,idleTimer,lastUse=0,sharedDevice=null,workerResources;
+/** One synchronous capture owns its private pixel storage. Its bounded graphics
+ * context/programs stay warm until the existing idle timeout or worker disposal.
+ * After a GPU failure,
+ * release its textures before allocating software pixels and keep the original
+ * surface limit so the native painter follows the same bounded surface route.
+ * Main preview/export calls outside this scope keep their existing policy. */
+export function withVfxWorkerResources(paint,{samplingPadding=false,releaseSource}={}){
+ if(sharedDevice||workerResources)throw messageError(new Error(''), 'errors.rasterSurfaces.aRasterScratchSurfaceCannotBeUsedConcurrently', {});
+ const previous=workerResources,state=workerResources={limit:undefined,software:false,samplingPadding,releaseSource};let completed=false;
+ try{const result=paint({setSamplingPadding(value){state.samplingPadding=value===true;}});completed=true;return result;}finally{try{try{if(completed)releasePrivateVfxPixels();else releasePrivateVfxGPU();}finally{releaseVfxCPU();}}finally{workerResources=previous;}}
+}
+/** Local software-region paint contexts have no parent scratch map. A one-shot
+ * worker may explicitly end their geometry lifetime after pixels are read. */
+export function releaseVfxWorkerSource(context){workerResources?.releaseSource?.(context);}
+/** Only disposable captures may borrow and convert their private CPU pixels. */
+export function vfxWorkerPixelsOwned(){return !!workerResources;}
+export function prepareVfxWorkerSource(){if(workerResources)releaseVfxCPUInput();}
+export function vfxSourcePadding(stack,scale=1,extent=0){return (workerResources?.samplingPadding?vfxSamplingPadding:vfxPadding)(stack,scale,extent);}
 function releaseIdle(){const wait=30000-(performance.now()-lastUse);if(wait>0){idleTimer=setTimeout(releaseIdle,wait);return;}releaseVfxGPU();}
 /** Register the renderer's WebGPU device so the shared WGSL executor can run
  * scene/drawable filters without leaving the device. Without one, callers fall
@@ -89,16 +117,24 @@ let cpuFallbacks=0;
 /** Filter a canvas through the active GPU executor when possible. Any GPU
  * failure — missing WebGL2, lost context, oversized surface — falls back to
  * the deterministic software executor so a filter call can never fail. */
+function filterSoftware(source,stack,options){
+ return filterVfxCPU(source,stack,workerResources?{...options,ownedPixels:true}:options);
+}
 export function filterVfxCanvas(source,stack,options){if(!activeVfx(stack).length)return source;
+ if(workerResources?.software)return filterSoftware(source,stack,options);
  try{
-  if(sharedDevice){const gpu=vfxWebGPUFor(sharedDevice);lastUse=performance.now();idleTimer??=setTimeout(releaseIdle,30000);return gpu.run(source,stack,options);}
+  if(sharedDevice&&!workerResources){const gpu=vfxWebGPUFor(sharedDevice);lastUse=performance.now();idleTimer??=setTimeout(releaseIdle,30000);return gpu.run(source,stack,options);}
   executor??=new VfxGPU();lastUse=performance.now();idleTimer??=setTimeout(releaseIdle,30000);return executor.run(source,stack,options);
- }catch(error){cpuFallbacks++;return filterVfxCPU(source,stack,options);}}
+ }catch(error){if(workerResources){workerResources.software=true;releasePrivateVfxGPU();}cpuFallbacks++;return filterSoftware(source,stack,options);}}
 /** Executor surface edge, or 0 when no GPU executor exists (callers then take
  * the software path, which is bounded only by memory). */
 export function vfxSurfaceDimension(){
- if(sharedDevice)return Math.min(VFX_MAX_DIMENSION,sharedDevice.limits.maxTextureDimension2D);
- try{executor??=new VfxGPU();lastUse=performance.now();idleTimer??=setTimeout(releaseIdle,30000);return executor.maxDimension;}catch{return 0;}
+ if(workerResources?.limit!==undefined)return workerResources.limit;
+ if(sharedDevice&&!workerResources)return Math.min(VFX_MAX_DIMENSION,sharedDevice.limits.maxTextureDimension2D);
+ let limit;try{executor??=new VfxGPU();lastUse=performance.now();idleTimer??=setTimeout(releaseIdle,30000);limit=executor.maxDimension;}catch{limit=0;}
+ if(workerResources){workerResources.limit=limit;if(!limit)workerResources.software=true;}return limit;
 }
 export function vfxGPUStats(){const source=sharedDevice?vfxWebGPUFor(sharedDevice).stats:executor?.stats;return {...(source??{passes:0,bytes:0,calls:0}),cpuFallbacks};}
-export function releaseVfxGPU(){clearTimeout(idleTimer);idleTimer=undefined;executor?.destroy();executor=null;if(sharedDevice)releaseVfxWebGPU(sharedDevice);}
+function releasePrivateVfxPixels(){try{executor?.releasePixels();}catch(error){try{releasePrivateVfxGPU();}finally{throw error;}}}
+function releasePrivateVfxGPU(){clearTimeout(idleTimer);idleTimer=undefined;const retired=executor;executor=null;retired?.destroy();}
+export function releaseVfxGPU(){releasePrivateVfxGPU();if(sharedDevice)releaseVfxWebGPU(sharedDevice);}

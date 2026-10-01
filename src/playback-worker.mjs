@@ -165,6 +165,13 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
   const initialVectorHits=resources?.vectors?.hits||0;
   let shapeCount = 0, bitmapBytes = 0;
   let reducedImages = false;
+  let rasterStarted = false;
+  const beforeRaster = async () => {
+    // A fulfilled preload/hash promise is only a microtask. Let an already
+    // queued interaction message suspend this packet before graphics work.
+    if (!rasterStarted) {await yieldPlaybackTask(); rasterStarted = true;}
+    if (cancelled()) throw messageError(new DOMException('', 'AbortError'), "errors.playbackWorker.playbackPreparationWasSuperseded", {});
+  };
   const requireBudget = bytes => {
     // Below WebGPU's minimum 128 MiB storage binding limit, with room for the
     // background records appended by the GPU cache. Bitmaps have their own
@@ -218,11 +225,13 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
       } else {
         requireBudget(bitmapBytes+glyph.bytes+(shapeCount+1)*SHAPE_FLOATS*4+(groups.length+1)*84);
         const pool=resources?.rasterSurface?.(glyph.width,glyph.height) || resources?.rasterSurfaces || fallbackRasterSurfaces;
-        const rasterize=()=>{const {surface,context}=pool.acquire(glyph.width,glyph.height);
+        const rasterize=()=>{if(cancelled())throw messageError(new DOMException('', 'AbortError'), "errors.playbackWorker.playbackPreparationWasSuperseded", {});
+          const {surface,context}=pool.acquire(glyph.width,glyph.height);
           try {drawGlyphMask(context,glyph);return surface.transferToImageBitmap();} finally {pool.release();}};
         group.compatibilityIndex=compatibility.length;
         const entry={uid,artworkKey:rasterKey,glyphMask:true};compatibility.push(entry);bitmapBytes+=glyph.bytes;
-        rasterJobs.push(async()=>{entry.bitmap=resources?.artworkBitmaps?await resources.artworkBitmaps.packetBitmap(rasterKey,rasterize):rasterize();});
+        rasterJobs.push(async()=>{await beforeRaster();entry.bitmap=resources?.artworkBitmaps?await resources.artworkBitmaps.packetBitmap(rasterKey,rasterize):rasterize();
+          if(cancelled())throw messageError(new DOMException('', 'AbortError'), "errors.playbackWorker.playbackPreparationWasSuperseded", {});});
         rasters.set(rasterKey,group.compatibilityIndex);
       }
       data=glyphTextureShape(glyph,g.root,transformIndex);
@@ -249,6 +258,7 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
       if (vectorVfx || vectorIsolation || typeof OffscreenCanvas !== 'undefined') {
         if(descriptor.hasImages) {
           await resources?.preload(items, {scale: resolution, maxDimension: maxTextureDimension, visible: visibleBounds});
+          if(cancelled())throw messageError(new DOMException('', 'AbortError'), "errors.playbackWorker.playbackPreparationWasSuperseded", {});
           reducedImages ||= Boolean(resources?.pressureReduced);
         }
         if(!descriptor.bounds)descriptor.bounds=objectBounds(items,resources);
@@ -286,6 +296,7 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
         const pool = resources?.rasterSurface?.(width,height,{hasImages:descriptor.hasImages}) || resources?.rasterSurfaces || fallbackRasterSurfaces;
         const rasterItems=items;
         const rasterize=()=>{
+        if(cancelled())throw messageError(new DOMException('', 'AbortError'), "errors.playbackWorker.playbackPreparationWasSuperseded", {});
         const {surface, context: ctx} = pool.acquire(width, height);
         try {
           ctx.setTransform(pixelScale, 0, 0, pixelScale, -bounds.x * pixelScale, -bounds.y * pixelScale);
@@ -300,7 +311,8 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
         // alone so unchanged artwork can share across retained frame revisions.
         const entry={bounds:actualBounds,root:g.root,resolution,pixelScale,uid};compatibility.push(entry);
         entry.artworkKey=rasterKey;
-        const capture=async()=>{entry.bitmap=resources?.artworkBitmaps?await resources.artworkBitmaps.packetBitmap(rasterKey,rasterize):rasterize();};
+        const capture=async()=>{await beforeRaster();entry.bitmap=resources?.artworkBitmaps?await resources.artworkBitmaps.packetBitmap(rasterKey,rasterize):rasterize();
+          if(cancelled())throw messageError(new DOMException('', 'AbortError'), "errors.playbackWorker.playbackPreparationWasSuperseded", {});};
         // Image decodes are a bounded moving working set. Consume them before
         // another object's preload can replace the variant used in this key.
         if(descriptor.hasImages)await capture();else rasterJobs.push(capture);
@@ -416,6 +428,8 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
   const sharing={},clipping={};
   const artworks=sharedArtwork?(artworkRegistry??new ArtworkRegistry()):null;
   if (typeof OffscreenCanvas !== 'undefined') {
+    await yieldPlaybackTask();
+    if(cancelled())throw messageError(new DOMException('', 'AbortError'), 'errors.playbackWorker.playbackPreparationWasSuperseded', {});
     // Compatibility frames rasterize on this worker's CPU, like the live
     // compatibility canvas. An accelerated worker canvas flushed the whole
     // scene through the GPU-service thread that presents frames, stalling
@@ -449,6 +463,8 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
       if (cameraEffects) {
         // Mirror the live pass: camera-space scene, effects, then projection.
         // view scale 1 with the bitmap density as dpr lands the artboard at 0,0.
+        await yieldPlaybackTask();
+        if(cancelled())throw messageError(new DOMException('', 'AbortError'), 'errors.playbackWorker.playbackPreparationWasSuperseded', {});
         const softwareCameraVfx=resources?.softwareCamera?.()??(localCamera=new CameraVfx());
         softwareCameraVfx.render(ctx, { report, frame: native, view: { x: 0, y: 0, scale: 1 }, geometry: scene,
           cameraEnabled, playing: true, vfxEnabled, resourceRevision: revision }, pixelScale, resources);

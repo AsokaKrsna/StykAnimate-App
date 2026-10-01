@@ -1,5 +1,5 @@
 import {activeVfx,vfxStack,vfxPadding} from './vfx.mjs';
-import {filterVfxCanvas,vfxSurfaceDimension} from './vfx-gpu.mjs';
+import {filterVfxCanvas,vfxSurfaceDimension,vfxSourcePadding,releaseVfxWorkerSource,prepareVfxWorkerSource,vfxWorkerPixelsOwned} from './vfx-gpu.mjs';
 import {fitsVfxSurface,vfxSurfaceTiles,vfxSurfaceError,VFX_MAX_PIXELS} from './vfx-surface.mjs';
 import {sceneVfxPlan} from './vfx-scene.mjs';
 import {VfxCPU} from './vfx-cpu.mjs';
@@ -17,12 +17,15 @@ function* splitRect(rect,size){for(let y=rect.y;y<rect.y+rect.height;y+=size)for
 let cpu;
 const cpuExecutor=()=>cpu??=new VfxCPU();
 const premultiply=pixels=>{for(let i=0;i<pixels.length;i+=4){const a=pixels[i+3];if(a<255){pixels[i]=Math.round(pixels[i]*a/255);pixels[i+1]=Math.round(pixels[i+1]*a/255);pixels[i+2]=Math.round(pixels[i+2]*a/255);}}return pixels;};
-const unpremultiply=pixels=>{const out=new Uint8ClampedArray(pixels.length);for(let i=0;i<pixels.length;i+=4){const a=pixels[i+3];out[i+3]=a;if(a){out[i]=Math.min(255,Math.round(pixels[i]*255/a));out[i+1]=Math.min(255,Math.round(pixels[i+1]*255/a));out[i+2]=Math.min(255,Math.round(pixels[i+2]*255/a));}}return out;};
+const unpremultiply=pixels=>{const owned=vfxWorkerPixelsOwned(),out=owned?pixels:new Uint8ClampedArray(pixels.length);for(let i=0;i<pixels.length;i+=4){const a=pixels[i+3];out[i+3]=a;if(a){out[i]=Math.min(255,Math.round(pixels[i]*255/a));out[i+1]=Math.min(255,Math.round(pixels[i+1]*255/a));out[i+2]=Math.min(255,Math.round(pixels[i+2]*255/a));}else if(owned)out[i]=out[i+1]=out[i+2]=0;}return out;};
+const prepareSource=()=>{if(vfxWorkerPixelsOwned()){cpu?.releaseInput();prepareVfxWorkerSource();}};
+const softwarePixels=(data,width,height,stack,options)=>cpuExecutor().runPixels(data,width,height,stack,vfxWorkerPixelsOwned()?{...options,ownedPixels:true}:options);
 const blitInto=(dest,dw,src,sw,dx,dy)=>{const h=src.length/(sw*4);for(let y=0;y<h;y++)dest.set(src.subarray(y*sw*4,(y+1)*sw*4),((dy+y)*dw+dx)*4);};
 /** getImageData + premultiply + software pass over a painted canvas region. */
 function cpuRegion(source,sx,sy,region,stack,options){
+ prepareSource();
  const data=source.getContext('2d',{willReadFrequently:true}).getImageData(region.x-sx,region.y-sy,region.width,region.height).data;
- return cpuExecutor().runPixels(premultiply(data),region.width,region.height,stack,options);
+ return softwarePixels(premultiply(data),region.width,region.height,stack,options);
 }
 let resultCanvas;
 /** Software results are premultiplied buffers; wrap them in a canvas so the
@@ -111,15 +114,18 @@ export function releaseVfxSoftwareResources(){
 /** Paint a world-space source rect into premultiplied pixels, striping past
  * the single-canvas bound. */
 function paintSourceRect(paintAt,src){
+ prepareSource();
  let data;
  if(fitsSourceBound(src.width,src.height)){
-  const canvas=new OffscreenCanvas(src.width,src.height),ctx=canvas.getContext('2d');ctx.setTransform(1,0,0,1,0,0);paintAt(ctx,src.x,src.y);
-  data=premultiply(ctx.getImageData(0,0,src.width,src.height).data);
+  const canvas=new OffscreenCanvas(src.width,src.height),ctx=canvas.getContext('2d');
+  try{ctx.setTransform(1,0,0,1,0,0);paintAt(ctx,src.x,src.y);data=premultiply(ctx.getImageData(0,0,src.width,src.height).data);}
+  finally{releaseVfxWorkerSource(ctx);}
  }else{
   data=new Uint8ClampedArray(src.width*src.height*4);
   for(const strip of splitRect(src,VFX_SOURCE_DIMENSION)){
-   const canvas=new OffscreenCanvas(strip.width,strip.height),ctx=canvas.getContext('2d');ctx.setTransform(1,0,0,1,0,0);paintAt(ctx,strip.x,strip.y);
-   const img=ctx.getImageData(0,0,strip.width,strip.height);premultiply(img.data);blitInto(data,src.width,img.data,strip.width,strip.x-src.x,strip.y-src.y);
+   const canvas=new OffscreenCanvas(strip.width,strip.height),ctx=canvas.getContext('2d');
+   try{ctx.setTransform(1,0,0,1,0,0);paintAt(ctx,strip.x,strip.y);const img=ctx.getImageData(0,0,strip.width,strip.height);premultiply(img.data);blitInto(data,src.width,img.data,strip.width,strip.x-src.x,strip.y-src.y);}
+   finally{releaseVfxWorkerSource(ctx);}
   }
  }
  return data;
@@ -142,18 +148,43 @@ export function vfxRasterScale(items,bounds,requested,limit){
  const edge=Math.min(4096,deviceLimit)-128; // rounding/antialias guards through nested scopes
  return Math.min(requested,edge/(bounds.width+2*padding),edge/(bounds.height+2*padding));
 }
-export function withVfx(context,stack,paint,{bounds,domainBounds=bounds,scale=1,cacheHint,outputRect}={}){
- const stackObj=stack;
- stack=activeVfx(stack);if(!stack.length){paint(context);return;}
- const matrix=context.getTransform(),pixelScale=Math.hypot(matrix.a,matrix.b)*Math.abs(scale),pad=vfxPadding(stack,pixelScale)+2;
- const corners=bounds?[[bounds.x,bounds.y],[bounds.x+bounds.width,bounds.y],[bounds.x,bounds.y+bounds.height],[bounds.x+bounds.width,bounds.y+bounds.height]].map(([x,y])=>({x:matrix.a*x+matrix.c*y+matrix.e,y:matrix.b*x+matrix.d*y+matrix.f})): [{x:0,y:0},{x:context.canvas.width,y:context.canvas.height}];
- const x=Math.max(-pad,Math.floor(Math.min(...corners.map(p=>p.x)))-pad),y=Math.max(-pad,Math.floor(Math.min(...corners.map(p=>p.y)))-pad),right=Math.min(context.canvas.width+pad,Math.ceil(Math.max(...corners.map(p=>p.x)))+pad),bottom=Math.min(context.canvas.height+pad,Math.ceil(Math.max(...corners.map(p=>p.y)))+pad),width=Math.max(1,right-x),height=Math.max(1,bottom-y);
- if(right<=-pad||bottom<=-pad||x>=context.canvas.width+pad||y>=context.canvas.height+pad)return;
+/** Pure native source/domain calculation, shared by painting and bounded
+ * worker admission. Passing padding does not change the executor or density. */
+export function vfxSourcePlan({width:canvasWidth,height:canvasHeight,matrix,stack,bounds,domainBounds=bounds,scale=1,padding}){
+ const pixelScale=Math.hypot(matrix.a,matrix.b)*Math.abs(scale),pad=padding??vfxSourcePadding(stack,pixelScale)+2;
+ const corners=bounds?[[bounds.x,bounds.y],[bounds.x+bounds.width,bounds.y],[bounds.x,bounds.y+bounds.height],[bounds.x+bounds.width,bounds.y+bounds.height]].map(([x,y])=>({x:matrix.a*x+matrix.c*y+matrix.e,y:matrix.b*x+matrix.d*y+matrix.f})): [{x:0,y:0},{x:canvasWidth,y:canvasHeight}];
+ const x=Math.max(-pad,Math.floor(Math.min(...corners.map(p=>p.x)))-pad),y=Math.max(-pad,Math.floor(Math.min(...corners.map(p=>p.y)))-pad),right=Math.min(canvasWidth+pad,Math.ceil(Math.max(...corners.map(p=>p.x)))+pad),bottom=Math.min(canvasHeight+pad,Math.ceil(Math.max(...corners.map(p=>p.y)))+pad),width=Math.max(1,right-x),height=Math.max(1,bottom-y);
+ if(right<=-pad||bottom<=-pad||x>=canvasWidth+pad||y>=canvasHeight+pad)return null;
  // Anchor spatial filters to the full owner bounds, never the viewport/tile crop.
  const domain=domainBounds?[[domainBounds.x,domainBounds.y],[domainBounds.x+domainBounds.width,domainBounds.y],[domainBounds.x,domainBounds.y+domainBounds.height],[domainBounds.x+domainBounds.width,domainBounds.y+domainBounds.height]].map(([x,y])=>({x:matrix.a*x+matrix.c*y+matrix.e,y:matrix.b*x+matrix.d*y+matrix.f})):corners; const anchorX=Math.min(...domain.map(p=>p.x)),anchorY=Math.min(...domain.map(p=>p.y));
  const outputSize={width:Math.max(1,Math.max(...domain.map(p=>p.x))-anchorX),height:Math.max(1,Math.max(...domain.map(p=>p.y))-anchorY)};
+ return {rect:{x,y,width,height},pixelScale,pad,corners,anchorX,anchorY,outputSize};
+}
+/** The native software route expands only the required output through its
+ * sampling halo. Keep the exact region shared with admission as well. */
+export function vfxSoftwareSourcePlan({rect,pad,corners},{width:canvasWidth,height:canvasHeight,outputRect}={}){
+ const wx=Math.floor(Math.min(...corners.map(p=>p.x)))-pad,wy=Math.floor(Math.min(...corners.map(p=>p.y)))-pad;
+ const world={x:wx,y:wy,width:Math.max(1,Math.ceil(Math.max(...corners.map(p=>p.x)))+pad-wx),height:Math.max(1,Math.ceil(Math.max(...corners.map(p=>p.y)))+pad-wy)};
+ const cl=Math.max(0,rect.x),ct=Math.max(0,rect.y),cr=Math.min(canvasWidth,rect.x+rect.width),cb=Math.min(canvasHeight,rect.y+rect.height);
+ if(cr<=cl||cb<=ct)return null;
+ const rout={x:Math.min(cl,Math.max(world.x,outputRect?outputRect.x:cl)),y:Math.min(ct,Math.max(world.y,outputRect?outputRect.y:ct)),width:0,height:0};
+ rout.width=Math.max(cr,Math.min(world.x+world.width,outputRect?outputRect.x+outputRect.width:cr))-rout.x;
+ rout.height=Math.max(cb,Math.min(world.y+world.height,outputRect?outputRect.y+outputRect.height:cb))-rout.y;
+ const rin={x:Math.max(world.x,rout.x-pad),y:Math.max(world.y,rout.y-pad),width:0,height:0};
+ rin.width=Math.min(world.x+world.width,rout.x+rout.width+pad)-rin.x;
+ rin.height=Math.min(world.y+world.height,rout.y+rout.height+pad)-rin.y;
+ {const rx=Math.floor(rin.x),ry=Math.floor(rin.y);rin.width=Math.ceil(rin.x+rin.width)-rx;rin.height=Math.ceil(rin.y+rin.height)-ry;rin.x=rx;rin.y=ry;}
+ return {world,rout,rin,cl,ct,cr,cb};
+}
+export function withVfx(context,stack,paint,{bounds,domainBounds=bounds,scale=1,cacheHint,outputRect}={}){
+ const stackObj=stack;
+ stack=activeVfx(stack);if(!stack.length){paint(context);return;}
+ const matrix=context.getTransform(),plan=vfxSourcePlan({width:context.canvas.width,height:context.canvas.height,matrix,stack,bounds,domainBounds,scale});
+ if(!plan)return;
+ const {rect,pixelScale,pad,corners,anchorX,anchorY,outputSize}=plan,{x,y,width,height}=rect;
  const paintAt=(ctx,tx,ty)=>{configureVfxSoftwareResources(ctx,{owner:context});ctx.setTransform(matrix.a,matrix.b,matrix.c,matrix.d,matrix.e-tx,matrix.f-ty);paint(ctx);};
  const render=tile=>{
+  prepareSource();
   let surface=surfaces.get(context);if(!surface){surface=new OffscreenCanvas(tile.width,tile.height);surfaces.set(context,surface);}if(surface.width!==tile.width)surface.width=tile.width;if(surface.height!==tile.height)surface.height=tile.height;
   const ctx=surface.getContext('2d');ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,tile.width,tile.height);paintAt(ctx,tile.x,tile.y);
   const filtered=filterVfxCanvas(surface,stack,{scale:pixelScale,origin:{x:tile.x-anchorX,y:tile.y-anchorY},outputSize});
@@ -162,32 +193,17 @@ export function withVfx(context,stack,paint,{bounds,domainBounds=bounds,scale=1,
    else context.drawImage(filteredCanvas(filtered),tile.x,tile.y);
   }finally{context.restore();}
  };
- const rect={x,y,width,height},limit=vfxSurfaceDimension();
+ const limit=vfxSurfaceDimension();
  if(fitsVfxSurface(width,height,limit)){render(rect);return;}
  let tiled=false;
- if(limit>0)try{for(const tile of vfxSurfaceTiles(rect,context.canvas,pad,limit))render(tile);tiled=true;}catch{tiled=false;}
+ if(limit>0)try{for(const tile of vfxSurfaceTiles(rect,context.canvas,pad,limit))render(tile);tiled=true;}catch(error){if(vfxWorkerPixelsOwned())throw error;tiled=false;}
  if(tiled)return;
  // Software path. The drawn pixels sit inside world ∩ output, and every tap
  // they need sits inside rin = (world ∩ output)±pad ∩ world — a region that
  // is tile-invariant, so it is filtered once and composited per tile.
- const wx=Math.floor(Math.min(...corners.map(p=>p.x)))-pad,wy=Math.floor(Math.min(...corners.map(p=>p.y)))-pad;
- const world={x:wx,y:wy,width:Math.max(1,Math.ceil(Math.max(...corners.map(p=>p.x)))+pad-wx),height:Math.max(1,Math.ceil(Math.max(...corners.map(p=>p.y)))+pad-wy)};
- const cl=Math.max(0,rect.x),ct=Math.max(0,rect.y),cr=Math.min(context.canvas.width,rect.x+rect.width),cb=Math.min(context.canvas.height,rect.y+rect.height);
- if(cr<=cl||cb<=ct)return;
- // rout covers world ∩ outputRect (all output tiles) ∪ this tile's drawn
- // region — coverage is guaranteed even when outputRect is absent or stale.
- const rout={
-  x:Math.min(cl,Math.max(world.x,outputRect?outputRect.x:cl)),
-  y:Math.min(ct,Math.max(world.y,outputRect?outputRect.y:ct)),
-  width:0,height:0};
- rout.width=Math.max(cr,Math.min(world.x+world.width,outputRect?outputRect.x+outputRect.width:cr))-rout.x;
- rout.height=Math.max(cb,Math.min(world.y+world.height,outputRect?outputRect.y+outputRect.height:cb))-rout.y;
- const rin={x:Math.max(world.x,rout.x-pad),y:Math.max(world.y,rout.y-pad),width:0,height:0};
- rin.width=Math.min(world.x+world.width,rout.x+rout.width+pad)-rin.x;
- rin.height=Math.min(world.y+world.height,rout.y+rout.height+pad)-rin.y;
- // Fractional outputRect/depth values feed pixel buffers: snap outward so the
- // region keeps every needed tap and canvas calls stay integer-aligned.
- {const rx=Math.floor(rin.x),ry=Math.floor(rin.y);rin.width=Math.ceil(rin.x+rin.width)-rx;rin.height=Math.ceil(rin.y+rin.height)-ry;rin.x=rx;rin.y=ry;}
+ const software=vfxSoftwareSourcePlan(plan,{width:context.canvas.width,height:context.canvas.height,outputRect});
+ if(!software)return;
+ const {world,rout,rin,cl,ct,cr,cb}=software;
  if(cacheHint!==undefined&&typeof stackObj==='object'&&stackObj!==null&&rin.width>0&&rin.height>0&&rin.width*rin.height<=VFX_CPU_PIXELS){
   // Fingerprints are only needed by this oversized software cache. Ordinary
   // painting and GPU filtering must not serialize a dense pose on each redraw.
@@ -197,7 +213,7 @@ export function withVfx(context,stack,paint,{bounds,domainBounds=bounds,scale=1,
   if(!entry){
    const retained=cacheAdmit(context,rin.width*rin.height*4);
    const data=paintSourceRect(paintAt,rin);
-   const filtered=cpuExecutor().runPixels(data,rin.width,rin.height,stack,{scale:pixelScale,origin:{x:rin.x-anchorX,y:rin.y-anchorY},outputSize});
+   const filtered=softwarePixels(data,rin.width,rin.height,stack,{scale:pixelScale,origin:{x:rin.x-anchorX,y:rin.y-anchorY},outputSize});
    const canvas=new OffscreenCanvas(rin.width,rin.height);
    canvas.getContext('2d').putImageData(new ImageData(unpremultiply(filtered.pixels),rin.width,rin.height),0,0);
    entry=retained?cacheStore(context,stackObj,sig,canvas,rin.width*rin.height*4):null;transient=!entry;entry??={canvas};
@@ -216,7 +232,7 @@ export function withVfx(context,stack,paint,{bounds,domainBounds=bounds,scale=1,
   const src={x:sx,y:sy,width:ex-sx,height:ey-sy};
   if(src.width*src.height>VFX_CPU_PIXELS)throw vfxSurfaceError();
   const data=paintSourceRect(paintAt,src);
-  const filtered=cpuExecutor().runPixels(data,src.width,src.height,stack,{scale:pixelScale,origin:{x:src.x-anchorX,y:src.y-anchorY},outputSize});
+  const filtered=softwarePixels(data,src.width,src.height,stack,{scale:pixelScale,origin:{x:src.x-anchorX,y:src.y-anchorY},outputSize});
   context.save();try{context.setTransform(1,0,0,1,0,0);context.drawImage(filteredCanvas(filtered),out.x-src.x,out.y-src.y,out.width,out.height,out.x,out.y,out.width,out.height);}finally{context.restore();}
  }
 }
@@ -252,7 +268,7 @@ export function applySceneVfx(context,frame,{scale=1,origin={x:0,y:0},outputSize
   let filtered;
   if(fitsVfxSurface(region.width,region.height,limit)){
    const tile=tileSurface(region.width,region.height),ctx=tile.getContext('2d');ctx.clearRect(0,0,region.width,region.height);ctx.save();if(clip){ctx.beginPath();ctx.rect(clip.x-region.x,clip.y-region.y,clip.width,clip.height);ctx.clip();}ctx.drawImage(context.canvas,region.x,region.y,region.width,region.height,0,0,region.width,region.height);ctx.restore();
-   try{filtered=filterVfxCanvas(tile,stack,{scale,origin:{x:origin.x+region.x,y:origin.y+region.y},outputSize:os});}catch{filtered=cpuRegion(context.canvas,0,0,region,stack,{scale,origin:{x:origin.x+region.x,y:origin.y+region.y},outputSize:os});}
+   try{filtered=filterVfxCanvas(tile,stack,{scale,origin:{x:origin.x+region.x,y:origin.y+region.y},outputSize:os});}catch(error){if(vfxWorkerPixelsOwned())throw error;filtered=cpuRegion(context.canvas,0,0,region,stack,{scale,origin:{x:origin.x+region.x,y:origin.y+region.y},outputSize:os});}
   }else filtered=cpuRegion(context.canvas,0,0,region,stack,{scale,origin:{x:origin.x+region.x,y:origin.y+region.y},outputSize:os});
   emit(filtered,region,c);
  }
@@ -287,7 +303,7 @@ export function prepareSceneVfx(context,frame,viewport,scale=1){
      const region={x:c.x-pad,y:c.y-pad,width:c.width+2*pad,height:c.height+2*pad},tile=tileSurface(region.width,region.height);
      tile.getContext('2d').drawImage(source,region.x-src.x,region.y-src.y,region.width,region.height,0,0,region.width,region.height);
      try{composite(filterVfxCanvas(tile,stack,{scale,origin:{x:region.x,y:region.y},outputSize:os}),region,c);}
-     catch{composite(cpuRegion(source,src.x,src.y,region,stack,{scale,origin:{x:region.x,y:region.y},outputSize:os}),region,c);}
+     catch(error){if(vfxWorkerPixelsOwned())throw error;composite(cpuRegion(source,src.x,src.y,region,stack,{scale,origin:{x:region.x,y:region.y},outputSize:os}),region,c);}
     }
     return;
    }
@@ -303,13 +319,14 @@ export function prepareSceneVfx(context,frame,viewport,scale=1){
   const child=canvas.getContext('2d');configureVfxSoftwareResources(child,{owner:context});return {context:child,origin:{x:strip.x,y:strip.y},canvas,rect:strip,done(){}};
  });
  return {...plan,context:parts[0].context,parts,finish(){
+  prepareSource();
   const data=new Uint8ClampedArray(src.width*src.height*4);
   for(const part of parts){
    const img=part.canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,part.canvas.width,part.canvas.height);
    premultiply(img.data);blitInto(data,src.width,img.data,part.canvas.width,part.rect.x-src.x,part.rect.y-src.y);
    part.canvas.width=part.canvas.height=1;
   }
-  composite(cpuExecutor().runPixels(data,src.width,src.height,stack,{scale,origin:{x:src.x,y:src.y},outputSize:os}),src);
+  composite(softwarePixels(data,src.width,src.height,stack,{scale,origin:{x:src.x,y:src.y},outputSize:os}),src);
  }};
 }
 export function releaseVfxSurface(context,{retainSoftwareFilters=false}={}){

@@ -12,16 +12,44 @@ const waitFor=async condition=>{
   assert.ok(condition(),'Expected asynchronous refinement state before the deadline.');
 };
 class Worker {
-  calls=[];captures=[];chunks=[];holdChunks=false;outstanding=0;maximum=0;disposed=0;
+  calls=[];captures=[];chunks=[];plans=[];holdChunks=false;holdPlans=false;requiredBytes=512;outstanding=0;maximum=0;disposed=0;
   request(kind,payload,{signal}={}){
     this.calls.push({kind,payload,signal});this.maximum=Math.max(this.maximum,++this.outstanding);
     if(kind==='composite-chunk')return (this.holdChunks?new Promise(resolve=>this.chunks.push({signal,resolve:()=>resolve({})})):Promise.resolve({})).finally(()=>this.outstanding--);
+    if(kind==='preview-raster-plan')return (this.holdPlans?new Promise(resolve=>this.plans.push({signal,resolve})):Promise.resolve({requiredBytes:this.requiredBytes})).finally(()=>this.outstanding--);
     assert.equal(kind,'preview-raster');
     return new Promise((resolve,reject)=>this.captures.push({payload,signal,resolve:bitmap=>resolve({bitmap}),reject})).finally(()=>this.outstanding--);
   }
   // A completed transferred bitmap can still arrive after cancellation.
   dispose(){this.disposed++;}
 }
+
+test('a scene capture precedes queued component upgrades without preempting a running owner',async()=>{
+  const worker=new Worker(),order=[],queue=new CanvasRasterRefinement({worker});
+  const request=(key,priority=false)=>queue.request(key,description({priority,install:()=>{order.push(key);return true;}}));
+  try{
+    request('component-1');request('component-2');request('scene',true);
+    await waitFor(()=>worker.captures.length===1);assert.equal(queue.running.key,'scene');
+    request('next-scene',true);assert.equal(worker.captures[0].signal.aborted,false);
+    worker.captures[0].resolve(bitmap());await waitFor(()=>worker.captures.length===2);
+    assert.equal(queue.running.key,'next-scene');worker.captures[1].resolve(bitmap());
+    await waitFor(()=>worker.captures.length===3);assert.equal(queue.running.key,'component-1');worker.captures[2].resolve(bitmap());
+    await waitFor(()=>worker.captures.length===4);assert.equal(queue.running.key,'component-2');worker.captures[3].resolve(bitmap());
+    await queue.whenReady();assert.deepEqual(order,['scene','next-scene','component-1','component-2']);
+    assert.equal(worker.maximum,1);assert.equal(queue.stats.failed,0);assert.equal(queue.priority,null);
+  }finally{queue.dispose();}
+});
+
+test('cancelled and superseded scene priority leaves ordinary queue order intact',async()=>{
+  const worker=new Worker(),queue=new CanvasRasterRefinement({worker});
+  try{
+    queue.request('first',description());queue.request('scene',description({priority:true}));queue.cancel('scene');
+    queue.request('second',description({priority:true}));queue.request('second',description());
+    await waitFor(()=>worker.captures.length===1);assert.equal(queue.running.key,'first');worker.captures[0].resolve(bitmap());
+    await waitFor(()=>worker.captures.length===2);assert.equal(queue.running.key,'second');worker.captures[1].resolve(bitmap());
+    await queue.whenReady();assert.equal(queue.stats.completed,2);assert.equal(queue.priority,null);
+  }finally{queue.dispose();}
+});
 
 test('covered refinement returns before transfer, deduplicates its batch and publishes one independently owned bitmap',async()=>{
   const worker=new Worker(),published=[],invalidations=[];
@@ -190,4 +218,57 @@ test('native effects retain the warm worker after capture publishes its independ
     queue.request({},description({items:[drawable],install:()=>{assert.equal(worker.disposed,0);assert.equal(queue.stats.bytes,0);return true;}}));await waitFor(()=>worker.captures.length===1);const result=bitmap();worker.captures[0].resolve(result);await queue.whenReady();
     assert.equal(worker.disposed,0);assert.equal(result.closed,0);assert.equal(queue.stats.completed,1);result.close();
   }finally{queue.dispose();}
+});
+
+test('native admission reclaims its measured scratch allowance without retransferring the acknowledged snapshot',async()=>{
+  const worker=new Worker(),queue=new CanvasRasterRefinement({worker}),allowances=[],published=[];
+  worker.requiredBytes=96*1024;
+  try{
+    queue.request({},description({preflightBudget:128*1024,allowance:required=>{
+      allowances.push(required);return required===undefined?64*1024:100*1024;
+    },install:bitmap=>{published.push(bitmap);return true;}}));
+    await waitFor(()=>worker.captures.length===1);
+    assert.deepEqual(allowances,[undefined,96*1024]);
+    assert.deepEqual(worker.calls.slice(-2).map(call=>call.kind),['preview-raster-plan','preview-raster']);
+    assert.ok(worker.calls.slice(0,-2).every(call=>call.kind==='composite-chunk'));
+    assert.equal(worker.calls.filter(call=>call.kind==='composite-chunk'&&call.payload.chunk.header).length,1);
+    assert.equal(worker.calls.find(call=>call.kind==='preview-raster-plan').payload.maxBytes,128*1024);
+    assert.equal(worker.captures[0].payload.maxBytes,100*1024);assert.equal(queue.stats.bytes,100*1024);assert.equal(worker.maximum,1);
+    const result=bitmap();worker.captures[0].resolve(result);await queue.whenReady();
+    assert.deepEqual(published,[result]);assert.equal(queue.stats.failed,0);assert.equal(queue.stats.bytes,0);result.close();
+  }finally{queue.dispose();}
+});
+
+test('native admission protects visible pixels when measured scratch cannot fit the existing owner',async()=>{
+  const worker=new Worker(),errors=[],queue=new CanvasRasterRefinement({worker,onError:error=>{
+    assert.equal(worker.disposed,1);assert.equal(queue.stats.bytes,0);errors.push(error);
+  }}),displayed=bitmap();
+  worker.requiredBytes=96*1024;
+  try{
+    queue.request({},description({preflightBudget:128*1024,allowance:()=>64*1024,install:()=>{displayed.close();return true;}}));await queue.whenReady();
+    assert.equal(worker.captures.length,0);assert.equal(displayed.closed,0);assert.equal(errors.length,1);assert.equal(errors[0].code,'preview_raster_budget');
+    assert.equal(worker.disposed,1,'Rejected admission releases the acknowledged worker snapshot.');
+    assert.equal(queue.stats.failed,1);assert.equal(queue.stats.pending,0);assert.equal(queue.stats.bytes,0);
+  }finally{queue.dispose();displayed.close();}
+});
+
+test('cancellation during native preflight does not reclaim cold owners or start painting',async()=>{
+  const worker=new Worker(),errors=[],queue=new CanvasRasterRefinement({worker,onError:error=>errors.push(error)}),allowances=[];worker.holdPlans=true;
+  try{
+    queue.request({},description({preflightBudget:128*1024,allowance:required=>{allowances.push(required);return 64*1024;}}));
+    await waitFor(()=>worker.plans.length===1);queue.cancel();assert.equal(worker.plans[0].signal.aborted,true);assert.equal(queue.stats.bytes,0);
+    worker.plans[0].resolve({requiredBytes:96*1024});await queue.whenReady();
+    assert.deepEqual(allowances,[undefined]);assert.equal(worker.captures.length,0);assert.equal(errors.length,0);assert.equal(queue.stats.failed,0);assert.equal(queue.stats.pending,0);
+  }finally{queue.dispose();}
+});
+
+test('malformed native preflight cannot enlarge a reservation or reach the painter',async()=>{
+  for(const requiredBytes of [NaN,511,128*1024+1]){
+    const worker=new Worker(),errors=[],queue=new CanvasRasterRefinement({worker,onError:error=>errors.push(error)}),allowances=[];worker.requiredBytes=requiredBytes;
+    try{
+      queue.request({},description({preflightBudget:128*1024,allowance:required=>{allowances.push(required);return 64*1024;}}));await queue.whenReady();
+      assert.deepEqual(allowances,[undefined]);assert.equal(worker.captures.length,0);assert.equal(errors.length,1);assert.equal(queue.stats.failed,1);assert.equal(queue.stats.bytes,0);
+      assert.equal(worker.disposed,1,'Malformed planning replies cannot retain the acknowledged snapshot.');
+    }finally{queue.dispose();}
+  }
 });

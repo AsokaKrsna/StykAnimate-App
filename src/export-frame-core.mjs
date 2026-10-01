@@ -73,7 +73,7 @@ export function exportFrameGeometry(report, frame) {
     ),
   };
 }
-export function drawExportScene(context, report, frame, geometry, resources) {
+export function drawExportScene(context, report, frame, geometry, resources, {releaseSceneScratch=false,beforeSceneFilter}={}) {
   if(!geometry.connectedVfxSource)geometry=connectedVfxGeometry(geometry,frame,report);
   const width = report.canvas_width,
     height = report.canvas_height;
@@ -98,8 +98,14 @@ export function drawExportScene(context, report, frame, geometry, resources) {
     } finally {
       pctx.restore();
     }
+    // A one-shot worker capture no longer needs object isolation/effect
+    // pixels after the padded scene has been painted. Release them before
+    // allocating the final scene filter, as the sequential exporter does.
+    if(releaseSceneScratch)releaseGeometryResources(pctx);
+    if(scene.parts.length===1)beforeSceneFilter?.();
     part.done();
   }
+  if(scene.parts.length!==1)beforeSceneFilter?.();
   scene.finish();
 }
 
