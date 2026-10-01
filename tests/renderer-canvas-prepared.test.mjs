@@ -134,3 +134,29 @@ test('object artwork under a covering camera image is neither painted nor refine
     assert.equal(painted,3,'Backed-off camera previews keep painting objects.');assert.equal(camera,3);
   }finally{renderer.destroy();}
 });
+
+test('Canvas image decodes replace only artwork that paints the changed images',async()=>{
+  const renderer=await createRenderer(canvas(),{forceCanvas2D:true,asyncArtwork:false});
+  const owner=url=>({drawables:[{type:'line'},{type:'image',asset:{asset_url:url}}]}),item=()=>({bytes:10,canvas:canvas()});
+  const keep=owner('/keep.png'),change=owner('/change.png'),vector={drawables:[{type:'line'}]},camera={};
+  try{
+    const kept=item(),changed=item(),plain=item(),scene=item(),ghost=item(),changedGhost=item();
+    renderer.artwork.set(keep,kept);renderer.artwork.set(change,changed);renderer.artwork.set(vector,plain);renderer.artwork.set(camera,scene);renderer.artworkBytes=40;
+    renderer.onionArtwork.set(keep,ghost);renderer.onionArtwork.set(change,changedGhost);renderer.onionArtworkBytes=20;
+    renderer.invalidateImages(['/change.png']);
+    assert.deepEqual([...renderer.artwork.keys()],[keep,vector]);assert.equal(renderer.artworkBytes,20);
+    assert.deepEqual([...renderer.onionArtwork.keys()],[keep]);assert.equal(renderer.onionArtworkBytes,10);
+    assert.ok(changed.destroyed&&scene.destroyed&&changedGhost.destroyed,'Changed and unknown dependencies are released.');
+    assert.ok(!kept.destroyed&&!plain.destroyed&&!ghost.destroyed);
+  }finally{renderer.destroy();}
+});
+
+test('navigation stand-ins share their cache allowance among the visible figures or onion skins',async()=>{
+  const renderer=await createRenderer(canvas(),{forceCanvas2D:true,asyncArtwork:false,onionCache:{maxBytes:8*1024*1024}});
+  try{
+    renderer.artworkBudget=64*1024*1024;renderer.onionGroupCount=4;renderer.artworkGroupCount=3;
+    assert.equal(renderer.gestureProxyPixels(true),Math.floor(4*1024*1024*.75/4/4));
+    assert.equal(renderer.gestureProxyPixels(false),4*1024*1024,'Never above the four-megapixel stand-in limit.');
+    renderer.onionGroupCount=0;assert.equal(renderer.gestureProxyPixels(true),Math.floor(4*1024*1024*.75/4));
+  }finally{renderer.destroy();}
+});

@@ -813,6 +813,53 @@ export async function zoomSceneCaptureNative({onProgress=()=>{},disableWebGL=fal
 
 /** A capped GPU Camera must repaint when settled generic artwork gains detail,
  * even though its camera dimensions remain unchanged throughout the gesture. */
+/** Compatibility onion skins with effects must keep their rasters through
+ * navigation and settled repaints when together they exceed the onion
+ * allowance at the requested density: each eviction re-rasterizes a ghost
+ * with its effects, and evictions cascaded on every zoom step. */
+export async function zoomCanvasOnionBudget({rendererURL='../src/renderer.mjs',onProgress=()=>{}}={}){
+  const [{createRenderer},{createVfx}]=await Promise.all([import(rendererURL),import('../src/vfx.mjs')]);
+  const width=384,height=256,onionBytes=8*MiB,checks=[],rows=[],renderers=[];
+  const verify=(condition,message,details)=>{check(condition,message,details);checks.push(message);onProgress({checks:checks.length,message});};
+  const make=async()=>{
+    const renderer=await createRenderer(document.createElement('canvas'),{forceCanvas2D:true,asyncArtwork:false,gpuDrawing:false,sharedArtwork:false,onionCache:{maxBytes:onionBytes}});
+    renderer.resize(width,height,1);renderers.push(renderer);return renderer;
+  };
+  try{
+    const s=scene({opaque:true}),figure=s.report.figure_types[0];
+    const glowing=(x,y)=>{const object=createObject(figure,1,x,y),glow=createVfx('glow','ghost-glow');glow.params.radius=4;object._stykVfx={figure:[glow]};return object;};
+    s.frame=createFrame([glowing(200,200)]);s.report.keyframes=[s.frame];s.geometry=buildGeometry(s.report,s.frame);
+    const onionFrames=[-24,-12,12,24].map(dx=>{const frame=createFrame([glowing(200+dx,200+dx/3)]);return {frame,geometry:buildGeometry(s.report,frame),opacity:.35};});
+    const options=(scale,{dx=0,...extra}={})=>{const view=sceneView(scale,s.target,width,height);return {report:s.report,frame:s.frame,geometry:s.geometry,view:{...view,x:view.x+dx},
+      cameraEnabled:false,clipToCanvas:false,editorBackgroundColor:0x00ffffff,onionFrames,...extra};};
+    const renderer=await make(),rasters=()=>renderer.stats.onionRasterizedObjects;
+    renderer.render(options(1.5));
+    verify(renderer.onionArtwork.size===4&&rasters()===4,'Four onion skins with effects are rasterized once at the fitted view',{entries:renderer.onionArtwork.size,rasters:rasters()});
+    for(const scale of [2,4,8,16,32]){renderer.render({...options(scale),viewChanging:true});verify(rasters()===0,`${scale}x: zooming into held onion skins rasterizes none`);}
+    renderer.render(options(32));
+    verify(rasters()===4&&renderer.onionArtworkBytes<=onionBytes/2,'Settling at high zoom rasterizes each onion skin once, within the onion allowance',
+      {rasters:rasters(),bytes:renderer.onionArtworkBytes,allowance:onionBytes/2});
+    const fresh=await make();fresh.render(options(32));
+    const diff=difference(read(renderer.canvas),read(fresh.canvas));
+    verify(diff.visible>100&&diff.max===0,'Onion skins fitted to the allowance match an independently prepared view',diff);
+    for(const dx of [3,6,9]){
+      renderer.render(options(32,{dx}));
+      verify(rasters()===0,`A ${dx}px pan recomposites onion skins from their retained rasters`,{rasters:rasters(),entries:renderer.onionArtwork.size,bytes:renderer.onionArtworkBytes});
+    }
+    let gesture=0;
+    for(const scale of [24,16,10,6,3,1.5]){renderer.render({...options(scale),viewChanging:true});gesture+=rasters();
+      verify(renderer.onionArtworkBytes<=onionBytes/2,`${scale}x: zoom-out stand-ins fit the onion allowance together`);}
+    verify(gesture<=4,'Zooming out replaces each onion skin at most once',{gesture});
+    renderer.render(options(1.5));
+    renderer.invalidateImages(['/zoom-onion-resource-not-present.png']);
+    renderer.render(options(1.5,{dx:2}));
+    verify(rasters()===0&&renderer.onionArtwork.size===4,'An unrelated image decode keeps every onion raster');
+    rows.push({name:'Canvas onion allowance',gestureRasters:gesture,diff});
+    return {checks,rows,backend:'Canvas onion allowance'};
+  }catch(error){error.partialChecks=checks;throw error;}
+  finally{for(const renderer of renderers)renderer.destroy();}
+}
+
 /** Below its size cap the GPU Camera image follows the view density, so an
  * unheld zoom repaints and re-uploads it on every step. Navigation holds the
  * painted density and the settled paint restores the requested one. */

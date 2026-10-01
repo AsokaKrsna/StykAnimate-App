@@ -44,6 +44,29 @@ export function canvasArtworkPlan(bounds, visible, resolution, {safe=false,paddi
   return plan.cropped&&plan.pixelWidth*plan.pixelHeight<=plan.fullPixels*.6?plan:undefined;
 }
 
+/** canvasArtworkPlan, or when that raster exceeds `maxPixels`, a crop to the
+ * view at the highest density that fits. A reduced raster crops even where
+ * ordinary detail would paint the whole artwork, which would need a far lower
+ * density. Returns the plan (undefined for the whole artwork, null when
+ * nothing is visible) and the density to paint it at. */
+export function canvasArtworkPlanWithin(bounds, visible, resolution, {maxPixels=Infinity,...options}={}) {
+  const maxDimension=options.maxDimension??4096;
+  const area=(plan,density)=>plan?plan.pixelWidth*plan.pixelHeight:
+    Math.ceil(bounds.width*Math.min(density,maxDimension/bounds.width,maxDimension/bounds.height))*Math.ceil(bounds.height*Math.min(density,maxDimension/bounds.width,maxDimension/bounds.height));
+  let density=resolution,plan=canvasArtworkPlan(bounds,visible,density,options);
+  if(plan===null||area(plan,density)<=maxPixels)return {plan,density};
+  // Crops grow in coverage steps, so the area can jump: always reduce enough
+  // to make progress past a step.
+  for(let attempt=0;attempt<8;attempt++){
+    // Dimension limits can already hold the crop below the requested density.
+    const effective=plan?plan.pixelScale:Math.min(density,maxDimension/bounds.width,maxDimension/bounds.height);
+    density=effective*Math.min(.95,Math.sqrt(maxPixels/area(plan,density))*.98);
+    plan=visible?rasterBounds(bounds,visible,density,maxDimension,128,options.padding??0):undefined;
+    if(plan===null||area(plan,density)<=maxPixels)break;
+  }
+  return {plan,density};
+}
+
 /** Device-pixel union, clipped to an admitted viewport plus its pan margin.
  * Exact editing keeps the destination origin: translating cached image draws
  * changes Canvas edge sampling even under a whole-pixel offset. Null coverage

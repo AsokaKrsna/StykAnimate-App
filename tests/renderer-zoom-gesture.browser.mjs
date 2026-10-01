@@ -55,12 +55,16 @@ try{
     const reports=[];
     try{
       if(drawingCPUOnly||sceneCaptureOnly)return {reports};
-      const {zoomGestureState,zoomGestureDrawing,zoomArtworkRefinement,zoomCameraArtworkRefinement,zoomCameraDrawingArtworkRefinement,zoomCameraCappedGPU,zoomCameraHeldGPU}=await import('/tests/renderer-zoom-gesture-fixture.mjs');
+      const {zoomGestureState,zoomGestureDrawing,zoomArtworkRefinement,zoomCameraArtworkRefinement,zoomCameraDrawingArtworkRefinement,zoomCameraCappedGPU,zoomCameraHeldGPU,zoomCanvasOnionBudget}=await import('/tests/renderer-zoom-gesture-fixture.mjs');
       if(!refinementSmall&&!cameraOnly&&!cameraDrawingOnly&&!cameraGPUOnly)for(const forceCanvas2D of [false,true]){
         await window.zoomCheckProgress({phase:'state',forceCanvas2D});
         reports.push(await zoomGestureState({forceCanvas2D}));
         await window.zoomCheckProgress({phase:'drawing',forceCanvas2D});
         reports.push(await zoomGestureDrawing({forceCanvas2D}));
+      }
+      if(!refinementSmall&&!cameraOnly&&!cameraDrawingOnly&&!cameraGPUOnly){
+        await window.zoomCheckProgress({phase:'Canvas onion allowance'});
+        reports.push(await zoomCanvasOnionBudget());
       }
       if(!stateOnly&&!cameraOnly&&!cameraDrawingOnly){
         await window.zoomCheckProgress({phase:'capped GPU camera'});

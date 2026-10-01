@@ -129,7 +129,11 @@ export class DrawingController {
     // never spawn stores, workers or presenters.
     const report=this.editor.report,owner=drawingResourcesFor(report)??((required||this.active||report.figure_types?.some(figure=>drawingMetadata(figure)))?this.editor.drawingResources:null);
     if(owner===this.owner)return;this.owner=owner;if(!owner)return;
-    owner.onChange=()=>{if(this.selection?.presenter)this.selection.presenter.stamp++;if(this.surfaceVersion!==owner.surfaceVersion){this.surfaceVersion=owner.surfaceVersion;if(this.state.renderer){this.state.renderer.lastGeometry=null;this.state.renderer.clearArtwork?.();this.state.renderer.clearOnionArtwork?.();}}this.onRender();};owner.onError=this.onError;
+    // A decoded or evicted cel changes its own entry's store and stamp; each
+    // cached raster records the entries it painted and repaints only when one
+    // of them changes. Clearing every raster re-rasterized all figures and
+    // onion skins whenever a neighbouring cel finished decoding.
+    owner.onChange=()=>{if(this.selection?.presenter)this.selection.presenter.stamp++;if(this.surfaceVersion!==owner.surfaceVersion){this.surfaceVersion=owner.surfaceVersion;if(this.state.renderer)this.state.renderer.lastGeometry=null;}this.onRender();};owner.onError=this.onError;
     // Evicted published cels restore from GPU-resident tiles when possible.
     owner.onEvictStore=(entry,store)=>this.state.renderer?.drawingGpu?.remember(entry,store);
     owner.restoreStore=(entry,revision)=>this.state.renderer?.drawingGpu?.restore(entry,revision)??null;

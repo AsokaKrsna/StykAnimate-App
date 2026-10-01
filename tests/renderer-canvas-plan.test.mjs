@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {canvasCoverageBounds,canvasBoundsOutside,canvasArtworkCropSafe,canvasArtworkPlan,canvasLayerBounds} from '../src/renderer-canvas-plan.mjs';
+import {canvasCoverageBounds,canvasBoundsOutside,canvasArtworkCropSafe,canvasArtworkPlan,canvasArtworkPlanWithin,canvasLayerBounds} from '../src/renderer-canvas-plan.mjs';
 import {rasterCovers} from '../src/raster-view.mjs';
 import {createDrawingFigure} from '../src/drawing-model.mjs';
 
@@ -66,4 +66,24 @@ test('gesture layers crop transformed device extents, preserving uncertain and o
   assert.deepEqual(canvasLayerBounds([null],[2,0,0,2,10,20],800,600,40),{x:-40,y:-40,width:880,height:680});
   assert.deepEqual(canvasLayerBounds([{x:10000,y:10000,width:10,height:10}],[1,0,0,1,0,0],800,600),{x:0,y:0,width:1,height:1});
   assert.deepEqual(canvasLayerBounds([],[1,0,0,1,0,0],800,600),{x:0,y:0,width:1,height:1});
+});
+
+test('a raster allowance lowers the planned density until the raster fits and keeps cropping to the view',()=>{
+  const visible={x:650,y:300,width:200,height:150},area=plan=>plan.pixelWidth*plan.pixelHeight;
+  // Within the allowance the ordinary plan is unchanged.
+  const ordinary=canvasArtworkPlan(bounds,visible,24,{});
+  assert.deepEqual(canvasArtworkPlanWithin(bounds,visible,24,{maxPixels:Infinity}),{plan:ordinary,density:24});
+  // Over the allowance the raster stays a crop of the view, at a lower density,
+  // including below the density at which ordinary detail would stop cropping.
+  const large={x:0,y:0,width:10000,height:6000},view={x:4100,y:2900,width:400,height:300};
+  for(const [resolution,maxPixels] of [[24,2e6],[6,2e6],[3,4e5]]){
+    const fitted=canvasArtworkPlanWithin(large,view,resolution,{maxPixels});
+    assert.ok(fitted.density<resolution,resolution);
+    assert.ok(fitted.plan.cropped&&area(fitted.plan)<=maxPixels&&area(fitted.plan)>maxPixels/2,`${resolution}: the crop uses most of its allowance`);
+    assert.ok(rasterCovers(fitted.plan,large,view),'The reduced crop still covers the view.');
+  }
+  // Artwork that is entirely in view scales as a whole.
+  const small={x:0,y:0,width:100,height:80},whole=canvasArtworkPlanWithin(small,{x:-10,y:-10,width:200,height:200},6,{maxPixels:40000});
+  assert.equal(whole.plan?.cropped??false,false);assert.ok(whole.density<6&&whole.plan.pixelWidth*whole.plan.pixelHeight<=40000);
+  assert.equal(canvasArtworkPlanWithin(bounds,{x:5000,y:5000,width:10,height:10},24,{maxPixels:1000}).plan,null);
 });

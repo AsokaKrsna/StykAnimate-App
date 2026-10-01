@@ -141,6 +141,23 @@ down on smaller memory tiers. Canvas splits that allowance between completed
 layers and object rasters, preventing large viewport images from flushing small
 figure rasters. WebGPU's existing object artwork owners keep their own budgets.
 
+Compatibility onion rasters must fit `editorOnions / 2` together: each
+eviction re-rasterizes a ghost with its effects the next time its layer is
+recomposited, and evictions cascaded on every zoom step. A ghost whose raster
+at the requested density exceeds its share of that allowance (shared among the
+frame's onion groups, `gestureProxyPixels(true)`) is painted at the highest
+density that fits by `canvasArtworkPlanWithin()`, still cropped to the view;
+its entry keeps the requested `resolution`, so it is not refined back over the
+allowance. Zoom stand-ins for both figures and ghosts use the same shares.
+Faded ghosts can therefore be softer than live artwork at high zoom. Image
+decodes call the Canvas renderer's `invalidateImages(changedURLs)`, which
+releases only artwork that paints a changed image, and a completed drawing-cel
+decode no longer clears every raster: each raster records the cels it painted
+and repaints when one of them changes. Both previously re-rasterized every
+figure and ghost whenever zooming crossed an image decode scale or a nearby cel
+finished decoding. `zoomCanvasOnionBudget` in
+`tests/renderer-zoom-gesture-fixture.mjs` covers these rules.
+
 WebGPU paints each ghost into one reusable frame texture and MSAA surface, then
 blends that frame at its opacity into the completed layer. The main pass retains
 its samples across composites; GPU timing spans the first and last pass. There

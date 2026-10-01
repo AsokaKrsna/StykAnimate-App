@@ -3,7 +3,7 @@ import {vectorVfxSource,rasterizeVectorVfx,canvasVfxSource,filterArtworkVfx} fro
 import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {parallaxResolver} from './layer-parallax.mjs';
 import {rasterBounds,rasterCovers,rasterViewport,gestureProxyResolution} from './raster-view.mjs';
-import {canvasCoverageBounds,canvasBoundsOutside,canvasArtworkCropSafe,canvasArtworkPlan,canvasLayerBounds} from './renderer-canvas-plan.mjs';
+import {canvasCoverageBounds,canvasBoundsOutside,canvasArtworkCropSafe,canvasArtworkPlan,canvasArtworkPlanWithin,canvasLayerBounds} from './renderer-canvas-plan.mjs';
 import {canvasPaint} from './paint.mjs';
 import {GpuTiming,requestInstrumentedDevice} from './gpu-timing.mjs';
 import {gpuStartupBudget} from './gpu-startup.mjs';
@@ -304,6 +304,29 @@ class CanvasFallback {
   cancelArtworkRefinement(){this.refinement?.cancel();this.refinementContext=null;}
   prepareInitialScene(options) { return prepareInitialScene(this, options); }
   activatePreparedScene(prepared, options) { return activatePreparedScene(this, prepared, options); }
+  /** A decoded image batch replaces only artwork that paints one of its URLs.
+   * Clearing every raster instead re-rasterized all figures and onion skins,
+   * with their effects, each time zooming crossed an image decode scale. */
+  invalidateImages(changedURLs) {
+    const urls = new Set(changedURLs);
+    // Keys are the geometry that painted each raster; anything else (the
+    // camera scene) can contain images and is replaced conservatively.
+    const affected = key => !Array.isArray(key?.drawables) ||
+      key.drawables.some(item => item.type === 'image' && item.asset && urls.has(this.resources.url(item.asset)));
+    for (const [map, total] of [[this.artwork, 'artworkBytes'], [this.onionArtwork, 'onionArtworkBytes']])
+      for (const [key, item] of map) if (affected(key)) {map.delete(key); this[total] -= item.bytes; this.refinement?.cancel(item); releaseCanvasArtwork(item);}
+    // Composites, bounds and backgrounds can contain the changed pixels.
+    this.boundsCache = new WeakMap(); this.lastSceneGroups = null; this.clearSceneLayers(); this.onionLayers.clear();
+    releaseBackgroundResources(this.context); if (this.vfxCamera) this.vfxCamera.frame = null;
+    this.clearPreparedFrames();
+  }
+  /** Pixels for one whole-artwork stand-in during navigation: a share of its
+   * cache's allowance. Stand-ins for every visible figure or onion skin must
+   * fit together, or each new one evicts another on every zoom step. */
+  gestureProxyPixels(onion) {
+    const budget = onion ? this.onionBudget / 2 : this.artworkBudget ?? previewMemoryPlan().editorRasters;
+    return Math.max(4096, Math.min(4 * 1024 * 1024, Math.floor(budget * .75 / 4 / Math.max(1, onion ? this.onionGroupCount : this.artworkGroupCount))));
+  }
   clearOnionArtwork() {
     for (const item of this.onionArtwork.values()) {this.refinement?.cancel(item);releaseCanvasArtwork(item);}
     this.onionArtwork.clear(); this.onionArtworkBytes = 0;
@@ -472,10 +495,11 @@ class CanvasFallback {
     if(this.last.liveEditing)return true;
     const originalBounds=cached.originalBounds??cachedArtworkBounds(this,key,items);
     const padding=items.reduce((n,item)=>Math.max(n,drawableVfxPadding(item)),0);
-    const plan=drawingViewport?undefined:canvasArtworkPlan(originalBounds,visible,resolution,{safe:Boolean(cachedCanvasCoverage(this,key,items))&&canvasArtworkCropSafe(items),padding});
+    const {plan,density}=drawingViewport?{plan:undefined,density:resolution}:canvasArtworkPlanWithin(originalBounds,visible,resolution,
+      {safe:Boolean(cachedCanvasCoverage(this,key,items))&&canvasArtworkCropSafe(items),padding,...(onion?{maxPixels:this.gestureProxyPixels(true)}:{})});
     if(plan===null)return false;
     const bounds=plan??originalBounds;
-    const pixelScale=drawingViewport?resolution:vfxRasterScale(items,bounds,Math.min(resolution,4096/bounds.width,4096/bounds.height));
+    const pixelScale=drawingViewport?resolution:vfxRasterScale(items,bounds,Math.min(density,4096/bounds.width,4096/bounds.height));
     const width=drawingViewport?.width??Math.max(1,Math.ceil(bounds.width*pixelScale)),height=drawingViewport?.height??Math.max(1,Math.ceil(bounds.height*pixelScale)),bytes=width*height*4;
     const context=this.refinementContext,signature=drawingViewport?.signature??[resolution,bounds.x,bounds.y,width,height,pixelScale].join('|');
     if(cached.refinementFailure===signature)return false;
@@ -521,11 +545,15 @@ class CanvasFallback {
       if (cached) { this.refinement?.cancel(cached);this.onionArtwork.delete(group.g); this.onionArtworkBytes -= cached.bytes; releaseCanvasArtwork(cached); }
       const originalBounds = cachedArtworkBounds(this,group.g,group.items);
       const padding=group.items.reduce((n,item)=>Math.max(n,drawableVfxPadding(item)),0);
-      if(proxy)resolution=gestureProxyResolution(requested,originalBounds,4096);
-      const plan=proxy?undefined:canvasArtworkPlan(originalBounds,visible,resolution,{safe:Boolean(coverage)&&canvasArtworkCropSafe(group.items),padding});
+      if(proxy)resolution=gestureProxyResolution(requested,originalBounds,4096,this.gestureProxyPixels(true));
+      // Every onion skin in view must fit the onion allowance together, or
+      // each repaint evicts and re-rasterizes them. Faded ghosts take the
+      // density that fits; `resolution` still names the requested detail.
+      const {plan,density}=proxy?{plan:undefined,density:resolution}:canvasArtworkPlanWithin(originalBounds,visible,resolution,
+        {safe:Boolean(coverage)&&canvasArtworkCropSafe(group.items),padding,maxPixels:this.gestureProxyPixels(true)});
       if(plan===null)return;
       const bounds=plan??originalBounds;
-      const pixelScale = vfxRasterScale(group.items,bounds,Math.min(resolution, 4096 / bounds.width, 4096 / bounds.height));
+      const pixelScale = vfxRasterScale(group.items,bounds,Math.min(density, 4096 / bounds.width, 4096 / bounds.height));
       const width = Math.max(1, Math.ceil(bounds.width * pixelScale)), height = Math.max(1, Math.ceil(bounds.height * pixelScale));
       const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : this.canvas.ownerDocument.createElement('canvas');
       canvas.width = width; canvas.height = height;
@@ -705,7 +733,7 @@ class CanvasFallback {
       const originalBounds = cachedArtworkBounds(this,source,items);
       if (!(originalBounds.width > 0 && originalBounds.height > 0)) { drawGeometry(ctx, directGeometry, this.resources); return; }
       const padding=items.reduce((n,item)=>Math.max(n,drawableVfxPadding(item)),0);
-      if(proxy)resolution=gestureProxyResolution(requested,originalBounds,4096);
+      if(proxy)resolution=gestureProxyResolution(requested,originalBounds,4096,this.gestureProxyPixels(false));
       const plan=proxy?undefined:canvasArtworkPlan(originalBounds,visible??canvasRasterViewport(ctx,group.g.root.x-source.root.x,group.g.root.y-source.root.y),resolution,
         {safe:Boolean(cachedCanvasCoverage(this,source,items))&&canvasArtworkCropSafe(items),padding});
       if(plan===null)return;
@@ -925,6 +953,8 @@ class CanvasFallback {
     const generatorPlan=generatorBatch&&generatorSchedule(generatorBatch,hiddenUids);
     const walker=generatorPlan&&!generatorPlan.empty?scheduleWalker(generatorPlan,draws=>{drawGeneratorDraws(ctx,generatorBatch,draws);}):null;
     const groups = composeSceneGroups(geometry, onions, frame, report);
+    this.onionGroupCount = groups.reduce((count, group) => count + Number(Boolean(group.isOnion)), 0);
+    this.artworkGroupCount = groups.length - this.onionGroupCount;
     if (!onions.length) this.clearOnionArtwork();
     else this.onionLayers.begin(onionLayerKeys(groups),this.canvas.width,this.canvas.height);
     const paint = {scale, hiddenUids, parallax, dragTranslations, walker, frame};
