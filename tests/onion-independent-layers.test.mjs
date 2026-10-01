@@ -25,3 +25,18 @@ test('drawing ranges use their frame distance even when global key spacing yield
   assert.deepEqual(drawingOnionSamples(editor,settings).map(s=>s.tick),[0,8]);
   assert.deepEqual(drawingOnionSamples(editor,{...settings,onionRangeBefore:4,onionRangeAfter:2}),[]);
 });
+
+test('independent layers share a bounded full-scene cache and retain their styled wrappers',()=>{
+  const report=emptyDocument();
+  report.keyframes=Array.from({length:30},(_,tick)=>createFrame(Array.from({length:8},(_,i)=>createObject(report.figure_types[0],i+1,tick+i,100)),3));
+  const editor=new Editor({demo:false,layerTimeline:true}).load(report);
+  for(let i=2;i<=8;i++){const layer=editor.createLayer(`Layer ${i}`);editor.assignFiguresToLayer([i],layer.id);}
+  const cache=new OnionSkinCache({maxEntries:6}),settings=normalizeEditorSettings({onionBefore:2,onionAfter:1});
+  editor.seek(30);const first=cache.get(editor,settings);
+  assert.equal(first.length,24);assert.equal(cache.samples.size,3);
+  editor.seek(33);cache.get(editor,settings);editor.seek(30);
+  const restored=cache.get(editor,settings);
+  for(let i=0;i<first.length;i++)assert.equal(restored[i].geometry,first[i].geometry);
+  for(let tick=6;tick<75;tick+=3){editor.seek(tick);cache.get(editor,settings);}
+  assert.ok(cache.samples.size<=6,'per-layer aliases do not increase the full-scene warm budget');
+});

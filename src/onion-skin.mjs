@@ -33,8 +33,8 @@ export function drawingOnionSamples(editor,settings){
 export function layerOnionSamples(editor,settings){
   const samples=[],sheet=editor.report._styk?.layerSheet;
   if(!sheet||settings.onionMode==='frames')return samples;
-  for(const id of editor.report._styk.layers.order){
-    const layer=editor.getLayer(id),track=sheet.tracks[id];if(!layer.visible||layer.drawing||!track)continue;
+  for(const layer of editor.layers){
+    const id=layer.id,track=sheet.tracks[id];if(layer.kind!=='layer'||!layer.visible||layer.drawing||!track)continue;
     const found=sheetKeyAt(track,editor.tick),step=Math.max(1,settings.onionStep??1);
     for(const direction of [-1,1]){
       const span=direction<0?settings.onionRangeBefore:settings.onionRangeAfter;
@@ -185,7 +185,7 @@ export class OnionSkinCache {
       settings.onionMode,settings.onionScope,settings.onionJoined,settings.onionOpacity,settings.onionFade,settings.onionTint,
       settings.onionBeforeColor,settings.onionAfterColor,settings.onionShowOnTop,samplingSettings.onionRangeBefore,samplingSettings.onionRangeAfter,[...selected],hiddenKey]);
     if (this.last?.signature === signature) return this.last.frames;
-    const frames = [], rows = editor.timeline;
+    const frames = [], activeSamples = new Set(), rows = editor.timeline;
     // The Add pose is the next, not-yet-stored frame. Its nearest predecessor
     // is the last stored pose, including the checkpoint underneath the draft.
     const sourceReport=adding?storedFrameReport(report,{validate:false}):report;
@@ -230,12 +230,14 @@ export class OnionSkinCache {
       }
     }
     for(const candidate of [...(independentLayers?layerOnionSamples(editor,samplingSettings):[]),...drawingOnionSamples(editor,samplingSettings)]){
-      let index=0;for(let i=0;i<rows.length&&rows[i].start<=candidate.tick;i++)index=i;
+      let index=0,high=rows.length-1;
+      while(index<high){const mid=Math.ceil((index+high)/2);if(rows[mid].start<=candidate.tick)index=mid;else high=mid-1;}
       candidates.push({...candidate,sampleLayer:candidate.sampleLayer??candidate.drawingLayer,index,ratio:rows[index].count?(candidate.tick-rows[index].start)/rows[index].count:0});
     }
     candidates.sort((a,b)=>b.distance-a.distance);
     for(const {index,tick,ratio,distance,direction,sampleLayer} of candidates){
         const id=`${index}:${tick}`;
+        activeSamples.add(id);
         let sample=this.samples.get(id);
         if(!sample || sample.dirtyUids || sample.stale){
           let frame=this.evaluate(sourceReport,index,ratio,tick);
@@ -273,14 +275,18 @@ export class OnionSkinCache {
           });
           let drawables;
           geometry={objects:sample.geometry.objects,orderedObjects,get drawables(){return drawables??=orderedObjects.flatMap(g=>g.drawables);}};
-          cache.set(styleKey,geometry);while(cache.size>4)cache.delete(cache.keys().next().value);
+          cache.set(styleKey,geometry);
+          // One sampled scene can supply many independently timed layers.
+          // Keep their wrappers warm without growing full-scene residency.
+          const styleLimit=Math.max(4,report._styk?.layers?.order.length??0);
+          while(cache.size>styleLimit)cache.delete(cache.keys().next().value);
         }
         frames.push({frame:sample.frame,geometry,opacity:settings.onionOpacity*(settings.onionFade?1/distance:1),showOnTop:settings.onionShowOnTop});
     }
     // Retain the currently displayed range as well as the small warm cache.
     // Evict after the batch: evicting while walking a range larger than the
     // warm cache repeatedly discarded samples still needed by that same batch.
-    const cacheLimit=Math.max(this.maxEntries,frames.length);
+    const cacheLimit=Math.max(this.maxEntries,activeSamples.size);
     while(this.samples.size>cacheLimit)this.samples.delete(this.samples.keys().next().value);
     this.last={signature,frames};return frames;
   }

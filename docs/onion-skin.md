@@ -22,6 +22,8 @@ the resulting objects exactly, including joined parent positions, and rebuilds o
 changed geometry. Unchanged objects keep their tint and renderer artwork identities.
 New neighboring samples use the same reuse path, preventing texture churn while
 scrubbing. Document replacement and shared-definition edits discard the baseline.
+Layer subsets share each full-scene sample. The warm sample budget counts unique
+evaluations, while styled layer wrappers stay reusable across nearby seeks.
 
 Layer pose drags edit a private working frame, so ghosts retain committed poses
 during the gesture and refresh when the sheet is published. Seeking, opacity,
