@@ -361,8 +361,8 @@ class CanvasFallback {
   }
   drawOnion(ctx, group, scale) {
     if(performance.now()<this.rasterRetryAt){drawGeometry(ctx,{drawables:group.items},this.resources);return;}
-    const resolution = rasterResolution(scale);
     let cached = this.onionArtwork.get(group.g);
+    const resolution = this.last?.viewChanging && !this.last.playing && cached ? cached.resolution : rasterResolution(scale);
     const visible=cached?.raster?canvasRasterViewport(ctx):null;
     if (cached?.resolution !== resolution || changedDrawingRaster(cached?.drawingInputs) || cached?.raster&&!rasterCovers(cached.raster,cached.originalBounds,visible)) {
       if (cached) { this.onionArtwork.delete(group.g); this.onionArtworkBytes -= cached.bytes; cached.canvas.width = 1; cached.canvas.height = 1; }
@@ -411,7 +411,8 @@ class CanvasFallback {
   drawOnionScene(ctx, groups, start, scale, hiddenUids, parallax) {
     const first = groups[start], matrix = ctx.getTransform();
     const end = onionLayerEnd(groups,start), cached = this.onionLayers.acquire(first.onionLayerKey ?? first.onionIndex);
-    const valid=cached?.members?.length===end-start&&
+    const viewChanging=Boolean(this.last?.viewChanging&&!this.last.playing);
+    const valid=cached?.members?.length===end-start&&(!cached.viewChanging||viewChanging)&&
       ['a','b','c','d','e','f'].every(k=>cached.matrix[k]===matrix[k])&&!changedDrawingRaster(cached.drawingInputs)&&
       cached.members.every((member,index)=>{const group=groups[start+index],uid=group.g.obj.unique_id,depth=parallax(uid);
         return member.g===group.g&&member.opacity===group.opacity&&member.onionIndex===group.onionIndex&&
@@ -434,7 +435,7 @@ class CanvasFallback {
         layer.globalAlpha=groups[from].opacity;layer.drawImage(scratch,0,0);this.stats.onionRenderedFrames++;from=to;
       }
       layer.globalAlpha=1;
-      if(cached)Object.assign(cached,{matrix,members,drawingInputs});
+      if(cached)Object.assign(cached,{matrix,members,drawingInputs,viewChanging});
     } else {
       for(let i=start;i<end;i++)if(i===start||groups[i].onionIndex!==groups[i-1].onionIndex)this.stats.onionFrameHits++;
     }
@@ -456,8 +457,8 @@ class CanvasFallback {
     if (group.items.length < 4 && !group.items.some(hasDrawableVfx) || typeof OffscreenCanvas === 'undefined' || performance.now()<this.rasterRetryAt) {
       drawGeometry(ctx, { drawables: group.items }, this.resources); return;
     }
-    const resolution = rasterResolution(scale);
     let cached = this.artwork.get(source), retained = true;
+    const resolution = this.last?.viewChanging && !this.last.playing && cached ? cached.resolution : rasterResolution(scale);
     let visible;
     if(viewport){
       const bounds=cachedArtworkBounds(this,source,items),dx=group.g.root.x-source.root.x+offsetX,dy=group.g.root.y-source.root.y+offsetY;
@@ -1289,7 +1290,7 @@ class WebGPURenderer {
    * just those drawing entries, so their scratch canvases repaint the changed
    * tiles and their textures upload only the dirty region, instead of
    * rebuilding the scene. Returns false when an entry outgrew its slot. */
-  refreshDrawings(options,parallax) {
+  refreshDrawings(options,parallax,rasterScale) {
     if (!this.layout) return true;
     const matrix = cameraMatrix(options), scale = Math.hypot(matrix[0], matrix[1]) * this.dpr;
     const viewKey = `${matrix.join()}|${this.width}|${this.height}|${this.dpr}`, moved = viewKey !== this.drawingViewKey;
@@ -1303,7 +1304,7 @@ class WebGPURenderer {
       if(previous.rasterCropped && moved)cropChanged=!this.rasterEntryCovered(previous);
       if (!cropChanged && (!drawing || !previous.g || (!moved && previous.drawingStamp === drawing.stamp))) continue;
       this.activeCamera = matrix;
-      const entry = this.objectEntry(previous.g, previous.rasterItems??previous.drawingItems, previous.opacity, previous.key, previous.transform, scale, previous.isOnion);
+      const entry = this.objectEntry(previous.g, previous.rasterItems??previous.drawingItems, previous.opacity, previous.key, previous.transform, drawing ? scale : rasterScale ?? scale, previous.isOnion);
       if (entry.count > previous.capacity) return false;
       entry.capacity = previous.capacity; entry.offset = previous.offset;
       if (entry.data !== previous.data) uploadBytes += this.uploadEntry(entry);
@@ -1465,7 +1466,12 @@ class WebGPURenderer {
     // Geometry identity is stable during view changes and direct object translation.
     const backgroundKey = JSON.stringify([frame.background_id, frame.background_id_b, frame.background_mix, editorBackgroundColor(options) ?? sceneBackgroundColor(report, frame), effectiveCamera(report, frame, options.cameraEnabled !== false)]);
     const onionFrames = options.onionFrames || [], onionChanged = this.onionFrameRefs?.length !== onionFrames.length || onionFrames.some((frame, i) => frame !== this.onionFrameRefs?.[i]);
-    const camera = cameraMatrix(options), viewResolution = rasterResolution(Math.hypot(camera[0], camera[1]) * this.dpr),parallax=parallaxResolver(report,frame,options.cameraEnabled!==false);
+    const camera = cameraMatrix(options), requestedResolution = rasterResolution(Math.hypot(camera[0], camera[1]) * this.dpr),parallax=parallaxResolver(report,frame,options.cameraEnabled!==false);
+    // Navigation changes the projection immediately, but covered artwork can
+    // keep its density until input settles. Never publish the requested bucket
+    // as prepared before its pixels exist: the final paint must refine it.
+    const viewChanging=options.viewChanging&&!options.playing&&this.lastGeometry===geometry&&this.lastReport===report&&this.lastGeneration===this.generation&&this.backgroundKey===backgroundKey&&!onionChanged;
+    let viewResolution=viewChanging ? this.lastRasterResolution : requestedResolution;
     const textured=this.stats.textureObjects||this.stats.croppedTextureObjects;
     const outlineTransition=this.stats.outlinedVectorObjects&&viewResolution<=8;
     if (this.lastGeometry !== geometry || this.lastReport !== report || this.lastGeneration !== this.generation || this.backgroundKey !== backgroundKey || onionChanged || outlineTransition || (textured && this.lastRasterResolution !== viewResolution)) {
@@ -1478,8 +1484,8 @@ class WebGPURenderer {
       else {
         try {
           const viewUpdate=this.lastGeometry===geometry&&this.lastReport===report&&this.lastGeneration===this.generation&&this.backgroundKey===backgroundKey&&!onionChanged&&viewResolution>8&&this.lastRasterResolution>8;
-          if(viewUpdate){if(!this.refreshRasterResolution(options,viewResolution,parallax))this.prepare(options,geometry,parallax);}
-          else if (!canUpdate || !this.updateGeometry(options, geometry,parallax)) this.prepare(options, geometry,parallax);
+          if(viewUpdate){if(!this.refreshRasterResolution(options,viewResolution,parallax)){this.prepare(options,geometry,parallax);viewResolution=requestedResolution;}}
+          else if (!canUpdate || !this.updateGeometry(options, geometry,parallax)){this.prepare(options, geometry,parallax);viewResolution=requestedResolution;}
           this.prepareFailure = null;
           this.lastReport = report; this.backgroundKey = backgroundKey; this.onionFrameRefs = [...onionFrames]; this.lastRasterResolution = viewResolution;
         } catch (error) {
@@ -1493,7 +1499,7 @@ class WebGPURenderer {
       }
     } else {
       this.stats.uploadBytes = 0; this.stats.primitiveUploadCalls = 0; this.stats.updatedObjects = 0; this.stats.compiledObjects = 0; this.stats.rasterizedObjects = 0; this.stats.preparation = 'retained';
-      try { if (!this.refreshDrawings(options,parallax)) this.prepare(options, geometry,parallax); }
+      try { if (!this.refreshDrawings(options,parallax,viewResolution)) {this.prepare(options, geometry,parallax);this.lastRasterResolution=requestedResolution;} }
       catch (error) {
         if (error?.name === 'AbortError') throw error;
         this.stats.lastPrepareError = error?.message || String(error);
@@ -1561,7 +1567,7 @@ class WebGPURenderer {
       if(refreshedCrops){
         this.artworkStats();
         if(this.rasterCache.stats.activeBytes>(this.rasterCache.maxBytes||previewMemoryPlan().editorRasters)){
-          this.prepare(options,geometry,parallax);continue;
+          this.prepare(options,geometry,parallax);this.lastRasterResolution=viewResolution=requestedResolution;continue;
         }
       }
       break;

@@ -50,7 +50,7 @@ What's new in each version of StykAnimate.
 
 ### Performance
 
-- Smoother editing and panning at high zoom, especially in Compatibility mode.
+- Smoother zooming, editing, and panning in complex animations, especially in Compatibility mode.
 - Much smoother playback of busy animations, with fewer pauses, especially on laptops without a dedicated graphics card and in Compatibility mode.
 
 ## [1.2.0]

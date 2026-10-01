@@ -63,6 +63,42 @@ test('continuous input and reduced motion zoom directly', () => {
   assert.ok(Math.abs(still.view.scale - Math.exp(wheelZoomAmount(-100))) < 1e-12);
 });
 
+test('continuous input coalesces one settled detail paint after the last event', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  let paints=0;const page=canvas({onSettled:()=>paints++});
+  page.glide.wheel(-4,at,0);
+  assert.equal(page.glide.interacting,true);
+  t.mock.timers.tick(80);
+  page.glide.wheel(-4,at,80);
+  t.mock.timers.tick(99);
+  assert.equal(paints,0);
+  assert.equal(page.glide.interacting,true);
+  t.mock.timers.tick(1);
+  assert.equal(page.glide.interacting,false);
+  assert.equal(paints,1);
+  t.mock.timers.tick(1000);
+  assert.equal(paints,1);
+});
+
+test('settlement waits for the glide and cancellation releases pending input', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  let paints=0;const page=canvas({onSettled:()=>paints++});
+  page.glide.wheel(-100,at,0);
+  t.mock.timers.tick(100);
+  assert.equal(page.glide.interacting,true);
+  assert.equal(paints,0);
+  page.finish(100);
+  assert.equal(page.glide.interacting,false);
+  assert.equal(paints,1);
+  page.glide.wheel(-4,at,300);
+  page.glide.cancel();
+  assert.equal(page.glide.interacting,false);
+  assert.equal(paints,2);
+  t.mock.timers.tick(1000);
+  page.glide.cancel();
+  assert.equal(paints,2);
+});
+
 test('a larger wheel delta never zooms less', () => {
   for (let delta = 1; delta <= 400; delta++) {
     assert.ok(wheelZoomAmount(-delta) >= wheelZoomAmount(-(delta - 1)), `delta ${delta}`);

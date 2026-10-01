@@ -1403,7 +1403,10 @@ const wheelZoom = createWheelZoom({
   getScale: () => state.view.scale,
   zoomBy: zoom,
   reducedMotion: () => Boolean(reducedMotionQuery?.matches),
+  onSettled: requestRender,
 });
+let canvasPinch;
+function viewGestureActive() { return wheelZoom.interacting || canvasPinch?.active || drawingController?.touchNavigation?.active || state.drag?.kind === 'zoom'; }
 function fitSelection() {
   const b = selectionBounds();
   if (!Number.isFinite(b.minX)) return fit();
@@ -1781,8 +1784,9 @@ function loop(now) {
   // before drawing, never after publishing that task's completed frame.
   commitPreviewQuality();
   if (state.playing) syncPlayback();
-  playback.setInteractionActive(Boolean(editingGestureActive()||state.scrubbing||state.editablePreparing||document.hidden));
-  thumbnailRenderer?.setPaused(Boolean(editingGestureActive()||state.playing||state.scrubbing||state.editablePreparing||document.hidden));
+  const viewChanging=!state.playing&&!state.previewing&&Boolean(viewGestureActive());
+  playback.setInteractionActive(Boolean(viewChanging||editingGestureActive()||state.scrubbing||state.editablePreparing||document.hidden));
+  thumbnailRenderer?.setPaused(Boolean(viewChanging||editingGestureActive()||state.playing||state.scrubbing||state.editablePreparing||document.hidden));
   let advancedPlayback = false;
   if (!$("renderer-error").hidden) return;
   if (state.playing) {
@@ -1929,6 +1933,7 @@ function loop(now) {
         frame,
         geometry,
         view: state.view,
+        viewChanging,
         cameraEnabled: state.playing || state.previewing,
         editorBackgroundColor: builderBackgroundColor(state.settings, state),
         selectedUid: null,
@@ -3330,7 +3335,7 @@ viewport.addEventListener(
 // A press takes over the view (a pan, a pose): the glide stops where it is.
 overlay.addEventListener("pointerdown", () => wheelZoom.cancel(), { capture: true });
 // Two fingers zoom and pan the canvas; the first finger's drag is cancelled. Draw mode has its own pinch.
-installCanvasPinch({
+canvasPinch = installCanvasPinch({
   overlay, viewport,
   getView: () => state.view,
   setView: (view) => { state.view = view; placeArtboard(); requestRender(); },
@@ -3341,6 +3346,7 @@ installCanvasPinch({
     pause();
     if (state.drag) cancelDrag();
   },
+  onEnd: requestRender,
 });
 
 async function api(path, options = {}) {

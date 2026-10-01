@@ -18,6 +18,7 @@ const TIME_CONSTANT_MS = 40;   // the glide covers about 90% of its distance in 
 const FIRST_STEP_MS = 16;      // the wheel event itself moves the view one frame's worth
 const LONGEST_STEP_MS = 64;    // a stalled frame does not finish the glide in one jump
 const SETTLED = 0.004;         // remaining zoom (log scale) too small to see: land exactly
+const INPUT_IDLE_MS = 100;    // continuous input also needs a final detail paint
 
 /** The zoom (log scale) one wheel event asks for; monotonic in the delta across both kinds of device. */
 export function wheelZoomAmount(deltaY) {
@@ -25,10 +26,15 @@ export function wheelZoomAmount(deltaY) {
   return -Math.sign(deltaY) * Math.max(Math.min(size, PRECISE_DELTA) * PRECISE_GAIN, size * NOTCH_GAIN);
 }
 
-export function createWheelZoom({getScale, zoomBy, min = 0.001, max = 100, reducedMotion = () => false}) {
-  let target = null, point = null, applied = 0, last = 0;
+export function createWheelZoom({getScale, zoomBy, min = 0.001, max = 100, reducedMotion = () => false, onSettled = () => {}}) {
+  let target = null, point = null, applied = 0, last = 0, idleTimer = null;
 
-  const stop = () => { target = null; };
+  const stop = () => { const active=target!==null;target = null;if(active&&idleTimer===null)onSettled(); };
+  const cancel = () => {
+    const active=target!==null||idleTimer!==null;
+    clearTimeout(idleTimer);idleTimer=null;target=null;
+    if(active)onSettled();
+  };
   const step = elapsed => {
     const scale = getScale(), remaining = Math.log(target / scale), left = Math.exp(-elapsed / TIME_CONSTANT_MS);
     const settled = Math.abs(remaining) * left < SETTLED;
@@ -41,10 +47,13 @@ export function createWheelZoom({getScale, zoomBy, min = 0.001, max = 100, reduc
 
   return {
     get active() { return target !== null; },
-    cancel: stop,
+    get interacting() { return target !== null || idleTimer !== null; },
+    cancel,
     /** A wheel event at `at` (viewport coordinates); `now` is on the same clock as `advance`. */
     wheel(deltaY, at, now) {
-      if (overridden()) stop();
+      if (overridden()) cancel();
+      clearTimeout(idleTimer);
+      idleTimer=setTimeout(()=>{idleTimer=null;if(target===null)onSettled();},INPUT_IDLE_MS);
       const scale = getScale();
       target = Math.min(max, Math.max(min, (target ?? scale) * Math.exp(wheelZoomAmount(deltaY))));
       point = at;
@@ -59,7 +68,7 @@ export function createWheelZoom({getScale, zoomBy, min = 0.001, max = 100, reduc
     /** Moves the view one frame closer to the target. Returns whether the glide continues. */
     advance(now) {
       if (target === null) return false;
-      if (overridden()) { stop(); return false; }
+      if (overridden()) { cancel(); return false; }
       step(Math.min(LONGEST_STEP_MS, Math.max(0, now - last)));
       last = now;
       return target !== null;
