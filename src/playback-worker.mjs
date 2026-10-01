@@ -1,17 +1,16 @@
 import {errorMessageData, messageError} from './localized-error.mjs';
 
 import {vectorVfxSource} from './renderer-vfx-vector.mjs';
-import {vfxRasterScale, hasDrawableVfx, releaseVfxSurface,drawableVfxPadding} from './vfx-canvas.mjs';
+import {vfxRasterScale, hasDrawableVfx,drawableVfxPadding,releaseVfxSoftwareResources} from './vfx-canvas.mjs';
 import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {cameraAtTime} from './camera-motion.mjs';
 import {isolationStroke,isolationStrokeFits} from './renderer-vector-raster.mjs';
 import {meshOnlyItems,meshRasterSource,meshRasterBytes,meshRasterBuffers} from './renderer-mesh-raster.mjs';
-import {drawParallaxGeometry} from './parallax-draw.mjs';
 import {parallaxResolver} from './layer-parallax.mjs';
 import {rasterBounds} from './raster-view.mjs';
 import { PlaybackResources } from './playback-resources.mjs';
 export { PlaybackResources } from './playback-resources.mjs';
-import { evaluatedFrame, timeline, buildGeometry, drawGeometry, releaseGeometryResources, invalidateEvaluationCaches } from './pivot/geometry.mjs';
+import { evaluatedFrame, timeline, buildGeometry, drawGeometry, invalidateEvaluationCaches } from './pivot/geometry.mjs';
 import { compileVectorObject, requiresCompatibilityTexture, objectBounds, cameraMatrix, shapeRecord, SHAPE, SHAPE_FLOATS, rasterResolution } from './renderer-geometry.mjs';
 import { applyDocumentChunk } from './document-transport.mjs';
 import {MAX_NATIVE_PLAYBACK_BYTES, NATIVE_PLAYBACK_CHUNK_BYTES, materializePlaybackSnapshot} from './playback-native.mjs';
@@ -33,6 +32,8 @@ import {sceneVfxPlan} from './vfx-scene.mjs';
 import {opacityArtwork} from './renderer-opacity.mjs';
 import { backgroundImageAssets } from './scene-preparation.mjs';
 import {generatorBatchFor,offsetGeneratorBatch,canvasGenerators,canvasGeneratorWalker,SOFTWARE_PARTICLE_BUDGET} from './vfx-generator-frame.mjs';
+import {drawSoftwarePlaybackGeometry} from './playback-software-painter.mjs';
+import {softwareFrameSize} from './playback-software-size.mjs';
 
 /** A transferable copy of a frame's generator batch with layer parallax applied. */
 function packetGenerators(report, native, geometry, parallax, vfxEnabled) {
@@ -194,9 +195,9 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
     let data;
     // Immutable geometry: classify each artwork source once, not every tick.
     let descriptor=resources?.geometryDescriptors?.get(source);
-    if(!descriptor){
+    if(descriptor?.compatibility===undefined){
       const requiresTexture=requiresCompatibilityTexture(items);
-      descriptor={compatibility:artworkView.isolated||requiresTexture,requiresTexture,stroke:isolationStroke(items),hasImages:items.some(item=>item.type==='image')};
+      descriptor={...descriptor,compatibility:artworkView.isolated||requiresTexture,requiresTexture,stroke:isolationStroke(items),hasImages:items.some(item=>item.type==='image')};
       resources?.geometryDescriptors?.set(source,descriptor);
     }
     const vectorIsolates=scale=>!descriptor.requiresTexture&&isolationStrokeFits(descriptor.stroke,scale);
@@ -361,14 +362,10 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
   } catch (error) { for (const entry of compatibility) entry.bitmap?.close(); throw error; }
 }
 
-/** One CameraVfx per worker: its scratch surface is resized per packet anyway.
- * Lazily constructed so Node test workers without OffscreenCanvas still load. */
-let softwareCameraVfx = null;
-
 /** Software playback packets carry one composited artboard bitmap instead of
  * shape records. The compatibility canvas blits it in a single draw call, so
  * low-end machines never re-evaluate or re-rasterize the scene on the UI thread. */
-async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, quality = 1, entries, sampleReport, resources, maxPacketBytes = 128 * 1024 * 1024, cameraEnabled = true, vfxEnabled = true, storedFrames = false, hiddenUids, hiddenKey = '', geometryCache, tweenCache, cancelled = () => false, maxTextureDimension = 8192 } = {}) {
+async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, quality = 1, entries, sampleReport, resources, maxPacketBytes = 128 * 1024 * 1024, cameraEnabled = true, vfxEnabled = true, storedFrames = false, hiddenUids, hiddenKey = '', geometryCache, tweenCache, artworkRegistry, sharedArtwork = true, cancelled = () => false, maxTextureDimension = 8192 } = {}) {
   resources?.artworkBitmaps?.beginFrame();
   if (typeof cameraEnabled !== 'boolean') throw messageError(new TypeError(''), "errors.playbackWorker.playbackCameraModeMustBeABoolean", {});
   if (typeof storedFrames !== 'boolean') throw messageError(new TypeError(''), "errors.playbackWorker.playbackStoredFrameModeMustBeABoolean", {});
@@ -393,9 +390,8 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
   // whole-frame bitmap is drawn at one view, where rounding only rasterized up
   // to 41% more pixels and then resampled them down.
   const resolution = hypot * quality;
-  const pixelScale = Math.min(scale * resolution / hypot, maxTextureDimension / report.canvas_width, maxTextureDimension / report.canvas_height);
-  const pixelWidth = Math.max(1, Math.ceil(report.canvas_width * pixelScale)), pixelHeight = Math.max(1, Math.ceil(report.canvas_height * pixelScale));
-  const bitmapBytes = pixelWidth * pixelHeight * 4;
+  const {pixelScale,pixelWidth,pixelHeight,bitmapBytes}=softwareFrameSize(report,{scale,quality,maxTextureDimension});
+  const paintRatio=scale>0?pixelScale/scale:quality,paintResolution=hypot*paintRatio;
   if (bitmapBytes + 128 > maxPacketBytes) {
     const error = messageError(new Error(''), "errors.playbackWorker.aPlaybackFrameExceedsItsPreparationMemoryBudget", {});
     error.code = 'playback_frame_budget'; error.fixedBytes = bitmapBytes + 128; throw error;
@@ -404,49 +400,71 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
   const backgroundItems = backgroundImageAssets(report, frame).map(asset => ({ type: 'image', asset }));
   let reducedImages = false;
   if (resources && (imageItems.length || backgroundItems.length)) {
-    const visible=playbackVisibleBounds(report,frame,cameraEnabled,scale*quality),depth=parallaxResolver(report,native,cameraEnabled),groups=new Map();
-    for(const item of imageItems){const offset=depth(item.obj.unique_id),key=`${offset.x}:${offset.y}`;let group=groups.get(key);if(!group)groups.set(key,group={items:[],offset});group.items.push(item);}
-    for(const {items,offset} of groups.values()){await resources.preload(items,{scale:resolution,maxDimension:maxTextureDimension,visible:visible?{...visible,x:visible.x-offset.x,y:visible.y-offset.y}:undefined});reducedImages||=Boolean(resources.pressureReduced);}
-    if(backgroundItems.length){await resources.preload(backgroundItems,{scale:resolution,maxDimension:maxTextureDimension});reducedImages||=Boolean(resources.pressureReduced);}
+    const visible=playbackVisibleBounds(report,frame,cameraEnabled,pixelScale),depth=parallaxResolver(report,native,cameraEnabled);
+    // One simultaneous working set prevents later parallax/background batches
+    // from evicting image pixels the frame has not painted yet.
+    await resources.preload([...imageItems,...backgroundItems],{scale:paintResolution,maxDimension:maxTextureDimension,visible,
+      viewFor:(item,view)=>{
+        if(!item.obj||!visible)return null;
+        const offset=depth(item.obj.unique_id);
+        return {...view,visible:{...visible,x:visible.x-offset.x,y:visible.y-offset.y}};
+      }});
+    reducedImages=Boolean(resources.pressureReduced);
   }
   if (cancelled()) throw messageError(new DOMException('', 'AbortError'), "errors.playbackWorker.playbackPreparationWasSuperseded", {});
   let bitmap = null;
+  const sharing={},clipping={};
+  const artworks=sharedArtwork?(artworkRegistry??new ArtworkRegistry()):null;
   if (typeof OffscreenCanvas !== 'undefined') {
     // Compatibility frames rasterize on this worker's CPU, like the live
     // compatibility canvas. An accelerated worker canvas flushed the whole
     // scene through the GPU-service thread that presents frames, stalling
     // editing and playback for hundreds of milliseconds on integrated GPUs.
-    const canvas = new OffscreenCanvas(pixelWidth, pixelHeight), ctx = canvas.getContext('2d', {willReadFrequently: true});
+    const pool=resources?.softwareFrameSurfaces??new RasterSurfacePool({contextOptions:{willReadFrequently:true}});
+    const {surface:canvas,context:ctx}=resources?.softwareFrame?.(pixelWidth,pixelHeight)??pool.acquire(pixelWidth,pixelHeight);
     const scene = { ...geometry, drawables };
+    let localCamera;
     try {
       // The artboard is the whole bitmap: document edges crop world content,
       // exactly like the clip rect the live canvas path applies on screen.
-      ctx.setTransform(matrix[0] * resolution / hypot, matrix[1] * resolution / hypot,
-        matrix[2] * resolution / hypot, matrix[3] * resolution / hypot,
-        matrix[4] * resolution / hypot, matrix[5] * resolution / hypot);
-      drawBackground(ctx, report, frame, report.canvas_width, report.canvas_height,
-        { ...resources, bounds: backgroundBounds(frame, report.canvas_width, report.canvas_height, cameraEnabled, report) });
-      const depth = parallaxResolver(report,native,cameraEnabled);
-      const generators = vfxEnabled ? canvasGenerators(report, native, geometry, depth, {hidden: {has: uid => hiddenSet.has(uid) || !layerVisible(report, uid)}, budget: SOFTWARE_PARTICLE_BUDGET}) : null;
-      drawParallaxGeometry(ctx, { drawables }, resources, depth, undefined, canvasGeneratorWalker(generators, ctx));
-    } finally { releaseGeometryResources(ctx); }
-    if (activeVfx(vfxStack(frame)).length) {
-      // Mirror the live pass: camera-space scene, effects, then projection.
-      // view scale 1 with the bitmap density as dpr lands the artboard at 0,0.
-      softwareCameraVfx ??= new CameraVfx();
-      softwareCameraVfx.render(ctx, { report, frame: native, view: { x: 0, y: 0, scale: 1 }, geometry: scene,
-        cameraEnabled, playing: true, vfxEnabled, resourceRevision: revision }, pixelScale, resources);
-      releaseVfxSurface(ctx);
-    }
-    bitmap = typeof canvas.transferToImageBitmap === 'function' ? canvas.transferToImageBitmap() : await createImageBitmap(canvas);
+      const cameraEffects=activeVfx(vfxStack(frame)).length>0;
+      // With the camera filling this artboard, its processed source is the
+      // complete authoritative image. A neutral world view still needs its
+      // artwork outside the projected camera, matching live editing semantics.
+      if(!cameraEffects||!cameraEnabled){
+        ctx.setTransform(matrix[0] * paintRatio, matrix[1] * paintRatio,
+          matrix[2] * paintRatio, matrix[3] * paintRatio,
+          matrix[4] * paintRatio, matrix[5] * paintRatio);
+        drawBackground(ctx, report, frame, report.canvas_width, report.canvas_height,
+          { ...resources, bounds: backgroundBounds(frame, report.canvas_width, report.canvas_height, cameraEnabled, report) });
+        const depth = parallaxResolver(report,native,cameraEnabled);
+        const visibility={has:uid=>hiddenSet.has(uid)||!layerVisible(report,uid)};
+        const generators = vfxEnabled ? canvasGenerators(report, native, geometry, depth, {hidden:visibility, budget: SOFTWARE_PARTICLE_BUDGET}) : null;
+        let deadline=performance.now()+8;
+        const yieldWork=async()=>{if(performance.now()<deadline)return;await yieldPlaybackTask();deadline=performance.now()+8;if(cancelled())throw messageError(new DOMException('', 'AbortError'), 'errors.playbackWorker.playbackPreparationWasSuperseded', {});};
+        await drawSoftwarePlaybackGeometry(ctx,geometry,resources,{report,hiddenSet:visibility,offsetFor:depth,
+          artworkRegistry:artworks,revision,sharedArtwork,cancelled,yieldWork,walker:canvasGeneratorWalker(generators,ctx),statistics:sharing});
+        clipping.culledObjects=sharing.culledObjects;
+      }
+      if (cameraEffects) {
+        // Mirror the live pass: camera-space scene, effects, then projection.
+        // view scale 1 with the bitmap density as dpr lands the artboard at 0,0.
+        const softwareCameraVfx=resources?.softwareCamera?.()??(localCamera=new CameraVfx());
+        softwareCameraVfx.render(ctx, { report, frame: native, view: { x: 0, y: 0, scale: 1 }, geometry: scene,
+          cameraEnabled, playing: true, vfxEnabled, resourceRevision: revision }, pixelScale, resources);
+      }
+      if(cancelled())throw messageError(new DOMException('', 'AbortError'), 'errors.playbackWorker.playbackPreparationWasSuperseded', {});
+      bitmap = typeof canvas.transferToImageBitmap === 'function' ? canvas.transferToImageBitmap() : await createImageBitmap(canvas);
+      if(cancelled()){bitmap.close();bitmap=null;throw messageError(new DOMException('', 'AbortError'), 'errors.playbackWorker.playbackPreparationWasSuperseded', {});}
+    } finally {localCamera?.destroy();pool.release();if(!resources?.softwareFrameSurfaces)pool.dispose();}
   }
   const ended = performance.now();
   return { key: `${revision}:${tick}`, revision, tick, frameIndex: location.index, frame,
     softwareFrames: true, hiddenKey,
     shapes: new Float32Array(0), transforms: new Float32Array([0, 0, 1, 1]), uids: Uint32Array.from(uidSet), groups: [],
     compatibility: bitmap ? [{ bitmap, uid: 0, software: true }] : [],
-    previewQuality: { reduced: reducedImages },
-    objectCount: geometry.objects.size, shapeCount: 0, warnings: geometry.warnings, scale, resolution, cameraEnabled, storedFrames,
+    previewQuality: { reduced: reducedImages||pixelScale<scale*quality },
+    objectCount: geometry.objects.size, shapeCount: 0, warnings: geometry.warnings, scale, resolution, cameraEnabled, storedFrames,sharing,clipping,
     workerCache: { ...resources?.cacheSnapshot?.(),
       alternateDrawables: geometryCache?.alternateDrawables || 0, tweenEntries: tweenCache?.entries.size || 0 },
     byteLength: bitmapBytes + 128,
@@ -471,6 +489,14 @@ export function createPlaybackWorkerEndpoint(postMessage) {
   const geometryCache=new PlaybackGeometryCache();
   const tweenCache=new PlaybackTweenCache();
   const planning = new PlaybackPlanningService({snapshot: () => current, postMessage, onIdle: () => {void drain();}});
+  const disposeCurrentResources = () => {
+    if (!current) return;
+    // This endpoint owns its worker realm. End the shared software executor's
+    // pixel lifetime with the document, while retained revisions keep it warm.
+    // Effects paint synchronously between cooperative preparation yields.
+    try { current.resources.dispose(); }
+    finally { releaseVfxSoftwareResources(); }
+  };
   async function drain() {
     if (running) return;
     running = true;
@@ -571,7 +597,7 @@ export function createPlaybackWorkerEndpoint(postMessage) {
         if (message.chunk.header) {
           planning.cancel();
           tweenCache.clear();
-          serial++; releaseDelivery(); queue.length = 0; current?.resources.dispose(); current = null;
+          serial++; releaseDelivery(); queue.length = 0; disposeCurrentResources(); current = null;
           incoming = { ...message.options, revision: message.revision, report: applyDocumentChunk(null, message.chunk) };
         } else {
           if (incoming?.revision !== message.revision) throw messageError(new Error(''), "errors.playbackWorker.playbackSnapshotChunksArrivedBeforeTheirHeader", {});
@@ -627,7 +653,7 @@ export function createPlaybackWorkerEndpoint(postMessage) {
     } else if (message.type === 'load') {
       planning.cancel();
       tweenCache.clear();
-      serial++; releaseDelivery(); queue.length = 0; current?.resources.dispose();
+      serial++; releaseDelivery(); queue.length = 0; disposeCurrentResources();
       latestRevision = message.revision; incoming = null;
       current = refreshSampling({ ...message, resources: new PlaybackResources({...message, preview: true, maxBytes: message.maxAssetBytes || (message.maxPacketBytes || 128 * 1024 * 1024) / 4}) });
       postMessage({ type: 'loaded', revision: message.revision });
@@ -636,7 +662,7 @@ export function createPlaybackWorkerEndpoint(postMessage) {
       serial++; releaseDelivery(); latestRevision = message.revision; queue.length = 0; incoming = null; incomingFrames = null; incomingPatch = null;
       tweenCache.clear();
       if (message.retainDocument && current) { current.resources.previewScale = 1; current.resources.previewPressureScale = undefined; current.resources.previewRecovery = null; geometryCache.retainRevision(message.revision);invalidateEvaluationCaches(current.report); current = refreshSampling({ ...current, ...message.options, revision: message.revision }); }
-      else { geometryCache.clear();artworkRegistry.clear();current?.resources.dispose(); current = null; }
+      else { geometryCache.clear();artworkRegistry.clear();disposeCurrentResources(); current = null; }
     } else if (message.type === 'retain' && message.revision === current?.revision) {
       const keep = new Set(message.ticks);
       for (let i = queue.length - 1; i >= 0; i--) if (!keep.has(queue[i].tick)) queue.splice(i, 1);

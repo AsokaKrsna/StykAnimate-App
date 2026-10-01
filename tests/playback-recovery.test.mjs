@@ -3,6 +3,7 @@ import test from 'node:test';
 import { Worker } from 'node:worker_threads';
 import { PlaybackCache } from '../src/playback.mjs';
 import { createDemo } from '../src/demo.mjs';
+import {playbackWorkerAdmission} from '../src/playback-budget.mjs';
 
 // Real playback workers whose crash can be triggered from the test.
 function crashableWorkers() {
@@ -61,7 +62,8 @@ test('consecutive crashes are bounded per document revision and an edit earns an
 
 test('crash recovery preserves memory admission, interaction priority and replacement-pool ownership', async () => {
   const {factory}=crashableWorkers(),mib=1024*1024;
-  const cache=new PlaybackCache({workerFactory:factory,workerCount:3,maxBytes:16*mib,maxWorkerBytes:232*mib});
+  const maxWorkerBytes=Math.ceil(3*playbackWorkerAdmission({maxWorkers:3,maxBytes:Infinity,frameBytes:16*mib}).perWorkerEstimate)+mib;
+  const cache=new PlaybackCache({workerFactory:factory,workerCount:3,maxBytes:16*mib,maxWorkerBytes});
   try{
     const report=createDemo();report._styk.admissionFixture='x'.repeat(mib);
     cache.load(report,{revision:1});await cache.prepareRange([0,1]);

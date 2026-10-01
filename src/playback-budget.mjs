@@ -32,9 +32,11 @@ export function previewMemoryPlan(deviceMemory = deviceMemoryHint(), workerCount
   const workers = playbackWorkerMemoryPlan(base), count = Math.max(1, Math.min(4, Math.floor(workerCount) || 1));
   const plan = {cpuFrames: base, gpuFrames: base, editorImages: Math.min(64 * mib, base / 4),
     editorRasters: Math.min(128 * mib, base / 2), editorOnions: Math.min(64 * mib, base / 8),
+    editorSoftwareFilters: Math.min(64 * mib, base / 4),
+    editorBackgrounds: Math.min(16 * mib, base / 16),
     thumbnails: Math.min(24 * mib, base / 8), library: 8 * mib,...playbackReuseMemoryPlan(base)};
   return {...plan, workerImages: workers.images, workerSources: workers.sources, workerRasters: workers.rasters,
-    workerVectors: workers.vectors, workerDrawings: workers.drawings, workerTints: workers.tints,
+    workerVectors: workers.vectors, workerDrawings: workers.drawings, workerTints: workers.tints, workerSoftwareFilters: workers.softwareFilters, workerBackgrounds: workers.backgrounds,
     workerCount: count, workerRetainedBytes: workers.retainedBytes, workerPoolBytes: workers.retainedBytes * count,
     retainedBytes: Object.values(plan).reduce((sum, bytes) => sum + bytes, 0) + workers.retainedBytes * count};
 }
@@ -48,7 +50,8 @@ export function playbackWorkerMemoryPlan(frameBytes = playbackMemoryBudget()) {
   const mib = 1024 * 1024, base = Math.max(0, Number.isFinite(frameBytes) ? frameBytes : playbackMemoryBudget());
   const images = Math.min(64 * mib, base / 4);
   const plan = {images, sources: images / 2, rasters: Math.min(128 * mib, base / 4),
-    vectors: Math.min(32 * mib, base / 8), drawings: Math.min(96 * mib, Math.max(16 * mib, images)), tints: 32 * mib};
+    vectors: Math.min(32 * mib, base / 8), drawings: Math.min(96 * mib, Math.max(16 * mib, images)), tints: 32 * mib,
+    softwareFilters: Math.min(64 * mib, base / 8), backgrounds: Math.min(16 * mib, base / 16)};
   return {...plan, retainedBytes: Object.values(plan).reduce((sum, bytes) => sum + bytes, 0)};
 }
 

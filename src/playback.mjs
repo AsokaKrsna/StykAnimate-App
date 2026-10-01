@@ -315,7 +315,8 @@ export class PlaybackCache {
     const options = { scale: this.scale, cameraEnabled: this.cameraEnabled, storedFrames: this.storedFrames, vfxEnabled:this.vfxEnabled!==false, baseURL: this.baseURL, token: this.token,
       softwareFrames: Boolean(this.softwareFrames), gpuIsolation: this.gpuIsolation, hiddenUids: this.hiddenUids, hiddenKey: this.hiddenKey || '',
       acknowledgePackets: true, maxPacketBytes: this.maxBytes * .8, maxAssetBytes: this.workerMemoryPlan.images,
-      maxRasterBytes: this.workerMemoryPlan.rasters, maxVectorBytes: this.workerMemoryPlan.vectors };
+      maxRasterBytes: this.workerMemoryPlan.rasters, maxVectorBytes: this.workerMemoryPlan.vectors,
+      maxSoftwareFilterBytes: this.workerMemoryPlan.softwareFilters, maxBackgroundBytes: this.workerMemoryPlan.backgrounds };
     this.stats.loadKind = 'document'; this.stats.loadChunks = 0; this.stats.loadSerializationMs = 0; this.stats.loadMaxTaskMs = 0;
     this.stats.maxChunkBytes = 0; this.stats.patchFrames = 0; this.stats.patchFigures = 0;
     this.stats.patchSourceUpserts = 0; this.stats.patchSourceDeletes = 0;

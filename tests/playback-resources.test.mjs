@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PlaybackResources } from '../src/playback-resources.mjs';
 import { previewPNG } from './preview-png-fixture.mjs';
+import {vfxSoftwareResourceStats} from '../src/vfx-canvas.mjs';
 
 test('preview path fills rasterize on worker CPUs at every size; images and exports stay accelerated',()=>{
   const preview=new PlaybackResources({preview:true}),original=new PlaybackResources();
@@ -12,6 +13,28 @@ test('preview path fills rasterize on worker CPUs at every size; images and expo
     assert.equal(preview.rasterSurface(20,20,{hasImages:true}),preview.rasterSurfaces);
     assert.equal(original.rasterSurface(20,20),original.rasterSurfaces);
   }finally{preview.dispose();original.dispose();}
+});
+
+test('software frame and camera scratch share the worker resource lifetime and filter allowance',t=>{
+  const prior=Object.getOwnPropertyDescriptor(globalThis,'OffscreenCanvas');
+  globalThis.OffscreenCanvas=class {
+    constructor(width,height){this.width=width;this.height=height;this.context={canvas:this,reset(){}};}
+    getContext(){return this.context;}
+  };
+  t.after(()=>{if(prior)Object.defineProperty(globalThis,'OffscreenCanvas',prior);else delete globalThis.OffscreenCanvas;});
+  const resources=new PlaybackResources({preview:true,maxSoftwareFilterBytes:65536,maxBackgroundBytes:16384});
+  const frame=resources.softwareFrame(64,32),camera=resources.softwareCamera();
+  camera.geometry={objects:new Map()};camera.frame={objects:[]};
+  assert.equal(resources.softwareCamera(),camera,'A worker should reuse one camera scratch owner');
+  assert.equal(vfxSoftwareResourceStats(frame.context).maxBytes,65536);
+  assert.equal(vfxSoftwareResourceStats(camera.context).maxBytes,65536);
+  assert.equal(resources.backgroundBytes,16384);
+  resources.softwareFrameSurfaces.release();
+  assert.equal(frame.surface.width,1);assert.equal(frame.surface.height,1);
+  resources.dispose();
+  assert.equal(camera.geometry,null);assert.equal(camera.frame,null);
+  assert.equal(camera.canvas.width,1);assert.equal(camera.canvas.height,1);
+  assert.equal(resources.softwareFrameSurfaces.context,null);
 });
 
 function setup(t, sizes, maxBytes = 32) {
@@ -170,6 +193,34 @@ test('simultaneous preview crop growth shares one image allowance', async t => {
     assert.equal(image.width, image.srcW, 'Budgeted coverage growth must preserve visible pixel density.');
   }
   assert.equal(resources.pressureReduced, false);
+});
+
+test('one preview batch retains images from distinct projections and the background under pressure',async t=>{
+  const {resources,item,url}=await imageFixture(t,8192*4,128,128);
+  resources.preview=true;
+  const other={...item,obj:{unique_id:2},asset:{...item.asset,data_url:item.asset.data_url.replace('image/png;','image/x-png;')}};
+  const background={type:'image',asset:{...item.asset,data_url:item.asset.data_url.replace('image/png;','image/octet-stream;')}};
+  const projection=new Map([[item,{visible:{x:0,y:0,width:32,height:32},scale:1}],
+    [other,{visible:{x:80,y:64,width:32,height:32},scale:1}],[background,null]]);
+  await resources.preload([item,other,background],{viewFor:value=>projection.get(value)});
+  assert.equal(resources.images.size,3,'A later frame requirement evicted an earlier image');
+  assert.ok(resources.image(url));assert.ok(resources.image(resources.url(other.asset)));assert.ok(resources.image(resources.url(background.asset)));
+  const crop=resources.image(resources.url(other.asset));
+  assert.ok(crop.srcX<=80&&crop.srcX+crop.srcW>=112&&crop.srcY<=64&&crop.srcY+crop.srcH>=96);
+  assert.ok(crop.srcX>=78&&crop.srcY>=62,'The per-item projection was ignored and decoded the whole source');
+  assert.ok(resources.bytes<=resources.maxBytes,'Simultaneous sources exceeded their shared preview allowance');
+  assert.equal(resources.pressureReduced,true);
+});
+
+test('one source merges every projection before choosing a bounded decoded variant',async t=>{
+  const {resources,item,url,decoded}=await imageFixture(t,4*1024*1024);
+  resources.preview=true;const second={...item,obj:{unique_id:2}};
+  await resources.preload([item,second],{viewFor:value=>({visible:{x:value===item?0:400,y:0,width:64,height:64},scale:value===item ? .5 : 1})});
+  const image=resources.image(url);
+  assert.equal(decoded.length,1);
+  assert.ok(image.srcX<=0&&image.srcX+image.srcW>=464,'Only one of the source projections was retained');
+  assert.ok(image.srcW<600,'The per-item source union was ignored');
+  assert.equal(image.width,image.srcW,'The highest requested density must serve both projections');
 });
 
 test('export crop replacement releases obsolete pixels before checking the new allocation', async t => {

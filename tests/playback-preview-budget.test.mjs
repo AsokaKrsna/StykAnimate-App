@@ -30,6 +30,10 @@ test('raster retention scales with available memory without exceeding its partit
     assert.ok(plan.workerVectors<=plan.cpuFrames/8);
     assert.ok(plan.editorOnions<=64*1024*1024);
     assert.equal(plan.editorOnions,Math.min(64*1024*1024,plan.cpuFrames/8));
+    assert.equal(plan.editorSoftwareFilters,Math.min(64*1024*1024,plan.cpuFrames/4));
+    assert.equal(plan.workerSoftwareFilters,Math.min(64*1024*1024,plan.cpuFrames/8));
+    assert.equal(plan.editorBackgrounds,Math.min(16*1024*1024,plan.cpuFrames/16));
+    assert.equal(plan.workerBackgrounds,plan.editorBackgrounds);
   }
   assert.equal(previewMemoryPlan(8).workerRasters,128*1024*1024);
 });
@@ -37,7 +41,7 @@ test('raster retention scales with available memory without exceeding its partit
 test('aggregate retention includes every worker and its encoded sources and drawing caches',()=>{
   for(const memory of [.5,2,8,32,undefined]){
     const single=previewMemoryPlan(memory,1), triple=previewMemoryPlan(memory,3);
-    const perWorker=single.workerImages+single.workerSources+single.workerRasters+single.workerVectors+single.workerDrawings+single.workerTints;
+    const perWorker=single.workerImages+single.workerSources+single.workerRasters+single.workerVectors+single.workerDrawings+single.workerTints+single.workerSoftwareFilters+single.workerBackgrounds;
     assert.equal(single.workerRetainedBytes,perWorker);
     assert.equal(triple.workerPoolBytes,perWorker*3);
     assert.equal(triple.retainedBytes-single.retainedBytes,perWorker*2);

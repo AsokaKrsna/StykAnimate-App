@@ -6,6 +6,9 @@ import {playbackWorkerAdmission,playbackWorkerAdmissionBudget,playbackMemoryBudg
 import {createDemo} from '../src/demo.mjs';
 
 const mib=1024*1024;
+// Admit three cache/work reservations plus a small document; the extra 1 MiB
+// UTF-16 fixture then pushes the same pool below the three-worker boundary.
+const fixturePoolBytes=Math.ceil(3*playbackWorkerAdmission({maxWorkers:3,maxBytes:Infinity,frameBytes:16*mib}).perWorkerEstimate)+mib;
 const workerFactory=()=>{
   const worker=new Worker(new URL('./playback-node-worker.mjs',import.meta.url));
   return {postMessage:message=>worker.postMessage(message),terminate:()=>worker.terminate(),
@@ -22,7 +25,7 @@ test('pool admission charges document copies as well as caches and active work',
 
 test('real workers shrink during snapshot transfer and preserve every packet; a small replacement restores lanes',async t=>{
   // Keep the fixture small while crossing the same admission threshold.
-  const cache=new PlaybackCache({maxBytes:16*mib,workerCount:3,maxWorkerBytes:232*mib,workerFactory});
+  const cache=new PlaybackCache({maxBytes:16*mib,workerCount:3,maxWorkerBytes:fixturePoolBytes,workerFactory});
   const control=new PlaybackCache({maxBytes:16*mib,workerCount:3,workerFactory});
   t.after(()=>{cache.dispose();control.dispose();});
   const report=createDemo();report._styk.admissionFixture='x'.repeat(mib);
@@ -47,7 +50,7 @@ test('retired workers cannot fail a replacement lane or resurrect packet/cache o
       emit(type,data){handlers[type]?.(type==='message'?{data}:data);}};
     all.push(worker);return worker;
   };
-  const cache=new PlaybackCache({workerCount:3,workerFactory:factory,maxBytes:16*mib,maxWorkerBytes:232*mib});
+  const cache=new PlaybackCache({workerCount:3,workerFactory:factory,maxBytes:16*mib,maxWorkerBytes:fixturePoolBytes});
   cache._sendLoad=async()=>{};cache._yieldLoad=async()=>{};
   try{
     const report=createDemo();report._styk.admissionFixture='x'.repeat(mib);
@@ -62,7 +65,7 @@ test('retired workers cannot fail a replacement lane or resurrect packet/cache o
 });
 
 test('replacement while a shrunken snapshot awaits delivery cannot resize or charge the new document',async()=>{
-  const cache=new PlaybackCache({maxBytes:16*mib,workerCount:3,maxWorkerBytes:232*mib,workerFactory});
+  const cache=new PlaybackCache({maxBytes:16*mib,workerCount:3,maxWorkerBytes:fixturePoolBytes,workerFactory});
   let entered,release;
   const ready=new Promise(resolve=>entered=resolve),gate=new Promise(resolve=>release=resolve);
   const send=cache._broadcastLoad.bind(cache);let firstRevision;

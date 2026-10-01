@@ -183,11 +183,11 @@ export class ImageResources {
   /** Merge every item's source-space requirement for one URL: 'whole' when any
    * draw needs the complete image, 'none' when none can appear, or a crop
    * rectangle with the maximum required density. */
-  urlNeed(items, url, sourceWidth, sourceHeight, view) {
-    let merged = null, density = 0, whole = !view;
+  urlNeed(items, url, sourceWidth, sourceHeight, view,viewFor) {
+    let merged = null, density = 0, whole = !view&&!viewFor;
     for (const item of items) {
       if (item.type !== 'image' || this.url(item.asset) !== url) continue;
-      const need = imageDrawNeed(item, sourceWidth, sourceHeight, view);
+      const need = imageDrawNeed(item, sourceWidth, sourceHeight, viewFor?viewFor(item,view):view);
       if (need?.empty) continue;
       // A null need means the placement is unknown — synthetic items like
       // background images have no anchors, and unverified metadata must never
@@ -213,7 +213,7 @@ export class ImageResources {
     }
     return createImageBitmap(blob);
   }
-  async preload(items, {scale = 1, maxDimension = 4096, visible, plan} = {}) {
+  async preload(items, {scale = 1, maxDimension = 4096, visible, plan,viewFor} = {}) {
     if (this.disposed)
       throw messageError(new DOMException('', "AbortError"), "errors.imageResources.playbackAssetsWereInvalidated", {});
     const view = plan ? {matrix: plan.matrix, width: plan.width, height: plan.height}
@@ -242,14 +242,17 @@ export class ImageResources {
           const height = retained?.naturalHeight || source?.info?.height || asset.height || asset.pixel_height || 4096;
           request = {source, width, height, density: 0, crop: null, whole: false}; requests.set(url, request);
         }
-        const need = imageDrawNeed(item, request.width, request.height, view);
+        // Merge every parallax projection before fitting or replacing sources.
+        const itemView=viewFor?viewFor(item,view):view;
+        const need = imageDrawNeed(item, request.width, request.height, itemView);
         if (need?.empty) continue;
         if (!need) {
           request.whole = true;
           const objectScale = item.start && item.end && asset.anchor_length
             ? Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y) / asset.anchor_length : 1;
           const displayScale = Math.max((asset.display_width ?? request.width) / request.width, (asset.display_height ?? request.height) / request.height);
-          request.density = Math.max(request.density, 2 ** Math.ceil(Math.log2(Math.max(1 / 65536, objectScale * scale * displayScale))));
+          const itemScale=viewFor?(itemView?.matrix?Math.max(Math.hypot(itemView.matrix[0],itemView.matrix[1]),Math.hypot(itemView.matrix[2],itemView.matrix[3])):itemView?.scale??scale):scale;
+          request.density = Math.max(request.density, 2 ** Math.ceil(Math.log2(Math.max(1 / 65536, objectScale * itemScale * displayScale))));
           continue;
         }
         request.crop = request.crop ? unionRect(request.crop, need) : {x: need.x, y: need.y, width: need.width, height: need.height};
@@ -334,7 +337,7 @@ export class ImageResources {
       const retained = this.images.get(url);
       if (retained) {
         const width = retained.naturalWidth || retained.width, height = retained.naturalHeight || retained.height;
-        const need = this.urlNeed(items, url, width, height, view);
+        const need = this.urlNeed(items, url, width, height, view,viewFor);
         if (need === 'none' || bitmapCovers(retained, need === 'whole' ? {x:0,y:0,width,height} : need,
             need === 'whole' ? 1 : Math.min(1,need.density))) continue;
       }
@@ -343,7 +346,7 @@ export class ImageResources {
       this.check();
       const asset = items.find(item => item.type === 'image' && this.url(item.asset) === url)?.asset;
       const sourceWidth = metadata?.width || asset?.width || 0, sourceHeight = metadata?.height || asset?.height || 0;
-      const need = this.urlNeed(items, url, sourceWidth, sourceHeight, view);
+      const need = this.urlNeed(items, url, sourceWidth, sourceHeight, view,viewFor);
       const resolution = need === 'whole' || need === 'none' ? 1 : Math.min(1, need.density);
       const old = this.images.get(url);
       if (need === 'none' || bitmapCovers(old, need === 'whole' ? {x: 0, y: 0, width: sourceWidth, height: sourceHeight} : need, resolution)) continue;

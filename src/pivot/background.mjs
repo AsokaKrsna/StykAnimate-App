@@ -1,6 +1,7 @@
 import {messageError} from '../localized-error.mjs';
 import {cameraAtTime} from '../camera-motion.mjs';
 import {canvasPaint} from '../paint.mjs';
+import {previewMemoryPlan} from '../playback-budget.mjs';
 // Backgrounds are native ARGB; figure COLORREF colors use a different byte order.
 export function backgroundColor(raw) {
   const n = Number(raw) >>> 0;
@@ -87,24 +88,89 @@ export function backgroundImageRaster(width, height, imageWidth, imageHeight, bo
   return {...rect, pixelWidth, pixelHeight, tiles};
 }
 
-const imageEdgeSurfaces = new WeakMap();
-function drawImageTiles(context, image, width, height, bounds) {
+const imageEdgeSurfaces = new WeakMap(), retainedEdges = new Map(), edgeImageIds = new WeakMap();
+let retainedEdgeBytes = 0, edgeImageSerial = 0;
+function discardEdge(entry) {
+  if (!entry) return;
+  retainedEdges.delete(entry); retainedEdgeBytes -= entry.bytes;
+  entry.owner.entries.delete(entry.key); entry.surface.width = entry.surface.height = 1;
+}
+/** Background pixels belong to the drawing context, never the document. */
+export function releaseBackgroundResources(context) {
+  const owner = imageEdgeSurfaces.get(context);
+  if (!owner) return;
+  for (const entry of [...owner.entries.values()]) discardEdge(entry);
+  owner.scratch.width = owner.scratch.height = 1; imageEdgeSurfaces.delete(context);
+}
+export function backgroundResourceStats() {
+  return {bytes: retainedEdgeBytes, entries: retainedEdges.size};
+}
+function drawImageTiles(context, image, width, height, bounds, allowance = 0) {
   const sourceWidth = image.width || image.naturalWidth, sourceHeight = image.height || image.naturalHeight;
   const tiles = backgroundImageTiles(width,height,image.naturalWidth,image.naturalHeight,bounds,sourceWidth,sourceHeight);
+  let owner = imageEdgeSurfaces.get(context);
+  const realmLimit = Math.max(0, previewMemoryPlan().editorBackgrounds ?? 0);
+  const ownerLimit = Math.max(0, Math.min(Number.isFinite(allowance) ? allowance : 0, realmLimit));
+  // A hit or a transient draw can follow a smaller allowance. Release obsolete
+  // retention before either returns, without restricting its temporary raster.
+  if (owner) {
+    let bytes = [...owner.entries.values()].reduce((sum, entry) => sum + entry.bytes, 0);
+    for (const entry of owner.entries.values()) {
+      if (bytes <= ownerLimit) break;
+      bytes -= entry.bytes; discardEdge(entry);
+    }
+  }
+  for (const entry of retainedEdges.keys()) {
+    if (retainedEdgeBytes <= realmLimit) break;
+    discardEdge(entry);
+  }
   if (tiles.length === 1) {context.drawImage(image, ...tiles[0]); return;}
-  let surface = imageEdgeSurfaces.get(context);
-  if (!surface) {
-    surface = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(1, 1)
+  if (!owner) {
+    const scratch = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(1, 1)
       : context.canvas.ownerDocument.createElement('canvas');
-    imageEdgeSurfaces.set(context, surface);
+    owner = {scratch, entries: new Map()}; imageEdgeSurfaces.set(context, owner);
   }
   const raster = backgroundImageRaster(width,height,image.naturalWidth,image.naturalHeight,bounds,sourceWidth,sourceHeight);
+  // Only immutable decoded pixels are eligible. HTML images may animate or
+  // reload in place; canvases/video can change without an identity change.
+  const immutable = typeof ImageBitmap !== 'undefined' && image instanceof ImageBitmap && image.width > 0 && image.height > 0;
+  const limit = immutable ? ownerLimit : 0;
+  const bytes = raster.pixelWidth * raster.pixelHeight * 4;
+  // Exact raster coordinates determine every slice and its world placement.
+  // Images can be replaced or resized without a document revision.
+  let imageId = edgeImageIds.get(image);
+  if (!imageId) {imageId = ++edgeImageSerial; edgeImageIds.set(image,imageId);}
+  const key = [imageId,width,height,image.naturalWidth,image.naturalHeight,sourceWidth,sourceHeight,
+    raster.x,raster.y,raster.width,raster.height,raster.pixelWidth,raster.pixelHeight].join(':');
+  let entry = owner.entries.get(key);
+  if (entry && (entry.image !== image || entry.bytes > limit)) {discardEdge(entry); entry = null;}
+  if (entry) {
+    retainedEdges.delete(entry); retainedEdges.set(entry, true);
+    context.drawImage(entry.surface, raster.x, raster.y, raster.width, raster.height); return;
+  }
+  const retain = bytes <= limit && limit > 0;
+  if (retain) {
+    // Crossfade owners retain at most two completed variants. A realm-wide
+    // allowance also bounds the sum of all live drawing contexts.
+    while (owner.entries.size >= 2) discardEdge(owner.entries.values().next().value);
+    for (const old of [...retainedEdges.keys()]) {
+      const ownerBytes = [...owner.entries.values()].reduce((sum, item) => sum + item.bytes, 0);
+      if (retainedEdgeBytes + bytes <= limit && ownerBytes + bytes <= limit) break;
+      discardEdge(old);
+    }
+  }
+  const surface = retain ? (typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(1,1)
+    : context.canvas.ownerDocument.createElement('canvas')) : owner.scratch;
   surface.width = raster.pixelWidth; surface.height = raster.pixelHeight;
   try {
     const target = surface.getContext('2d'); target.imageSmoothingEnabled = false;
     for (const tile of raster.tiles) target.drawImage(image, ...tile);
     context.drawImage(surface, raster.x, raster.y, raster.width, raster.height);
-  } finally {surface.width = surface.height = 1;}
+    if (retain) {
+      entry = {owner,key,image,surface,bytes}; owner.entries.set(key,entry);
+      retainedEdges.set(entry,true); retainedEdgeBytes += bytes;
+    }
+  } finally {if (!entry) surface.width = surface.height = 1;}
 }
 
 // Solids and gradients are world-aligned infinite backgrounds. Their brush
@@ -275,7 +341,7 @@ export function drawBackground(
       const img = resources.image?.(resources.url?.(bg));
       if (img?.complete && img.naturalWidth) {
         context.imageSmoothingEnabled = false;
-        drawImageTiles(context, img, width, height, bounds);
+        drawImageTiles(context, img, width, height, bounds, resources.backgroundBytes);
       }
     }
     context.restore();

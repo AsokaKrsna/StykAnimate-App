@@ -10,7 +10,7 @@ import {vfxRenderFrame,frameWithVfxTime} from '../vfx-clips.mjs';
 import {frameWithCameraTime} from '../camera-motion.mjs';
 import {canvasPaint, segmentPaint, textPaintGeometry, shapePaintBounds} from '../paint.mjs';
 // Scene evaluation is independent of the DOM so the regression harness can test it.
-import { tweenBackground } from "./background.mjs";
+import { tweenBackground, releaseBackgroundResources } from "./background.mjs";
 import { composePoseChannels, invalidatePoseCache } from '../animation-pose.mjs';
 import { composeAnimationChannels, animationEndTick } from '../animation-channels.mjs';
 import { applyLayerOrder } from '../layers.mjs';
@@ -43,7 +43,7 @@ export function invalidateEvaluationCaches(report) {
 }
 import {interpolateVfx, vfxStack, activeVfx} from '../vfx.mjs';
 
-import {withVfx,segmentVfx,releaseVfxSurface,hasDrawableVfx} from '../vfx-canvas.mjs';
+import {withVfx,segmentVfx,releaseVfxSurface,hasDrawableVfx,configureVfxSoftwareResources} from '../vfx-canvas.mjs';
 import {objectBounds} from '../renderer-geometry.mjs';
 export const TAU = Math.PI * 2;
 export const lerp = (a, b, t) => Number(a) + (Number(b) - Number(a)) * t;
@@ -1032,7 +1032,8 @@ const outlineCanvases = new WeakMap();
  * Long-lived Canvas renderers can keep their scratch surfaces for ordinary reuse. */
 export function releaseGeometryResources(ctx, { retainCanvases = false } = {}) {
   if (!retainCanvases) releaseSurfaceRaster(ctx);
-  releaseVfxSurface(ctx);
+  if (!retainCanvases) releaseBackgroundResources(ctx);
+  releaseVfxSurface(ctx,{retainSoftwareFilters:retainCanvases});
   for (const cache of [groupCanvases, outlineCanvases]) {
     const scratch = cache.get(ctx);
     if (!scratch) continue;
@@ -1102,6 +1103,7 @@ function isolated(ctx, alpha, paint, cache, bounds = null) {
     willReadFrequently: ctx.getContextAttributes?.().willReadFrequently === true,
   });
   if (!temp || temp.isContextLost?.()) throw Object.assign(messageError(new Error(''), "errors.geometry.theTemporaryDrawingCanvasIsUnavailable", {}), { telemetryCode: 'device_lost' });
+  configureVfxSoftwareResources(temp,{owner:ctx});
   temp.setTransform(1, 0, 0, 1, 0, 0);
   temp.clearRect(x0, y0, layerWidth, layerHeight);
   temp.setTransform(ctx.getTransform());

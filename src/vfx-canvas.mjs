@@ -40,22 +40,73 @@ function filteredCanvas(filtered){
  * is filtered once and composited per tile. The key chain is context → stack
  * object → geometry+content signature, so a repeated signature can only come
  * from the same painted content. Entries own their canvas (the executor
- * reuses its buffers) and a global LRU bounds total retained pixels. */
-const filteredCache=new WeakMap(),cacheLRU=[],FILTER_CACHE_BYTES=1280*1024*1024;
+ * reuses its buffers). Preview owners explicitly configure their hardware
+ * allowance and share it with their isolation children. Unconfigured export
+ * contexts preserve the existing large tiled-export allowance. One aggregate
+ * LRU uses the largest active allowance, never the sum of context allowances. */
+const filteredCache=new WeakMap(),cacheLRU=new Map(),cacheOwners=new Set(),EXPORT_FILTER_CACHE_BYTES=1280*1024*1024,FILTER_CACHE_ENTRIES=2048;
 let cacheBytes=0;
+function softwareScope(context){
+ let scope=filteredCache.get(context);
+ if(!scope){scope={byStack:new WeakMap(),entries:new Set(),owner:{maxBytes:EXPORT_FILTER_CACHE_BYTES,bytes:0,entries:new Set()}};filteredCache.set(context,scope);}
+ return scope;
+}
+function cacheTarget(incoming){let target=incoming?.maxBytes??0;for(const owner of cacheOwners)target=Math.max(target,owner.maxBytes);return target;}
+function cacheRelease(entry){
+ entry.map.delete(entry.sig);entry.scope.entries.delete(entry);cacheLRU.delete(entry);cacheBytes-=entry.bytes;
+ const owner=entry.scope.owner;owner.entries.delete(entry);owner.bytes-=entry.bytes;if(!owner.entries.size)cacheOwners.delete(owner);
+ entry.canvas.width=entry.canvas.height=1;
+}
+function trimSoftwareCache(owner){
+ if(owner)while(owner.entries.size&&owner.bytes>owner.maxBytes)cacheRelease(owner.entries.values().next().value);
+ while(cacheLRU.size&&(cacheBytes>cacheTarget()||cacheLRU.size>FILTER_CACHE_ENTRIES))cacheRelease(cacheLRU.keys().next().value);
+}
+/** Configure one pixel lifetime, or attach a child context to its parent's
+ * existing allowance. Group/outline/effect scratch shares the quota instead
+ * of acquiring another quota for every nested Canvas context. */
+export function configureVfxSoftwareResources(context,{maxBytes,owner:parent}={}){
+ const scope=softwareScope(context);let changed=false;
+ if(parent&&parent!==context){
+  const owner=softwareScope(parent).owner;
+  if(scope.owner!==owner){for(const entry of [...scope.entries])cacheRelease(entry);scope.owner=owner;changed=true;}scope.parent=true;
+ }
+ if(maxBytes!==undefined){if(!Number.isFinite(maxBytes)||maxBytes<0)throw new RangeError('Software filter retention must be a finite nonnegative byte allowance.');scope.owner.maxBytes=maxBytes;trimSoftwareCache(scope.owner);}
+ else if(changed)trimSoftwareCache();
+}
+export function vfxSoftwareResourceStats(context){
+ const owner=context?filteredCache.get(context)?.owner:null;
+ return owner?{bytes:owner.bytes,entries:owner.entries.size,maxBytes:owner.maxBytes}:{bytes:cacheBytes,entries:cacheLRU.size,maxBytes:cacheTarget()};
+}
 function cacheGet(context,stackObj,sig){
- const entry=filteredCache.get(context)?.get(stackObj)?.get(sig);
- if(entry){const i=cacheLRU.indexOf(entry);if(i>=0){cacheLRU.splice(i,1);cacheLRU.push(entry);}}
+ const entry=filteredCache.get(context)?.byStack.get(stackObj)?.get(sig);
+ if(entry){cacheLRU.delete(entry);cacheLRU.set(entry,entry);const entries=entry.scope.owner.entries;entries.delete(entry);entries.add(entry);}
  return entry;
 }
+function cacheAdmit(context,bytes){
+ const owner=softwareScope(context).owner;
+ if(bytes>owner.maxBytes)return false;
+ while(owner.entries.size&&owner.bytes+bytes>owner.maxBytes)cacheRelease(owner.entries.values().next().value);
+ while(cacheLRU.size&&(cacheBytes+bytes>cacheTarget(owner)||cacheLRU.size>=FILTER_CACHE_ENTRIES))cacheRelease(cacheLRU.keys().next().value);
+ return true;
+}
 function cacheStore(context,stackObj,sig,canvas,bytes){
- let byStack=filteredCache.get(context);if(!byStack){byStack=new WeakMap();filteredCache.set(context,byStack);}
+ if(!cacheAdmit(context,bytes))return null;
+ const scope=softwareScope(context),byStack=scope.byStack;
  let map=byStack.get(stackObj);if(!map){map=new Map();byStack.set(stackObj,map);}
  const old=map.get(sig);
- if(old){cacheBytes-=old.bytes;const i=cacheLRU.indexOf(old);if(i>=0)cacheLRU.splice(i,1);}
- const entry={canvas,bytes,map,sig};map.set(sig,entry);cacheLRU.push(entry);cacheBytes+=bytes;
- while(cacheBytes>FILTER_CACHE_BYTES&&cacheLRU.length>1){const victim=cacheLRU[0];if(victim===entry)break;cacheLRU.shift();victim.map.delete(victim.sig);cacheBytes-=victim.bytes;}
+ if(old)cacheRelease(old);
+ const entry={canvas,bytes,map,sig,scope};map.set(sig,entry);scope.entries.add(entry);cacheLRU.set(entry,entry);cacheBytes+=bytes;
+ scope.owner.entries.add(entry);scope.owner.bytes+=bytes;cacheOwners.add(scope.owner);
  return entry;
+}
+/** Release software-only working owners after a worker capture. The ordinary
+ * preview/export filter selection and cache reuse stay unchanged until an
+ * owning worker explicitly ends this lifetime. */
+export function releaseVfxSoftwareResources(){
+ for(const entry of [...cacheLRU.keys()])cacheRelease(entry);
+ cpu?.destroy();cpu=undefined;
+ for(const canvas of [resultCanvas,tileCanvas])if(canvas)canvas.width=canvas.height=1;
+ resultCanvas=tileCanvas=undefined;
 }
 /** Paint a world-space source rect into premultiplied pixels, striping past
  * the single-canvas bound. */
@@ -101,7 +152,7 @@ export function withVfx(context,stack,paint,{bounds,domainBounds=bounds,scale=1,
  // Anchor spatial filters to the full owner bounds, never the viewport/tile crop.
  const domain=domainBounds?[[domainBounds.x,domainBounds.y],[domainBounds.x+domainBounds.width,domainBounds.y],[domainBounds.x,domainBounds.y+domainBounds.height],[domainBounds.x+domainBounds.width,domainBounds.y+domainBounds.height]].map(([x,y])=>({x:matrix.a*x+matrix.c*y+matrix.e,y:matrix.b*x+matrix.d*y+matrix.f})):corners; const anchorX=Math.min(...domain.map(p=>p.x)),anchorY=Math.min(...domain.map(p=>p.y));
  const outputSize={width:Math.max(1,Math.max(...domain.map(p=>p.x))-anchorX),height:Math.max(1,Math.max(...domain.map(p=>p.y))-anchorY)};
- const paintAt=(ctx,tx,ty)=>{ctx.setTransform(matrix.a,matrix.b,matrix.c,matrix.d,matrix.e-tx,matrix.f-ty);paint(ctx);};
+ const paintAt=(ctx,tx,ty)=>{configureVfxSoftwareResources(ctx,{owner:context});ctx.setTransform(matrix.a,matrix.b,matrix.c,matrix.d,matrix.e-tx,matrix.f-ty);paint(ctx);};
  const render=tile=>{
   let surface=surfaces.get(context);if(!surface){surface=new OffscreenCanvas(tile.width,tile.height);surfaces.set(context,surface);}if(surface.width!==tile.width)surface.width=tile.width;if(surface.height!==tile.height)surface.height=tile.height;
   const ctx=surface.getContext('2d');ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,tile.width,tile.height);paintAt(ctx,tile.x,tile.y);
@@ -142,16 +193,19 @@ export function withVfx(context,stack,paint,{bounds,domainBounds=bounds,scale=1,
   // painting and GPU filtering must not serialize a dense pose on each redraw.
   const content=typeof cacheHint==='function'?cacheHint():cacheHint;
   const sig=`${rin.x-anchorX},${rin.y-anchorY},${rin.width},${rin.height}|${pixelScale}|${outputSize.width},${outputSize.height}|${content}`;
-  let entry=cacheGet(context,stackObj,sig);
+  let entry=cacheGet(context,stackObj,sig),transient=false;
   if(!entry){
+   const retained=cacheAdmit(context,rin.width*rin.height*4);
    const data=paintSourceRect(paintAt,rin);
    const filtered=cpuExecutor().runPixels(data,rin.width,rin.height,stack,{scale:pixelScale,origin:{x:rin.x-anchorX,y:rin.y-anchorY},outputSize});
    const canvas=new OffscreenCanvas(rin.width,rin.height);
    canvas.getContext('2d').putImageData(new ImageData(unpremultiply(filtered.pixels),rin.width,rin.height),0,0);
-   entry=cacheStore(context,stackObj,sig,canvas,rin.width*rin.height*4);
+   entry=retained?cacheStore(context,stackObj,sig,canvas,rin.width*rin.height*4):null;transient=!entry;entry??={canvas};
   }
-  const x0=Math.max(cl,rin.x),y0=Math.max(ct,rin.y),x1=Math.min(cr,rin.x+rin.width),y1=Math.min(cb,rin.y+rin.height),w=x1-x0,h=y1-y0;
-  if(w>0&&h>0){context.save();try{context.setTransform(1,0,0,1,0,0);context.drawImage(entry.canvas,x0-rin.x,y0-rin.y,w,h,x0,y0,w,h);}finally{context.restore();}}
+  try{
+   const x0=Math.max(cl,rin.x),y0=Math.max(ct,rin.y),x1=Math.min(cr,rin.x+rin.width),y1=Math.min(cb,rin.y+rin.height),w=x1-x0,h=y1-y0;
+   if(w>0&&h>0){context.save();try{context.setTransform(1,0,0,1,0,0);context.drawImage(entry.canvas,x0-rin.x,y0-rin.y,w,h,x0,y0,w,h);}finally{context.restore();}}
+  }finally{if(transient)entry.canvas.width=entry.canvas.height=1;}
   return;
  }
  // Oversized filtered region: software tiles keep full detail. Cores cover
@@ -225,7 +279,7 @@ export function prepareSceneVfx(context,frame,viewport,scale=1){
   let source=sceneInputs.get(context);
   if(!source){source=new OffscreenCanvas(1,1);sceneInputs.set(context,source);}
   if(source.width!==src.width)source.width=src.width;if(source.height!==src.height)source.height=src.height;
-  const ctx=source.getContext('2d'),parts=[{context:ctx,origin:{x:src.x,y:src.y},done(){
+  const ctx=source.getContext('2d');configureVfxSoftwareResources(ctx,{owner:context});const parts=[{context:ctx,origin:{x:src.x,y:src.y},done(){
    if(fitsVfxSurface(src.width,src.height,limit)){composite(filterVfxCanvas(source,stack,{scale,origin:{x:src.x,y:src.y},outputSize:os}),src);return;}
    const edge=Math.min(limit,Math.floor(Math.sqrt(VFX_MAX_PIXELS)))-2*pad;
    if(edge>=1){ // split the core so each GPU tile's halo fits the executor
@@ -246,7 +300,7 @@ export function prepareSceneVfx(context,frame,viewport,scale=1){
  if(src.width*src.height>VFX_CPU_PIXELS)throw vfxSurfaceError();
  const parts=[...splitRect(src,VFX_SOURCE_DIMENSION)].map(strip=>{
   const canvas=new OffscreenCanvas(strip.width,strip.height);
-  return {context:canvas.getContext('2d'),origin:{x:strip.x,y:strip.y},canvas,rect:strip,done(){}};
+  const child=canvas.getContext('2d');configureVfxSoftwareResources(child,{owner:context});return {context:child,origin:{x:strip.x,y:strip.y},canvas,rect:strip,done(){}};
  });
  return {...plan,context:parts[0].context,parts,finish(){
   const data=new Uint8ClampedArray(src.width*src.height*4);
@@ -258,4 +312,10 @@ export function prepareSceneVfx(context,frame,viewport,scale=1){
   composite(cpuExecutor().runPixels(data,src.width,src.height,stack,{scale,origin:{x:src.x,y:src.y},outputSize:os}),src);
  }};
 }
-export function releaseVfxSurface(context){const input=sceneInputs.get(context);if(input){releaseVfxSurface(input.getContext('2d'));input.width=input.height=1;sceneInputs.delete(context);}const scene=sceneSurfaces.get(context);if(scene){scene.width=scene.height=1;sceneSurfaces.delete(context);}const surface=surfaces.get(context);if(surface){releaseVfxSurface(surface.getContext('2d'));surface.width=surface.height=1;surfaces.delete(context);}}
+export function releaseVfxSurface(context,{retainSoftwareFilters=false}={}){
+ if(!retainSoftwareFilters){const scope=filteredCache.get(context);if(scope)for(const entry of [...(scope.parent?scope.entries:scope.owner.entries)])cacheRelease(entry);}
+ const input=sceneInputs.get(context);if(input){releaseVfxSurface(input.getContext('2d'),{retainSoftwareFilters});input.width=input.height=1;sceneInputs.delete(context);}
+ const scene=sceneSurfaces.get(context);if(scene){scene.width=scene.height=1;sceneSurfaces.delete(context);}
+ const surface=surfaces.get(context);if(surface){releaseVfxSurface(surface.getContext('2d'),{retainSoftwareFilters});surface.width=surface.height=1;surfaces.delete(context);}
+ if(!retainSoftwareFilters)trimSoftwareCache();
+}

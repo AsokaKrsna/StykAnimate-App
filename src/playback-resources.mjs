@@ -4,6 +4,8 @@ import {PlaybackVectorCache} from './playback-vector-cache.mjs';
 import {previewMemoryPlan} from './playback-budget.mjs';
 import {drawingMetadata} from './drawing-model.mjs';
 import {DrawingTileProvider} from './drawing-provider.mjs';
+import {CameraVfx} from './vfx-camera.mjs';
+import {configureVfxSoftwareResources,vfxSoftwareResourceStats} from './vfx-canvas.mjs';
 
 import {ImageResources} from './image-resources.mjs';
 export {assetURL, imageDrawNeed} from './image-resources.mjs';
@@ -16,6 +18,9 @@ export class PlaybackResources extends ImageResources {
     const {preview = false, maxPacketBytes = 128 * 1024 * 1024,
       maxRasterBytes = previewMemoryPlan().workerRasters, maxVectorBytes = previewMemoryPlan().workerVectors} = options;
     this.rasterSurfaces = new RasterSurfacePool();
+    this.softwareFrameSurfaces = new RasterSurfacePool({contextOptions:{willReadFrequently:true}});
+    this.maxSoftwareFilterBytes=options.maxSoftwareFilterBytes??previewMemoryPlan().workerSoftwareFilters;
+    this.backgroundBytes=options.maxBackgroundBytes??previewMemoryPlan().workerBackgrounds;
     // Isolate path rasterization from WebGPU presentation. Image compositing
     // keeps acceleration to avoid expensive GPU-to-CPU source readbacks.
     this.pathRasterSurfaces = preview ? new RasterSurfacePool({contextOptions:{willReadFrequently:true}}) : this.rasterSurfaces;
@@ -47,7 +52,9 @@ export class PlaybackResources extends ImageResources {
     return {imageBytes: this.bytes, sourceBytes: this.sourceBytes,
       rasterBytes: this.artworkBitmaps.bytes, rasterEntries: this.artworkBitmaps.entries.size,
       vectorBytes: this.vectors.bytes, vectorEntries: this.vectors.lru.size,
-      drawingBytes: this.drawingProvider.bytes, tintBytes};
+      drawingBytes: this.drawingProvider.bytes, tintBytes,
+      softwareFilterBytes:this.softwareFrameSurfaces.context?vfxSoftwareResourceStats(this.softwareFrameSurfaces.context).bytes:0,
+      cameraBytes:(this.softwareCameraVfx?.canvas.width??0)*(this.softwareCameraVfx?.canvas.height??0)*4};
   }
   rasterSurface(width,height,{hasImages=false}={}) {
     // Accelerated worker canvases all flush through the single GPU-service
@@ -58,6 +65,17 @@ export class PlaybackResources extends ImageResources {
     // so an object keeps the same antialiasing as it grows or shrinks.
     return hasImages ? this.rasterSurfaces : this.pathRasterSurfaces;
   }
+  /** Camera effect pixels and validity references belong to this worker mirror,
+   * so replacing a document cannot retain its scene through module state. */
+  softwareFrame(width,height) {
+    this.check();const frame=this.softwareFrameSurfaces.acquire(width,height);
+    configureVfxSoftwareResources(frame.context,{maxBytes:this.maxSoftwareFilterBytes});return frame;
+  }
+  softwareCamera() {
+    this.check();const camera=this.softwareCameraVfx??=new CameraVfx();
+    configureVfxSoftwareResources(camera.context,{maxBytes:this.maxSoftwareFilterBytes,
+      owner:this.softwareFrameSurfaces.context??undefined});return camera;
+  }
   async preload(items, options = {}) {
     this.check();
     await this.drawingProvider.prepare(items.filter(item => item.type === 'image' && drawingMetadata(item.fig)?.version === 2).map(item => item.fig));
@@ -66,6 +84,8 @@ export class PlaybackResources extends ImageResources {
   dispose() {
     super.dispose();
     this.rasterSurfaces.dispose();
+    this.softwareFrameSurfaces.dispose();
+    this.softwareCameraVfx?.destroy();this.softwareCameraVfx=null;
     if(this.pathRasterSurfaces!==this.rasterSurfaces)this.pathRasterSurfaces.dispose();
     this.artworkBitmaps.dispose();
     this.vectors.clear();

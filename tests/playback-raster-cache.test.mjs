@@ -44,3 +44,36 @@ test('frame admission bypasses oversized incoming artwork without evicting later
   assert.equal(kept.closed,0);assert.equal(cache.bytes,16);cache.clear();assert.equal(kept.closed,1);
   cache.beginFrame();await cache.packetBitmap('replacement',bitmap);assert.equal(cache.bytes,16);cache.dispose();incoming.close();
 });
+
+test('software composition borrows retained originals without cloning or transferring them',()=>{
+  const cache=new PlaybackRasterCache({maxBytes:32,clone:()=>{throw new Error('A software draw must not clone artwork');}}),original=bitmap();
+  cache.beginFrame();
+  assert.equal(cache.consumeBitmap('a',()=>original,source=>source),original);
+  cache.beginFrame();
+  assert.equal(cache.consumeBitmap('a',()=>{throw new Error('Repainted retained artwork');},source=>source.closed),0);
+  assert.equal(cache.hits,1);assert.equal(cache.misses,1);assert.equal(original.closed,0);
+  cache.dispose();assert.equal(original.closed,1);
+});
+
+test('software composition closes temporary originals after successful and failed draws',()=>{
+  const cache=new PlaybackRasterCache({maxBytes:8}),a=bitmap(),b=bitmap();
+  cache.consumeBitmap('a',()=>a,source=>assert.equal(source.closed,0));
+  assert.equal(a.closed,1);assert.equal(cache.bytes,0);
+  assert.throws(()=>cache.consumeBitmap('b',()=>b,()=>{throw new Error('Draw failed');}),/Draw failed/);
+  assert.equal(b.closed,1);cache.dispose();
+  assert.throws(()=>cache.consumeBitmap('a',bitmap,()=>{}),{name:'AbortError'});
+});
+
+test('software admission reserves retained hits before allocating another capture',()=>{
+  const cache=new PlaybackRasterCache({maxBytes:32});cache.beginFrame();
+  assert.equal(cache.canRetain('held',16),true);
+  cache.consumeBitmap('held',bitmap,()=>{});
+  const held=cache.entries.get('held');cache.beginFrame();
+  assert.equal(cache.canRetain('held',64),true,'An existing bitmap needs no new allocation');
+  assert.equal(cache.canRetain('new',32),false,'A new capture would consume protected artwork headroom');
+  assert.equal(cache.canRetain('new',16),true);
+  cache.consumeBitmap('new',bitmap,()=>{});
+  assert.equal(cache.canRetain('churn',16),false);
+  assert.equal(held.closed,0);assert.equal(cache.bytes,32);
+  cache.dispose();assert.equal(held.closed,1);
+});
