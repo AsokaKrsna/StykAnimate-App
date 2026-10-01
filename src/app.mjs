@@ -5477,7 +5477,7 @@ editor.addEventListener("change", (e) => {
   const kind = e.detail?.kind;
   // Some persisted metadata changes reuse the editor revision (selection and
   // already-dirty metadata included). Save snapshots require a monotonic token.
-  if (kind !== 'saved') {
+  if (kind !== 'saved' && kind !== 'seek') {
     saveMutationEpoch++;
     // Publish immediately during the final IPC handoff. Main-process guards
     // cannot rely on a title update deferred to the next animation frame.

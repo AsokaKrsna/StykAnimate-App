@@ -8,6 +8,8 @@ const deferred = () => { let resolve, reject; const promise = new Promise((yes, 
 const source = await readFile(new URL('../src/app.mjs', import.meta.url), 'utf8');
 const saveSource = source.slice(source.indexOf('function saveNative('), source.indexOf('function showDialog(', source.indexOf('function saveNative(')));
 const recoverySource = source.slice(source.indexOf('function scheduleRecovery('), source.indexOf('function offerRecovery(', source.indexOf('function scheduleRecovery(')));
+const changeAt = source.indexOf('editor.addEventListener("change", (e) => {');
+const epochSource = source.slice(source.indexOf('  const kind = e.detail?.kind;', changeAt), source.indexOf("  if ((['toggle-selection'", changeAt));
 
 /** Exercise the application's actual save/close functions with staged I/O. */
 function app({browser = false} = {}) {
@@ -34,7 +36,7 @@ function app({browser = false} = {}) {
     workspaceLayout: {flushPreferences: () => hooks.flushPreferences()},
     editorSettings: {flush: () => hooks.flushSettings()}, nativeFrameClipboard: {flush: () => hooks.flushClipboard()},
   });
-  const functions = vm.runInContext(`let savingDocument = false, lastSave = null, saveMutationEpoch = 0, finalizingDocument = false;\n${saveSource}\n({saveNative, finishDocumentAction, checkpoint: () => lastSave, advanceEpoch: () => saveMutationEpoch++})`, context);
+  const functions = vm.runInContext(`let savingDocument = false, lastSave = null, saveMutationEpoch = 0, finalizingDocument = false;\n${saveSource}\nfunction editorChanged(e) {${epochSource}}\n({saveNative, finishDocumentAction, checkpoint: () => lastSave, emitChange: kind => editorChanged({detail: {kind}})})`, context);
   return {editor, state, calls, hooks, ...functions};
 }
 
@@ -99,10 +101,18 @@ test('same-revision persisted metadata cannot become marked saved or approve clo
   const a = app(), held = deferred(); a.hooks.write = () => held.promise;
   const saving = a.saveNative();
   for (let i = 0; i < 10 && !a.calls.writes; i++) await Promise.resolve();
-  a.advanceEpoch(); held.resolve(); assert.equal(await saving, false); assert.equal(a.editor.dirty, true);
+  a.emitChange('edit'); held.resolve(); assert.equal(await saving, false); assert.equal(a.editor.dirty, true);
   a.hooks.write = async () => {}; assert.equal(await a.saveNative(), true);
-  a.hooks.flushPreferences = async () => {a.advanceEpoch();};
+  a.hooks.flushPreferences = async () => {a.emitChange('selection');};
   assert.equal(await a.finishDocumentAction('close', a.checkpoint()), false); assert.equal(a.calls.closed, 0);
+});
+
+test('pure navigation during a save retains the unchanged persisted checkpoint', async () => {
+  const a = app(), held = deferred(); a.hooks.write = () => held.promise;
+  const saving = a.saveNative();
+  for (let i = 0; i < 10 && !a.calls.writes; i++) await Promise.resolve();
+  a.editor.tick = 5; a.emitChange('seek'); held.resolve();
+  assert.equal(await saving, true); assert.equal(a.editor.dirty, false); assert.equal(a.calls.committed, 1);
 });
 
 test('final close handoff is bounded and honors a main-process checkpoint rejection', async () => {
