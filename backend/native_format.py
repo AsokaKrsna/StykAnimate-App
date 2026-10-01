@@ -72,7 +72,34 @@ def _unpack(codec: int, data: bytes, raw_length: int) -> bytes:
         if _zstd is None:
             raise ValueError('This project uses zstd compression this build cannot decode. Update the app to open this file.')
         try:
-            out = _zstd.ZstdDecompressor().decompress(data, max_output_size=raw_length + 1)
+            # max_output_size bounds frames without a content size; frames with
+            # a known size can otherwise allocate that size before our check.
+            size = _zstd.frame_content_size(data)
+            parameters = _zstd.get_frame_parameters(data)
+            if (size >= 0 and size != raw_length) or parameters.window_size > MAX_SKELETON_BYTES:
+                raise ValueError('The StykAnimate file is damaged (invalid payload length).')
+            # Some decoder versions ignore allow_extra_data for unknown-size
+            # frames. Walk only block framing before decoding, without copying
+            # payloads, to require exactly one frame including its checksum.
+            offset = _zstd.frame_header_size(data)
+            while True:
+                if offset + 3 > len(data):
+                    raise ValueError('The StykAnimate file is damaged (invalid compressed data).')
+                header = int.from_bytes(data[offset:offset + 3], 'little')
+                block_type, block_size = (header >> 1) & 3, header >> 3
+                if block_type == 3 or block_size > min(parameters.window_size, 128 * 1024):
+                    raise ValueError('The StykAnimate file is damaged (invalid compressed data).')
+                offset += 3 + (1 if block_type == 1 else block_size)
+                if offset > len(data):
+                    raise ValueError('The StykAnimate file is damaged (invalid compressed data).')
+                if header & 1:
+                    break
+            if parameters.has_checksum:
+                offset += 4
+            if offset != len(data):
+                raise ValueError('The StykAnimate file is damaged (invalid payload length).')
+            out = _zstd.ZstdDecompressor().decompress(data, max_output_size=raw_length + 1,
+                                                   allow_extra_data=False)
         except _zstd.ZstdError as error:
             raise ValueError('The StykAnimate file is damaged (invalid compressed data).') from error
     else:

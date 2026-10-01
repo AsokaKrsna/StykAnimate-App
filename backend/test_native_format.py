@@ -213,5 +213,34 @@ class NativeFormatV2Tests(unittest.TestCase):
         self.assertLess(len(encoded_v2), len(encoded_v1))
 
 
+@unittest.skipIf(native._zstd is None, 'Optional zstandard codec is unavailable')
+class ZstdAdmissionTests(unittest.TestCase):
+    def test_known_content_size_is_rejected_before_decoder_allocation(self):
+        packed = native._zstd.ZstdCompressor().compress(b'x' * 4096)
+        with mock.patch.object(native._zstd, 'ZstdDecompressor', side_effect=AssertionError('Allocated before admission')):
+            with self.assertRaisesRegex(ValueError, 'payload length'):
+                native._unpack(2, packed, 32)
+
+    def test_known_and_unknown_frames_reject_trailing_and_oversized_data(self):
+        for known in (True, False):
+            for checksum in (True, False):
+                for raw in (b'', b'precise bytes', bytes(range(256)) * 1200, b'x' * 300000):
+                    packed = native._zstd.ZstdCompressor(write_content_size=known, write_checksum=checksum).compress(raw)
+                    self.assertEqual(native._unpack(2, packed, len(raw)), raw)
+                    for damaged in (packed[:-1], packed + b'junk', packed + packed):
+                        with self.assertRaises(ValueError):
+                            native._unpack(2, damaged, len(raw))
+                    with self.assertRaises(ValueError):
+                        native._unpack(2, packed, len(raw) + 1)
+
+    def test_oversized_windows_are_rejected_before_decoder_allocation(self):
+        packed = native._zstd.ZstdCompressor(write_content_size=False).compress(b'exact')
+        # Window descriptor is byte five in a frame without a content-size field.
+        oversized = packed[:5] + bytes([0x98]) + packed[6:]
+        with mock.patch.object(native._zstd, 'ZstdDecompressor', side_effect=AssertionError('Allocated before admission')):
+            with self.assertRaisesRegex(ValueError, 'payload length'):
+                native._unpack(2, oversized, 5)
+
+
 if __name__ == '__main__':
     unittest.main()
