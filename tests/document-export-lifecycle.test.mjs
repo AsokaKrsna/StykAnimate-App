@@ -4,8 +4,8 @@ import {DocumentExporter} from '../src/document-export.mjs';
 import {createDemo} from '../src/demo.mjs';
 
 const turn = () => new Promise(resolve => setTimeout(resolve, 0));
-async function until(predicate) {
-  for (let i = 0; i < 100; i++) { if (predicate()) return; await turn(); }
+async function until(predicate, nextTurn = turn) {
+  for (let i = 0; i < 100; i++) { if (predicate()) return; await nextTurn(); }
   assert.fail('Export did not reach the expected stage.');
 }
 
@@ -66,21 +66,31 @@ test('exports serialize, queued cancellation is isolated, and admission stays bo
 });
 
 for (const reason of ['cancel', 'error', 'messageerror', 'timeout']) test(`a ${reason} destroys partial worker state and the next export starts fresh`, async t => {
+  if (reason === 'timeout') t.mock.timers.enable({apis: ['setTimeout']});
+  // Complete snapshot yields without consuming either export's deadline.
+  const pollTurn = reason === 'timeout' ? async () => {
+    await Promise.resolve();
+    t.mock.timers.tick(0);
+  } : turn;
   const {workers, exporter, cancellations} = environment(t, {timeoutMs: reason === 'timeout' ? 30 : 0});
   const controller = new AbortController(), report = createDemo();
   const result = exporter.export(report, {signal: controller.signal});
-  const rejected = assert.rejects(result, error => reason === 'cancel' ? error.name === 'AbortError' : Boolean(error.telemetryCode));
-  await until(() => workers[0]?.messages.at(-1)?.operation === 'export');
+  const rejected = assert.rejects(result, error => reason === 'cancel' ? error.name === 'AbortError'
+    : reason === 'timeout' ? error.telemetryCode === 'timeout' : Boolean(error.telemetryCode));
+  await until(() => workers[0]?.messages.at(-1)?.operation === 'export', pollTurn);
   if (reason === 'cancel') controller.abort();
-  else if (reason !== 'timeout') workers[0].fail(reason);
+  else if (reason === 'timeout') {
+    t.mock.timers.tick(29);
+    assert.equal(workers[0].terminated, undefined);
+    assert.equal(cancellations.length, 0);
+    t.mock.timers.tick(1);
+  } else workers[0].fail(reason);
   await rejected; assert.equal(workers[0].terminated, true); assert.equal(cancellations.length, 1);
-  // The fresh-worker success checks ownership with a generous deadline after
-  // the intentionally short first-job timeout has proved cleanup.
-  if (reason === 'timeout') exporter.timeoutMs = 3000;
   const next = exporter.export(report);
-  await until(() => workers[1]?.messages.at(-1)?.operation === 'export');
+  await until(() => workers[1]?.messages.at(-1)?.operation === 'export', pollTurn);
   workers[0].reply(workers[1].messages.at(-1).id, {blob: new Blob(['stale'])});
-  workers[1].finish(); await next; assert.equal(workers.length, 2);
+  workers[1].finish(); assert.equal(await (await next).text(), 'exact bytes');
+  assert.equal(workers.length, 2); assert.equal(cancellations.length, 1);
 });
 
 test('queued revision changes reject before snapshot and disposal cancels active and waiting requests', async t => {
