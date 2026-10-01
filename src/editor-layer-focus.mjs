@@ -30,6 +30,19 @@ export const editorLayerFocusMethods = {
     return focusByReport.get(this.report) ?? null;
   },
 
+  // Creation publishers call this before follow-up selection/edit guards and
+  // their layer-change event. The focus remains session state, including when
+  // Draw or a movieclip command creates its own layer without the timeline UI.
+  _includeCreatedLayersInFocus(ids) {
+    const focus = focusByReport.get(this.report);
+    if (!focus) return false;
+    let included = false;
+    for (const id of ids) if (Object.hasOwn(this.report._styk.layers.byId, id) && !focus.ids.has(id)) {
+      focus.ids.add(id); included = true;
+    }
+    return included;
+  },
+
   setLayerFocus(ids, {lock = false} = {}) {
     if (ids == null) return this.clearLayerFocus();
     const next = new Set(ids);

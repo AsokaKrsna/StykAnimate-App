@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {figureFocusLocked, layerFocusLocked} from '../src/editor-layer-focus.mjs';
-import {layerLocked} from '../src/layers.mjs';
+import {createLayerState, layerLocked} from '../src/layers.mjs';
+import {createDrawingFigure} from '../src/drawing-model.mjs';
+import {DrawingController} from '../src/drawing-controller.mjs';
+import {clipboardSnapshot, restoreClipboard, pasteSheetClipboard} from '../src/shared-clipboard.mjs';
 import {organizeTimelineRows, timelineOrganizationMethods} from '../src/timeline-organization.mjs';
 
 function fixture({joined = false} = {}) {
@@ -111,6 +114,71 @@ test('invalid focus changes are atomic and identical focus changes preserve the 
   assert.throws(() => editor.setLayerFocus(['layer-1'], {lock: 'yes'}));
   assert.equal(editor.getLayerFocus(), focus); assert.equal(editor.layerRevision, revision);
   assert.equal(editor.setLayerFocus(['layer-1'], {lock: true}), false); assert.equal(editor.getLayerFocus(), focus);
+});
+
+for (const lock of [false, true]) {
+  test(`new layers join ${lock ? 'Focus and lock' : 'view-only focus'} before their creation event`, () => {
+    const editor = fixture(); editor.setLayerFocus(['layer-1'], {lock});
+    const focus = editor.getLayerFocus(), history = editor._undo.length, events = [];
+    editor.addEventListener('change', event => {
+      if (event.detail.kind === 'edit') events.push(editor.getLayerFocus().ids.has(editor.activeLayerId));
+    });
+    const layer = editor.createLayer('New artwork');
+    assert.equal(editor.getLayerFocus(), focus); assert.deepEqual([...focus.ids], ['layer-1', layer.id]);
+    assert.deepEqual(events, [true]); assert.equal(editor._undo.length, history + 1);
+    assert.equal(layer.locked, false); assert.equal(layer.savedLocked, false);
+    assert.equal(editor.getLayer('layer-2').focusLocked, lock);
+    assert.equal(editor.report._styk.layers.byId[layer.id].locked, false);
+    editor.undo(); assert.deepEqual([...editor.getLayerFocus().ids], ['layer-1']);
+  });
+
+  test(`the first Draw stroke can create and select its layer during ${lock ? 'Focus and lock' : 'view-only focus'}`, () => {
+    const editor = fixture(); editor.setLayerFocus(['layer-1'], {lock}); editor.selectSheetLayer('layer-1');
+    const history = editor._undo.length, selected = [];
+    const drawing = {editor, tool: 'brush', state: {}, onStatus() {}, sync() {}, onUI() {},
+      getTimeline: () => ({selectTrack: id => selected.push(id)})};
+    DrawingController.prototype.ensurePaintLayer.call(drawing);
+    const layer = editor.getLayer(drawing.state.selectedTrackId);
+    assert.ok(layer.drawing); assert.equal(layer.locked, false); assert.equal(layer.savedLocked, false);
+    assert.equal(editor.activeLayerId, layer.id); assert.deepEqual(selected, [layer.id]);
+    assert.deepEqual([...editor.getLayerFocus().ids], ['layer-1', layer.id]);
+    assert.equal(editor.report._styk.layerSheet.tracks[layer.id].keys.length, 1);
+    assert.equal(editor._undo.length, history + 1);
+    editor.undo(); assert.deepEqual([...editor.getLayerFocus().ids], ['layer-1']);
+  });
+
+  test(`a drawing converted to a movieclip stays focused and selected during ${lock ? 'Focus and lock' : 'view-only focus'}`, () => {
+    const report = emptyDocument(), figure = createDrawingFigure({figureTypeId: 1, pixelsPerUnit: 1});
+    report.figure_types = [figure]; report.keyframes = [createFrame([createObject(figure, 1, 10, 10)], 2)];
+    report._styk ??= {}; report._styk.layers = createLayerState(); report._styk.layers.byId['layer-1'].drawing = {version: 1};
+    const editor = new Editor({demo: false, layerTimeline: true}).load(report);
+    editor.setLayerFocus(['layer-1'], {lock}); editor.select(1);
+    const before = editor.serialize(), history = editor._undo.length;
+    editor.createMovieclip({start: 0, end: 1, name: 'Clip'});
+    const uid = editor.selectedUid, owner = editor.layerForUid(uid), layer = editor.getLayer(owner);
+    assert.notEqual(uid, 1); assert.ok(editor.object); assert.ok(editor.figure._styk.movieclip);
+    assert.equal(editor.activeLayerId, owner); assert.equal(layer.locked, false); assert.equal(layer.savedLocked, false);
+    assert.deepEqual([...editor.getLayerFocus().ids], ['layer-1', owner]);
+    assert.equal(editor.report._styk.layers.byId[owner].locked, false);
+    assert.equal(editor._undo.length, history + 1);
+    editor.undo(); assert.deepEqual(editor.serialize(), before); assert.equal(editor.selectedUid, 1);
+    assert.deepEqual([...editor.getLayerFocus().ids], ['layer-1']);
+  });
+}
+
+test('cross-project frame paste can add missing focused layers without unlocking existing references', async () => {
+  const source = fixture(); source.sheetCopyFrames(['layer-1', 'layer-2'], 0, 1);
+  const editor = new Editor({demo: false, layerTimeline: true}).load(emptyDocument());
+  const reference = editor.createLayer('Reference'); editor.setLayerFocus(['layer-1'], {lock: true});
+  await restoreClipboard(editor, clipboardSnapshot(source, 'sheet'));
+  const before = editor.serialize(), history = editor._undo.length;
+  pasteSheetClipboard(editor, ['layer-1'], 0);
+  const added = editor.report._styk.layers.order.find(id => !['layer-1', reference.id].includes(id));
+  assert.ok(added); assert.deepEqual([...editor.getLayerFocus().ids], ['layer-1', added]);
+  assert.equal(editor.getLayer(added).locked, false); assert.equal(editor.getLayer(reference.id).focusLocked, true);
+  assert.equal(editor.getLayer(reference.id).savedLocked, false); assert.equal(editor._undo.length, history + 1);
+  assert.ok(editor.report._styk.layerSheet.tracks[added].keys.length);
+  editor.undo(); assert.deepEqual(editor.serialize(), before); assert.deepEqual([...editor.getLayerFocus().ids], ['layer-1']);
 });
 
 test('revealing an off-focus selection keeps the focused rows until Show all', () => {

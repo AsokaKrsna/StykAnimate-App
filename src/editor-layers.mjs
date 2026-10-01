@@ -66,7 +66,7 @@ export const editorLayerMethods = {
     const state = ensureLayerState(this.report); if (state.activeId === id) return false;
     state.activeId = id; this._emit('selection', {layerSelection: true, activeLayerId: id, layerRevision: this.layerRevision}); return true;
   },
-  _layerEdit(label, updates, {structural = false, reindex = false, activeId, migration} = {}) {
+  _layerEdit(label, updates, {structural = false, reindex = false, activeId, migration, createdLayerIds = []} = {}) {
     if (this._drag) this.commitDrag();
     const state = ensureLayerState(this.report), beforeSelection = this._selectionState();
     const changes = updates.map(([path, value, remove = false]) => ({path, before: capture(state, path), after: {exists: !remove, value: clone(value)}}))
@@ -91,6 +91,7 @@ export const editorLayerMethods = {
       this._applyFrameSourceChanges(command, 'after', migration.preparedFrameSources);
       this.report._styk.animation = migration.afterAnimation;
     }
+    this._includeCreatedLayersInFocus(createdLayerIds);
     this._layerChanged({reindex});
     this._invalidate({timing: Boolean(migration)});
     command.afterSelection = this._selectionState(); this._record(command);
@@ -119,7 +120,7 @@ export const editorLayerMethods = {
     if(folderId!==undefined&&!Object.hasOwn(state.folders?.byId??{},folderId))throw messageError(new Error(''), 'errors.layerFolders.missingFolder');
     const title = cleanName(name ?? `Layer ${state.nextId}`), order = state.order.slice(); order.splice(insertion, 0, id);
     this._layerEdit('Create layer', [[['byId', id], {name: title, visible: true, locked: false, ...(folderId?{folderId}:{}), ...(drawing ? {drawing:{version:1}} : {})}], [['order'], folderLayerOrder({...state,byId:{...state.byId,[id]:{folderId}}},order)], [['nextId'], state.nextId + 1]],
-      {structural: true, reindex: true, activeId: activate ? id : undefined}); return this.getLayer(id);
+      {structural: true, reindex: true, activeId: activate ? id : undefined, createdLayerIds: [id]}); return this.getLayer(id);
   },
   renameLayer(id, name) {
     if (FIXED_LAYER_IDS.includes(id)) throw messageError(new Error(''), "errors.editorLayers.sceneAndCameraArePermanentTracksAndCannot", {});

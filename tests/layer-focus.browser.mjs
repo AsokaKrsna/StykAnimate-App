@@ -18,7 +18,7 @@ const point = (uid, part = 'root') => page.evaluate(({uid, part}) => {
 const clickFigure = async uid => { const p = await point(uid); await page.mouse.click(p.x, p.y); await settle(); };
 
 try {
-  await page.goto('http://127.0.0.1:47831'); await page.waitForFunction(() => window.styk?.ready);
+  await page.goto(process.env.STYK_URL || 'http://127.0.0.1:47831'); await page.waitForFunction(() => window.styk?.ready);
   await page.evaluate(async () => {
     const {emptyDocument, createFrame, createObject} = await import('/src/demo.mjs');
     const {worldToScreen} = await import('/src/renderer.mjs');
@@ -56,6 +56,39 @@ try {
   await page.getByRole('button', {name: 'Show all layers', exact: true}).click(); await settle();
   check('Show all restores saved locks and releases the reference layer', await page.evaluate(() => !styk.editor.getLayerFocus() && styk.editor.getLayer('layer-2').locked && !styk.editor.getLayer('layer-3').locked));
   await clickFigure(3); check('reference artwork is selectable after Show all', await page.evaluate(() => styk.editor.selectedUid === 3));
+
+  for (const lock of [false, true]) {
+    await page.evaluate(lock => {
+      styk.timeline.focusSelectedLayers({ids: ['layer-1'], lock});
+      const layer = styk.timeline.newLayer('drawing');
+      globalThis.__focusCreatedLayer = layer.id;
+    }, lock); await settle();
+    check(`timeline drawing creation joins ${lock ? 'Focus and lock' : 'view-only focus'} and remains editable`, await page.evaluate(() => {
+      const layer = styk.editor.getLayer(__focusCreatedLayer);
+      return layer.drawing && !layer.locked && !layer.savedLocked && styk.editor.activeLayerId === layer.id &&
+        styk.editor.getLayerFocus().ids.has(layer.id) && styk.timeline.tracks.some(row => row.id === layer.id) &&
+        styk.editor.report._styk.layerSheet.tracks[layer.id].keys.length === 1;
+    }));
+    await page.keyboard.press('Escape');
+  }
+
+  // Every existing drawing is outside the locked focus, so the first paint
+  // gesture must create an editable drawing layer rather than reusing one.
+  await page.evaluate(() => { styk.timeline.focusSelectedLayers({ids: ['layer-1'], lock: true}); styk.editor.selectSheetLayer('layer-1'); });
+  const history = await page.evaluate(() => styk.editor._undo.length);
+  await page.locator('[data-workspace-mode="draw"]').click();
+  const box = await page.locator('#viewport').boundingBox(), x = box.x + box.width * .4, y = box.y + box.height * .45;
+  await page.mouse.move(x, y); await page.mouse.down(); await page.waitForFunction(() => Boolean(styk.drawing.gesture));
+  await page.mouse.move(x + 90, y + 35, {steps: 10}); await page.mouse.up(); await page.waitForFunction(() => !styk.drawing.gesture);
+  await page.evaluate(() => styk.drawing.barrier()); await settle();
+  check('a real first Draw stroke creates focused ink while reference layers remain locked', await page.evaluate(history => {
+    const target = styk.editor.drawingTarget(), layer = styk.editor.getLayer(target.id), surface = styk.drawing.owner.entry(target.figure);
+    return Boolean(surface?.store?.bounds?.width) && !layer.locked && styk.editor.getLayerFocus().ids.has(layer.id) &&
+      styk.timeline.tracks.some(row => row.id === layer.id) && styk.editor.getLayer('layer-3').focusLocked &&
+      !styk.editor.getLayer('layer-3').savedLocked && styk.editor._undo.length > history;
+  }, history));
+  await page.screenshot({path: `${out}/focus-first-drawing.png`});
+  await page.getByRole('button', {name: 'Animate', exact: true}).click(); await settle();
 
   await page.evaluate(() => styk.timeline.focusSelectedLayers({ids: ['layer-1'], lock: true}));
   await page.locator('[data-timeline-mode="simple"]').click(); await settle();

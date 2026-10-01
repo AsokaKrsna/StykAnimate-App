@@ -141,6 +141,12 @@ function publish(editor,plan,label,{selection=editor._selectionState(),assets,se
     else editor.report[field]=change.after;
   }
   editor.report._styk.layerSheet=plan.state;editor.report._styk.layers=plan.layers;
+  if(plan.layers.nextId!==beforeLayers.nextId){
+    editor._includeCreatedLayersInFocus(plan.layers.order.filter(id=>!Object.hasOwn(beforeLayers.byId,id)));
+    // Selection can ask for layer descriptors before the normal layer-change
+    // publication below; discard descriptors from before the planned creation.
+    editor._layerDescriptors=null;
+  }
   for(const source of plan.sources)(editor.report._styk.frameSources??={})[source.id]=source.after.value;
   editor._nextFrameIdentity=plan.nextFrame;editor._invalidate({timing:true,retainGeometry});
   if(nextUid!==undefined)editor._nextUid=nextUid;

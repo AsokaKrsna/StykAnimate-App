@@ -611,7 +611,7 @@ export class Timeline{
   _clipboard(action,operation){return this._run(()=>this.sharedClipboard?this.sharedClipboard[action]('sheet',operation):operation());}
   selectAll(){this.selectedLayers=new Set(this.tracks.filter(t=>this.editor.getLayer(t.id)).map(t=>t.id));this.start=0;this.end=this.editor.totalTicks-1;this.update();}
   /** New layer (or a drawing layer): its row opens its name for typing once it is painted. */
-  newLayer(kind='layer'){return this._run(()=>{const focus=this.editor.getLayerFocus(),layer=kind==='drawing'?this.editor.createDrawingLayer():this.editor.createLayer();this.setLayerFilter('',focus?new Set([...focus.ids,layer.id]):null,{lock:Boolean(focus?.lock)});this._selectLayer(layer.id);this.revealSelectedLayer();this.pendingRename=layer.id;this.update();return layer;});}
+  newLayer(kind='layer'){return this._run(()=>{const layer=kind==='drawing'?this.editor.createDrawingLayer():this.editor.createLayer(),focus=this.editor.getLayerFocus();this.setLayerFilter('',focus?.ids??null,{lock:Boolean(focus?.lock)});this._selectLayer(layer.id);this.revealSelectedLayer();this.pendingRename=layer.id;this.update();return layer;});}
   /** Find layers: the field takes the title's place and the focus. */
   openLayerSearch(){this.searchField.hidden=false;this.labelTitle.hidden=true;this.layerSearch.focus();this.layerSearch.select();this._syncOrganization();}
   deleteLayer(){return this._run(()=>this.onDeleteLayer?this.onDeleteLayer(this.selectedTrackId):this.editor.deleteLayerAsync(this.selectedTrackId));}

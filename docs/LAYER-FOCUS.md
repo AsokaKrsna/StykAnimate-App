@@ -24,8 +24,15 @@ prunes it from the set; deleting the last focused layer ends focus. Figure, conn
 group and marquee selection all enforce the same temporary selection boundary.
 Metadata edits such as renaming or folder organization remain available.
 
+New layers join the active focus before their first edit or selection. This also
+applies when Draw creates its first drawing layer, a paste adds missing layers,
+or converting a drawing to a movieclip creates a figure layer. **Focus and lock**
+keeps other layers temporarily locked while the new layer is ready to edit.
+Undoing creation removes the absent layer from focus; focus is not saved in history.
+
 Focused regression coverage lives in `tests/editor-layer-focus.test.mjs`,
 `tests/layer-focus.browser.mjs` and the timeline organization browser regression.
 These check selection across layers,
 multiple focused layers, rejected pose/key edits, unchanged saved locks and history,
-and cleanup when a project or its focused layers change.
+creation through Draw, timeline and movieclip commands, and cleanup when a project
+or its focused layers change.
