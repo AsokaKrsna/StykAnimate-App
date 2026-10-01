@@ -74,6 +74,9 @@ for (const reason of ['cancel', 'error', 'messageerror', 'timeout']) test(`a ${r
   if (reason === 'cancel') controller.abort();
   else if (reason !== 'timeout') workers[0].fail(reason);
   await rejected; assert.equal(workers[0].terminated, true); assert.equal(cancellations.length, 1);
+  // The fresh-worker success checks ownership with a generous deadline after
+  // the intentionally short first-job timeout has proved cleanup.
+  if (reason === 'timeout') exporter.timeoutMs = 3000;
   const next = exporter.export(report);
   await until(() => workers[1]?.messages.at(-1)?.operation === 'export');
   workers[0].reply(workers[1].messages.at(-1).id, {blob: new Blob(['stale'])});
