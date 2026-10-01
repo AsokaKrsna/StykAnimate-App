@@ -6852,6 +6852,12 @@
       "one": "Εισαγωγή {count} ενδιάμεσου καρέ",
       "other": "Εισαγωγή {count} ενδιάμεσων καρέ"
     },
-    "propertyControls.enterValueBetween": "Εισαγάγετε τιμή μεταξύ {min} και {max}."
+    "propertyControls.enterValueBetween": "Εισαγάγετε τιμή μεταξύ {min} και {max}.",
+    "desktop.updates.developmentUnavailable": "Οι ενημερώσεις είναι διαθέσιμες στην εγκατεστημένη εφαρμογή. Οι εκδόσεις ανάπτυξης δεν ενημερώνονται.",
+    "desktop.updates.linuxAppImageRequired": "Εκτελέστε το αρχείο AppImage για Linux ώστε να ενεργοποιήσετε τις αυτόματες ενημερώσεις.",
+    "desktop.updates.writableAppImageRequired": "Μετακινήστε το αρχείο AppImage σε φάκελο όπου έχετε δικαίωμα εγγραφής, όπως τον φάκελο Applications μέσα στον προσωπικό σας φάκελο, και εκτελέστε το ξανά για να ενεργοποιήσετε τις αυτόματες ενημερώσεις.",
+    "desktop.updates.supportedInstallerRequired": "Οι αυτόματες ενημερώσεις απαιτούν το πρόγραμμα εγκατάστασης για Windows ή το αρχείο AppImage για Linux.",
+    "desktop.updates.windowsSetupRequired": "Εγκαταστήστε το StykAnimate με το πρόγραμμα εγκατάστασης Windows Setup για να ενεργοποιήσετε τις αυτόματες ενημερώσεις.",
+    "desktop.updates.retryConnection": "Δεν ήταν δυνατή η ολοκλήρωση της ενημέρωσης. Ελέγξτε τη σύνδεσή σας και δοκιμάστε ξανά."
   }
 }

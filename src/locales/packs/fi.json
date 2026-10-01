@@ -6852,6 +6852,12 @@
       "one": "Lisää {count} väliruutu",
       "other": "Lisää {count} väliruutua"
     },
-    "propertyControls.enterValueBetween": "Anna arvo väliltä {min}–{max}."
+    "propertyControls.enterValueBetween": "Anna arvo väliltä {min}–{max}.",
+    "desktop.updates.developmentUnavailable": "Päivitykset ovat saatavilla asennetussa sovelluksessa. Kehitysversiot eivät päivity.",
+    "desktop.updates.linuxAppImageRequired": "Ota automaattiset päivitykset käyttöön käynnistämällä Linuxin AppImage-tiedosto.",
+    "desktop.updates.writableAppImageRequired": "Siirrä AppImage-tiedosto kansioon, johon sinulla on kirjoitusoikeus, esimerkiksi kotikansiosi Applications-kansioon, ja käynnistä se uudelleen. Näin saat automaattiset päivitykset käyttöön.",
+    "desktop.updates.supportedInstallerRequired": "Automaattiset päivitykset edellyttävät Windows-asennusohjelmaa tai Linuxin AppImage-tiedostoa.",
+    "desktop.updates.windowsSetupRequired": "Ota automaattiset päivitykset käyttöön asentamalla StykAnimate Windows Setup -asennusohjelmalla.",
+    "desktop.updates.retryConnection": "Päivitystä ei voitu viimeistellä. Tarkista yhteytesi ja yritä uudelleen."
   }
 }

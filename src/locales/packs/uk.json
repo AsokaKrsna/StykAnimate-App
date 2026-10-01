@@ -6940,6 +6940,12 @@
       "many": "Вставити {count} проміжних кадрів",
       "other": "Вставити {count} проміжного кадру"
     },
-    "propertyControls.enterValueBetween": "Введіть значення від {min} до {max}."
+    "propertyControls.enterValueBetween": "Введіть значення від {min} до {max}.",
+    "desktop.updates.developmentUnavailable": "Оновлення доступні у встановленому застосунку. Версії для розробки не оновлюються.",
+    "desktop.updates.linuxAppImageRequired": "Запустіть AppImage для Linux, щоб увімкнути автоматичні оновлення.",
+    "desktop.updates.writableAppImageRequired": "Перемістіть AppImage до папки з доступом для запису, наприклад до Applications у вашій домашній папці, і знову відкрийте застосунок, щоб увімкнути автоматичні оновлення.",
+    "desktop.updates.supportedInstallerRequired": "Для автоматичних оновлень потрібна програма встановлення для Windows або AppImage для Linux.",
+    "desktop.updates.windowsSetupRequired": "Установіть StykAnimate за допомогою програми встановлення Windows Setup, щоб увімкнути автоматичні оновлення.",
+    "desktop.updates.retryConnection": "Не вдалося завершити оновлення. Перевірте з'єднання та спробуйте знову."
   }
 }

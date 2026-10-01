@@ -1,4 +1,4 @@
-import {appendLocalized, localizedMarkup} from '../localization-bindings.mjs';
+import {appendLocalized, localizedMarkup, localizedText, localizedAttribute} from '../localization-bindings.mjs';
 /**
  * Anchored, non-modal panels (onion settings, Go to frame, the Document
  * popover, brush presets, …): a [popover] in the top layer with an optional
@@ -29,10 +29,11 @@ const content = (doc, value) => (value === null || value === undefined ? null : 
  *                anchor while it scrolls); the default places it once, in JS
  *   keyboardScope  typing belongs to the popover (hotkeys stay off while open)
  *   closeLabel     the close button's name (default: common.close through `t`)
+ *   titleKey, labelKey, closeLabelKey and their Params retain localized captions
  * Returns {element, body, show(), hide(reason), toggle(), update(), isOpen, signal}.
  */
-export function createPopover({anchor, placement = 'bottom-start', title = '', closeLabel = null, body = null, foot = null, dismiss = 'auto',
-  returnFocus = true, mount = 'auto', overlays = null, keyboardScope = false, label = '', className = '', cssAnchor = false, topInset = 0,
+export function createPopover({anchor, placement = 'bottom-start', title = '', titleKey, titleParams, closeLabel = null, closeLabelKey, closeLabelParams, body = null, foot = null, dismiss = 'auto',
+  returnFocus = true, mount = 'auto', overlays = null, keyboardScope = false, label = '', labelKey, labelParams, className = '', cssAnchor = false, topInset = 0,
   onOpen = null, onClose = null, icon = null, t = null, document: doc = anchor?.ownerDocument ?? globalThis.document} = {}) {
   const id = `ui-popover-${++popoverCount}`;
   const element = doc.createElement('div');
@@ -41,25 +42,28 @@ export function createPopover({anchor, placement = 'bottom-start', title = '', c
   element.popover = dismiss === 'manual' ? 'manual' : 'auto';
   element.setAttribute('role', 'dialog');
   element.setAttribute('aria-modal', 'false');
-  if (title) {
+  if (title || titleKey) {
     const head = doc.createElement('div'), heading = doc.createElement('span');
     head.className = 'ui-popover-head';
     heading.className = 'ui-popover-title';
     heading.id = `${id}-title`;
     heading.textContent = title;
+    if (titleKey) localizedText(heading, titleKey, titleParams);
     appendLocalized(head, heading);
     const close = doc.createElement('button');
     close.type = 'button';
     close.className = 'ui-icon-button ui-popover-close';
     close.dataset.size = 'sm';
     close.setAttribute('aria-label', closeLabel ?? kitText(t, 'common.close'));
+    if (closeLabelKey || closeLabel === null) localizedAttribute(close, 'aria-label', closeLabelKey ?? 'common.close', closeLabelParams);
     if (icon) { const glyph = icon('close'); if (typeof glyph === 'string') localizedMarkup(close, glyph); else if (glyph) appendLocalized(close, glyph); }
     else close.textContent = '×';
     close.addEventListener('click', () => hide('close-button'));
     appendLocalized(head, close);
     appendLocalized(element, head);
     element.setAttribute('aria-labelledby', heading.id);
-  } else if (label) element.setAttribute('aria-label', label);
+  } else if (labelKey) localizedAttribute(element, 'aria-label', labelKey, labelParams);
+  else if (label) element.setAttribute('aria-label', label);
   const bodyElement = doc.createElement('div');
   bodyElement.className = 'ui-popover-body';
   const bodyNode = content(doc, body);

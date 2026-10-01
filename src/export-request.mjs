@@ -185,7 +185,11 @@ const isLossless = request => request.format === 'avi' && ['ffv1', 'rawvideo'].i
 const has = value => value !== undefined && value !== null;
 const number = (value, fallback) => (has(value) ? Number(value) : fallback);
 const rawText = (value, fallback) => (has(value) ? String(value) : fallback);
-const size = (width, height) => `${width} × ${height}`;
+// Dimensions have physical width/height order even inside an RTL caption.
+const size = (width, height) => {
+  const text = `${width} × ${height}`;
+  return interfaceLocalization.direction === 'rtl' ? `\u2066${text}\u2069` : text;
+};
 /** The artboard size a size change needs; a missing one would silently give NaN. */
 function artboard({canvasWidth, canvasHeight} = {}) {
   if (!(canvasWidth > 0 && canvasHeight > 0)) throw messageError(new TypeError(''), "errors.exportRequest.sizeChangesNeedTheArtboardSizeContextCanvaswidth", {});
@@ -500,6 +504,15 @@ export function resolveExportCodec(capability, requested) {
   return codecs.find(codec => codec.supported)?.id ?? '';
 }
 
+// Owned codec names are data; their lossless/transparency notes are interface
+// copy. Keep the probe's original diagnostic label and external driver names.
+function codecDisplayLabel(codec) {
+  if (codec?.displayName) return codec.displayName
+    + (codec.alpha ? ` · ${interfaceText('exportSheet.transparent')}` : '')
+    + (codec.lossless ? interfaceText('exportRequest.lossless') : '');
+  return (codec?.labelKey ? interfaceText(codec.labelKey, codec.labelParams) : codec?.label) ?? codec?.id ?? '';
+}
+
 /**
  * A format's Codec select, as today's refreshCapabilities() fills it: every
  * codec the probe reports, " · Lossless" after a lossless one whose label
@@ -509,8 +522,8 @@ export function resolveExportCodec(capability, requested) {
 export function exportCodecChoices(capability) {
   const codecs = capability?.codecs ?? [];
   return {disabled: !codecs.some(codec => codec.supported), options: codecs.map(codec => {
-    const label = codec.labelKey ? interfaceText(codec.labelKey, codec.labelParams) : codec.label ?? codec.id;
-    return {id: codec.id, label: `${label}${codec.lossless && !/lossless|uncompressed/i.test(label) ? interfaceText("exportRequest.lossless") : ''}`, disabled: !codec.supported};
+    const label = codecDisplayLabel(codec);
+    return {id: codec.id, label: `${label}${!codec.displayName && codec.lossless && !/lossless|uncompressed/i.test(codec.label ?? '') ? interfaceText("exportRequest.lossless") : ''}`, disabled: !codec.supported};
   })};
 }
 
@@ -548,8 +561,9 @@ export function exportFormatStates({capabilities = null, capabilityError = null,
     const empty = totalFrames === 0 && !SINGLE_FRAME_ACTIONS.has(FORMATS.get(format.id).action);
     const codec = FORMATS.get(format.id).codecKey ? resolveExportCodec(format, codecs[format.id]) : undefined;
     const selected = format.codecs?.find(option => option.id === codec);
+    const displayCodec = selected ?? (!FORMATS.get(format.id).codecKey ? format.codecs?.find(option => option.id === format.defaultCodec) : null);
     const encodedWidth = selected?.encodedWidth || format.encodedWidth, encodedHeight = selected?.encodedHeight || format.encodedHeight;
-    Object.assign(state, {pending: false, provider: format.provider || '', codec, codecLabel: (selected?.labelKey ? interfaceText(selected.labelKey, selected.labelParams) : selected?.label) || format.codec || '', ...(format.audio === true ? {audio: true} : {}),
+    Object.assign(state, {pending: false, provider: format.provider || '', codec, codecLabel: codecDisplayLabel(displayCodec) || format.codec || '', ...(format.audio === true ? {audio: true} : {}),
       // Today's "960 × 544 (padded)": the encoder pads odd sizes.
       padded: format.supported && encodedWidth && (encodedWidth !== capabilities.width || encodedHeight !== capabilities.height) ? {width: encodedWidth, height: encodedHeight} : null,
       disabled: !format.supported || selected?.supported === false || empty,

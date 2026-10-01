@@ -6852,6 +6852,12 @@
       "one": "{count} tussenframe invoegen",
       "other": "{count} tussenframes invoegen"
     },
-    "propertyControls.enterValueBetween": "Voer een waarde tussen {min} en {max} in."
+    "propertyControls.enterValueBetween": "Voer een waarde tussen {min} en {max} in.",
+    "desktop.updates.developmentUnavailable": "Updates zijn beschikbaar in de geïnstalleerde app. Ontwikkelversies werken zichzelf niet bij.",
+    "desktop.updates.linuxAppImageRequired": "Start de Linux AppImage om automatische updates in te schakelen.",
+    "desktop.updates.writableAppImageRequired": "Verplaats de AppImage naar een map met schrijfrechten, bijvoorbeeld Applications in je persoonlijke map, en start de app opnieuw om automatische updates in te schakelen.",
+    "desktop.updates.supportedInstallerRequired": "Voor automatische updates is het installatieprogramma voor Windows of de Linux AppImage vereist.",
+    "desktop.updates.windowsSetupRequired": "Installeer StykAnimate met het installatieprogramma Windows Setup om automatische updates in te schakelen.",
+    "desktop.updates.retryConnection": "De update kon niet worden voltooid. Controleer je verbinding en probeer het opnieuw."
   }
 }

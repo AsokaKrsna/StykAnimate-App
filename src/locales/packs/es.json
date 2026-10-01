@@ -6896,6 +6896,12 @@
       "many": "Insertar {count} fotogramas intermedios",
       "other": "Insertar {count} fotogramas intermedios"
     },
-    "propertyControls.enterValueBetween": "Introduce un valor entre {min} y {max}."
+    "propertyControls.enterValueBetween": "Introduce un valor entre {min} y {max}.",
+    "desktop.updates.developmentUnavailable": "Las actualizaciones están disponibles en la aplicación instalada. Las copias de desarrollo no se actualizan.",
+    "desktop.updates.linuxAppImageRequired": "Ejecuta el archivo AppImage de Linux para activar las actualizaciones automáticas.",
+    "desktop.updates.writableAppImageRequired": "Mueve el archivo AppImage a una carpeta con permisos de escritura, como Applications dentro de tu carpeta personal, y vuelve a ejecutarlo para activar las actualizaciones automáticas.",
+    "desktop.updates.supportedInstallerRequired": "Las actualizaciones automáticas requieren el instalador de Windows o el archivo AppImage para Linux.",
+    "desktop.updates.windowsSetupRequired": "Instala StykAnimate con el instalador Windows Setup para activar las actualizaciones automáticas.",
+    "desktop.updates.retryConnection": "No se ha podido completar la actualización. Comprueba tu conexión e inténtalo de nuevo."
   }
 }

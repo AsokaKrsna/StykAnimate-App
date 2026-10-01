@@ -639,7 +639,7 @@ export class EditorSettings {
         ...(presets.includes(value.autosaveSeconds) ? [] : [messageTuple([value.autosaveSeconds, say("settings.seconds", {count: value.autosaveSeconds})], {1: {key: "settings.seconds", params: {count: value.autosaveSeconds}}})])];
       return this.group(say("settings.keyframes"), this.checkbox(say("settings.replaceOnDrop"), 'replaceKeyframesOnDrop', say("settings.replaceOnDropNote")))
         + this.group(say("settings.playback"),
-          this.select(say("settings.playbackQuality"), 'playbackQuality', playbackQualityOptions.map(option => [option.id, option.label]), say("settings.playbackQualityNote"))
+          this.select(say("settings.playbackQuality"), 'playbackQuality', playbackQualityOptions.map(option => messageTuple([option.id, say(option.labelKey)], {1: {key: option.labelKey}})), say("settings.playbackQualityNote"))
           + this.checkbox(say("settings.loop"), 'loopPlayback')
           + this.checkbox(say("settings.fitView"), 'fitViewOnPlayback', say("settings.fitViewNote")))
         + this.group(say("settings.recovery"), this.select(say("settings.autosaveInterval"), 'autosaveSeconds', autosave, say("settings.autosaveNote")));

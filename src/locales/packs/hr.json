@@ -6896,6 +6896,12 @@
       "few": "Umetni {count} međusličice",
       "other": "Umetni {count} međusličica"
     },
-    "propertyControls.enterValueBetween": "Unesite vrijednost između {min} i {max}."
+    "propertyControls.enterValueBetween": "Unesite vrijednost između {min} i {max}.",
+    "desktop.updates.developmentUnavailable": "Ažuriranja su dostupna u instaliranoj aplikaciji. Razvojne kopije ne primaju ažuriranja.",
+    "desktop.updates.linuxAppImageRequired": "Pokrenite datoteku AppImage za Linux da biste omogućili automatska ažuriranja.",
+    "desktop.updates.writableAppImageRequired": "Premjestite datoteku AppImage u mapu u kojoj imate dopuštenje za pisanje, primjerice u mapu Applications unutar svoje osobne mape, pa je ponovno pokrenite da biste omogućili automatska ažuriranja.",
+    "desktop.updates.supportedInstallerRequired": "Automatska ažuriranja zahtijevaju instalacijski program za Windows ili datoteku AppImage za Linux.",
+    "desktop.updates.windowsSetupRequired": "Instalirajte StykAnimate pomoću instalacijskog programa Windows Setup da biste omogućili automatska ažuriranja.",
+    "desktop.updates.retryConnection": "Ažuriranje nije bilo moguće dovršiti. Provjerite vezu i pokušajte ponovno."
   }
 }

@@ -35,7 +35,7 @@ const FORMATS = Object.freeze({
   },
 });
 const CODECS = Object.freeze({
-  vp9: {encoder:"libvpx-vp9",label:"VP9 with transparency",pixelFormat:"yuva420p",quality:true,lossless:false,alpha:true},
+  vp9: {encoder:"libvpx-vp9",label:"VP9 with transparency",displayName:"VP9",pixelFormat:"yuva420p",quality:true,lossless:false,alpha:true},
   h264: {
     encoder: "libx264",
     label: "H.264",
@@ -60,6 +60,7 @@ const CODECS = Object.freeze({
   ffv1: {
     encoder: "ffv1",
     label: "FFV1 (lossless)",
+    displayName: "FFV1",
     pixelFormat: "bgr0",
     quality: false,
     lossless: true,
@@ -486,14 +487,14 @@ class VideoExportService {
               new RegExp(`\\b${format.muxer}\\b`).test(muxers);
             return {
               id,
-              label: codec.label, labelKey: codec.labelKey,
+              label: codec.label, labelKey: codec.labelKey, displayName: codec.displayName,
               supported,
               quality: codec.quality,
               lossless: codec.lossless,
               alpha: Boolean(codec.alpha),
               matte: codec.alpha ? null : "black",
               reasonKey: supported ? undefined : reason ? "desktop.videoExportService.unavailable" : "desktop.videoExportService.unsupportedCodec",
-              reasonParams: {codec: codec.labelKey ? {messageKey:codec.labelKey} : codec.label},
+              reasonParams: {codec: codec.labelKey ? {messageKey:codec.labelKey} : codec.displayName ?? codec.label},
               reason: supported
                 ? null
                 : reason ||

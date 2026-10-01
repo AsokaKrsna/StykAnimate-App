@@ -490,7 +490,7 @@ function syncStageHead() {
     size: `${editor.report.canvas_width} × ${editor.report.canvas_height}`,
     background: sceneBackground(),
     session: session === "movieclip" ? { done: "movieclip-done", name: scopes.map((scope) => scope.name).join(" › ") }
-      : session === "camera" ? { done: "camera-done", name: "Camera" } : null,
+      : session === "camera" ? { done: "camera-done", nameKey: "layers.camera" } : null,
     handles: state.handles, motionPaths: state.motionPaths, grid: Boolean(state.settings.canvasGrid), vfx: state.vfxEnabled,
     staticHandles: state.settings.builderShowStaticHandles !== false, highlight: Boolean(state.settings.builderHighlightSegment),
     isolate: Boolean(state.isolateMode),

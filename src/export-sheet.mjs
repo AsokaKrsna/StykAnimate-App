@@ -237,7 +237,7 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
   localizedAttribute(sound.input, 'aria-label', 'exportSheet.includeSound');
   if (soundNames.length !== 1) localizedText(sound.caption, soundNames.length ? 'exportSheet.soundCount' : 'exportSheet.includeSound', {count:soundNames.length});
   const soundRow = row(interfaceText("exportSheet.sound"), sound.wrap, {labelKey: "exportSheet.sound", labelParams: {}});
-  const smoothing = select(FIELD.smoothing, interfaceText("exportSheet.edges"), icon, EXPORT_SMOOTHING.map(option => ({value: option.value, label: option.label, title: option.description})), "exportSheet.edges", {});
+  const smoothing = select(FIELD.smoothing, interfaceText("exportSheet.edges"), icon, EXPORT_SMOOTHING.map(option => ({value: option.value, label: interfaceText(option.labelKey), labelKey: option.labelKey, title: interfaceText(option.descriptionKey), titleKey: option.descriptionKey})), "exportSheet.edges", {});
   const transparent = switchRow('export-transparent', interfaceText("exportSheet.transparentBackground"), interfaceText("exportSheet.transparent"), {labelKey:'exportSheet.transparentBackground',textKey:'exportSheet.transparent'});
   transparent.input.disabled = true;
   const transparentReason = element('p', {className: 'export-reason', id: 'export-transparent-reason'});
@@ -261,7 +261,7 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
     element('div', {className: 'ui-section-head'}, encodingToggle), encodingBody);
 
   const validation = element('p', {className: 'export-validation', id: ELEMENT.validation, role: 'status', 'aria-live': 'polite', hidden: true});
-  const summarySize = element('span', {id: ELEMENT.summarySize}), summaryTime = element('span', {id: ELEMENT.summaryTime});
+  const summarySize = element('span', {id: ELEMENT.summarySize, dir: 'ltr'}), summaryTime = element('span', {id: ELEMENT.summaryTime});
 
   const stop = stopQuestion({overlays, icon, t});
   const dialog = createDialog({size: 'lg', variant: 'export', id: EXPORT_DIALOG_ID, title: interfaceText("exportSheet.export"), titleKey: "exportSheet.export", overlays, icon, t, closeLabel: interfaceText("exportSheet.closeExport"), closeLabelKey: "exportSheet.closeExport",
@@ -323,11 +323,18 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
     refreshStates();
   }
   /** Today's codec selects: every codec the probe reports, unsupported ones disabled; the value is the one the request exports. */
-  function fillCodecs() {
+  function fillCodecs(captionsOnly = false) {
     for (const [key, control] of [['mp4', mp4Codec.node], ['avi', aviCodec.node]]) {
       const choices = exportCodecChoices(capabilities?.formats?.find(format => format.id === key));
-      replaceLocalized(control, ...choices.options.map(option => element('option', {value: option.id, text: option.label, disabled: option.disabled})));
-      control.disabled = choices.disabled;
+      if (captionsOnly) {
+        for (const option of control.options) {
+          const choice = choices.options.find(choice => choice.id === option.value);
+          if (choice) option.textContent = choice.label;
+        }
+      } else {
+        replaceLocalized(control, ...choices.options.map(option => element('option', {value: option.id, text: option.label, disabled: option.disabled})));
+        control.disabled = choices.disabled;
+      }
     }
   }
 
@@ -484,7 +491,7 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
     strip.style.setProperty('--end', `calc(var(--space-3) + (100% - 2 * var(--space-3)) * ${ratio(to)})`);
     for (const [control, frame] of [[startHandle, from], [endHandle, to]]) {
       control.setAttribute('aria-valuenow', String(frame));
-      control.setAttribute('aria-valuetext', `Frame ${frame}`);
+      localizedAttribute(control, 'aria-valuetext', 'filmstrip.card', {frame});
     }
     for (const entry of cells) entry.cell.toggleAttribute('data-out', entry.tick + 1 < from || entry.tick + 1 > to);
   }
@@ -683,6 +690,12 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
 
   const stopLanguage = interfaceLocalization.subscribe(() => {
     if (closed || exporting) return;
+    fillCodecs(true);
+    const sizeCaptions = sizePresetChoices(board);
+    for (const option of size.node.options) {
+      const choice = sizeCaptions.find(choice => choice.id === option.value);
+      if (choice) { option.textContent = choice.label; option.title = choice.reason; }
+    }
     states = baseStates(request.codecs);
     render(document.activeElement, true);
   });

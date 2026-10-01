@@ -6852,6 +6852,12 @@
       "one": "{count} Zwischenbild einfügen",
       "other": "{count} Zwischenbilder einfügen"
     },
-    "propertyControls.enterValueBetween": "Gib einen Wert zwischen {min} und {max} ein."
+    "propertyControls.enterValueBetween": "Gib einen Wert zwischen {min} und {max} ein.",
+    "desktop.updates.developmentUnavailable": "Updates sind in der installierten App verfügbar. Entwicklungsversionen werden nicht aktualisiert.",
+    "desktop.updates.linuxAppImageRequired": "Starte das Linux-AppImage, um automatische Updates zu aktivieren.",
+    "desktop.updates.writableAppImageRequired": "Verschiebe das AppImage in einen beschreibbaren Ordner, zum Beispiel „Applications“ in deinem Benutzerordner, und starte es erneut, um automatische Updates zu aktivieren.",
+    "desktop.updates.supportedInstallerRequired": "Automatische Updates erfordern das Windows-Installationsprogramm oder das Linux-AppImage.",
+    "desktop.updates.windowsSetupRequired": "Installiere StykAnimate mit dem Installationsprogramm „Windows Setup“, um automatische Updates zu aktivieren.",
+    "desktop.updates.retryConnection": "Das Update konnte nicht abgeschlossen werden. Prüfe deine Verbindung und versuche es erneut."
   }
 }

@@ -7028,6 +7028,12 @@
       "many": "إدراج {count} إطارًا بينيًا",
       "other": "إدراج {count} إطار بيني"
     },
-    "propertyControls.enterValueBetween": "أدخل قيمة من {min} إلى {max}."
+    "propertyControls.enterValueBetween": "أدخل قيمة من {min} إلى {max}.",
+    "desktop.updates.developmentUnavailable": "تتوفر التحديثات في التطبيق المثبّت. لا تُحدَّث نسخ التطوير.",
+    "desktop.updates.linuxAppImageRequired": "شغّل ملف AppImage لنظام Linux لتفعيل التحديثات التلقائية.",
+    "desktop.updates.writableAppImageRequired": "انقل ملف AppImage إلى مجلد قابل للكتابة، مثل مجلد Applications داخل مجلدك الرئيسي، ثم شغّله مجددًا لتفعيل التحديثات التلقائية.",
+    "desktop.updates.supportedInstallerRequired": "تتطلب التحديثات التلقائية برنامج تثبيت Windows أو ملف AppImage لنظام Linux.",
+    "desktop.updates.windowsSetupRequired": "ثبّت StykAnimate باستخدام برنامج التثبيت Windows Setup لتفعيل التحديثات التلقائية.",
+    "desktop.updates.retryConnection": "تعذّر إكمال التحديث. تحقّق من اتصالك وأعد المحاولة."
   }
 }

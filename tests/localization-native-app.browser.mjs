@@ -47,7 +47,7 @@ try {
   await page.locator('[data-setting=locale]').selectOption('he');
   check('Hebrew uses the reviewed Unicode Save caption without altering document geometry',await page.evaluate(()=>document.querySelector('.titlebar [data-action=save]').textContent.trim()==='שמירה'&&styk.editor.object.root_x===325.125));
   await page.locator('[data-setting=locale]').selectOption('zh-Hans');
-  check('Chinese project Save/Open use animation captions rather than Builder asset captions',await page.evaluate(()=>document.querySelector('.titlebar [data-action=save]').textContent.trim()==='保存动画'&&styk.localization.t('menu.openProject')==='打开动画'));
+  check('Chinese generic Save/Open and project-opening captions follow their message contexts',await page.evaluate(()=>document.querySelector('.titlebar [data-action=save]').textContent.trim()==='保存'&&styk.localization.t('chrome.open')==='打开'&&styk.localization.t('menu.openProject')==='打开项目…'));
   await page.setViewportSize({width:760,height:700});
   check('Native Chinese settings fit a compact window without horizontal overflow',await page.locator('.styk-settings').evaluate(dialog=>dialog.getBoundingClientRect().width<=innerWidth-30&&dialog.scrollWidth<=dialog.clientWidth&&dialog.querySelector('.styk-settings-content').scrollWidth<=dialog.querySelector('.styk-settings-content').clientWidth));
   await page.screenshot({path:path.join(output,'chinese-compact-settings.png')});

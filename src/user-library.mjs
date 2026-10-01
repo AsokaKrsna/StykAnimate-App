@@ -571,7 +571,11 @@ export class UserLibrary {
       const list = this.dialog.querySelector('.library-move-folders'); replaceLocalized(list);
       // A row per place: the parent first (a back chevron), then each folder with its glyph.
       const add = (text, path, glyph) => { const button = document.createElement('button'); button.type = 'button'; localizedMarkup(button, icon(glyph)); const words = document.createElement('span'); words.textContent = text; appendLocalized(button, words); button.onclick = () => this.run(() => browse(path)); appendLocalized(list, button); return button; };
-      if (folder) add('Parent folder', parentOf(folder), 'chevron-left').dataset.parent = '';
+      if (folder) {
+        const path=parentOf(folder),parent=add(path.split('/').at(-1),path,'chevron-left');parent.dataset.parent='';
+        if(path)localizedAttribute(parent,'aria-label','userLibrary.folderLocation',{folder:path.replaceAll('/',' › ')});
+        else {localizedText(parent.querySelector('span'),'userLibrary.myLibrary');localizedAttribute(parent,'aria-label','userLibrary.myLibrary');}
+      }
       for (const child of result.entries.filter(child => child.kind === 'folder' && child.path !== item.path)) add(child.name, child.path, 'folder');
       if (!list.children.length) { const none = document.createElement('p'); none.className = 'library-move-none'; localizedText(none, "userLibrary.noFoldersHere", {}); appendLocalized(list, none); }
     };

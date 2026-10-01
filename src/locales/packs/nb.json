@@ -6856,6 +6856,12 @@
       "one": "Sett inn {count} mellombilde",
       "other": "Sett inn {count} mellombilder"
     },
-    "propertyControls.enterValueBetween": "Skriv inn en verdi mellom {min} og {max}."
+    "propertyControls.enterValueBetween": "Skriv inn en verdi mellom {min} og {max}.",
+    "desktop.updates.developmentUnavailable": "Oppdateringer er tilgjengelige i den installerte appen. Utviklingsversjoner oppdaterer ikke seg selv.",
+    "desktop.updates.linuxAppImageRequired": "Kjør AppImage-filen for Linux for å aktivere automatiske oppdateringer.",
+    "desktop.updates.writableAppImageRequired": "Flytt AppImage-filen til en mappe med skrivetilgang, for eksempel Applications i hjemmemappen din, og åpne appen på nytt for å aktivere automatiske oppdateringer.",
+    "desktop.updates.supportedInstallerRequired": "Automatiske oppdateringer krever installasjonsprogrammet for Windows eller AppImage-filen for Linux.",
+    "desktop.updates.windowsSetupRequired": "Installer StykAnimate med installasjonsprogrammet Windows Setup for å aktivere automatiske oppdateringer.",
+    "desktop.updates.retryConnection": "Oppdateringen kunne ikke fullføres. Kontroller tilkoblingen og prøv igjen."
   }
 }

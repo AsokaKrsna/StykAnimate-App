@@ -1,4 +1,5 @@
-import {replaceLocalized, localizedAttribute, appendLocalized} from '../localization-bindings.mjs';
+import {replaceLocalized, localizedAttribute, localizedText, appendLocalized} from '../localization-bindings.mjs';
+import {interfaceLocalization} from '../localization.mjs';
 
 /**
  * The command palette: type to find any command (or anything a feature
@@ -70,6 +71,9 @@ let paletteCount = 0;
  */
 export function createCommandPalette({commands, overlays = null, providers = [], frameJump = null, icon = null, context = null, topInset = 0,
   openKeys = null, placeholder = null, label = null, emptyLabel = null, t = null, document: doc = globalThis.document} = {}) {
+  const placeholderKey = placeholder === null ? 'overlays.palette.placeholder' : null;
+  const labelKey = label === null ? 'overlays.palette.label' : null;
+  const emptyKey = emptyLabel === null ? 'overlays.palette.empty' : null;
   placeholder ??= kitText(t, 'overlays.palette.placeholder');
   label ??= kitText(t, 'overlays.palette.label');
   emptyLabel ??= kitText(t, 'overlays.palette.empty');
@@ -79,6 +83,7 @@ export function createCommandPalette({commands, overlays = null, providers = [],
   element.className = 'ui-dialog ui-palette';
   element.dataset.size = 'md';
   element.setAttribute('aria-label', label);
+  if (labelKey) localizedAttribute(element, 'aria-label', labelKey);
   if ('closedBy' in element) element.closedBy = 'any';   // a press outside closes it (Chromium 134+; a pointerdown check below otherwise)
   const search = doc.createElement('div');
   search.className = 'ui-palette-search';
@@ -92,6 +97,10 @@ export function createCommandPalette({commands, overlays = null, providers = [],
   input.spellcheck = false;
   input.setAttribute('role', 'combobox');
   input.setAttribute('aria-label', placeholder);
+  if (placeholderKey) {
+    localizedAttribute(input, 'placeholder', placeholderKey);
+    localizedAttribute(input, 'aria-label', placeholderKey);
+  }
   input.setAttribute('aria-autocomplete', 'list');
   input.setAttribute('aria-expanded', 'true');
   input.setAttribute('aria-controls', `${id}-list`);
@@ -110,6 +119,7 @@ export function createCommandPalette({commands, overlays = null, providers = [],
   list.id = `${id}-list`;
   list.setAttribute('role', 'listbox');
   list.setAttribute('aria-label', label);
+  if (labelKey) localizedAttribute(list, 'aria-label', labelKey);
   appendLocalized(element, search, list);
 
   const sources = [...providers];
@@ -175,6 +185,7 @@ export function createCommandPalette({commands, overlays = null, providers = [],
       const empty = doc.createElement('div');
       empty.className = 'ui-palette-empty';
       empty.textContent = emptyLabel;
+      if (emptyKey) localizedText(empty, emptyKey);
       appendLocalized(list, empty);
     }
     // The first row Enter can run (a disabled row still explains itself when chosen).
@@ -235,6 +246,14 @@ export function createCommandPalette({commands, overlays = null, providers = [],
     open = true;
     controller = new AbortController();
     const {signal} = controller;
+    const stopLanguage = interfaceLocalization.subscribe(() => {
+      const selected = rows[active]?.key, scroll = list.scrollTop;
+      render();
+      const index = rows.findIndex(row => row.key === selected);
+      if (index >= 0) setActive(index, false);
+      list.scrollTop = scroll;
+    });
+    signal.addEventListener('abort', stopLanguage, {once: true});
     input.addEventListener('input', render, {signal});
     element.addEventListener('keydown', onKeydown, {signal});
     element.addEventListener('cancel', event => { event.preventDefault(); close({restore: true}); }, {signal});

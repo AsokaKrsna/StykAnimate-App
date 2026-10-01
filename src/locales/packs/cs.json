@@ -6940,6 +6940,12 @@
       "many": "Vložit {count} mezisnímku",
       "other": "Vložit {count} mezisnímků"
     },
-    "propertyControls.enterValueBetween": "Zadejte hodnotu v rozmezí {min} až {max}."
+    "propertyControls.enterValueBetween": "Zadejte hodnotu v rozmezí {min} až {max}.",
+    "desktop.updates.developmentUnavailable": "Aktualizace jsou dostupné v nainstalované aplikaci. Vývojové kopie se neaktualizují.",
+    "desktop.updates.linuxAppImageRequired": "Spuštěním souboru AppImage pro Linux povolíte automatické aktualizace.",
+    "desktop.updates.writableAppImageRequired": "Přesuňte soubor AppImage do složky s oprávněním k zápisu, například do složky Applications ve své domovské složce, a znovu ho spusťte. Tím povolíte automatické aktualizace.",
+    "desktop.updates.supportedInstallerRequired": "Automatické aktualizace vyžadují instalátor pro Windows nebo soubor AppImage pro Linux.",
+    "desktop.updates.windowsSetupRequired": "Chcete-li povolit automatické aktualizace, nainstalujte StykAnimate pomocí instalátoru Windows Setup.",
+    "desktop.updates.retryConnection": "Aktualizaci se nepodařilo dokončit. Zkontrolujte připojení a zkuste to znovu."
   }
 }

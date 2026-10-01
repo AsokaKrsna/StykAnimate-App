@@ -6852,6 +6852,12 @@
       "one": "{count} köztes képkocka beszúrása",
       "other": "{count} köztes képkocka beszúrása"
     },
-    "propertyControls.enterValueBetween": "Adj meg {min} és {max} közötti értéket."
+    "propertyControls.enterValueBetween": "Adj meg {min} és {max} közötti értéket.",
+    "desktop.updates.developmentUnavailable": "A frissítések a telepített alkalmazásban érhetők el. A fejlesztői példányok nem frissülnek.",
+    "desktop.updates.linuxAppImageRequired": "Az automatikus frissítések engedélyezéséhez indítsd el a Linux AppImage-fájlt.",
+    "desktop.updates.writableAppImageRequired": "Az automatikus frissítések engedélyezéséhez helyezd át az AppImage-fájlt egy írható mappába, például a saját mappád Applications mappájába, majd indítsd el újra.",
+    "desktop.updates.supportedInstallerRequired": "Az automatikus frissítésekhez a Windows-telepítő vagy a Linux AppImage-fájl szükséges.",
+    "desktop.updates.windowsSetupRequired": "Az automatikus frissítések engedélyezéséhez telepítsd a StykAnimate alkalmazást a Windows Setup telepítővel.",
+    "desktop.updates.retryConnection": "A frissítést nem sikerült befejezni. Ellenőrizd az internetkapcsolatodat, majd próbáld újra."
   }
 }

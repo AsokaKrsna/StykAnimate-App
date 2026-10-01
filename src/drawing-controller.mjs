@@ -8,6 +8,7 @@ import {FILL_SOURCE_MAX_PIXELS} from './drawing-fill.mjs';
 import {sendDrawingComposite} from './drawing-composite-transport.mjs';
 import {lassoBounds,lassoContains,selectionStores} from './drawing-lasso.mjs';
 import {BRUSH_PRESETS,quickBarMarkup,paletteMarkup} from './drawing-view.mjs';
+import {brushMessages} from './drawing-brush-labels.mjs';
 import {recentColors,setRecentColors,rememberColor as rememberRecentColor,saveColor,subscribePalette} from './color-palette.mjs';
 import {SLIDERS,installDrawingSliders,refreshSliders,formatSlider,displayValue} from './drawing-sliders.mjs';
 import {WetInk} from './drawing-wet-ink.mjs';
@@ -948,8 +949,8 @@ export class DrawingController {
     if(action.startsWith('filter-'))return this.applyFilter(action.slice(7));
     if(action==='swap-colors'){[this.settings.color,this.settings.color2]=[this.settings.color2??'#ffffff',this.settings.color];this.onUI();this.paintPreview(this.panel);return;}
     if(action==='save-preset'){
-      const base=BRUSH_PRESETS.find(p=>p.id===this.settings.preset)?.name??'Custom',n=this.library.presets.length+1,tip=Object.fromEntries(brushKeys.filter(k=>k!=='preset').map(k=>[k,this.settings[k]]));
-      const preset={id:'custom-'+(Date.now()).toString(36)+n,name:base+' '+n,description:'Saved brush',...tip};this.library.presets=[...this.library.presets,preset].slice(-48);this.settings.preset=preset.id;this.saveLibrary();this.onUI();this.onStatus(interfaceText('drawingController.brushSaved', {name:preset.name}), 'drawingController.brushSaved', {name:preset.name});return;
+      const base=interfaceText(brushMessages[this.settings.preset]?.nameKey??'drawingView.custom'),n=this.library.presets.length+1,tip=Object.fromEntries(brushKeys.filter(k=>k!=='preset').map(k=>[k,this.settings[k]]));
+      const preset={id:'custom-'+(Date.now()).toString(36)+n,name:base+' '+n,description:interfaceText('drawingController.savedBrush'),...tip};this.library.presets=[...this.library.presets,preset].slice(-48);this.settings.preset=preset.id;this.saveLibrary();this.onUI();this.onStatus(interfaceText('drawingController.brushSaved', {name:preset.name}), 'drawingController.brushSaved', {name:preset.name});return;
     }
     if(action==='delete-preset'){const id=this.settings.preset;if(!this.library.presets.some(p=>p.id===id))return;this.library.presets=this.library.presets.filter(p=>p.id!==id);this.settings.preset=null;this.saveLibrary();this.onUI();return;}
     if(action==='mirror-x'||action==='mirror-y'){const key=action==='mirror-x'?'mirrorX':'mirrorY';this.settings[key]=!this.settings[key];this.onUI();this.onRender();return;}

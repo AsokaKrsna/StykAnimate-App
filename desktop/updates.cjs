@@ -4,23 +4,25 @@ const { messageError } = require('./localization.cjs');
 
 // Keep the release feed and filesystem access in the main process. The renderer
 // receives only status, never installer paths or a configurable download URL.
-function updateAvailability({ packaged, platform, portable, installed, appImage }) {
-  if (!packaged) return 'Updates are available in the installed app. Development copies do not update.';
+function updateAvailabilityDetails({ packaged, platform, portable, installed, appImage }) {
+  if (!packaged) return {message: 'Updates are available in the installed app. Development copies do not update.', messageKey: 'desktop.updates.developmentUnavailable'};
   if (platform === 'linux') {
-    if (!appImage) return 'Run the Linux AppImage to enable automatic updates.';
-    try { require('./appimage-updater.cjs').writableAppImage(appImage); return ''; }
-    catch { return 'Move the AppImage to a writable folder, such as Applications in your home folder, and reopen it to enable automatic updates.'; }
+    if (!appImage) return {message: 'Run the Linux AppImage to enable automatic updates.', messageKey: 'desktop.updates.linuxAppImageRequired'};
+    try { require('./appimage-updater.cjs').writableAppImage(appImage); return {message: ''}; }
+    catch { return {message: 'Move the AppImage to a writable folder, such as Applications in your home folder, and reopen it to enable automatic updates.', messageKey: 'desktop.updates.writableAppImageRequired'}; }
   }
-  if (platform !== 'win32') return 'Automatic updates require the Windows installer or Linux AppImage.';
-  if (portable || !installed) return 'Install StykAnimate using the Windows Setup installer to enable automatic updates.';
-  return '';
+  if (platform !== 'win32') return {message: 'Automatic updates require the Windows installer or Linux AppImage.', messageKey: 'desktop.updates.supportedInstallerRequired'};
+  if (portable || !installed) return {message: 'Install StykAnimate using the Windows Setup installer to enable automatic updates.', messageKey: 'desktop.updates.windowsSetupRequired'};
+  return {message: ''};
 }
+function updateAvailability(options) { return updateAvailabilityDetails(options).message; }
 
 class UpdateService {
-  constructor({ updater, currentVersion, unavailable = '', onState = () => {} }) {
+  constructor({ updater, currentVersion, unavailable = '', unavailableMessageKey, onState = () => {} }) {
     this.updater = updater;
     this.onState = onState;
-    this.state = { status: unavailable ? 'unavailable' : 'idle', currentVersion, version: null, percent: 0, transferred: 0, total: 0, message: unavailable };
+    this.state = { status: unavailable ? 'unavailable' : 'idle', currentVersion, version: null, percent: 0, transferred: 0, total: 0, message: unavailable,
+      ...(unavailable && unavailableMessageKey ? {messageKey: unavailableMessageKey} : {}) };
     if (unavailable) return;
     updater.autoDownload = false;
     updater.autoInstallOnAppQuit = false;
@@ -38,10 +40,13 @@ class UpdateService {
   }
 
   snapshot() { return { ...this.state }; }
-  set(next) { Object.assign(this.state, next); this.onState(this.snapshot()); }
+  set(next) {
+    if (Object.hasOwn(next, 'message') && !Object.hasOwn(next, 'messageKey')) { delete this.state.messageKey; delete this.state.messageParams; }
+    Object.assign(this.state, next); this.onState(this.snapshot());
+  }
   fail(error) {
     console.warn('Update failed:', error?.message || error);
-    this.set({ status: 'error', message: 'The update could not be completed. Check your connection and try again.' });
+    this.set({ status: 'error', message: 'The update could not be completed. Check your connection and try again.', messageKey: 'desktop.updates.retryConnection' });
   }
 
   async check() {
@@ -86,4 +91,4 @@ class UpdateService {
   dispose() { clearTimeout(this.initialTimer); clearInterval(this.timer); }
 }
 
-module.exports = { UpdateService, updateAvailability };
+module.exports = { UpdateService, updateAvailability, updateAvailabilityDetails };

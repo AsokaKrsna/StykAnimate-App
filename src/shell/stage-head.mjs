@@ -1,5 +1,5 @@
 import {t as interfaceText} from '../localization.mjs';
-import {appendLocalized, localizedMarkup, localizedAttribute} from '../localization-bindings.mjs';
+import {appendLocalized, localizedMarkup, localizedAttribute, localizedText, clearTranslation} from '../localization-bindings.mjs';
 /**
  * The stage header (experience.md §4.1-4.4, architecture.md §3.12): the
  * canvas's own 40px line, a sibling of #viewport above it, level with the
@@ -175,7 +175,8 @@ export function createStageHead({root, toasts = () => null, toolOptions = {}, op
     localizedAttribute(scene,'aria-label',session?'stageHead.sceneBackToTheScene':'movieclipUi.scene2',session?{}:{scene:state.size??''});
     setHidden(separator, !session);
     setHidden(here, !session);
-    setText(hereName, session?.name ?? '');
+    if (session?.nameKey) localizedText(hereName, session.nameKey, session.nameParams);
+    else { clearTranslation(hereName); setText(hereName, session?.name ?? ''); }
     setHidden(chip, Boolean(session) || !state.background);
     if (state.background) {
       setVar(chip.firstElementChild, '--swatch', state.background.css);
@@ -204,14 +205,14 @@ export function createStageHead({root, toasts = () => null, toolOptions = {}, op
    * The active tool's options (ui/tool-options.mjs descriptors), or none: the
    * crumb shows again. The bar is created on first use and kept.
    */
-  function setToolOptions(descriptors = [], {tool = '', label = ''} = {}) {
+  function setToolOptions(descriptors = [], {tool = '', label = '', labelKey, labelParams} = {}) {
     const list = descriptors ?? [];
     if (!bar && !list.length) return null;
     if (!bar) {
-      bar = createToolOptions({...(typeof toolOptions === 'function' ? toolOptions() : toolOptions), descriptors: list, tool, label, popoverMount: root});
+      bar = createToolOptions({...(typeof toolOptions === 'function' ? toolOptions() : toolOptions), descriptors: list, tool, label, labelKey, labelParams, popoverMount: root});
       bar.element.classList.add('stage-options');
       crumb.after(bar.element);
-    } else bar.update(list, {tool, label});
+    } else bar.update(list, {tool, label, labelKey, labelParams});
     setHidden(bar.element, !list.length);
     reposition();
     return bar;

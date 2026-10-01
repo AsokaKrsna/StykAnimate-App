@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { createRequire } from 'node:module';
-const { UpdateService, updateAvailability } = createRequire(import.meta.url)('../desktop/updates.cjs');
+const { UpdateService, updateAvailability, updateAvailabilityDetails } = createRequire(import.meta.url)('../desktop/updates.cjs');
+import english from '../src/locales/en.mjs';
 function fixture() {
   const updater = new EventEmitter();
   const states = [];
@@ -32,10 +33,30 @@ test('a failed or cancelled download never offers installation and can retry', a
   updater.downloadUpdate = async () => { throw new Error('Checksum mismatch'); };
   await service.check();
   assert.equal(service.snapshot().status, 'error');
+  assert.equal(service.snapshot().messageKey, 'desktop.updates.retryConnection');
+  assert.equal(service.snapshot().message, english['desktop.updates.retryConnection']);
   assert.equal(await service.restart(async () => true), false);
   updater.downloadUpdate = async () => updater.emit('update-downloaded', { version: '0.5.0' });
   await service.check();
   assert.equal(service.snapshot().status, 'ready');
+  assert.equal(service.snapshot().messageKey, undefined);
+});
+test('update availability transports display identity while preserving original strings and installer guards', async () => {
+  const installed = {packaged:true,platform:'win32',portable:false,installed:true};
+  for (const [options,key] of [
+    [{...installed,packaged:false},'desktop.updates.developmentUnavailable'],
+    [{...installed,platform:'linux'},'desktop.updates.linuxAppImageRequired'],
+    [{...installed,platform:'linux',appImage:'/missing-styk-localization-appimage'},'desktop.updates.writableAppImageRequired'],
+    [{...installed,platform:'darwin'},'desktop.updates.supportedInstallerRequired'],
+    [{...installed,portable:true},'desktop.updates.windowsSetupRequired'],
+    [{...installed,installed:false},'desktop.updates.windowsSetupRequired'],
+  ]) {
+    const detail=updateAvailabilityDetails(options);
+    assert.equal(detail.messageKey,key);assert.equal(detail.message,english[key]);assert.equal(updateAvailability(options),detail.message);
+    const service=new UpdateService({currentVersion:'1.2.0',unavailable:detail.message,unavailableMessageKey:detail.messageKey});
+    assert.equal((await service.check()).status,'unavailable');assert.equal(service.snapshot().messageKey,key);
+  }
+  assert.deepEqual(updateAvailabilityDetails(installed),{message:''});
 });
 test('repeated requests do not duplicate downloads or installers', async () => {
   const { updater, service } = fixture();

@@ -26,7 +26,7 @@ const { RecentFiles } = require('./recent-files.cjs');
 const { LibraryStore } = require('./library-store.cjs');
 const { PublicLibrary, DownloadLedger, isPublicId } = require('./public-library.cjs');
 const { TelemetryService } = require('./telemetry.cjs');
-const { UpdateService, updateAvailability } = require('./updates.cjs');
+const { UpdateService, updateAvailabilityDetails } = require('./updates.cjs');
 const releaseInfo = require('./release-info.json');
 const getReleaseHistory = require('./release-history.cjs').createReleaseHistory();
 let telemetryBuild = {};
@@ -720,15 +720,16 @@ async function createWindow() {
 async function start() {
   const saved = await new WorkspacePreferences(app.getPath('userData'), {filename: 'editor-settings.json'}).get();
   localization.setLocale(normalizeLocale(saved.locale));
-  const unavailable = updateAvailability({ packaged: app.isPackaged, platform: process.platform,
+  const availability = updateAvailabilityDetails({ packaged: app.isPackaged, platform: process.platform,
     appImage: process.env.APPIMAGE,
     portable: Boolean(process.env.PORTABLE_EXECUTABLE_DIR), installed: existsSync(path.join(path.dirname(process.execPath), 'Uninstall StykAnimate.exe')) });
+  const unavailable = availability.message;
   const updater = unavailable ? null : process.platform === 'linux'
     ? new (require('./appimage-updater.cjs').LinuxAppImageUpdater)()
     : require('electron-updater').autoUpdater;
   if (updater && process.platform === 'win32') updater.installDirectory = path.dirname(process.execPath);
   updates = new UpdateService({ updater,
-    currentVersion: app.getVersion(), unavailable,
+    currentVersion: app.getVersion(), unavailable, unavailableMessageKey: availability.messageKey,
     onState: value => { if (value.status === 'error') quitting = false; if (window && !window.isDestroyed()) window.webContents.send('styk:update-state-changed', value); },
   });
   if (app.isPackaged) app.setAsDefaultProtocolClient('stykanimate');

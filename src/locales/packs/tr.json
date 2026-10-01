@@ -6852,6 +6852,12 @@
       "one": "{count} ara kare ekle",
       "other": "{count} ara kare ekle"
     },
-    "propertyControls.enterValueBetween": "{min} ile {max} arasında bir değer girin."
+    "propertyControls.enterValueBetween": "{min} ile {max} arasında bir değer girin.",
+    "desktop.updates.developmentUnavailable": "Güncellemeler kurulu uygulamada sunulur. Geliştirme sürümleri güncellenmez.",
+    "desktop.updates.linuxAppImageRequired": "Otomatik güncellemeleri etkinleştirmek için Linux AppImage dosyasını çalıştırın.",
+    "desktop.updates.writableAppImageRequired": "AppImage dosyasını yazma izniniz olan bir klasöre, örneğin ev klasörünüzdeki Applications klasörüne taşıyın ve otomatik güncellemeleri etkinleştirmek için yeniden açın.",
+    "desktop.updates.supportedInstallerRequired": "Otomatik güncellemeler için Windows kurulum programı veya Linux AppImage dosyası gerekir.",
+    "desktop.updates.windowsSetupRequired": "Otomatik güncellemeleri etkinleştirmek için StykAnimate uygulamasını Windows Setup kurulum programıyla yükleyin.",
+    "desktop.updates.retryConnection": "Güncelleme tamamlanamadı. Bağlantınızı kontrol edin ve yeniden deneyin."
   }
 }

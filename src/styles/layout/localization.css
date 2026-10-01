@@ -4,8 +4,9 @@
   :where(#app), .workspace, .viewport, .shell-stage, :where(#timeline), .sheet-scroll,
   .audio-ruler, .audio-lanes, .filmstrip-scroll, .filmstrip-track,
   .camera-motion-graph, .paint-ramp, canvas, input[type="number"],
-  input[type="range"], kbd, .ui-field-unit, .timeline-readout,
-  :where(#time-display), .ui-export-strip { direction: ltr; }
+  input[type="range"], input[inputmode="numeric"], input[inputmode="decimal"],
+  kbd, .ui-field-unit, .timeline-readout,
+  :where(#time-display), .ui-range-strip { direction: ltr; }
   :root { --interface-direction: ltr; }
   :root[dir="rtl"] { --interface-direction: rtl; }
   .titlebar, .shell-tabs, :where(#inspector), .inspector-head, .inspector-foot,

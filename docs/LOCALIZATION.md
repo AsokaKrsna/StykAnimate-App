@@ -2,7 +2,7 @@
 
 English is the default. Settings → Interface → Language persists through the
 existing editor preference service. The browser, touch interface and Electron
-menus use the same catalog and fallback rules. Existing accurate translations are preserved. Translation and independent context review proceed in exclusive language batches; current coverage and review status are recorded in [LOCALIZATION-REVIEW.md](LOCALIZATION-REVIEW.md).
+menus use the same catalog and fallback rules. Existing accurate translations are preserved. All 26 non-English packs have complete catalog and plural coverage. Translation and independent context review use exclusive language batches; per-language results are recorded in [LOCALIZATION-REVIEW.md](LOCALIZATION-REVIEW.md).
 
 ## Ownership and lookup
 
@@ -120,8 +120,8 @@ coverage. The pre-existing playback-quiet browser check also fails on the unchan
 onion markers write their attributes/styles during playback. Localization's earlier
 parameter writes were removed; comparison showed only the baseline marker writers
 remaining. Catalog coverage is a completeness report, not a translation-quality
-score. Native-speaker review and Windows/macOS packaged rendering remain necessary
-before claiming a fully translated release.
+score. Native-speaker terminology review and Windows/macOS packaged rendering remain
+unverified; catalog completion and AI context review do not certify those results.
 
 ## Native baseline and supplied languages
 

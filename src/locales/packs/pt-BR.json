@@ -6899,6 +6899,12 @@
       "many": "Inserir {count} quadros intermediários",
       "other": "Inserir {count} quadros intermediários"
     },
-    "propertyControls.enterValueBetween": "Insira um valor entre {min} e {max}."
+    "propertyControls.enterValueBetween": "Insira um valor entre {min} e {max}.",
+    "desktop.updates.developmentUnavailable": "As atualizações estão disponíveis no aplicativo instalado. Versões de desenvolvimento não são atualizadas.",
+    "desktop.updates.linuxAppImageRequired": "Para ativar as atualizações automáticas, execute o AppImage para Linux.",
+    "desktop.updates.writableAppImageRequired": "Mova o AppImage para uma pasta com permissão de gravação, como Applications na sua pasta pessoal, e abra-o novamente para ativar as atualizações automáticas.",
+    "desktop.updates.supportedInstallerRequired": "As atualizações automáticas exigem o instalador para Windows ou o AppImage para Linux.",
+    "desktop.updates.windowsSetupRequired": "Instale o StykAnimate usando o instalador Windows Setup para ativar as atualizações automáticas.",
+    "desktop.updates.retryConnection": "Não foi possível concluir a atualização. Verifique sua conexão e tente novamente."
   }
 }

@@ -7254,7 +7254,7 @@
       "src/ui/ui-toast.mjs:441",
       "src/user-library.mjs:555",
       "src/user-library.mjs:567",
-      "src/user-library.mjs:589"
+      "src/user-library.mjs:593"
     ],
     "context": "{ label: kitText(t, \"common.cancel\"), labelKey: \"common.cancel\", labelParams: {}, cancel: true, id: \"keep-editing\", variant: \"ghost\" },"
   },
@@ -7263,10 +7263,11 @@
       "src/app-dialogs.mjs:240",
       "src/app-dialogs.mjs:269",
       "src/canvas-guides.mjs:30",
-      "src/ui/command-palette.mjs:103",
+      "src/ui/command-palette.mjs:112",
       "src/ui/ui-dialog.mjs:111",
       "src/ui/ui-dialog.mjs:112",
-      "src/ui/ui-popover.mjs:55"
+      "src/ui/ui-popover.mjs:57",
+      "src/ui/ui-popover.mjs:58"
     ],
     "context": "{ label: kitText(t, \"common.close\"), labelKey: \"common.close\", labelParams: {}, cancel: true, variant: \"secondary\" },"
   },
@@ -7705,7 +7706,7 @@
     "locations": [
       "desktop/file-streams.cjs:56",
       "desktop/vfw-export-service.cjs:200",
-      "desktop/video-export-service.cjs:838"
+      "desktop/video-export-service.cjs:839"
     ],
     "context": "if (typeof destination !== 'string' || !path.isAbsolute(destination)) throw messageError(new Error(''), 'desktop.fileStreams.errors.aNativeApprovedDestinationIs"
   },
@@ -8850,11 +8851,47 @@
     ],
     "context": "if (!['bug', 'idea', 'other'].includes(value?.category) || typeof value?.message !== 'string' || value.message.trim().length < 5 || value.message.length > 2000)"
   },
+  "desktop.updates.developmentUnavailable": {
+    "locations": [
+      "desktop/updates.cjs:8"
+    ],
+    "context": "if (!packaged) return {message: 'Updates are available in the installed app. Development copies do not update.', messageKey: 'desktop.updates.developmentUnavail"
+  },
   "desktop.updates.errors.updateCheckDidNotRun": {
     "locations": [
-      "desktop/updates.cjs:54"
+      "desktop/updates.cjs:59"
     ],
     "context": "else if (!result && this.state.status === 'checking') throw messageError(new Error(''), 'desktop.updates.errors.updateCheckDidNotRun', {});"
+  },
+  "desktop.updates.linuxAppImageRequired": {
+    "locations": [
+      "desktop/updates.cjs:10"
+    ],
+    "context": "if (!appImage) return {message: 'Run the Linux AppImage to enable automatic updates.', messageKey: 'desktop.updates.linuxAppImageRequired'};"
+  },
+  "desktop.updates.retryConnection": {
+    "locations": [
+      "desktop/updates.cjs:49"
+    ],
+    "context": "this.set({ status: 'error', message: 'The update could not be completed. Check your connection and try again.', messageKey: 'desktop.updates.retryConnection' })"
+  },
+  "desktop.updates.supportedInstallerRequired": {
+    "locations": [
+      "desktop/updates.cjs:14"
+    ],
+    "context": "if (platform !== 'win32') return {message: 'Automatic updates require the Windows installer or Linux AppImage.', messageKey: 'desktop.updates.supportedInstaller"
+  },
+  "desktop.updates.windowsSetupRequired": {
+    "locations": [
+      "desktop/updates.cjs:15"
+    ],
+    "context": "if (portable || !installed) return {message: 'Install StykAnimate using the Windows Setup installer to enable automatic updates.', messageKey: 'desktop.updates."
+  },
+  "desktop.updates.writableAppImageRequired": {
+    "locations": [
+      "desktop/updates.cjs:12"
+    ],
+    "context": "catch { return {message: 'Move the AppImage to a writable folder, such as Applications in your home folder, and reopen it to enable automatic updates.', message"
   },
   "desktop.vfwExportService.errors.aVideoFrameExceedsThe64MiBLimit": {
     "locations": [
@@ -9082,353 +9119,353 @@
   },
   "desktop.videoExportService.edge.both": {
     "locations": [
-      "desktop/video-export-service.cjs:84"
+      "desktop/video-export-service.cjs:85"
     ],
     "context": "noticeParams: {edge: {messageKey: padRight && padBottom ? \"desktop.videoExportService.edge.both\" : padRight ? \"desktop.videoExportService.edge.right\" : \"desktop"
   },
   "desktop.videoExportService.edge.bottom": {
     "locations": [
-      "desktop/video-export-service.cjs:84"
+      "desktop/video-export-service.cjs:85"
     ],
     "context": "noticeParams: {edge: {messageKey: padRight && padBottom ? \"desktop.videoExportService.edge.both\" : padRight ? \"desktop.videoExportService.edge.right\" : \"desktop"
   },
   "desktop.videoExportService.edge.right": {
     "locations": [
-      "desktop/video-export-service.cjs:84"
+      "desktop/video-export-service.cjs:85"
     ],
     "context": "noticeParams: {edge: {messageKey: padRight && padBottom ? \"desktop.videoExportService.edge.both\" : padRight ? \"desktop.videoExportService.edge.right\" : \"desktop"
   },
   "desktop.videoExportService.edgeNotice": {
     "locations": [
-      "desktop/video-export-service.cjs:83"
+      "desktop/video-export-service.cjs:84"
     ],
     "context": "noticeKey: padRight || padBottom ? \"desktop.videoExportService.edgeNotice\" : undefined,"
   },
   "desktop.videoExportService.errors.addingAudioToTheVideoTimedOut": {
     "locations": [
-      "desktop/video-export-service.cjs:717"
+      "desktop/video-export-service.cjs:718"
     ],
     "context": "timer = setTimeout(() => { child.kill(); reject(messageError(new Error(''), 'desktop.videoExportService.errors.addingAudioToTheVideoTimedOut', {})); },this.oper"
   },
   "desktop.videoExportService.errors.aNativeApprovedEncoderIsRequired": {
     "locations": [
-      "desktop/video-export-service.cjs:450"
+      "desktop/video-export-service.cjs:451"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.aNativeApprovedEncoderIsRequired', {});"
   },
   "desktop.videoExportService.errors.aNativeApprovedTemporaryFolderIsRequired": {
     "locations": [
-      "desktop/video-export-service.cjs:452"
+      "desktop/video-export-service.cjs:453"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.aNativeApprovedTemporaryFolderIsRequired', {});"
   },
   "desktop.videoExportService.errors.audioEncodingFailedStderr": {
     "locations": [
-      "desktop/video-export-service.cjs:718"
+      "desktop/video-export-service.cjs:719"
     ],
     "context": "child.once('error',reject); child.once('close',code => code === 0 ? resolve() : reject(messageError(new Error(''), 'desktop.videoExportService.errors.audioEncod"
   },
   "desktop.videoExportService.errors.audioExportMustBeEnabledOrDisabled": {
     "locations": [
-      "desktop/video-export-service.cjs:269"
+      "desktop/video-export-service.cjs:270"
     ],
     "context": "if (value.audio !== undefined && typeof value.audio !== 'boolean') throw messageError(new Error(''), 'desktop.videoExportService.errors.audioExportMustBeEnabled"
   },
   "desktop.videoExportService.errors.audioSamplesMustBeFiniteAndNormalized": {
     "locations": [
-      "desktop/video-export-service.cjs:699"
+      "desktop/video-export-service.cjs:700"
     ],
     "context": "for (let at = 0; at < bytes.length; at += 4) { const sample = bytes.readFloatLE(at); if (!Number.isFinite(sample) || Math.abs(sample) > 1) throw messageError(ne"
   },
   "desktop.videoExportService.errors.audioVideoExportsSupportUpToOneHour": {
     "locations": [
-      "desktop/video-export-service.cjs:270"
+      "desktop/video-export-service.cjs:271"
     ],
     "context": "if (value.audio && value.totalFrames / value.fps > 3600) throw messageError(new Error(''), 'desktop.videoExportService.errors.audioVideoExportsSupportUpToOneHou"
   },
   "desktop.videoExportService.errors.audioWritingStopped": {
     "locations": [
-      "desktop/video-export-service.cjs:701"
+      "desktop/video-export-service.cjs:702"
     ],
     "context": "let written = 0; while (written < bytes.length) { const result = await job.audioHandle.write(bytes, written, bytes.length - written); if (!result.bytesWritten) "
   },
   "desktop.videoExportService.errors.beginAPNGFrameBeforeSendingPixels": {
     "locations": [
-      "desktop/video-export-service.cjs:745"
+      "desktop/video-export-service.cjs:746"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.beginAPNGFrameBeforeSendingPixels', {});"
   },
   "desktop.videoExportService.errors.chooseASupportedCodecForTheSelectedVideoFormat": {
     "locations": [
-      "desktop/video-export-service.cjs:278"
+      "desktop/video-export-service.cjs:279"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.chooseASupportedCodecForTheSelectedVideoFormat', {});"
   },
   "desktop.videoExportService.errors.chooseWebMMP4AVIOrWMVVideo": {
     "locations": [
-      "desktop/video-export-service.cjs:272"
+      "desktop/video-export-service.cjs:273"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.chooseWebMMP4AVIOrWMVVideo', {});"
   },
   "desktop.videoExportService.errors.enableAudioWhenBeginningTheVideoExport": {
     "locations": [
-      "desktop/video-export-service.cjs:696"
+      "desktop/video-export-service.cjs:697"
     ],
     "context": "if (!job.config.audio) throw messageError(new Error(''), 'desktop.videoExportService.errors.enableAudioWhenBeginningTheVideoExport', {});"
   },
   "desktop.videoExportService.errors.encodedVideoChangedWhileReading": {
     "locations": [
-      "desktop/video-export-service.cjs:868"
+      "desktop/video-export-service.cjs:869"
     ],
     "context": "if (!bytesRead) throw messageError(new Error(''), 'desktop.videoExportService.errors.encodedVideoChangedWhileReading', {});"
   },
   "desktop.videoExportService.errors.encodedVideoExceedsItsSizeLimit": {
     "locations": [
-      "desktop/video-export-service.cjs:814"
+      "desktop/video-export-service.cjs:815"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.encodedVideoExceedsItsSizeLimit', {});"
   },
   "desktop.videoExportService.errors.encodingFailed": {
     "locations": [
-      "desktop/video-export-service.cjs:805"
+      "desktop/video-export-service.cjs:806"
     ],
     "context": "const failure = messageError(new Error(''), 'desktop.videoExportService.errors.encodingFailed', {detail:job.stderr || job.failure?.message || ''});"
   },
   "desktop.videoExportService.errors.finishOrCancelTheCurrentVideoExportFirst": {
     "locations": [
-      "desktop/video-export-service.cjs:567"
+      "desktop/video-export-service.cjs:568"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.finishOrCancelTheCurrentVideoExportFirst', {});"
   },
   "desktop.videoExportService.errors.finishThePreviousPNGFrameFirst": {
     "locations": [
-      "desktop/video-export-service.cjs:726"
+      "desktop/video-export-service.cjs:727"
     ],
     "context": "if (job.frame) throw messageError(new Error(''), 'desktop.videoExportService.errors.finishThePreviousPNGFrameFirst', {});"
   },
   "desktop.videoExportService.errors.invalidPNGFrameChunk": {
     "locations": [
-      "desktop/video-export-service.cjs:215"
+      "desktop/video-export-service.cjs:216"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.invalidPNGFrameChunk', {});"
   },
   "desktop.videoExportService.errors.invalidStereoAudioChunk": {
     "locations": [
-      "desktop/video-export-service.cjs:698"
+      "desktop/video-export-service.cjs:699"
     ],
     "context": "if (!bytes?.length || bytes.length > MAX_CHUNK_BYTES || bytes.length % 8 || (job.audioBytes ?? 0) + bytes.length > expected) throw messageError(new Error(''), '"
   },
   "desktop.videoExportService.errors.missing": {
     "locations": [
-      "desktop/video-export-service.cjs:470"
+      "desktop/video-export-service.cjs:471"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.missing', {});"
   },
   "desktop.videoExportService.errors.nameMustBeAnIntegerBetweenMinAndMax": {
     "locations": [
-      "desktop/video-export-service.cjs:95"
+      "desktop/video-export-service.cjs:96"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.nameMustBeAnIntegerBetweenMinAndMax', {name: validationLabel(name), min: min, max: max});"
   },
   "desktop.videoExportService.errors.nameMustBeBetweenMinAndMax": {
     "locations": [
-      "desktop/video-export-service.cjs:105"
+      "desktop/video-export-service.cjs:106"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.nameMustBeBetweenMinAndMax', {name: validationLabel(name), min: min, max: max});"
   },
   "desktop.videoExportService.errors.nativeEncoderDidNotRespond": {
     "locations": [
-      "desktop/video-export-service.cjs:414"
+      "desktop/video-export-service.cjs:415"
     ],
     "context": "reject(messageError(new Error(''), 'desktop.videoExportService.errors.nativeEncoderDidNotRespond', {}));"
   },
   "desktop.videoExportService.errors.nativeEncoderIsUnavailable": {
     "locations": [
-      "desktop/video-export-service.cjs:434"
+      "desktop/video-export-service.cjs:435"
     ],
     "context": ": reject(messageError(new Error(''), 'desktop.videoExportService.errors.nativeEncoderIsUnavailable', {}));"
   },
   "desktop.videoExportService.errors.nativeEncoderReturnedAnInvalidCapabilityList": {
     "locations": [
-      "desktop/video-export-service.cjs:422"
+      "desktop/video-export-service.cjs:423"
     ],
     "context": "messageError(new Error(''), 'desktop.videoExportService.errors.nativeEncoderReturnedAnInvalidCapabilityList', {}),"
   },
   "desktop.videoExportService.errors.nativeVideoEncodedEncodedFramesOfTotalFramesFramesTheVideoMayExceedItsSizeLimit": {
     "locations": [
-      "desktop/video-export-service.cjs:810"
+      "desktop/video-export-service.cjs:811"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.nativeVideoEncodedEncodedFramesOfTotalFramesFramesTheVideoMayExceedItsSizeLimit', {encodedF"
   },
   "desktop.videoExportService.errors.nativeVideoEncoderCouldNotStartMessage": {
     "locations": [
-      "desktop/video-export-service.cjs:621"
+      "desktop/video-export-service.cjs:622"
     ],
     "context": "job.failure = messageError(new Error(''), 'desktop.videoExportService.errors.nativeVideoEncoderCouldNotStartMessage', {message: error.message});"
   },
   "desktop.videoExportService.errors.nativeVideoEncoderDidNotFinish": {
     "locations": [
-      "desktop/video-export-service.cjs:795"
+      "desktop/video-export-service.cjs:796"
     ],
     "context": "() => reject(messageError(new Error(''), 'desktop.videoExportService.errors.nativeVideoEncoderDidNotFinish', {})),"
   },
   "desktop.videoExportService.errors.nativeVideoEncoderStoppedAcceptingFramesMessage": {
     "locations": [
-      "desktop/video-export-service.cjs:625"
+      "desktop/video-export-service.cjs:626"
     ],
     "context": "job.failure ||= messageError(new Error(''), 'desktop.videoExportService.errors.nativeVideoEncoderStoppedAcceptingFramesMessage', {message: error.message});"
   },
   "desktop.videoExportService.errors.nativeVideoEncoderStoppedAcceptingPixels": {
     "locations": [
-      "desktop/video-export-service.cjs:750"
+      "desktop/video-export-service.cjs:751"
     ],
     "context": "reject(messageError(new Error(''), 'desktop.videoExportService.errors.nativeVideoEncoderStoppedAcceptingPixels', {})),"
   },
   "desktop.videoExportService.errors.nativeVideoEncoderStoppedStderr": {
     "locations": [
-      "desktop/video-export-service.cjs:757"
+      "desktop/video-export-service.cjs:758"
     ],
     "context": ": messageError(new Error(''), 'desktop.videoExportService.errors.nativeVideoEncoderStoppedStderr', {stderr: job.stderr}),"
   },
   "desktop.videoExportService.errors.nativeVideoExportSupportsUpTo16MillionPixelsPerFrame": {
     "locations": [
-      "desktop/video-export-service.cjs:282"
+      "desktop/video-export-service.cjs:283"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.nativeVideoExportSupportsUpTo16MillionPixelsPerFrame', {});"
   },
   "desktop.videoExportService.errors.pngFrameChecksumIsInvalid": {
     "locations": [
-      "desktop/video-export-service.cjs:239"
+      "desktop/video-export-service.cjs:240"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.pngFrameChecksumIsInvalid', {});"
   },
   "desktop.videoExportService.errors.pngFrameContainsTrailingData": {
     "locations": [
-      "desktop/video-export-service.cjs:172",
-      "desktop/video-export-service.cjs:176"
+      "desktop/video-export-service.cjs:173",
+      "desktop/video-export-service.cjs:177"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.pngFrameContainsTrailingData', {});"
   },
   "desktop.videoExportService.errors.pngFrameContainsUnsupportedMetadata": {
     "locations": [
-      "desktop/video-export-service.cjs:224"
+      "desktop/video-export-service.cjs:225"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.pngFrameContainsUnsupportedMetadata', {});"
   },
   "desktop.videoExportService.errors.pngFrameDimensionsDoNotMatchTheExport": {
     "locations": [
-      "desktop/video-export-service.cjs:245"
+      "desktop/video-export-service.cjs:246"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.pngFrameDimensionsDoNotMatchTheExport', {});"
   },
   "desktop.videoExportService.errors.pngFrameHasARepeatedHeader": {
     "locations": [
-      "desktop/video-export-service.cjs:226"
+      "desktop/video-export-service.cjs:227"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.pngFrameHasARepeatedHeader', {});"
   },
   "desktop.videoExportService.errors.pngFrameIsIncomplete": {
     "locations": [
-      "desktop/video-export-service.cjs:228",
-      "desktop/video-export-service.cjs:264"
+      "desktop/video-export-service.cjs:229",
+      "desktop/video-export-service.cjs:265"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.pngFrameIsIncomplete', {});"
   },
   "desktop.videoExportService.errors.sendEveryVideoFrameBeforeFinishingTheExport": {
     "locations": [
-      "desktop/video-export-service.cjs:787"
+      "desktop/video-export-service.cjs:788"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.sendEveryVideoFrameBeforeFinishingTheExport', {});"
   },
   "desktop.videoExportService.errors.sendTheEntireAudioMixBeforeFinishingVideoExport": {
     "locations": [
-      "desktop/video-export-service.cjs:707"
+      "desktop/video-export-service.cjs:708"
     ],
     "context": "if (job.audioBytes !== expected) throw messageError(new Error(''), 'desktop.videoExportService.errors.sendTheEntireAudioMixBeforeFinishingVideoExport', {});"
   },
   "desktop.videoExportService.errors.thereIsNoPNGFrameToFinish": {
     "locations": [
-      "desktop/video-export-service.cjs:777"
+      "desktop/video-export-service.cjs:778"
     ],
     "context": "if (!job.frame) throw messageError(new Error(''), 'desktop.videoExportService.errors.thereIsNoPNGFrameToFinish', {});"
   },
   "desktop.videoExportService.errors.thisEncoderDoesNotSupportAudioCodecAudio": {
     "locations": [
-      "desktop/video-export-service.cjs:585"
+      "desktop/video-export-service.cjs:586"
     ],
     "context": "if (!new RegExp(`\\\\b${audioCodec}\\\\b`).test(encoders)) throw messageError(new Error(''), 'desktop.videoExportService.errors.thisEncoderDoesNotSupportAudioCodecA"
   },
   "desktop.videoExportService.errors.thisVideoExportIsNoLongerActive": {
     "locations": [
-      "desktop/video-export-service.cjs:669"
+      "desktop/video-export-service.cjs:670"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.thisVideoExportIsNoLongerActive', {});"
   },
   "desktop.videoExportService.errors.videoChunksMustContain1ByteTo256KiB": {
     "locations": [
-      "desktop/video-export-service.cjs:743"
+      "desktop/video-export-service.cjs:744"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.videoChunksMustContain1ByteTo256KiB', {});"
   },
   "desktop.videoExportService.errors.videoExportCancelled": {
     "locations": [
-      "desktop/video-export-service.cjs:92"
+      "desktop/video-export-service.cjs:93"
     ],
     "context": "Object.assign(messageError(new Error(''), 'desktop.videoExportService.errors.videoExportCancelled', {}), { name: \"AbortError\" });"
   },
   "desktop.videoExportService.errors.videoFrameMustBeAPNGImage": {
     "locations": [
-      "desktop/video-export-service.cjs:202"
+      "desktop/video-export-service.cjs:203"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.videoFrameMustBeAPNGImage', {});"
   },
   "desktop.videoExportService.errors.videoFramesMustArriveInSequence": {
     "locations": [
-      "desktop/video-export-service.cjs:728"
+      "desktop/video-export-service.cjs:729"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.videoFramesMustArriveInSequence', {});"
   },
   "desktop.videoExportService.errors.videoFramesMustBeStillPNGImages": {
     "locations": [
-      "desktop/video-export-service.cjs:217"
+      "desktop/video-export-service.cjs:218"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.videoFramesMustBeStillPNGImages', {});"
   },
   "desktop.videoExportService.errors.videoFramesRequireStandard8BitRGBOrRGBAPNGImages": {
     "locations": [
-      "desktop/video-export-service.cjs:253"
+      "desktop/video-export-service.cjs:254"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.videoFramesRequireStandard8BitRGBOrRGBAPNGImages', {});"
   },
   "desktop.videoExportService.errors.waitForThePreviousVideoChunkToFinish": {
     "locations": [
-      "desktop/video-export-service.cjs:671"
+      "desktop/video-export-service.cjs:672"
     ],
     "context": "throw messageError(new Error(''), 'desktop.videoExportService.errors.waitForThePreviousVideoChunkToFinish', {});"
   },
   "desktop.videoExportService.unavailable": {
     "locations": [
-      "desktop/video-export-service.cjs:495",
-      "desktop/video-export-service.cjs:513",
-      "desktop/video-export-service.cjs:523"
+      "desktop/video-export-service.cjs:496",
+      "desktop/video-export-service.cjs:514",
+      "desktop/video-export-service.cjs:524"
     ],
     "context": "reasonKey: supported ? undefined : reason ? \"desktop.videoExportService.unavailable\" : \"desktop.videoExportService.unsupportedCodec\","
   },
   "desktop.videoExportService.uncompressedRgb": {
     "locations": [
-      "desktop/video-export-service.cjs:69"
+      "desktop/video-export-service.cjs:70"
     ],
     "context": "label: \"Uncompressed RGB\", labelKey: \"desktop.videoExportService.uncompressedRgb\","
   },
   "desktop.videoExportService.unsupportedCodec": {
     "locations": [
-      "desktop/video-export-service.cjs:495"
+      "desktop/video-export-service.cjs:496"
     ],
     "context": "reasonKey: supported ? undefined : reason ? \"desktop.videoExportService.unavailable\" : \"desktop.videoExportService.unsupportedCodec\","
   },
   "desktop.videoExportService.unsupportedFormat": {
     "locations": [
-      "desktop/video-export-service.cjs:513"
+      "desktop/video-export-service.cjs:514"
     ],
     "context": "reasonKey: supported ? undefined : reason ? \"desktop.videoExportService.unavailable\" : \"desktop.videoExportService.unsupportedFormat\","
   },
@@ -9813,188 +9850,194 @@
   },
   "drawingController.alreadyDrawing": {
     "locations": [
-      "src/drawing-controller.mjs:957"
+      "src/drawing-controller.mjs:958"
     ],
     "context": "if(action==='blank')return e.drawingKey(ids,e.tick,{blank:true});if(action==='copy-key'){if(!e.drawingKey(ids))this.onStatus(interfaceText('drawingController.al"
   },
   "drawingController.blank": {
     "locations": [
-      "src/drawing-controller.mjs:347"
+      "src/drawing-controller.mjs:348"
     ],
     "context": "get exposureMessage(){try{const t=this.editor.drawingTarget();return {key: 'drawingController.exposure', params: {kind: {messageKey: t.figure ? 'drawingControll"
   },
   "drawingController.brushPalette": {
     "locations": [
-      "src/drawing-controller.mjs:271"
+      "src/drawing-controller.mjs:272"
     ],
     "context": "const palette=document.createElement('div');palette.className='drawing-palette';palette.setAttribute('role','dialog');localizedAttribute(palette, 'aria-label', "
   },
   "drawingController.brushSaved": {
     "locations": [
-      "src/drawing-controller.mjs:952"
+      "src/drawing-controller.mjs:953"
     ],
-    "context": "const preset={id:'custom-'+(Date.now()).toString(36)+n,name:base+' '+n,description:'Saved brush',...tip};this.library.presets=[...this.library.presets,preset].s"
+    "context": "const preset={id:'custom-'+(Date.now()).toString(36)+n,name:base+' '+n,description:interfaceText('drawingController.savedBrush'),...tip};this.library.presets=[."
   },
   "drawingController.color": {
     "locations": [
-      "src/drawing-controller.mjs:239"
+      "src/drawing-controller.mjs:240"
     ],
     "context": "return {anchor:input,title:key==='color2'?interfaceText('drawingController.secondColor'):interfaceText('drawingController.color'), titleKey: (key==='color2' ? '"
   },
   "drawingController.copyingPixels": {
     "locations": [
-      "src/drawing-controller.mjs:963"
+      "src/drawing-controller.mjs:964"
     ],
     "context": "if(['copy-pixels','cut-pixels'].includes(action)){await this.ensureFloating();return this.pixelOperation({messageKey:'drawingController.copyingPixels'},async op"
   },
   "drawingController.createdLayer": {
     "locations": [
-      "src/drawing-controller.mjs:308"
+      "src/drawing-controller.mjs:309"
     ],
     "context": "else{layer=this.editor.createDrawingLayer();this.onStatus(interfaceText('drawingController.createdLayer', {name:layer.name}), 'drawingController.createdLayer', "
   },
   "drawingController.deleteSelection": {
     "locations": [
-      "src/drawing-controller.mjs:961"
+      "src/drawing-controller.mjs:962"
     ],
     "context": "if(action==='delete-pixels'){const s=await this.ensureFloating();if(!s)return;return this.commitSelection(s,'Delete selected pixels',{remove:true,labelKey:'draw"
   },
   "drawingController.drawing": {
     "locations": [
-      "src/drawing-controller.mjs:347",
+      "src/drawing-controller.mjs:348",
       "src/studio-shell.mjs:139"
     ],
     "context": "get exposureMessage(){try{const t=this.editor.drawingTarget();return {key: 'drawingController.exposure', params: {kind: {messageKey: t.figure ? 'drawingControll"
   },
   "drawingController.drawingCanvasBBrushEEraserGFillU": {
     "locations": [
-      "src/drawing-controller.mjs:349"
+      "src/drawing-controller.mjs:350"
     ],
     "context": "sync(){if(!this.active)return;try{const t=this.editor.drawingTarget();this.exposure={layerId:t.id,start:t.key.tick,end:t.end};this.lastLayer=t.id;}catch{this.ex"
   },
   "drawingController.drawingToolOptions": {
     "locations": [
-      "src/drawing-controller.mjs:279"
+      "src/drawing-controller.mjs:280"
     ],
     "context": "createQuickBar(){const bar=document.createElement('div');bar.className='drawing-quickbar';bar.setAttribute('role','toolbar');localizedAttribute(bar, 'aria-label"
   },
   "drawingController.editingHold": {
     "locations": [
-      "src/drawing-controller.mjs:347"
+      "src/drawing-controller.mjs:348"
     ],
     "context": "get exposureMessage(){try{const t=this.editor.drawingTarget();return {key: 'drawingController.exposure', params: {kind: {messageKey: t.figure ? 'drawingControll"
   },
   "drawingController.exposure": {
     "locations": [
-      "src/drawing-controller.mjs:347"
+      "src/drawing-controller.mjs:348"
     ],
     "context": "get exposureMessage(){try{const t=this.editor.drawingTarget();return {key: 'drawingController.exposure', params: {kind: {messageKey: t.figure ? 'drawingControll"
   },
   "drawingController.filled": {
     "locations": [
-      "src/drawing-controller.mjs:826"
+      "src/drawing-controller.mjs:827"
     ],
     "context": "op.check();op.received(result.tiles);await this.commitPixels(target,result.tiles,'Fill drawing',op);this.onStatus(interfaceText('drawingController.filled'), 'dr"
   },
   "drawingController.fillingDrawing": {
     "locations": [
-      "src/drawing-controller.mjs:799"
+      "src/drawing-controller.mjs:800"
     ],
     "context": "fill(target,surface,point){return this.pixelOperation({messageKey:'drawingController.fillingDrawing'},async op=>{"
   },
   "drawingController.fillSelection": {
     "locations": [
-      "src/drawing-controller.mjs:945"
+      "src/drawing-controller.mjs:946"
     ],
     "context": "const surface=await this.owner.surface(target.figure);return this.pixelTool(target,surface,'fill-mask',{mask:m.mask,color:[...this.settings.color.slice(1).match"
   },
   "drawingController.fillShape": {
     "locations": [
-      "src/drawing-controller.mjs:535"
+      "src/drawing-controller.mjs:536"
     ],
     "context": "return this.pixelTool(g.target,g.surface,'fill-mask',{mask:clip,color:[...this.settings.color.slice(1).match(/../g).map(n=>parseInt(n,16)),Math.round(this.setti"
   },
   "drawingController.finishingStroke": {
     "locations": [
-      "src/drawing-controller.mjs:726"
+      "src/drawing-controller.mjs:727"
     ],
     "context": "const pending=this.pixelOperation({messageKey:'drawingController.finishingStroke'},async op=>{"
   },
   "drawingController.noExposure": {
     "locations": [
-      "src/drawing-controller.mjs:347"
+      "src/drawing-controller.mjs:348"
     ],
     "context": "get exposureMessage(){try{const t=this.editor.drawingTarget();return {key: 'drawingController.exposure', params: {kind: {messageKey: t.figure ? 'drawingControll"
   },
   "drawingController.operation": {
     "locations": [
-      "src/drawing-controller.mjs:168"
+      "src/drawing-controller.mjs:169"
     ],
     "context": "this.operation=op;owner.busy=true;const statusParams={label:labelKey?{messageKey:labelKey}:label};this.onStatus(interfaceText('drawingController.operation', sta"
   },
   "drawingController.paintingLayer": {
     "locations": [
-      "src/drawing-controller.mjs:307"
+      "src/drawing-controller.mjs:308"
     ],
     "context": "if(layer)this.onStatus(interfaceText('drawingController.paintingLayer', {name:layer.name}), 'drawingController.paintingLayer', {name:layer.name});"
   },
   "drawingController.pastingPixels": {
     "locations": [
-      "src/drawing-controller.mjs:979"
+      "src/drawing-controller.mjs:980"
     ],
     "context": "if(action==='paste-pixels')return this.pixelOperation({messageKey:'drawingController.pastingPixels'},op=>this.getClipboard().paste('drawing-pixels',async()=>{"
   },
   "drawingController.resampled": {
     "locations": [
-      "src/drawing-controller.mjs:1007"
+      "src/drawing-controller.mjs:1008"
     ],
     "context": "this.onStatus(interfaceText('drawingController.resampled'), 'drawingController.resampled');"
   },
   "drawingController.resamplingDrawing": {
     "locations": [
-      "src/drawing-controller.mjs:1001"
+      "src/drawing-controller.mjs:1002"
     ],
     "context": "return this.pixelOperation({messageKey:'drawingController.resamplingDrawing'},async op=>{"
   },
   "drawingController.restoringRedo": {
     "locations": [
-      "src/drawing-controller.mjs:210"
+      "src/drawing-controller.mjs:211"
     ],
     "context": "return this.pixelOperation({messageKey:direction==='undo'?'drawingController.restoringUndo':'drawingController.restoringRedo'},async op=>{op.history=true;return"
   },
   "drawingController.restoringUndo": {
     "locations": [
-      "src/drawing-controller.mjs:210"
+      "src/drawing-controller.mjs:211"
     ],
     "context": "return this.pixelOperation({messageKey:direction==='undo'?'drawingController.restoringUndo':'drawingController.restoringRedo'},async op=>{op.history=true;return"
   },
   "drawingController.sameResolution": {
     "locations": [
-      "src/drawing-controller.mjs:999"
+      "src/drawing-controller.mjs:1000"
     ],
     "context": "if(ratio===1){this.onStatus(interfaceText('drawingController.sameResolution'), 'drawingController.sameResolution');return;}"
   },
+  "drawingController.savedBrush": {
+    "locations": [
+      "src/drawing-controller.mjs:953"
+    ],
+    "context": "const preset={id:'custom-'+(Date.now()).toString(36)+n,name:base+' '+n,description:interfaceText('drawingController.savedBrush'),...tip};this.library.presets=[."
+  },
   "drawingController.secondColor": {
     "locations": [
-      "src/drawing-controller.mjs:239"
+      "src/drawing-controller.mjs:240"
     ],
     "context": "return {anchor:input,title:key==='color2'?interfaceText('drawingController.secondColor'):interfaceText('drawingController.color'), titleKey: (key==='color2' ? '"
   },
   "drawingController.selected": {
     "locations": [
-      "src/drawing-controller.mjs:840"
+      "src/drawing-controller.mjs:841"
     ],
     "context": "s.presenter=selectionPresenter(s,owner);this.selection=s;if(outline)this.marquee=outline;else this.setMarquee(g.target,g.surface,g.mask??{...bounds,points:g.poi"
   },
   "drawingController.selectingPixels": {
     "locations": [
-      "src/drawing-controller.mjs:833"
+      "src/drawing-controller.mjs:834"
     ],
     "context": "return this.pixelOperation({messageKey:'drawingController.selectingPixels'},async op=>{"
   },
   "drawingController.transformSelection": {
     "locations": [
-      "src/drawing-controller.mjs:863"
+      "src/drawing-controller.mjs:864"
     ],
     "context": "applySelection(){const s=this.selection;if(!s)return;if(s.committing)return s.committing;if(!moved(s)){this.cancelSelection();return;}return this.commitSelectio"
   },
@@ -10490,9 +10533,10 @@
   },
   "drawingView.custom": {
     "locations": [
+      "src/drawing-controller.mjs:952",
       "src/drawing-view.mjs:165"
     ],
-    "context": "if(tool==='brush')body+=`<button type=\"button\" class=\"draw-quick-preset\" data-draw-action=\"toggle-quick-presets\" aria-expanded=\"${Boolean(drawing.quickPresets)}"
+    "context": "const base=interfaceText(brushMessages[this.settings.preset]?.nameKey??'drawingView.custom'),n=this.library.presets.length+1,tip=Object.fromEntries(brushKeys.fi"
   },
   "drawingView.cutSelectedPixelsCtrlX": {
     "locations": [
@@ -13376,8 +13420,8 @@
       "src/drawing-composite-transport.mjs:43",
       "src/drawing-composite-worker.mjs:12",
       "src/drawing-composite.mjs:26",
-      "src/drawing-controller.mjs:808",
-      "src/drawing-controller.mjs:814",
+      "src/drawing-controller.mjs:809",
+      "src/drawing-controller.mjs:815",
       "src/drawing-fill.mjs:26",
       "src/drawing-fill.mjs:32",
       "src/drawing-fill.mjs:95"
@@ -13392,119 +13436,119 @@
   },
   "errors.drawingController.copySelectedPixelsFirst": {
     "locations": [
-      "src/drawing-controller.mjs:980"
+      "src/drawing-controller.mjs:981"
     ],
     "context": "const clip=e._drawingPixelClipboard;if(!clip)throw messageError(new Error(''), \"errors.drawingController.copySelectedPixelsFirst\", {});validatePixelClipboard(cl"
   },
   "errors.drawingController.drawingDocumentChanged": {
     "locations": [
-      "src/drawing-controller.mjs:204"
+      "src/drawing-controller.mjs:205"
     ],
     "context": "return wait?wait.then(()=>{if(report!==this.editor.report)throw messageError(new DOMException('', 'AbortError'), \"errors.drawingController.drawingDocumentChange"
   },
   "errors.drawingController.drawingInputExceededTheQueueLimit": {
     "locations": [
-      "src/drawing-controller.mjs:553",
-      "src/drawing-controller.mjs:737"
+      "src/drawing-controller.mjs:554",
+      "src/drawing-controller.mjs:738"
     ],
     "context": "if(queue.length>=MAX_STROKE_SAMPLES)throw messageError(new Error(''), \"errors.drawingController.drawingInputExceededTheQueueLimit\", {});"
   },
   "errors.drawingController.drawingOperationSuperseded": {
     "locations": [
-      "src/drawing-controller.mjs:165"
+      "src/drawing-controller.mjs:166"
     ],
     "context": "op.check=()=>{if(op.abort.signal.aborted||owner!==this.owner||revision!==this.editor.revision)throw messageError(new DOMException('', 'AbortError'), \"errors.dra"
   },
   "errors.drawingController.paintADrawingBeforeFilteringIt": {
     "locations": [
-      "src/drawing-controller.mjs:868"
+      "src/drawing-controller.mjs:869"
     ],
     "context": "const e=this.editor,target=e.drawingTarget();if(!target.figure)throw messageError(new Error(''), \"errors.drawingController.paintADrawingBeforeFilteringIt\", {});"
   },
   "errors.drawingController.paintADrawingBeforeResamplingIt": {
     "locations": [
-      "src/drawing-controller.mjs:997"
+      "src/drawing-controller.mjs:998"
     ],
     "context": "const target=e.drawingTarget();if(!target.figure)throw messageError(new Error(''), \"errors.drawingController.paintADrawingBeforeResamplingIt\", {});"
   },
   "errors.drawingController.paintADrawingBeforeSelectingItsPixels": {
     "locations": [
-      "src/drawing-controller.mjs:936"
+      "src/drawing-controller.mjs:937"
     ],
     "context": "await this.settleFloating();const target=e.drawingTarget();if(!target.figure)throw messageError(new Error(''), \"errors.drawingController.paintADrawingBeforeSele"
   },
   "errors.drawingController.sampleAllLayersSupportsFillRegionsUpTo": {
     "locations": [
-      "src/drawing-controller.mjs:806"
+      "src/drawing-controller.mjs:807"
     ],
     "context": "if(bounds.width*bounds.height>FILL_SOURCE_MAX_PIXELS)throw messageError(new Error(''), \"errors.drawingController.sampleAllLayersSupportsFillRegionsUpTo\", {});"
   },
   "errors.drawingController.selectASmallerAreaTheFilterExceeds16": {
     "locations": [
-      "src/drawing-controller.mjs:873"
+      "src/drawing-controller.mjs:874"
     ],
     "context": "if(bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw messageError(new Error(''), \"errors.drawingController.selectASmallerAreaTheFilterExceeds16\", {});"
   },
   "errors.drawingController.selectionChanged": {
     "locations": [
-      "src/drawing-controller.mjs:848",
-      "src/drawing-controller.mjs:854"
+      "src/drawing-controller.mjs:849",
+      "src/drawing-controller.mjs:855"
     ],
     "context": "if(this.selection!==s)throw messageError(new DOMException('', 'AbortError'), \"errors.drawingController.selectionChanged\", {});"
   },
   "errors.drawingController.selectPixelsBeforeFillingTheSelection": {
     "locations": [
-      "src/drawing-controller.mjs:943"
+      "src/drawing-controller.mjs:944"
     ],
     "context": "await this.settleFloating();const m=this.marquee;if(!m)throw messageError(new Error(''), \"errors.drawingController.selectPixelsBeforeFillingTheSelection\", {});"
   },
   "errors.drawingController.selectPixelsToFlip": {
     "locations": [
-      "src/drawing-controller.mjs:947"
+      "src/drawing-controller.mjs:948"
     ],
     "context": "if(action==='flip-selection-x'||action==='flip-selection-y'){const s=await this.ensureFloating();if(!s)throw messageError(new Error(''), \"errors.drawingControll"
   },
   "errors.drawingController.selectPixelsWithTheLassoFirst": {
     "locations": [
-      "src/drawing-controller.mjs:964"
+      "src/drawing-controller.mjs:965"
     ],
     "context": "const s=this.selection;if(!s)throw messageError(new Error(''), \"errors.drawingController.selectPixelsWithTheLassoFirst\", {});"
   },
   "errors.drawingController.strokeCancelled": {
     "locations": [
-      "src/drawing-controller.mjs:790"
+      "src/drawing-controller.mjs:791"
     ],
     "context": "cancel({navigation=true}={}){if(navigation)this.touchNavigation?.cancel();this.operation?.abort.abort();this.previewQueued=false;this.sequence++;const pending=t"
   },
   "errors.drawingController.theDrawingPoseIsUnavailable": {
     "locations": [
-      "src/drawing-controller.mjs:367"
+      "src/drawing-controller.mjs:368"
     ],
     "context": "geometryItem(target){let item;if(target.created||target.migratedFrom)item=buildGeometry({...this.editor.report,figure_types:[...this.editor.report.figure_types,"
   },
   "errors.drawingController.theOperationExceedsTheDrawingWorkingMemoryLimit": {
     "locations": [
-      "src/drawing-controller.mjs:181",
-      "src/drawing-controller.mjs:522"
+      "src/drawing-controller.mjs:182",
+      "src/drawing-controller.mjs:523"
     ],
     "context": "if((op.copiedBytes??0)+bytes.byteLength>op.maxBytes)throw messageError(new Error(''), \"errors.drawingController.theOperationExceedsTheDrawingWorkingMemoryLimit\""
   },
   "errors.drawingController.theSelectionBelongsToAnotherDrawing": {
     "locations": [
-      "src/drawing-controller.mjs:944"
+      "src/drawing-controller.mjs:945"
     ],
     "context": "const target=e.drawingTarget();if(!this.marqueeOn(target))throw messageError(new Error(''), \"errors.drawingController.theSelectionBelongsToAnotherDrawing\", {});"
   },
   "errors.drawingController.theSelectionChangedCopyItAgain": {
     "locations": [
-      "src/drawing-controller.mjs:969"
+      "src/drawing-controller.mjs:970"
     ],
     "context": "op.check();if(this.selection!==s)throw messageError(new DOMException('', 'AbortError'), \"errors.drawingController.theSelectionChangedCopyItAgain\", {});"
   },
   "errors.drawingController.theStrokeExceedsTheDrawingWorkingMemoryLimit": {
     "locations": [
-      "src/drawing-controller.mjs:594",
-      "src/drawing-controller.mjs:596",
+      "src/drawing-controller.mjs:595",
+      "src/drawing-controller.mjs:597",
       "src/drawing-gpu.mjs:752",
       "src/drawing-pixels.mjs:88",
       "src/drawing-stroke-engine.mjs:24",
@@ -13516,20 +13560,20 @@
   },
   "errors.drawingController.unknownDrawingFilter": {
     "locations": [
-      "src/drawing-controller.mjs:867",
+      "src/drawing-controller.mjs:868",
       "src/drawing-pixels.mjs:432"
     ],
     "context": "if(!FILTER_LABELS[kind])throw messageError(new Error(''), \"errors.drawingController.unknownDrawingFilter\", {});await this.settleFloating();"
   },
   "errors.drawingController.waitForTheDrawingToFinishLoading": {
     "locations": [
-      "src/drawing-controller.mjs:791"
+      "src/drawing-controller.mjs:792"
     ],
     "context": "async barrier(options){await this.settle({selection:true});if(this.loading)throw messageError(new Error(''), \"errors.drawingController.waitForTheDrawingToFinish"
   },
   "errors.drawingController.zoomInBeforeSelectingTheAreaExceeds16": {
     "locations": [
-      "src/drawing-controller.mjs:899"
+      "src/drawing-controller.mjs:900"
     ],
     "context": "if(!bounds)return;if(bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw messageError(new Error(''), \"errors.drawingController.zoomInBeforeSelectingTheAreaExcee"
   },
@@ -17319,100 +17363,100 @@
   },
   "errors.exportRequest.audioExportRequiresADesktopFfmpegVideoFormat": {
     "locations": [
-      "src/export-request.mjs:436"
+      "src/export-request.mjs:440"
     ],
     "context": "if (includeAudio && encoder !== 'native' && !(encoder === 'webcodecs' && context.browserAudio)) throw messageError(new Error(''), \"errors.exportRequest.audioExp"
   },
   "errors.exportRequest.chooseAnAnimatedImageOrASequence": {
     "locations": [
-      "src/export-request.mjs:444"
+      "src/export-request.mjs:448"
     ],
     "context": "if (!info || info.single || !['animated', 'frames'].includes(info.category)) throw messageError(new Error(''), \"errors.exportRequest.chooseAnAnimatedImageOrASeq"
   },
   "errors.exportRequest.chooseASizePreset": {
     "locations": [
-      "src/export-request.mjs:199"
+      "src/export-request.mjs:203"
     ],
     "context": "if (!choice || choice.id === 'custom') throw messageError(new Error(''), \"errors.exportRequest.chooseASizePreset\", {});"
   },
   "errors.exportRequest.chooseAValidExportFrameRange": {
     "locations": [
-      "src/export-request.mjs:356"
+      "src/export-request.mjs:360"
     ],
     "context": "throw messageError(new Error(''), \"errors.exportRequest.chooseAValidExportFrameRange\", {});"
   },
   "errors.exportRequest.chooseAVideoFormat": {
     "locations": [
-      "src/export-request.mjs:421"
+      "src/export-request.mjs:425"
     ],
     "context": "if (FORMATS.get(format)?.category !== 'video') throw messageError(new Error(''), \"errors.exportRequest.chooseAVideoFormat\", {});"
   },
   "errors.exportRequest.choosePngOrSvgFrame": {
     "locations": [
-      "src/export-request.mjs:456"
+      "src/export-request.mjs:460"
     ],
     "context": "if (!FORMATS.get(request.format)?.single) throw messageError(new Error(''), \"errors.exportRequest.choosePngOrSvgFrame\", {});"
   },
   "errors.exportRequest.enter": {
     "locations": [
-      "src/export-request.mjs:362",
+      "src/export-request.mjs:366",
       "src/vfw-export-controls.mjs:21"
     ],
     "context": "if (!String(text ?? '').trim()) throw messageError(new Error(''), \"errors.exportRequest.enter\", {value: label.toLowerCase()});"
   },
   "errors.exportRequest.exportSizeMustBeWholePixelsUpTo": {
     "locations": [
-      "src/export-request.mjs:354"
+      "src/export-request.mjs:358"
     ],
     "context": "throw messageError(new Error(''), \"errors.exportRequest.exportSizeMustBeWholePixelsUpTo\", {value: Math.round(maxPixels / 1e6)});"
   },
   "errors.exportRequest.installedWindowsCodecsAreUnavailableInThisApp": {
     "locations": [
-      "src/export-request.mjs:374",
+      "src/export-request.mjs:378",
       "src/vfw-export-controls.mjs:112"
     ],
     "context": "if (!available) throw messageError(new Error(''), \"errors.exportRequest.installedWindowsCodecsAreUnavailableInThisApp\", {});"
   },
   "errors.exportRequest.mustBeFromTo": {
     "locations": [
-      "src/export-request.mjs:364",
+      "src/export-request.mjs:368",
       "src/vfw-export-controls.mjs:24"
     ],
     "context": "if (!Number.isFinite(value) || value < min || value > max || (whole && !Number.isInteger(value))) throw messageError(new Error(''), \"errors.exportRequest.mustBe"
   },
   "errors.exportRequest.needsContext": {
     "locations": [
-      "src/export-request.mjs:194"
+      "src/export-request.mjs:198"
     ],
     "context": "const requireNumber = (context, key, who) => {if (!Number.isFinite(context[key])) throw messageError(new TypeError(''), \"errors.exportRequest.needsContext\", {wh"
   },
   "errors.exportRequest.qualityMustBeBetween1And100Percent": {
     "locations": [
-      "src/export-request.mjs:357"
+      "src/export-request.mjs:361"
     ],
     "context": "if (!Number.isFinite(options.quality) || options.quality < 0.01 || options.quality > 1) throw messageError(new Error(''), \"errors.exportRequest.qualityMustBeBet"
   },
   "errors.exportRequest.sizeChangesNeedTheArtboardSizeContextCanvaswidth": {
     "locations": [
-      "src/export-request.mjs:191"
+      "src/export-request.mjs:195"
     ],
     "context": "if (!(canvasWidth > 0 && canvasHeight > 0)) throw messageError(new TypeError(''), \"errors.exportRequest.sizeChangesNeedTheArtboardSizeContextCanvaswidth\", {});"
   },
   "errors.exportRequest.unknownExportFormat": {
     "locations": [
-      "src/export-request.mjs:245"
+      "src/export-request.mjs:249"
     ],
     "context": "if (!format) throw messageError(new TypeError(''), \"errors.exportRequest.unknownExportFormat\", {value: fields.format ?? fields.action});"
   },
   "errors.exportRequest.unknownExportFormat2": {
     "locations": [
-      "src/export-request.mjs:473"
+      "src/export-request.mjs:477"
     ],
     "context": "if (!info) throw messageError(new TypeError(''), \"errors.exportRequest.unknownExportFormat2\", {format: request.format});"
   },
   "errors.exportRequest.waitForTheInstalledCodecCheckOrChoose": {
     "locations": [
-      "src/export-request.mjs:375",
+      "src/export-request.mjs:379",
       "src/vfw-export-controls.mjs:114"
     ],
     "context": "if (!codec?.supported || codec.id !== vfw?.codecId || !ready) throw messageError(new Error(''), \"errors.exportRequest.waitForTheInstalledCodecCheckOrChoose\", {}"
@@ -23752,7 +23796,7 @@
   },
   "exportRequest.addTheWorkingPoseAsAFrameTo": {
     "locations": [
-      "src/export-request.mjs:681"
+      "src/export-request.mjs:695"
     ],
     "context": "? interfaceText(\"exportRequest.addTheWorkingPoseAsAFrameTo\") : '';"
   },
@@ -23764,19 +23808,19 @@
   },
   "exportRequest.aMovieclipExportsAsStykmov": {
     "locations": [
-      "src/export-request.mjs:533"
+      "src/export-request.mjs:546"
     ],
     "context": ": format.id === 'stkz' && movieclip ? interfaceText(\"exportRequest.aMovieclipExportsAsStykmov\") : '';"
   },
   "exportRequest.anAnimationExport": {
     "locations": [
-      "src/export-request.mjs:342"
+      "src/export-request.mjs:346"
     ],
     "context": "if (animation) requireNumber(context, 'totalFrames', interfaceText(\"exportRequest.anAnimationExport\"));"
   },
   "exportRequest.anImageExport": {
     "locations": [
-      "src/export-request.mjs:445"
+      "src/export-request.mjs:449"
     ],
     "context": "requireNumber(context, 'fps', interfaceText(\"exportRequest.anImageExport\"));"
   },
@@ -23806,13 +23850,13 @@
   },
   "exportRequest.automaticBitrate": {
     "locations": [
-      "src/export-request.mjs:654"
+      "src/export-request.mjs:668"
     ],
     "context": ": request.bitrateMode === 'manual' ? `${Number.isFinite(request.bitrateMbps) ? interfaceLocalization.formatNumber(request.bitrateMbps) : '—'} Mbit/s` : interfac"
   },
   "exportRequest.aVideoExport": {
     "locations": [
-      "src/export-request.mjs:422"
+      "src/export-request.mjs:426"
     ],
     "context": "requireNumber(context, 'fps', interfaceText(\"exportRequest.aVideoExport\"));"
   },
@@ -23824,31 +23868,31 @@
   },
   "exportRequest.aWholeNumber": {
     "locations": [
-      "src/export-request.mjs:364"
+      "src/export-request.mjs:368"
     ],
     "context": "if (!Number.isFinite(value) || value < min || value > max || (whole && !Number.isInteger(value))) throw messageError(new Error(''), \"errors.exportRequest.mustBe"
   },
   "exportRequest.bitrate": {
     "locations": [
-      "src/export-request.mjs:378"
+      "src/export-request.mjs:382"
     ],
     "context": "bitrate: codec.dataRate ? Math.round(vfwNumber(vfw.bitrateMbps, 0, 200, interfaceText(\"exportRequest.bitrate\")) * 1000000) : 0,"
   },
   "exportRequest.browserWebmExportsDoNotPreserveTransparency": {
     "locations": [
-      "src/export-request.mjs:491"
+      "src/export-request.mjs:495"
     ],
     "context": "if (format === 'webm') return {transparent: false, alpha: 'none', reason: interfaceText(\"exportRequest.browserWebmExportsDoNotPreserveTransparency\"), reasonKey:"
   },
   "exportRequest.checkingInstalledCodecs": {
     "locations": [
-      "src/export-request.mjs:536"
+      "src/export-request.mjs:549"
     ],
     "context": ": format.id === 'vfw' && !vfw?.ready ? (vfw?.reasonKey ? interfaceText(vfw.reasonKey, vfw.reasonParams) : vfw?.reason) || interfaceText(\"exportRequest.checkingI"
   },
   "exportRequest.checkingVideoEncoders": {
     "locations": [
-      "src/export-request.mjs:535"
+      "src/export-request.mjs:548"
     ],
     "context": "const waiting = ['mp4', 'avi', 'wmv'].includes(format.id) ? interfaceText(\"exportRequest.checkingVideoEncoders\")"
   },
@@ -23860,7 +23904,7 @@
   },
   "exportRequest.currentFrameSummary": {
     "locations": [
-      "src/export-request.mjs:664"
+      "src/export-request.mjs:678"
     ],
     "context": "if (info.single) return {size: pixels, time: interfaceText('exportRequest.currentFrameSummary', {frame:currentFrame})};"
   },
@@ -23872,7 +23916,7 @@
   },
   "exportRequest.dimensionsLimit": {
     "locations": [
-      "src/export-request.mjs:618"
+      "src/export-request.mjs:632"
     ],
     "context": "mark(['width', 'height'], interfaceText('exportRequest.dimensionsLimit', {million: Math.round(maxPixels / 1e6)}));"
   },
@@ -23890,19 +23934,19 @@
   },
   "exportRequest.enterAFileName": {
     "locations": [
-      "src/export-request.mjs:390"
+      "src/export-request.mjs:394"
     ],
     "context": "if (typeof name !== 'string' || !name.trim()) return interfaceText(\"exportRequest.enterAFileName\");"
   },
   "exportRequest.enterAValueBetween01And200": {
     "locations": [
-      "src/export-request.mjs:626"
+      "src/export-request.mjs:640"
     ],
     "context": "if (manual && !numberFieldValid(request.bitrateMbps, 0.1, 200)) mark(['bitrateMbps'], interfaceText(\"exportRequest.enterAValueBetween01And200\"));"
   },
   "exportRequest.enterAValueBetween1And100": {
     "locations": [
-      "src/export-request.mjs:625"
+      "src/export-request.mjs:639"
     ],
     "context": "if (format === 'jpeg-sequence' && !numberFieldValid(request.jpegQuality, 1, 100, 1)) mark(['jpegQuality'], interfaceText(\"exportRequest.enterAValueBetween1And10"
   },
@@ -23932,7 +23976,7 @@
   },
   "exportRequest.fileNamesCannotEndWithADotOr": {
     "locations": [
-      "src/export-request.mjs:392"
+      "src/export-request.mjs:396"
     ],
     "context": "if (/[. ]$/.test(name)) return interfaceText(\"exportRequest.fileNamesCannotEndWithADotOr\");"
   },
@@ -23950,7 +23994,7 @@
   },
   "exportRequest.frameLimit": {
     "locations": [
-      "src/export-request.mjs:633"
+      "src/export-request.mjs:647"
     ],
     "context": "if (!single && count > maxFrames) mark(['from', 'to'], interfaceText('exportRequest.frameLimit', {limit:maxFrames}));"
   },
@@ -23968,7 +24012,7 @@
   },
   "exportRequest.frameSummary": {
     "locations": [
-      "src/export-request.mjs:666"
+      "src/export-request.mjs:680"
     ],
     "context": "return {size: pixels, time: interfaceText('exportRequest.frameSummary', {count:Number.isInteger(count)&&count>0?count:0, duration, fps:{format:'number',value:fp"
   },
@@ -23980,25 +24024,25 @@
   },
   "exportRequest.gifSupportsUpTo50FpsChooseAnimated": {
     "locations": [
-      "src/export-request.mjs:631"
+      "src/export-request.mjs:645"
     ],
     "context": "if (format === 'gif' && fps > 50) error ||= interfaceText(\"exportRequest.gifSupportsUpTo50FpsChooseAnimated\");"
   },
   "exportRequest.hasNoTransparencyTransparentAreasBecomeBlack": {
     "locations": [
-      "src/export-request.mjs:493"
+      "src/export-request.mjs:497"
     ],
     "context": "return {transparent: false, alpha: 'none', matte: 'black', reason: interfaceText(\"exportRequest.hasNoTransparencyTransparentAreasBecomeBlack\", {short: info.shor"
   },
   "exportRequest.illegalFileName": {
     "locations": [
-      "src/export-request.mjs:391"
+      "src/export-request.mjs:395"
     ],
     "context": "if (ILLEGAL_NAME.test(name)) return interfaceText('exportRequest.illegalFileName');"
   },
   "exportRequest.jpegHasNoTransparencyTransparentAreasBecomeWhite": {
     "locations": [
-      "src/export-request.mjs:492"
+      "src/export-request.mjs:496"
     ],
     "context": "if (format === 'jpeg-sequence') return {transparent: false, alpha: 'none', matte: 'white', reason: interfaceText(\"exportRequest.jpegHasNoTransparencyTransparent"
   },
@@ -24010,7 +24054,7 @@
   },
   "exportRequest.keyframeInterval": {
     "locations": [
-      "src/export-request.mjs:377"
+      "src/export-request.mjs:381"
     ],
     "context": "keyframeEvery: codec.keyframes ? vfwNumber(vfw.keyframes, 0, 1000000, interfaceText(\"exportRequest.keyframeInterval\"), true) : 0,"
   },
@@ -24022,9 +24066,10 @@
   },
   "exportRequest.lossless": {
     "locations": [
-      "src/export-request.mjs:513"
+      "src/export-request.mjs:512",
+      "src/export-request.mjs:526"
     ],
-    "context": "return {id: codec.id, label: `${label}${codec.lossless && !/lossless|uncompressed/i.test(label) ? interfaceText(\"exportRequest.lossless\") : ''}`, disabled: !cod"
+    "context": "+ (codec.lossless ? interfaceText('exportRequest.lossless') : '');"
   },
   "exportRequest.message1080p": {
     "locations": [
@@ -24058,7 +24103,7 @@
   },
   "exportRequest.padded": {
     "locations": [
-      "src/export-request.mjs:655"
+      "src/export-request.mjs:669"
     ],
     "context": "return [state?.codecLabel, rate, padded ? interfaceText('exportRequest.padded', {size:size(padded.width, padded.height)}) : ''].filter(Boolean).join(' · ');"
   },
@@ -24076,7 +24121,7 @@
   },
   "exportRequest.playedFramesNote": {
     "locations": [
-      "src/export-request.mjs:676"
+      "src/export-request.mjs:690"
     ],
     "context": "return interfaceText('exportRequest.playedFramesNote', {count:storedFrames,total:totalFrames});"
   },
@@ -24100,7 +24145,7 @@
   },
   "exportRequest.primaryLabel": {
     "locations": [
-      "src/export-request.mjs:640"
+      "src/export-request.mjs:654"
     ],
     "context": "return interfaceText('exportRequest.primaryLabel', {format: request.format === 'stkz' && movieclip ? 'STYKMOV' : FORMATS.get(request.format).short});"
   },
@@ -24112,25 +24157,25 @@
   },
   "exportRequest.quality": {
     "locations": [
-      "src/export-request.mjs:376"
+      "src/export-request.mjs:380"
     ],
     "context": "return {codecId: codec.id, quality: codec.quality ? vfwNumber(vfw.quality, 0, 100, interfaceText(\"exportRequest.quality\")) / 100 : 0.9,"
   },
   "exportRequest.rangeLimit": {
     "locations": [
-      "src/export-request.mjs:620"
+      "src/export-request.mjs:634"
     ],
     "context": "mark(['from', 'to'], interfaceText('exportRequest.rangeLimit', {total: totalFrames}));"
   },
   "exportRequest.selectAFigureToExportIt": {
     "locations": [
-      "src/export-request.mjs:531"
+      "src/export-request.mjs:544"
     ],
     "context": "const object = format.needsObject && !hasObject ? interfaceText(\"exportRequest.selectAFigureToExportIt\")"
   },
   "exportRequest.selectAMovieclipToExportIt": {
     "locations": [
-      "src/export-request.mjs:532"
+      "src/export-request.mjs:545"
     ],
     "context": ": format.id === 'stykmov' && !movieclip ? interfaceText(\"exportRequest.selectAMovieclipToExportIt\")"
   },
@@ -24196,13 +24241,13 @@
   },
   "exportRequest.unavailable": {
     "locations": [
-      "src/export-request.mjs:571"
+      "src/export-request.mjs:585"
     ],
     "context": "const suffix = state.disabled ? interfaceText(\"exportRequest.unavailable\") : '';"
   },
   "exportRequest.valuePxIsLargerThanAnExportAllowsValue1": {
     "locations": [
-      "src/export-request.mjs:231"
+      "src/export-request.mjs:235"
     ],
     "context": "reason: fits ? '' : interfaceText('exportRequest.valuePxIsLargerThanAnExportAllowsValue1', {value: size(width, height), value1: interfaceLocalization.formatNumb"
   },
@@ -24232,7 +24277,7 @@
   },
   "exportRequest.windowsReservesThisNameChooseAnotherName": {
     "locations": [
-      "src/export-request.mjs:393"
+      "src/export-request.mjs:397"
     ],
     "context": "if (RESERVED_NAME.test(name)) return interfaceText(\"exportRequest.windowsReservesThisNameChooseAnotherName\");"
   },
@@ -24300,7 +24345,7 @@
   "exportSheet.closeExport": {
     "locations": [
       "src/export-sheet.mjs:267",
-      "src/export-sheet.mjs:709"
+      "src/export-sheet.mjs:722"
     ],
     "context": "const dialog = createDialog({size: 'lg', variant: 'export', id: EXPORT_DIALOG_ID, title: interfaceText(\"exportSheet.export\"), titleKey: \"exportSheet.export\", ov"
   },
@@ -24319,7 +24364,7 @@
   "exportSheet.currentFrame": {
     "locations": [
       "src/app.mjs:1274",
-      "src/export-sheet.mjs:379"
+      "src/export-sheet.mjs:386"
     ],
     "context": "const frame = {messageKey:hover.tick===editor.tick?'exportSheet.currentFrame':'filmstrip.card',messageParams:{frame:hover.tick+1}};"
   },
@@ -24345,7 +24390,7 @@
     "locations": [
       "src/export-sheet.mjs:240"
     ],
-    "context": "const smoothing = select(FIELD.smoothing, interfaceText(\"exportSheet.edges\"), icon, EXPORT_SMOOTHING.map(option => ({value: option.value, label: option.label, t"
+    "context": "const smoothing = select(FIELD.smoothing, interfaceText(\"exportSheet.edges\"), icon, EXPORT_SMOOTHING.map(option => ({value: option.value, label: interfaceText(o"
   },
   "exportSheet.encoding": {
     "locations": [
@@ -24418,7 +24463,7 @@
   "exportSheet.frames": {
     "locations": [
       "src/export-sheet.mjs:179",
-      "src/export-sheet.mjs:379"
+      "src/export-sheet.mjs:386"
     ],
     "context": "const captionLabel = element('span', {className: 'export-caption-label', text: interfaceText(\"exportSheet.frames\"), textKey: \"exportSheet.frames\"});"
   },
@@ -24510,7 +24555,7 @@
   },
   "exportSheet.movieclip": {
     "locations": [
-      "src/export-sheet.mjs:444"
+      "src/export-sheet.mjs:451"
     ],
     "context": "element('span', {text: choice.id === 'stykmov' ? interfaceText(\"exportSheet.movieclip\") : exportFormatInfo(choice.id).label, textKey: choice.id === 'stykmov' ? "
   },
@@ -24528,7 +24573,7 @@
   },
   "exportSheet.pausePreview": {
     "locations": [
-      "src/export-sheet.mjs:568"
+      "src/export-sheet.mjs:575"
     ],
     "context": "localizedAttribute(playButton, 'aria-label', (on ? \"exportSheet.pausePreview\" : \"exportSheet.playPreview\"), (on ? {} : {}));"
   },
@@ -24541,7 +24586,7 @@
   "exportSheet.playPreview": {
     "locations": [
       "src/export-sheet.mjs:172",
-      "src/export-sheet.mjs:568"
+      "src/export-sheet.mjs:575"
     ],
     "context": "'aria-label': interfaceText(\"exportSheet.playPreview\"), 'aria-labelKey': \"exportSheet.playPreview\", 'aria-labelParams': {}, 'aria-pressed': 'false'}, glyph(icon"
   },
@@ -24671,9 +24716,10 @@
   },
   "exportSheet.transparent": {
     "locations": [
+      "src/export-request.mjs:511",
       "src/export-sheet.mjs:241"
     ],
-    "context": "const transparent = switchRow('export-transparent', interfaceText(\"exportSheet.transparentBackground\"), interfaceText(\"exportSheet.transparent\"), {labelKey:'exp"
+    "context": "+ (codec.alpha ? ` · ${interfaceText('exportSheet.transparent')}` : '')"
   },
   "exportSheet.transparentBackground": {
     "locations": [
@@ -24696,7 +24742,7 @@
   },
   "exportSheet.wholeAnimation": {
     "locations": [
-      "src/export-sheet.mjs:379"
+      "src/export-sheet.mjs:386"
     ],
     "context": "localizedText(captionLabel, single ? 'exportSheet.currentFrame' : editable ? 'exportSheet.wholeAnimation' : 'exportSheet.frames', {frame: currentFrame, count: t"
   },
@@ -24727,6 +24773,7 @@
   "filmstrip.card": {
     "locations": [
       "src/app.mjs:1274",
+      "src/export-sheet.mjs:494",
       "src/inspector-view.mjs:282",
       "src/layer-timeline.mjs:662",
       "src/sheet-filmstrip.mjs:434"
@@ -27217,6 +27264,12 @@
     ],
     "context": "const label = document.createElement('label'); localizedText(label, [\"keyframeEasingView.x\",\"keyframeEasingView.y\",\"keyframeEasingView.x2\",\"keyframeEasingView.y"
   },
+  "layers.camera": {
+    "locations": [
+      "src/app.mjs:493"
+    ],
+    "context": ": session === \"camera\" ? { done: \"camera-done\", nameKey: \"layers.camera\" } : null,"
+  },
   "layers.choose": {
     "locations": [
       "src/timeline-layers-popover.mjs:91"
@@ -29224,15 +29277,16 @@
   },
   "overlays.palette.commands": {
     "locations": [
-      "src/ui/command-palette.mjs:40"
+      "src/ui/command-palette.mjs:41"
     ],
     "context": "commandsLabel ??= kitText(t, 'overlays.palette.commands');"
   },
   "overlays.palette.empty": {
     "locations": [
-      "src/ui/command-palette.mjs:75"
+      "src/ui/command-palette.mjs:76",
+      "src/ui/command-palette.mjs:79"
     ],
-    "context": "emptyLabel ??= kitText(t, 'overlays.palette.empty');"
+    "context": "const emptyKey = emptyLabel === null ? 'overlays.palette.empty' : null;"
   },
   "overlays.palette.figureIn": {
     "locations": [
@@ -29242,21 +29296,22 @@
   },
   "overlays.palette.goTo": {
     "locations": [
-      "src/ui/command-palette.mjs:36"
+      "src/ui/command-palette.mjs:37"
     ],
     "context": "groups.push({id: 'goto', label: kitText(t, 'overlays.palette.goTo'), labelKey: 'overlays.palette.goTo', labelParams: {}, rows: [{key: `frame:${frame}`, id: null"
   },
   "overlays.palette.goToFrame": {
     "locations": [
-      "src/ui/command-palette.mjs:37"
+      "src/ui/command-palette.mjs:38"
     ],
     "context": "label: kitText(t, 'overlays.palette.goToFrame', {frame}), labelKey: 'overlays.palette.goToFrame', labelParams: {frame}, icon: 'frame', meta: '', enabled: true, "
   },
   "overlays.palette.label": {
     "locations": [
-      "src/ui/command-palette.mjs:74"
+      "src/ui/command-palette.mjs:75",
+      "src/ui/command-palette.mjs:78"
     ],
-    "context": "label ??= kitText(t, 'overlays.palette.label');"
+    "context": "const labelKey = label === null ? 'overlays.palette.label' : null;"
   },
   "overlays.palette.layer": {
     "locations": [
@@ -29279,9 +29334,10 @@
   },
   "overlays.palette.placeholder": {
     "locations": [
-      "src/ui/command-palette.mjs:73"
+      "src/ui/command-palette.mjs:74",
+      "src/ui/command-palette.mjs:77"
     ],
-    "context": "placeholder ??= kitText(t, 'overlays.palette.placeholder');"
+    "context": "const placeholderKey = placeholder === null ? 'overlays.palette.placeholder' : null;"
   },
   "overlays.palette.project": {
     "locations": [
@@ -29291,7 +29347,7 @@
   },
   "overlays.palette.recent": {
     "locations": [
-      "src/ui/command-palette.mjs:39"
+      "src/ui/command-palette.mjs:40"
     ],
     "context": "recentLabel ??= kitText(t, 'overlays.palette.recent');"
   },
@@ -31331,13 +31387,13 @@
     "locations": [
       "src/settings.mjs:642"
     ],
-    "context": "this.select(say(\"settings.playbackQuality\"), 'playbackQuality', playbackQualityOptions.map(option => [option.id, option.label]), say(\"settings.playbackQualityNo"
+    "context": "this.select(say(\"settings.playbackQuality\"), 'playbackQuality', playbackQualityOptions.map(option => messageTuple([option.id, say(option.labelKey)], {1: {key: o"
   },
   "settings.playbackQualityNote": {
     "locations": [
       "src/settings.mjs:642"
     ],
-    "context": "this.select(say(\"settings.playbackQuality\"), 'playbackQuality', playbackQualityOptions.map(option => [option.id, option.label]), say(\"settings.playbackQualityNo"
+    "context": "this.select(say(\"settings.playbackQuality\"), 'playbackQuality', playbackQualityOptions.map(option => messageTuple([option.id, say(option.labelKey)], {1: {key: o"
   },
   "settings.privacy": {
     "locations": [
@@ -32365,13 +32421,13 @@
   },
   "stageHead.backgroundColourLabel": {
     "locations": [
-      "src/shell/stage-head.mjs:183"
+      "src/shell/stage-head.mjs:184"
     ],
     "context": "localizedAttribute(chip, 'data-tooltip', 'stageHead.backgroundColourLabel', {label: state.background.label});"
   },
   "stageHead.backgroundColourLabelOpensTheColourPicker": {
     "locations": [
-      "src/shell/stage-head.mjs:182"
+      "src/shell/stage-head.mjs:183"
     ],
     "context": "localizedAttribute(chip, 'aria-label', 'stageHead.backgroundColourLabelOpensTheColourPicker', {label: state.background.label});"
   },
@@ -32383,43 +32439,43 @@
   },
   "stageHead.cancel": {
     "locations": [
-      "src/shell/stage-head.mjs:288"
+      "src/shell/stage-head.mjs:289"
     ],
     "context": "actions: mode.cancel ? [{label: mode.cancelLabel ?? interfaceText(\"stageHead.cancel\"), tip: interfaceText(\"stageHead.esc\"), tipKey: \"stageHead.esc\", run: () => "
   },
   "stageHead.dataActionBuilderHighlight": {
     "locations": [
-      "src/shell/stage-head.mjs:191"
+      "src/shell/stage-head.mjs:192"
     ],
     "context": "toggle(interfaceText(\"stageHead.dataActionBuilderHighlight\"), state.highlight);"
   },
   "stageHead.dataActionBuilderStaticHandles": {
     "locations": [
-      "src/shell/stage-head.mjs:190"
+      "src/shell/stage-head.mjs:191"
     ],
     "context": "toggle(interfaceText(\"stageHead.dataActionBuilderStaticHandles\"), state.staticHandles);"
   },
   "stageHead.dataActionToggleIsolate": {
     "locations": [
-      "src/shell/stage-head.mjs:192"
+      "src/shell/stage-head.mjs:193"
     ],
     "context": "toggle(interfaceText(\"stageHead.dataActionToggleIsolate\"), state.isolate);"
   },
   "stageHead.esc": {
     "locations": [
-      "src/shell/stage-head.mjs:288"
+      "src/shell/stage-head.mjs:289"
     ],
     "context": "actions: mode.cancel ? [{label: mode.cancelLabel ?? interfaceText(\"stageHead.cancel\"), tip: interfaceText(\"stageHead.esc\"), tipKey: \"stageHead.esc\", run: () => "
   },
   "stageHead.handlesButton": {
     "locations": [
-      "src/shell/stage-head.mjs:186"
+      "src/shell/stage-head.mjs:187"
     ],
     "context": "toggle(interfaceText(\"stageHead.handlesButton\"), state.handles);"
   },
   "stageHead.pathsButton": {
     "locations": [
-      "src/shell/stage-head.mjs:187"
+      "src/shell/stage-head.mjs:188"
     ],
     "context": "toggle(interfaceText(\"stageHead.pathsButton\"), state.motionPaths);"
   },
@@ -32437,7 +32493,7 @@
   },
   "stageHead.vfxPreview": {
     "locations": [
-      "src/shell/stage-head.mjs:189"
+      "src/shell/stage-head.mjs:190"
     ],
     "context": "toggle(interfaceText(\"stageHead.vfxPreview\"), state.vfx);"
   },
@@ -35399,45 +35455,47 @@
   },
   "toolOptions.color": {
     "locations": [
-      "src/ui/tool-options.mjs:561"
+      "src/ui/tool-options.mjs:566"
     ],
     "context": "localizedAttribute(button, 'aria-label', 'toolOptions.color', {value: color.toUpperCase()});"
   },
   "toolOptions.colors": {
     "locations": [
-      "src/ui/tool-options.mjs:539"
+      "src/ui/tool-options.mjs:544"
     ],
     "context": "setAttribute(pair, 'aria-label', say(\"toolOptions.colors\", {name: item.label ?? item.id, stroke: (stroke ?? '').toUpperCase(), fill: (fillColor ?? '').toUpperCa"
   },
   "toolOptions.more": {
     "locations": [
       "src/ui/tool-options.mjs:305",
-      "src/ui/tool-options.mjs:753"
+      "src/ui/tool-options.mjs:307",
+      "src/ui/tool-options.mjs:758"
     ],
     "context": "more.setAttribute('aria-label', toolOptionsText(t, 'toolOptions.more'));"
   },
   "toolOptions.moreTip": {
     "locations": [
-      "src/ui/tool-options.mjs:306"
+      "src/ui/tool-options.mjs:306",
+      "src/ui/tool-options.mjs:308"
     ],
     "context": "more.dataset.tooltip = toolOptionsText(t, 'toolOptions.moreTip');"
   },
   "toolOptions.recent": {
     "locations": [
-      "src/ui/tool-options.mjs:547"
+      "src/ui/tool-options.mjs:552"
     ],
     "context": "root.setAttribute('aria-label', item.label ?? say(\"toolOptions.recent\"));"
   },
   "toolOptions.settings": {
     "locations": [
-      "src/ui/tool-options.mjs:478",
-      "src/ui/tool-options.mjs:613"
+      "src/ui/tool-options.mjs:483",
+      "src/ui/tool-options.mjs:618"
     ],
     "context": "localizedAttribute(button, 'aria-label', 'toolOptions.settings', {name});"
   },
   "toolOptions.swap": {
     "locations": [
-      "src/ui/tool-options.mjs:525"
+      "src/ui/tool-options.mjs:530"
     ],
     "context": "const swap = buildButton({id: `${item.id}-swap`, label: item.swap.label ?? (item.swap.command ? undefined : say(\"toolOptions.swap\")),"
   },
@@ -35707,7 +35765,7 @@
     "locations": [
       "src/user-library.mjs:555",
       "src/user-library.mjs:567",
-      "src/user-library.mjs:589"
+      "src/user-library.mjs:593"
     ],
     "context": "localizedMarkup(this.dialog, `<form><h2 data-i18n=\"userLibrary.newFolder\">${messageHTML(\"userLibrary.newFolder\", {})}</h2><p ${messageAttributes(\"userLibrary.in"
   },
@@ -35733,7 +35791,7 @@
   },
   "userLibrary.copiesAlreadyInYourScenesStayAvailable": {
     "locations": [
-      "src/user-library.mjs:589"
+      "src/user-library.mjs:593"
     ],
     "context": "localizedMarkup(this.dialog, `<h2 ${messageAttributes(\"userLibrary.remove\", {name: item.name})}>Remove ${esc(item.name)}?</h2><p ${messageAttributes(\"userLibrar"
   },
@@ -35804,7 +35862,8 @@
   },
   "userLibrary.folderLocation": {
     "locations": [
-      "src/user-library.mjs:510"
+      "src/user-library.mjs:510",
+      "src/user-library.mjs:576"
     ],
     "context": "this.say({messageKey:\"userLibrary.notice.savedTo2\",messageParams:{name: item.name, value1: this.folder ? {messageKey:'userLibrary.folderLocation',messageParams:"
   },
@@ -35856,7 +35915,7 @@
       "src/user-library.mjs:223",
       "src/user-library.mjs:474",
       "src/user-library.mjs:481",
-      "src/user-library.mjs:581"
+      "src/user-library.mjs:585"
     ],
     "context": "let current = ''; const parts = messageTuple([interfaceText(\"userLibrary.library2\"), ...this.folder.split('/').filter(Boolean)], {0: {key: \"userLibrary.library2"
   },
@@ -35953,7 +36012,8 @@
       "src/user-library.mjs:276",
       "src/user-library.mjs:499",
       "src/user-library.mjs:510",
-      "src/user-library.mjs:555"
+      "src/user-library.mjs:555",
+      "src/user-library.mjs:577"
     ],
     "context": "<div class=\"library-source ui-segmented\" data-size=\"sm\" data-fill role=\"group\" aria-label=\"Library source\" data-i18n-aria-label=\"userLibrary.librarySource\"><but"
   },
@@ -35992,7 +36052,7 @@
   },
   "userLibrary.noFoldersHere": {
     "locations": [
-      "src/user-library.mjs:576"
+      "src/user-library.mjs:580"
     ],
     "context": "if (!list.children.length) { const none = document.createElement('p'); none.className = 'library-move-none'; localizedText(none, \"userLibrary.noFoldersHere\", {}"
   },
@@ -36040,7 +36100,7 @@
   },
   "userLibrary.notice.movedTo2": {
     "locations": [
-      "src/user-library.mjs:581"
+      "src/user-library.mjs:585"
     ],
     "context": "try { await this.desktop.changeLibraryItem({path:item.path, folder:destination}); this.dialog.close(); this.selected = null; await this.refresh(); this.say({mes"
   },
@@ -36114,13 +36174,13 @@
   },
   "userLibrary.remove": {
     "locations": [
-      "src/user-library.mjs:589"
+      "src/user-library.mjs:593"
     ],
     "context": "localizedMarkup(this.dialog, `<h2 ${messageAttributes(\"userLibrary.remove\", {name: item.name})}>Remove ${esc(item.name)}?</h2><p ${messageAttributes(\"userLibrar"
   },
   "userLibrary.removeLibraryItem": {
     "locations": [
-      "src/user-library.mjs:588"
+      "src/user-library.mjs:592"
     ],
     "context": "localizedAttribute(this.dialog, 'aria-label', \"userLibrary.removeLibraryItem\", {});"
   },
@@ -36193,13 +36253,13 @@
   },
   "userLibrary.thisAssetAndItsPreview": {
     "locations": [
-      "src/user-library.mjs:589"
+      "src/user-library.mjs:593"
     ],
     "context": "localizedMarkup(this.dialog, `<h2 ${messageAttributes(\"userLibrary.remove\", {name: item.name})}>Remove ${esc(item.name)}?</h2><p ${messageAttributes(\"userLibrar"
   },
   "userLibrary.thisFolderAndItsContents": {
     "locations": [
-      "src/user-library.mjs:589"
+      "src/user-library.mjs:593"
     ],
     "context": "localizedMarkup(this.dialog, `<h2 ${messageAttributes(\"userLibrary.remove\", {name: item.name})}>Remove ${esc(item.name)}?</h2><p ${messageAttributes(\"userLibrar"
   },
@@ -40116,14 +40176,14 @@
     "locations": [
       "src/vfx-preset-ui.mjs:37"
     ],
-    "context": ":`<p class=\"vfx-my-presets-empty\">${icon('library')}<span>${messageHTML(\"vfxPresetUi.saveAnEffectYouLikeWith\", {})}<b data-i18n=\"vfxPresetUi.saveAsPreset\">${mes"
+    "context": ":`<p class=\"vfx-my-presets-empty\">${icon('library')}<span>${messageHTML(\"vfxPresetUi.saveAnEffectYouLikeWith\", {})} <b data-i18n=\"vfxPresetUi.saveAsPreset\">${me"
   },
   "vfxPresetUi.saveAsPreset": {
     "locations": [
       "src/vfx-preset-ui.mjs:37",
       "src/vfx-preset-ui.mjs:48"
     ],
-    "context": ":`<p class=\"vfx-my-presets-empty\">${icon('library')}<span>${messageHTML(\"vfxPresetUi.saveAnEffectYouLikeWith\", {})}<b data-i18n=\"vfxPresetUi.saveAsPreset\">${mes"
+    "context": ":`<p class=\"vfx-my-presets-empty\">${icon('library')}<span>${messageHTML(\"vfxPresetUi.saveAnEffectYouLikeWith\", {})} <b data-i18n=\"vfxPresetUi.saveAsPreset\">${me"
   },
   "vfxPresetUi.savedToMyPresets": {
     "locations": [
@@ -40141,7 +40201,7 @@
     "locations": [
       "src/vfx-preset-ui.mjs:37"
     ],
-    "context": ":`<p class=\"vfx-my-presets-empty\">${icon('library')}<span>${messageHTML(\"vfxPresetUi.saveAnEffectYouLikeWith\", {})}<b data-i18n=\"vfxPresetUi.saveAsPreset\">${mes"
+    "context": ":`<p class=\"vfx-my-presets-empty\">${icon('library')}<span>${messageHTML(\"vfxPresetUi.saveAnEffectYouLikeWith\", {})} <b data-i18n=\"vfxPresetUi.saveAsPreset\">${me"
   },
   "webOffline.aNewVersionOfStykanimateIsReadyIt": {
     "locations": [

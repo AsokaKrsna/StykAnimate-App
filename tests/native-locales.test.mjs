@@ -23,7 +23,8 @@ test('all 27 native languages resolve, are distinct and preserve readable source
     }
   }
   assert.equal(new Localization({locale:'ar'}).t('common.save'),'حفظ');
-  assert.equal(new Localization({locale:'zh-Hans'}).t('common.save'),'保存动画');
+  assert.equal(catalogs['zh-Hans']['common.save'],'保存动画');
+  assert.equal(new Localization({locale:'zh-Hans'}).t('common.save'),'保存');
   assert.equal(new Localization({locale:'cs'}).t('common.save'),'Uložit');
   assert.equal(new Localization({locale:'tr'}).t('common.cancel'),'İptal');
   assert.equal(new Localization({locale:'vi'}).t('common.save'),'Lưu');
@@ -37,7 +38,8 @@ test('regional language normalization preserves supplied variants without claimi
 test('known native translation defects are excluded from imported provenance', () => {
   assert.equal(Object.hasOwn(catalogs['pt-BR'], 'common.cancel'), false);
   assert.equal(new Localization({locale:'it'}).t('common.cancel'),'Annulla');
-  assert.equal(new Localization({locale:'zh-Hans'}).t('chrome.open'),'打开动画');
+  assert.equal(catalogs['zh-Hans']['chrome.open'],'打开动画');
+  assert.equal(new Localization({locale:'zh-Hans'}).t('chrome.open'),'打开');
 });
 
 test('native parser decodes BOM Unicode and deliberate ANSI code pages', () => {

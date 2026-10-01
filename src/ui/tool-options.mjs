@@ -1,4 +1,4 @@
-import {replaceLocalized, localizedAttribute, appendLocalized} from '../localization-bindings.mjs';
+import {replaceLocalized, localizedAttribute, localizedText, appendLocalized} from '../localization-bindings.mjs';
 import {messageError} from '../localized-error.mjs';
 
 import {t as interfaceText, messageText as toolOptionsText} from '../localization.mjs';
@@ -288,7 +288,7 @@ function reveal(element) {
  * measures again when an item's size drifts (the fonts load, a label is
  * translated); invalidate() forces it.
  */
-export function createToolOptions({descriptors = [], label = '', role = 'group', tool = '', registry = null, context = null, icon = null, t = null,
+export function createToolOptions({descriptors = [], label = '', labelKey, labelParams, role = 'group', tool = '', registry = null, context = null, icon = null, t = null,
   onChange = null, onFold = null, overlays = null, popoverMount = 'auto', document: doc = globalThis.document, Observer = globalThis.ResizeObserver,
   requestFrame = callback => globalThis.requestAnimationFrame(callback), cancelFrame = id => globalThis.cancelAnimationFrame(id)} = {}) {
   const view = doc.defaultView ?? globalThis;
@@ -304,6 +304,8 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
   more.setAttribute('aria-expanded', 'false');
   more.setAttribute('aria-label', toolOptionsText(t, 'toolOptions.more'));
   more.dataset.tooltip = toolOptionsText(t, 'toolOptions.moreTip');
+  localizedAttribute(more, 'aria-label', 'toolOptions.more');
+  localizedAttribute(more, 'data-tooltip', 'toolOptions.moreTip');
   more.hidden = true;
   appendGlyph(more, 'chevron-down');
 
@@ -379,6 +381,7 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     const root = node('div', 'ui-optbar-select');
     if (item.showLabel && item.label) {
       const text = node('span', 'ui-optbar-label', item.label);
+      if (item.labelKey) localizedText(text, item.labelKey, item.labelParams);
       text.setAttribute('aria-hidden', 'true');
       appendLocalized(root, text);
     }
@@ -388,9 +391,11 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     select.dataset.optionId = item.id;
     select.dataset.optionPart = 'select';
     select.setAttribute('aria-label', item.description ?? item.label ?? item.id);
+    if (item.descriptionKey || item.labelKey) localizedAttribute(select, 'aria-label', item.descriptionKey ?? item.labelKey, item.descriptionKey ? item.descriptionParams : item.labelParams);
     for (const option of item.options) {
       const entry = node('option', '', option.label ?? String(option.value));
       entry.value = String(option.value);
+      if (option.labelKey) localizedText(entry, option.labelKey, option.labelParams);
       appendLocalized(select, entry);
     }
     decorate(select, item, null);
@@ -908,8 +913,9 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
    * place, keeping focus and a value being typed; any other change (a fold order, a tip, a limit) rebuilds the
    * bar and folds it again (force: always rebuild).
    */
-  function update(next = [], {label: name = null, tool: toolName = null, force = false} = {}) {
+  function update(next = [], {label: name = null, labelKey: nameKey = labelKey, labelParams: nameParams = labelParams, tool: toolName = null, force = false} = {}) {
     if (name !== null) setAttribute(element, 'aria-label', name || null);
+    if (nameKey) localizedAttribute(element, 'aria-label', nameKey, nameParams);
     // data-options-for, never data-tool: [data-tool] is the rail's tools (app.mjs, the hotkey hints and the tests find them by it).
     if (toolName !== null) setAttribute(element, 'data-options-for', toolName || null);
     items = normalizeToolOptions(next);

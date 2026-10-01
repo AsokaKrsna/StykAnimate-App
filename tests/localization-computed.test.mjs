@@ -31,6 +31,8 @@ import {inspectorDescriptor} from '../src/inspector-view.mjs';
 import {rigSections} from '../src/rig-controls.mjs';
 import {renderInspector} from '../src/inspector-kit.mjs';
 import {VfxInspector} from '../src/vfx-inspector.mjs';
+import {DrawingController} from '../src/drawing-controller.mjs';
+import {exportCodecChoices,exportFormatStates,exportEncodingSummary} from '../src/export-request.mjs';
 
 const fixture=()=>new Editor({demo:false}).load(emptyDocument());
 const populatedFixture=()=>new Editor({demo:false}).load(createDemo());
@@ -276,4 +278,45 @@ test('fill ordering captions and fixed image shapes retain display keys while co
  const fields=walk(inspectorDescriptor({editor:image}).sections.flatMap(section=>section.rows??[]));
  const fixed=fields.flatMap(row=>row.options??[]).find(option=>option.value==='image');
  assert.equal(fixed.labelKey,'builderOutliner.image');assert.equal(image.figure.name,'Artist image');
+});
+
+test('owned codec display notes translate without rewriting capability diagnostics or duplicating lossless labels',async()=>{
+ const service=new videoService.VideoExportService({encoderPath:'/missing-styk-localization-test-encoder'});
+ const originalLocale=interfaceLocalization.locale;
+ try{
+  const capabilities=await service.capabilities({width:31,height:23}),bytes=JSON.stringify(capabilities);
+  const avi=capabilities.formats.find(format=>format.id==='avi'),webm=capabilities.formats.find(format=>format.id==='webm');
+  const ffv1=avi.codecs.find(codec=>codec.id==='ffv1'),vp9=webm.codecs.find(codec=>codec.id==='vp9');
+  assert.equal(ffv1.label,'FFV1 (lossless)');assert.equal(vp9.label,'VP9 with transparency');
+  for(const locale of ['ar','he','fr']){
+   interfaceLocalization.setLocale(locale);
+   const lossless='FFV1'+interfaceLocalization.t('exportRequest.lossless');
+   const choices=exportCodecChoices(avi).options;
+   assert.equal(choices.find(option=>option.id==='ffv1').label,lossless);
+   assert.equal(choices.find(option=>option.id==='rawvideo').label,interfaceLocalization.t('desktop.videoExportService.uncompressedRgb'));
+   assert.equal(exportCodecChoices(webm).options[0].label,'VP9 · '+interfaceLocalization.t('exportSheet.transparent'));
+   const available={...capabilities,width:31,height:23,formats:[avi,webm].map(format=>({...format,supported:true,codecs:format.codecs.map(codec=>({...codec,supported:true}))}))};
+   const states=exportFormatStates({capabilities:available,totalFrames:10,codecs:{avi:'ffv1'}});
+   assert.equal(states.get('avi').codecLabel,lossless);
+   assert.equal(states.get('webm').codecLabel,'VP9 · '+interfaceLocalization.t('exportSheet.transparent'));
+   assert.equal(states.get('webm').codec,undefined);
+   assert.equal(exportEncodingSummary({format:'webm',bitrateMode:'auto'},states),'VP9 · '+interfaceLocalization.t('exportSheet.transparent')+' · '+interfaceLocalization.t('exportRequest.automaticBitrate'));
+  }
+  assert.equal(JSON.stringify(capabilities),bytes);
+ }finally{interfaceLocalization.setLocale(originalLocale);await service.dispose();}
+});
+
+test('new saved brushes use current captions while existing artist names and saved preset data stay literal',async()=>{
+ const originalLocale=interfaceLocalization.locale,artist={id:'custom-artist',name:'Artist ink العربية',description:'Artist note',size:17};
+ const bytes=JSON.stringify(artist),controller=Object.create(DrawingController.prototype);let saves=0;
+ Object.assign(controller,{editor:{activeLayerId:'drawing'},library:{presets:[artist]},settings:{preset:'ink',size:23},settle:()=>null,applySelection:async()=>null,saveLibrary:()=>saves++,onUI:()=>{},onStatus:()=>{}});
+ try{
+  interfaceLocalization.setLocale('fr');await controller.action('save-preset');
+  assert.equal(controller.library.presets[1].name,interfaceLocalization.t('drawingPresets.ink')+' 2');
+  assert.equal(controller.library.presets[1].description,interfaceLocalization.t('drawingController.savedBrush'));
+  const saved=JSON.stringify(controller.library.presets[1]);
+  interfaceLocalization.setLocale('ar');controller.settings.preset=null;await controller.action('save-preset');
+  assert.equal(controller.library.presets[2].name,interfaceLocalization.t('drawingView.custom')+' 3');
+  assert.equal(JSON.stringify(controller.library.presets[1]),saved);assert.equal(JSON.stringify(artist),bytes);assert.equal(saves,2);
+ }finally{interfaceLocalization.setLocale(originalLocale);}
 });

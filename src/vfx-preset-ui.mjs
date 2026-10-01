@@ -34,7 +34,7 @@ export function myPresetsSection(scene,query,{disabled=false}={}){
  if(query&&!presets.length)return '';
  const body=presets.length
   ?`<div class="vfx-catalog-grid vfx-my-presets">${presets.map(p=>{const summary=presetSummaryMessage(p);return `<div class="vfx-my-preset"><button type="button" class="vfx-catalog-card" data-choice="${MINE}${esc(p.id)}" ${disabled?'disabled':''}>${presetTile(p,'vfx-catalog-art')}<span class="vfx-my-preset-text"><span>${esc(p.name)}</span><small>${messageHTML(summary.messageKey,summary.messageParams)}</small></span></button><button type="button" class="ui-icon-button vfx-my-preset-more" data-size="xs" data-preset-menu="${esc(p.id)}" aria-label="${esc(p.name)} preset actions" aria-haspopup="menu" ${messageAttributes("vfxPresetUi.presetActions", {name: p.name}, "aria-label")}>${icon('more')}</button></div>`;}).join('')}</div>`
-  :`<p class="vfx-my-presets-empty">${icon('library')}<span>${messageHTML("vfxPresetUi.saveAnEffectYouLikeWith", {})}<b data-i18n="vfxPresetUi.saveAsPreset">${messageHTML("vfxPresetUi.saveAsPreset", {})}</b>${messageHTML("vfxPresetUi.underItsSettingsAndItWaitsHereFor", {})}</span></p>`;
+  :`<p class="vfx-my-presets-empty">${icon('library')}<span>${messageHTML("vfxPresetUi.saveAnEffectYouLikeWith", {})} <b data-i18n="vfxPresetUi.saveAsPreset">${messageHTML("vfxPresetUi.saveAsPreset", {})}</b> ${messageHTML("vfxPresetUi.underItsSettingsAndItWaitsHereFor", {})}</span></p>`;
  return `<section class="vfx-my-presets-section"><h3 data-i18n="vfxPresetUi.myPresets">${messageHTML("vfxPresetUi.myPresets", {})}</h3>${body}</section>`;
 }
 

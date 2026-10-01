@@ -6940,6 +6940,12 @@
       "few": "Vstavi {count} vmesne sličice",
       "other": "Vstavi {count} vmesnih sličic"
     },
-    "propertyControls.enterValueBetween": "Vnesite vrednost med {min} in {max}."
+    "propertyControls.enterValueBetween": "Vnesite vrednost med {min} in {max}.",
+    "desktop.updates.developmentUnavailable": "Posodobitve so na voljo v nameščeni aplikaciji. Razvojne različice se ne posodabljajo.",
+    "desktop.updates.linuxAppImageRequired": "Zaženite AppImage za Linux, da omogočite samodejne posodobitve.",
+    "desktop.updates.writableAppImageRequired": "Premaknite AppImage v mapo z dovoljenjem za pisanje, na primer Applications v domači mapi, in znova odprite aplikacijo, da omogočite samodejne posodobitve.",
+    "desktop.updates.supportedInstallerRequired": "Samodejne posodobitve zahtevajo namestitveni program za Windows ali AppImage za Linux.",
+    "desktop.updates.windowsSetupRequired": "Namestite StykAnimate z namestitvenim programom Windows Setup, da omogočite samodejne posodobitve.",
+    "desktop.updates.retryConnection": "Posodobitve ni bilo mogoče dokončati. Preverite povezavo in poskusite znova."
   }
 }

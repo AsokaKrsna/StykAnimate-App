@@ -6896,6 +6896,12 @@
       "few": "Inserează {count} cadre intermediare",
       "other": "Inserează {count} de cadre intermediare"
     },
-    "propertyControls.enterValueBetween": "Introdu o valoare între {min} și {max}."
+    "propertyControls.enterValueBetween": "Introdu o valoare între {min} și {max}.",
+    "desktop.updates.developmentUnavailable": "Actualizările sunt disponibile în aplicația instalată. Versiunile de dezvoltare nu se actualizează.",
+    "desktop.updates.linuxAppImageRequired": "Pentru a activa actualizările automate, rulează fișierul AppImage pentru Linux.",
+    "desktop.updates.writableAppImageRequired": "Mută fișierul AppImage într-un dosar cu permisiune de scriere, de exemplu Applications din dosarul tău personal, și pornește-l din nou pentru a activa actualizările automate.",
+    "desktop.updates.supportedInstallerRequired": "Actualizările automate necesită programul de instalare pentru Windows sau fișierul AppImage pentru Linux.",
+    "desktop.updates.windowsSetupRequired": "Instalează StykAnimate folosind programul de instalare Windows Setup pentru a activa actualizările automate.",
+    "desktop.updates.retryConnection": "Actualizarea nu a putut fi încheiată. Verifică-ți conexiunea și încearcă din nou."
   }
 }

@@ -51,6 +51,15 @@ try {
   assert.equal(nativeSave, true, 'the native menu updates from the same saved locale');
   assert.equal(saved.editorSettings.locale,'it');
   assert.equal(saved.editorSettings.theme,'dark');
+  if (!packaged) {
+    const guidance=await page.evaluate(async()=>{
+      const state=await window.stykDesktop.getUpdateState();await window.styk.actions['check-updates']();
+      const notice=document.querySelector('.update-notice');return {state,visible:!notice.hidden,text:notice.querySelector('.update-copy span').textContent,expected:window.styk.localization.t(state.messageKey)};
+    });
+    assert.equal(guidance.state.status,'unavailable');assert.equal(guidance.state.messageKey,'desktop.updates.developmentUnavailable');
+    assert.equal(guidance.visible,true);assert.equal(guidance.text,guidance.expected);
+    assert.notEqual(guidance.text,guidance.state.message,'the real update IPC preserves English diagnostics and displays Italian guidance');
+  }
   const closed = first.waitForEvent('close');
   await first.evaluate(({ app }) => app.exit(0)).catch(() => {});
   await closed;

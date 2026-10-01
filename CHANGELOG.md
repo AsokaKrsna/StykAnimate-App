@@ -21,7 +21,7 @@ What's new in each version of StykAnimate.
 
 ### Changed
 
-- Expanded interface translations, with right-to-left layouts and clearer text in narrow windows.
+- Complete interface translations for all 26 supported non-English languages, with right-to-left layouts and clearer text in narrow windows.
 - Onion skin is enabled when the app starts.
 - While joining figures, movable nodes are shown in red and static nodes in white.
 - A simpler Motion tab for camera moves, with a gallery that explains each preset and plain sliders for the settings that matter most.

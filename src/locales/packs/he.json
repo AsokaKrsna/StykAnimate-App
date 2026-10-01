@@ -6896,6 +6896,12 @@
       "two": "הכנסת {count} פריימי ביניים",
       "other": "הכנסת {count} פריימי ביניים"
     },
-    "propertyControls.enterValueBetween": "יש להזין ערך בין {min} ל־{max}."
+    "propertyControls.enterValueBetween": "יש להזין ערך בין {min} ל־{max}.",
+    "desktop.updates.developmentUnavailable": "עדכונים זמינים באפליקציה המותקנת. גרסאות פיתוח אינן מתעדכנות.",
+    "desktop.updates.linuxAppImageRequired": "יש להפעיל את ה־AppImage ל־Linux כדי לאפשר עדכונים אוטומטיים.",
+    "desktop.updates.writableAppImageRequired": "יש להעביר את ה־AppImage לתיקייה עם הרשאת כתיבה, למשל Applications בתיקיית הבית שלך, ולהפעיל אותו מחדש כדי לאפשר עדכונים אוטומטיים.",
+    "desktop.updates.supportedInstallerRequired": "עדכונים אוטומטיים דורשים את תוכנית ההתקנה ל־Windows או את ה־AppImage ל־Linux.",
+    "desktop.updates.windowsSetupRequired": "יש להתקין את StykAnimate באמצעות תוכנית ההתקנה Windows Setup כדי לאפשר עדכונים אוטומטיים.",
+    "desktop.updates.retryConnection": "לא ניתן היה להשלים את העדכון. יש לבדוק את החיבור ולנסות שוב."
   }
 }

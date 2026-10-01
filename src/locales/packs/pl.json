@@ -4234,10 +4234,10 @@
     "exportRequest.primaryLabel": "Eksportuj {format}",
     "exportRequest.currentFrameSummary": "Bieżąca klatka · {frame}",
     "exportRequest.frameSummary": {
-      "one": "{count} klatka · {duration} przy {fps} kl./s",
-      "few": "{count} klatki · {duration} przy {fps} kl./s",
-      "many": "{count} klatek · {duration} przy {fps} kl./s",
-      "other": "{count} klatki · {duration} przy {fps} kl./s"
+      "one": "{count} klatka · {duration} przy {fps} fps",
+      "few": "{count} klatki · {duration} przy {fps} fps",
+      "many": "{count} klatek · {duration} przy {fps} fps",
+      "other": "{count} klatki · {duration} przy {fps} fps"
     },
     "exportRequest.playedFramesNote": {
       "one": "Eksport obejmuje każdą odtwarzaną klatkę. Liczba klatek osi czasu: {count}; liczba z klatkami pośrednimi: {total}.",
@@ -6940,6 +6940,12 @@
       "many": "Wstaw {count} klatek pośrednich",
       "other": "Wstaw {count} klatki pośredniej"
     },
-    "propertyControls.enterValueBetween": "Wpisz wartość od {min} do {max}."
+    "propertyControls.enterValueBetween": "Wpisz wartość od {min} do {max}.",
+    "desktop.updates.developmentUnavailable": "Aktualizacje są dostępne w zainstalowanej aplikacji. Wersje deweloperskie nie są aktualizowane.",
+    "desktop.updates.linuxAppImageRequired": "Uruchom AppImage dla systemu Linux, aby włączyć automatyczne aktualizacje.",
+    "desktop.updates.writableAppImageRequired": "Przenieś plik AppImage do folderu, w którym możesz zapisywać pliki, na przykład Applications w swoim folderze domowym, i uruchom go ponownie, aby włączyć automatyczne aktualizacje.",
+    "desktop.updates.supportedInstallerRequired": "Automatyczne aktualizacje wymagają instalatora dla systemu Windows lub AppImage dla systemu Linux.",
+    "desktop.updates.windowsSetupRequired": "Zainstaluj StykAnimate za pomocą instalatora Windows Setup, aby włączyć automatyczne aktualizacje.",
+    "desktop.updates.retryConnection": "Nie udało się ukończyć aktualizacji. Sprawdź połączenie i spróbuj ponownie."
   }
 }

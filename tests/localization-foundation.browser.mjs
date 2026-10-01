@@ -169,7 +169,16 @@ try {
   check('Update progress and version captions translate in place with unchanged download values',await page.evaluate(()=>updateProbe.progress===updateProgress&&updateProgress.value===35
     &&updateProbe.title.textContent===styk.localization.t('updateUi.downloadingVersion',{version:'1.2.3'})
     &&updateProbe.detail.textContent===styk.localization.t('updateUi.downloadingProgressWithSize',{percent:35,transferred:{format:'number',value:1,options:{minimumFractionDigits:1,maximumFractionDigits:1}},total:{format:'number',value:2,options:{minimumFractionDigits:1,maximumFractionDigits:1}}})));
-  await page.evaluate(()=>{updateProbe.element.remove();updateProbe.unsubscribe?.();styk.localization.localization.setPseudo(null);});
+  check('Every owned desktop update explanation renders translated metadata while preserving its original state message',await page.evaluate(async()=>{
+    const english=(await import('/src/locales/en.mjs')).default;styk.localization.localization.setPseudo(null);styk.localization.setLocale('fr');
+    for(const suffix of ['developmentUnavailable','linuxAppImageRequired','writableAppImageRequired','supportedInstallerRequired','windowsSetupRequired','retryConnection']){
+      const key='desktop.updates.'+suffix,state={status:suffix==='retryConnection'?'error':'unavailable',message:english[key],messageKey:key};
+      const before=JSON.stringify(state);updateProbe.render(state);
+      if(updateProbe.detail.textContent!==styk.localization.t(key)||updateProbe.detail.textContent===english[key]||JSON.stringify(state)!==before)return false;
+    }
+    return true;
+  }));
+  await page.evaluate(()=>{updateProbe.element.remove();updateProbe.unsubscribe?.();styk.localization.localization.setPseudo(null);styk.localization.setLocale('en');});
   await page.evaluate(async()=>{
     const {showTimelineMenu}=await import('/src/timeline-menu.mjs');
     window.timelineCaptionHost={_run:fn=>fn(),scroll:document.createElement('div')};document.body.append(timelineCaptionHost.scroll);
@@ -232,6 +241,17 @@ try {
     await page.evaluate(mode=>styk.localization.localization.setPseudo(mode),pseudo);
     check(`${pseudo}: Settings content fits a narrow window`,await page.locator('.styk-settings-content').evaluate(x=>x.scrollWidth<=x.clientWidth+1));
   }
+  await page.locator('button[data-tab=animation]').click();
+  await page.evaluate(()=>{window.playbackQualitySelect=document.querySelector('[data-setting=playbackQuality]');window.playbackQualityNodes=[...playbackQualitySelect.options];window.playbackQualityValue=playbackQualitySelect.value;});
+  check('Playback quality options use the active language after the module was imported in English',await page.evaluate(async()=>{
+    const {playbackQualityOptions}=await import('/src/preview-quality.mjs');return playbackQualityNodes.length===5&&playbackQualityNodes.every((option,index)=>option.textContent===styk.localization.t(playbackQualityOptions[index].labelKey));
+  }));
+  await page.evaluate(()=>styk.localization.localization.setPseudo('long'));
+  check('Playback quality captions update their original options without changing the chosen quality',await page.evaluate(async()=>{
+    const {playbackQualityOptions}=await import('/src/preview-quality.mjs');return playbackQualitySelect===document.querySelector('[data-setting=playbackQuality]')&&playbackQualitySelect.value===playbackQualityValue
+      &&playbackQualityNodes.every((option,index)=>option===playbackQualitySelect.options[index]&&option.textContent===styk.localization.t(playbackQualityOptions[index].labelKey));
+  }));
+  await page.locator('button[data-tab=interface]').click();
   await page.evaluate(()=>{
     styk.ui.toasts.clear();
     styk.ui.toasts.show({titleKey:'app.restoreUnsavedWork',messageKey:'app.recoveryOffer',messageParams:{name:'My animation',time:{format:'date',value:Date.UTC(2026,0,1)}},timeout:0,actions:[{labelKey:'common.cancel',run(){}},{labelKey:'common.save',run(){}},{labelKey:'common.name',run(){}}]});
@@ -252,13 +272,27 @@ try {
     check(`${pseudo}: Export preserves numeric drafts, selection, control identity and scroll`,await page.evaluate(()=>document.activeElement===exportDraft&&exportDraft.value==='128.'&&exportDraft.selectionStart===1&&exportDraft.selectionEnd===3&&document.querySelector('#export-name')===exportName&&exportScroll.scrollTop===23));
     check(`${pseudo}: Export preset and category captions update and wrap in a narrow window`,await page.evaluate(()=>{const d=document.querySelector('#export-dialog');return d.scrollWidth<=d.clientWidth+1&&[...d.querySelectorAll('.export-preset-label')].every(x=>x.textContent.includes('［')&&getComputedStyle(x).whiteSpace==='normal')&&d.querySelector('[data-category=video]').textContent.includes('［')&&[...d.querySelectorAll('#export-format button')].every(x=>x.scrollWidth<=x.clientWidth+1&&x.scrollHeight<=x.clientHeight+1);}));
   }
+  await page.evaluate(()=>styk.localization.localization.setPseudo(null));
+  for (const locale of ['ar','he']) {
+    await page.evaluate(locale=>styk.localization.setLocale(locale),locale);
+    check(`${locale}: export dimensions keep physical width before height`,await page.evaluate(()=>{
+      const span=document.querySelector('#export-summary-size'),text=span.firstChild,separator=text.data.indexOf(' × ');
+      const end=text.data.indexOf(' px'),range=document.createRange();
+      range.setStart(text,0);range.setEnd(text,separator);const width=range.getBoundingClientRect();
+      range.setStart(text,separator+3);range.setEnd(text,end);const height=range.getBoundingClientRect();
+      return width.width>0&&height.width>0&&width.left<height.left&&getComputedStyle(span).direction==='ltr';
+    }));
+    check(`${locale}: retained size presets isolate dimensions without changing their selected value`,await page.evaluate(()=>{
+      const select=document.querySelector('#export-resolution');return select.value==='custom'&&[...select.options].filter(option=>option.value!=='custom').every(option=>/\u2066[\d]+ × [\d]+\u2069/.test(option.textContent));
+    }));
+  }
   await page.screenshot({path:path.join(output,'rtl-narrow-export.png')});
   await page.locator('#export-dialog .ui-dialog-close').click();
 
   await page.setViewportSize({width:1280,height:800});
   const fontEvidence=await page.evaluate(async()=>{
     styk.localization.localization.setPseudo(null);
-    const samples={ar:'العربية',he:'עברית','zh-Hans':'中文',ru:'Русский',it:'È già così'};
+    const samples={ar:'العربية',he:'עברית','zh-Hans':'中文',ru:'Русский',kk:'Қазақша Ә Ғ Қ Ң Ө Ұ Ү Һ І',el:'Ελληνικά',vi:'Tiếng Việt: ảnh, chuyển động',it:'È già così'};
     const results=[];
     for(const [locale,text] of Object.entries(samples)){
       styk.localization.setLocale(locale);const sample=document.createElement('span');sample.textContent=text;sample.style.font='24px var(--font-ui)';document.body.append(sample);
@@ -302,6 +336,90 @@ try {
       &&soundOwnerSheet.element.querySelector('[for="export-width"]').textContent===styk.localization.t('exportSheet.width')));
     await page.evaluate(async()=>{soundOwnerSheet.close();await soundOwnerSheet.closed;styk.localization.localization.setPseudo(null);});
   }
+  await page.evaluate(async()=>{
+    const {createCommandPalette}=await import('/src/ui/command-palette.mjs'),{interfaceLocalization}=await import('/src/localization.mjs');
+    styk.localization.setLocale('en');window.paletteProbe=createCommandPalette({commands:{recent:()=>[],list:()=>[]}});
+    window.paletteListeners=interfaceLocalization.listeners.size;paletteProbe.open();paletteProbe.input.value='Artist query';paletteProbe.input.dispatchEvent(new Event('input',{bubbles:true}));paletteProbe.input.setSelectionRange(2,5);
+    styk.localization.setLocale('ar');
+  });
+  check('An English-created command palette refreshes search, accessible names and its empty state while preserving the typed query',await page.evaluate(()=>
+    paletteProbe.input.placeholder===styk.localization.t('overlays.palette.placeholder')&&paletteProbe.input.getAttribute('aria-label')===styk.localization.t('overlays.palette.placeholder')
+    &&paletteProbe.element.getAttribute('aria-label')===styk.localization.t('overlays.palette.label')&&paletteProbe.element.querySelector('.ui-palette-empty').textContent===styk.localization.t('overlays.palette.empty')
+    &&document.activeElement===paletteProbe.input&&paletteProbe.input.value==='Artist query'&&paletteProbe.input.selectionStart===2&&paletteProbe.input.selectionEnd===5));
+  await page.evaluate(()=>paletteProbe.close());
+  check('Closing the command palette releases its session language listener',await page.evaluate(async()=>{const {interfaceLocalization}=await import('/src/localization.mjs');return interfaceLocalization.listeners.size===paletteListeners;}));
+  await page.evaluate(async()=>{
+    const {createPopover}=await import('/src/ui/ui-popover.mjs'),{appendLocalized}=await import('/src/localization-bindings.mjs');
+    window.popoverAnchor=document.createElement('button');popoverAnchor.textContent='Artist anchor';appendLocalized(document.body,popoverAnchor);
+    window.popoverDraft=document.createElement('input');popoverDraft.value='Artist draft';
+    window.popoverProbe=createPopover({anchor:popoverAnchor,title:'Layout',titleKey:'layoutPopover.layout',closeLabel:'Close layout',closeLabelKey:'layoutPopover.closeLayout',body:popoverDraft});popoverProbe.show();
+    window.popoverHeading=popoverProbe.element.querySelector('.ui-popover-title');window.popoverClose=popoverProbe.element.querySelector('.ui-popover-close');styk.localization.setLocale('he');
+  });
+  check('Retained popover headings and close captions use owner metadata while retaining the focused draft',await page.evaluate(()=>
+    popoverHeading===popoverProbe.element.querySelector('.ui-popover-title')&&popoverClose===popoverProbe.element.querySelector('.ui-popover-close')
+    &&popoverHeading.textContent===styk.localization.t('layoutPopover.layout')&&popoverClose.getAttribute('aria-label')===styk.localization.t('layoutPopover.closeLayout')
+    &&document.activeElement===popoverDraft&&popoverDraft.value==='Artist draft'));
+  await page.evaluate(()=>{popoverProbe.hide();popoverProbe.element.remove();popoverAnchor.remove();paletteProbe.element.remove();});
+  await page.evaluate(async()=>{
+    const {createToolOptions}=await import('/src/ui/tool-options.mjs'),{appendLocalized}=await import('/src/localization-bindings.mjs');
+    styk.localization.setLocale('en');window.toolCaptionProbe=createToolOptions({label:'Tool options',labelKey:'app.toolOptions',descriptors:[
+      {id:'rig-mode-test',kind:'select',label:'Drag',labelKey:'app.drag',showLabel:true,description:'Rig edit mode',descriptionKey:'app.rigEditMode',value:'rotate',options:[
+        {value:'move',label:'Move joint',labelKey:'app.moveJoint'},{value:'rotate',label:'Rotate branch',labelKey:'app.rotateBranch'}]}]});
+    appendLocalized(document.body,toolCaptionProbe.element);window.toolCaptionSelect=toolCaptionProbe.element.querySelector('select');window.toolCaptionOptions=[...toolCaptionSelect.options];toolCaptionSelect.focus();styk.localization.setLocale('ar');
+  });
+  check('Retained tool selectors translate owner captions while preserving option identity, focus and machine values',await page.evaluate(()=>
+    toolCaptionProbe.element.getAttribute('aria-label')===styk.localization.t('app.toolOptions')&&toolCaptionProbe.element.querySelector('.ui-optbar-label').textContent===styk.localization.t('app.drag')
+    &&toolCaptionSelect.getAttribute('aria-label')===styk.localization.t('app.rigEditMode')&&document.activeElement===toolCaptionSelect&&toolCaptionSelect.value==='rotate'
+    &&toolCaptionOptions.every((option,index)=>option===toolCaptionSelect.options[index]&&option.textContent===styk.localization.t(index?'app.rotateBranch':'app.moveJoint'))));
+  await page.evaluate(()=>{toolCaptionProbe.destroy();toolCaptionProbe.element.remove();});
+  await page.evaluate(async()=>{
+    const {openExportSheet}=await import('/src/export-sheet.mjs');
+    styk.localization.setLocale('en');
+    window.codecCapabilities={width:640,height:360,formats:[
+      {id:'avi',provider:'FFmpeg',supported:true,defaultCodec:'ffv1',codecs:[
+        {id:'ffv1',label:'FFV1 (lossless)',displayName:'FFV1',lossless:true,supported:true},
+        {id:'rawvideo',label:'Uncompressed RGB',labelKey:'desktop.videoExportService.uncompressedRgb',lossless:true,supported:true}]},
+      {id:'webm',provider:'FFmpeg',supported:true,defaultCodec:'vp9',codec:'VP9 with transparency',codecs:[
+        {id:'vp9',label:'VP9 with transparency',displayName:'VP9',alpha:true,supported:true}]}]};
+    window.codecBytes=JSON.stringify(codecCapabilities);
+    window.codecSheet=openExportSheet({context:{canvasWidth:640,canvasHeight:360,totalFrames:12,fps:24,name:'Artist codec fixture'},probe:async()=>codecCapabilities,onExport(){}});
+  });
+  await page.waitForFunction(()=>codecSheet.states.get('avi').codec==='ffv1');
+  await page.evaluate(()=>{
+    const type=codecSheet.element.querySelector('#output-format');type.value='export-avi';type.dispatchEvent(new Event('input',{bubbles:true}));
+    codecSheet.element.querySelector('#export-encoding-toggle').click();
+    window.codecSelect=codecSheet.element.querySelector('#export-avi-codec');window.codecOptions=[...codecSelect.options];
+    window.smoothingOptions=[...codecSheet.element.querySelector('#export-smoothing').options];window.sizeOptions=[...codecSheet.element.querySelector('#export-resolution').options];
+    window.codecRequest=JSON.stringify(codecSheet.request);codecSelect.focus();styk.localization.setLocale('ar');
+  });
+  check('Owned native codec option captions refresh in place with the same selection, focus, request and capability data',await page.evaluate(()=>
+    codecSelect===codecSheet.element.querySelector('#export-avi-codec')&&codecOptions.every((option,index)=>option===codecSelect.options[index])
+    &&codecOptions[0].textContent==='FFV1'+styk.localization.t('exportRequest.lossless')
+    &&codecOptions[1].textContent===styk.localization.t('desktop.videoExportService.uncompressedRgb')
+    &&codecSelect.value==='ffv1'&&!codecSelect.disabled&&document.activeElement===codecSelect
+    &&JSON.stringify(codecSheet.request)===codecRequest&&JSON.stringify(codecCapabilities)===codecBytes));
+  check('Export edge options and size captions follow the language in their original option nodes',await page.evaluate(async()=>{
+    const {EXPORT_SMOOTHING}=await import('/src/export-sampling.mjs'),{sizePresetChoices}=await import('/src/export-request.mjs');
+    const sizes=sizePresetChoices({canvasWidth:640,canvasHeight:360});return smoothingOptions.every((option,index)=>option===codecSheet.element.querySelector('#export-smoothing').options[index]
+      &&option.textContent===styk.localization.t(EXPORT_SMOOTHING[index].labelKey)&&option.title===styk.localization.t(EXPORT_SMOOTHING[index].descriptionKey))
+      &&sizeOptions.every((option,index)=>option===codecSheet.element.querySelector('#export-resolution').options[index]&&option.textContent===sizes[index].label&&option.title===sizes[index].reason);
+  }));
+  await page.evaluate(()=>{
+    codecSheet.element.querySelector('#export-format [data-category="video"]').click();
+    const type=codecSheet.element.querySelector('#output-format');type.value='export-video';type.dispatchEvent(new Event('input',{bubbles:true}));
+  });
+  check('Native WebM summary localizes the transparency description without inserting a codec request field',await page.evaluate(()=>
+    codecSheet.request.format==='webm'&&codecSheet.states.get('webm').codec===undefined
+    &&codecSheet.element.querySelector('.export-encoding-summary').textContent.startsWith('VP9 · '+styk.localization.t('exportSheet.transparent'))
+    &&!codecSheet.element.querySelector('.export-encoding-summary').textContent.includes('with transparency')));
+  check('Export trim slider frame descriptions follow the language while frame numbers remain canonical',await page.evaluate(()=>
+    [...codecSheet.element.querySelectorAll('.ui-range-handle')].every(control=>control.getAttribute('aria-valuetext')===styk.localization.t('filmstrip.card',{frame:Number(control.getAttribute('aria-valuenow'))}))));
+  check('RTL export keeps actual numeric drafts and frame chronology left to right',await page.evaluate(()=>{
+    const root=codecSheet.element,fields=[...root.querySelectorAll('input[inputmode=numeric],input[inputmode=decimal]')],strip=root.querySelector('.ui-range-strip');
+    return fields.length>=6&&fields.every(field=>getComputedStyle(field).direction==='ltr')&&getComputedStyle(strip).direction==='ltr'
+      &&strip.querySelector('[data-edge=start]').getBoundingClientRect().left<strip.querySelector('[data-edge=end]').getBoundingClientRect().left;
+  }));
+  await page.evaluate(async()=>{codecSheet.close();await codecSheet.closed;styk.localization.setLocale('en');});
   await page.evaluate(async()=>{
     const {UserLibrary}=await import('/src/user-library.mjs');
     const {appendLocalized}=await import('/src/localization-bindings.mjs');
@@ -697,6 +815,20 @@ try {
   });
   check('New library folders start with a translated editable name and keep the artist draft when the language changes',await page.evaluate(()=>libraryFolderInitialCaption.includes('اختبار')&&libraryFolderCaptionInput.value==='Artist folder العربية'&&document.activeElement===libraryFolderCaptionInput&&libraryFolderCaptionInput.getAttribute('aria-label')===styk.localization.t('userLibrary.folderName')));
   await page.locator('dialog[open] [data-cancel]').click();
+  await page.evaluate(async()=>{
+    styk.localization.localization.setPseudo(null);styk.localization.setLocale('ar');
+    window.libraryMoveCaptionEntries=[{path:'Artist folder العربية',name:'Artist folder العربية',kind:'folder'},{path:'asset.styk',name:'Artist asset',kind:'styk'}];
+    window.libraryMoveCaptionBytes=JSON.stringify(libraryMoveCaptionEntries);window.libraryMoveCaptionWrites=0;
+    Object.assign(libraryEmptyCaptionProbe,{entries:libraryMoveCaptionEntries,selected:'asset.styk',run:task=>task(),desktop:{listLibrary:async folder=>({entries:folder?[{path:folder+'/Child',name:'Artist child',kind:'folder'}]:libraryMoveCaptionEntries}),changeLibraryItem:()=>{libraryMoveCaptionWrites++;throw new Error('Read-only caption fixture must not move library data');}}});
+    await libraryEmptyCaptionProbe.move();await libraryFolderCaptionDialog.querySelector('.library-move-folders button').onclick();
+    window.libraryMoveParent=libraryFolderCaptionDialog.querySelector('[data-parent]');window.libraryMoveParentIcon=libraryMoveParent.querySelector('svg');
+    window.libraryMoveParentCaption=libraryMoveParent.querySelector('span');libraryMoveParent.focus();styk.localization.setLocale('he');styk.localization.localization.setPseudo('long');
+  });
+  check('The library move chooser refreshes its retained parent destination without changing icons, focus or artist folder names',await page.evaluate(()=>libraryFolderCaptionDialog.querySelector('[data-parent]')===libraryMoveParent&&libraryMoveParent.querySelector('svg')===libraryMoveParentIcon&&libraryMoveParent.querySelector('span')===libraryMoveParentCaption&&libraryMoveParentCaption.textContent===styk.localization.t('userLibrary.myLibrary')&&libraryMoveParent.getAttribute('aria-label')===styk.localization.t('userLibrary.myLibrary')&&document.activeElement===libraryMoveParent&&libraryFolderCaptionDialog.querySelector('.library-move-folders button:not([data-parent])').textContent==='Artist child'&&JSON.stringify(libraryMoveCaptionEntries)===libraryMoveCaptionBytes));
+  await page.evaluate(async()=>{await libraryFolderCaptionDialog.querySelector('.library-move-folders button:not([data-parent])').onclick();window.libraryMoveNamedParent=libraryFolderCaptionDialog.querySelector('[data-parent]');libraryMoveNamedParent.focus();styk.localization.localization.setPseudo('rtl');});
+  check('A deeper library parent shows its authored destination name with a localized full-path description',await page.evaluate(()=>libraryFolderCaptionDialog.querySelector('[data-parent]')===libraryMoveNamedParent&&document.activeElement===libraryMoveNamedParent&&libraryMoveNamedParent.querySelector('span').textContent==='Artist folder العربية'&&libraryMoveNamedParent.getAttribute('aria-label')===styk.localization.t('userLibrary.folderLocation',{folder:'Artist folder العربية'})&&JSON.stringify(libraryMoveCaptionEntries)===libraryMoveCaptionBytes));
+  await page.locator('dialog[open] [data-cancel]').click();
+  check('Cancelling the translated library move chooser keeps the selected asset and writes no library changes',await page.evaluate(()=>libraryEmptyCaptionProbe.selected==='asset.styk'&&libraryMoveCaptionWrites===0&&JSON.stringify(libraryMoveCaptionEntries)===libraryMoveCaptionBytes));
   await page.evaluate(()=>{libraryFolderCaptionDialog.remove();libraryEmptyCaptionRoot.remove();supportPriorityCaptionCard.remove();styk.localization.localization.setPseudo(null);});
   await page.evaluate(async()=>{
     const {createAppDialogs}=await import('/src/app-dialogs.mjs');
