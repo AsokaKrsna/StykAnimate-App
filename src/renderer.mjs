@@ -1,5 +1,5 @@
 import {messageError, errorMessageData} from './localized-error.mjs';
-import {vectorVfxSource,rasterizeVectorVfx} from './renderer-vfx-vector.mjs';
+import {vectorVfxSource,rasterizeVectorVfx,canvasVfxSource,filterArtworkVfx} from './renderer-vfx-vector.mjs';
 import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {parallaxResolver} from './layer-parallax.mjs';
 import {rasterBounds,rasterCovers,rasterViewport,gestureProxyResolution} from './raster-view.mjs';
@@ -12,6 +12,7 @@ import {ViewportVfx,hasSceneVfx} from './vfx-viewport.mjs';
 import {CameraVfx,cameraSceneCovers} from './vfx-camera.mjs';
 import {initVfxDevice,releaseVfxDevice} from './vfx-gpu.mjs';
 import {hasDrawableVfx,vfxRasterScale,drawableVfxPadding,configureVfxSoftwareResources} from './vfx-canvas.mjs';
+import {fitsVfxSurface} from './vfx-surface.mjs';
 import {vfxPreviewOptions,vfxPreviewGeometry} from './vfx-preview.mjs';
 import { buildGeometry, buildGeometrySteps, drawGeometry, releaseGeometryResources } from './pivot/geometry.mjs';
 import { drawBackground, backgroundBounds, sceneBackgroundColor, effectiveCamera,releaseBackgroundResources } from './pivot/background.mjs';
@@ -1295,28 +1296,39 @@ class WebGPURenderer {
       const result = {...raster, bounds: {...bounds, width: width / pixelScale, height: height / pixelScale}, origin: {...g.root}, generation: this.generation, resolution, contentKey, drawingInputs,imageURLs,...crop};
       this.stats.meshObjects = (this.stats.meshObjects ?? 0) + 1; cache.set(artwork, result); return result;
     }
+    // The outermost effects of Canvas artwork run on this device from the
+    // uploaded pixels; only nested effects stay inside the Canvas painter.
+    const artworkVfx=this.disableVectorVfx||!fitsVfxSurface(width,height,this.device.limits.maxTextureDimension2D)?null:canvasVfxSource(items);
     // Fresh high-detail paths must not flush an accelerated Canvas on the GPU
     // service thread that presents the viewport. Reuse the worker's software
-    // scratch policy here; images and filters retain their established route.
-    const pool=detail&&!imageURLs.length&&!drawingInputs&&!items.some(hasDrawableVfx)
-      ?(this.pathRasterSurfaces??=new RasterSurfacePool({contextOptions:{willReadFrequently:true}})):this.rasterSurfaces;
-    const {surface, context: ctx} = pool.acquire(width, height); let texture;
+    // scratch policy here; images and Canvas filters retain their established route.
+    const software=!imageURLs.length&&!drawingInputs&&(artworkVfx?true:detail&&!items.some(hasDrawableVfx));
+    const pool=software?(this.pathRasterSurfaces??=new RasterSurfacePool({contextOptions:{willReadFrequently:true}})):this.rasterSurfaces;
+    const {surface, context: ctx} = pool.acquire(width, height); let texture, source;
     try {
       ctx.setTransform(pixelScale, 0, 0, pixelScale, -bounds.x * pixelScale, -bounds.y * pixelScale);
-      drawGeometry(ctx, { drawables: items,...(plan?.cropped && items.length>=64 ? {clipBounds:{...bounds,guard:2/pixelScale}} : {}) }, this.resources);
+      drawGeometry(ctx, { drawables: artworkVfx?.items??items,...(plan?.cropped && items.length>=64 ? {clipBounds:{...bounds,guard:2/pixelScale}} : {}) }, this.resources);
+      // A detached software bitmap uploads from memory. Copying the canvas
+      // itself snapshots it through the graphics process first.
+      source=software&&surface.transferToImageBitmap?surface.transferToImageBitmap():surface;
+      if(artworkVfx){
+        const result={...filterArtworkVfx(this,artworkVfx,source,{width,height,pixelScale,bounds}),bounds:{...bounds,width:width/pixelScale,height:height/pixelScale},origin:{...g.root},
+          generation:this.generation,resolution,contentKey,drawingInputs,imageURLs,...crop};
+        this.stats.artworkVfxObjects=(this.stats.artworkVfxObjects??0)+1;cache.set(artwork,result);return result;
+      }
       // Unused texels of a recycled allocation keep old pixels; the record's
       // region clamps sampling inside the copied rectangle.
       const poolClass = 'bitmap:rgba8unorm', allocation = cache.take?.(poolClass, textureBucket(width), textureBucket(height));
       const allocatedWidth = allocation?.width ?? textureBucket(width), allocatedHeight = allocation?.height ?? textureBucket(height);
       texture = allocation?.texture ?? this.device.createTexture({ label: `Compatibility object ${uidOf(g)}`, size: [allocatedWidth, allocatedHeight], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
-      this.device.queue.copyExternalImageToTexture({ source: surface }, { texture, premultipliedAlpha: true }, [width, height]);
+      this.device.queue.copyExternalImageToTexture({ source }, { texture, premultipliedAlpha: true }, [width, height]);
       // Include the final partially used pixel rather than squeezing its raster.
       const rasterBounds = { ...bounds, width: width / pixelScale, height: height / pixelScale };
       const result = { bounds: rasterBounds, origin: {...g.root}, texture, bindGroup: allocation?.bindGroup ?? this.textureBindGroup(texture), generation: this.generation, resolution, contentKey, drawingInputs,imageURLs,
         poolClass, allocatedWidth, allocatedHeight, region: textureRegion(width, height, allocatedWidth, allocatedHeight), bytes: allocatedWidth * allocatedHeight * 4,...crop };
       cache.set(artwork, result); return result;
     } catch (error) { texture?.destroy(); throw error; }
-    finally { pool.release(); }
+    finally { if(source!==surface)source?.close(); pool.release(); }
   }
   geometryBounds(g,items) {
     return cachedArtworkBounds(this,g,items);
