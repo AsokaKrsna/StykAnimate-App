@@ -2,12 +2,29 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { compileVectorObject, compileVectorObjectSteps, adoptPreparedVectors, shapeRecord, SHAPE_FLOATS, SHAPE, worldToScreen, screenToWorld, requiresCompatibilityTexture, objectBounds } from '../src/renderer-geometry.mjs';
 import { compilePlaybackPacket } from '../src/playback-worker.mjs';
-import { isolationStroke, isolationStrokeFits } from '../src/renderer-vector-raster.mjs';
+import { isolationStroke, isolationStrokeFits,nativeOutlineVectorItems } from '../src/renderer-vector-raster.mjs';
 import { buildGeometry } from '../src/pivot/geometry.mjs';
 import { defaultFigure, createObject, createFrame } from '../src/demo.mjs';
 
 const figure = defaultFigure(), object = createObject(figure, 42, 200, 240), frame = createFrame([object]);
 const report = { version: 5, canvas_width: 960, canvas_height: 540, figure_types: [figure], keyframes: [frame] };
+
+test('native outline isolation preserves painter order and rejects features requiring Canvas',()=>{
+  const f=structuredClone(figure);f.segment_decode={global_style:{u28:new Uint32Array(new Float32Array([2]).buffer)[0],rgb:[220,40,20],u30:0}};
+  const pose=createFrame([createObject(f,1,20,30)]),scene=buildGeometry({...report,figure_types:[f]},pose),items=scene.drawables;
+  const original=structuredClone(items),vectors=nativeOutlineVectorItems(items,32);
+  assert.ok(vectors);assert.deepEqual(vectors.slice(items.length),items,'Original painter order follows the complete silhouette pass.');
+  assert.deepEqual(items,original,'Preparing outline vectors cannot mutate editable geometry.');
+  assert.equal(vectors.find(item=>item.type==='circle').seg.segment_kind,'circleFill','The opaque outline covers the white-backed ring before its original disc.');
+  for(const change of [item=>item.alpha=.5,item=>item.opacity=.5,item=>item.points.push({x:0,y:0}),
+    item=>item.seg={...item.seg,secondary:{rgb:[0,0,0],a:0}},item=>item._movieclipOwner={},item=>item.thickness=.001]){
+    const changed=items.map(item=>({...item,points:[...item.points]}));change(changed[0]);
+    assert.equal(nativeOutlineVectorItems(changed,32),null);
+  }
+  const hollow=items.map(item=>item.type==='circle'?{...item,seg:{...item.seg,segment_kind:'circleNoFill'}}:item);
+  assert.equal(nativeOutlineVectorItems(hollow,32),null,'A hollow ring must retain its hole.');
+  f.segment_decode.global_style.u30=128;assert.equal(nativeOutlineVectorItems(items,32),null);
+});
 
 test('editing adopts exact worker vector records without retaining packet buffers', async () => {
   const packet = await compilePlaybackPacket(report, 0), geometry = buildGeometry(report, frame);

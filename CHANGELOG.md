@@ -33,6 +33,7 @@ What's new in each version of StykAnimate.
 
 ### Fixed
 
+- Fixed figures and text staying blurry when zooming far into the canvas.
 - Fixed drawings disappearing with VFX enabled or changing layer position after the first stroke.
 - Fixed onion skins disappearing behind lower layers or skipping nearby drawings in animations with many layers.
 - Fixed repeated captions in controls and panels when changing the interface language.
@@ -47,6 +48,7 @@ What's new in each version of StykAnimate.
 
 ### Performance
 
+- Smoother editing and panning at high zoom, especially in Compatibility mode.
 - Much smoother playback of busy animations, with fewer pauses, especially on laptops without a dedicated graphics card and in Compatibility mode.
 
 ## [1.2.0]

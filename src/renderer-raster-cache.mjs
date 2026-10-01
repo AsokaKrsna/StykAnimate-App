@@ -1,5 +1,7 @@
 import {messageError} from './localized-error.mjs';
 import {previewMemoryPlan} from './playback-budget.mjs';
+import {rasterCovers} from './raster-view.mjs';
+const rasterKey = (generation,resolution,contentKey='',regionKey='') => `${generation}:${resolution}:${contentKey}${regionKey ? `:crop:${regionKey}` : ''}`;
 /** Own editor textures independently of scene entries. Evict only at publication,
  * when the complete next layout is known, never while it is being assembled. */
 export class EditorRasterCache {
@@ -18,12 +20,21 @@ export class EditorRasterCache {
     this.evictions = 0;
     this.leases = new Set();
   }
-  get(artwork, resolution, generation, contentKey = '') {
-    const resource = this.variants.get(artwork)?.get(`${generation}:${resolution}:${contentKey}`);
+  get(artwork, resolution, generation, contentKey = '', regionKey = '') {
+    const resource = this.variants.get(artwork)?.get(rasterKey(generation,resolution,contentKey,regionKey));
     if (!resource || resource.destroyed) return undefined;
     const entry = this.lru.get(resource);
     this.lru.delete(resource); this.lru.set(resource, entry);
     return resource;
+  }
+  /** Crops share the same bounded owner as whole artwork. A covered viewport
+   * reuses its pixels even when panning crosses a quantized crop boundary. */
+  covered(artwork,resolution,generation,contentKey,bounds,visible) {
+    for(const resource of this.variants.get(artwork)?.values() ?? []) {
+      if(resource.destroyed || resource.resolution!==resolution || resource.generation!==generation || (resource.contentKey??'')!==contentKey || !resource.raster || !rasterCovers(resource.raster,bounds,visible))continue;
+      const entry=this.lru.get(resource);this.lru.delete(resource);this.lru.set(resource,entry);
+      return resource;
+    }
   }
   previous(artwork) {
     const variants = this.variants.get(artwork);
@@ -32,7 +43,7 @@ export class EditorRasterCache {
   set(artwork, resource) {
     let variants = this.variants.get(artwork);
     if (!variants) this.variants.set(artwork, variants = new Map());
-    const key = `${resource.generation}:${resource.resolution}:${resource.contentKey??''}`;
+    const key = rasterKey(resource.generation,resource.resolution,resource.contentKey,resource.regionKey);
     if (variants.has(key)) throw messageError(new Error(''), "errors.rendererRasterCache.anEditorRasterVariantAlreadyExists", {});
     variants.set(key, resource);
     // Keep only diagnostic scalars after eviction, never a destroyed GPU handle.
@@ -60,7 +71,7 @@ export class EditorRasterCache {
       }
       entry.variants.delete(entry.key);
       resource.generation = generation;
-      entry.key = `${generation}:${resource.resolution}:${resource.contentKey??''}`;
+      entry.key = rasterKey(generation,resource.resolution,resource.contentKey,resource.regionKey);
       entry.variants.set(entry.key, resource);
     }
   }

@@ -30,7 +30,10 @@ test('prepared raster cropping retains sample grid, filtering guards and origina
   const visible = { x: 0, y: 0, width: 640, height: 480 };
   const clipped = playbackRasterBounds(original, visible, 2);
   assert.equal(clipped.pixelScale, 2);
-  assert.equal(playbackRasterBounds(original, visible, 8, 4096).pixelScale, 4096 / 3400);
+  const limited=playbackRasterBounds(original, visible, 8, 4096);
+  assert.ok(limited.pixelScale>6,'The visible crop, rather than invisible artwork, sets the detail limit.');
+  assert.ok(limited.pixelWidth<=4096&&limited.pixelHeight<=4096);
+  assert.equal(playbackRasterBounds(original,{...visible,width:100,height:80},32,4096).pixelScale,32);
   assert.ok(clipped.pixelWidth * clipped.pixelHeight < clipped.fullPixels / 15);
   assert.ok(Math.abs((clipped.x - original.x) * clipped.pixelScale - Math.round((clipped.x - original.x) * clipped.pixelScale)) < 1e-9);
   assert.ok(clipped.x <= visible.x - 2 / clipped.pixelScale);

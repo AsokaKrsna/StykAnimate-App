@@ -6,6 +6,23 @@ function resource(resolution = 1, generation = 0, bytes = 10) {
   return {resolution, generation, bytes, texture: {destroyed: 0, destroy() {this.destroyed++;}}};
 }
 
+test('covered crops reuse pixels across pan boundaries and keep region identities during image invalidation',()=>{
+  const cache=new EditorRasterCache({maxBytes:100}),artwork={},bounds={x:0,y:0,width:100,height:100};
+  const a={...resource(32),regionKey:'a',contentKey:'drawing',imageURLs:[],raster:{x:0,y:0,width:30,height:30,pixelScale:32,cropped:true}};
+  const b={...resource(32),regionKey:'b',contentKey:'drawing',imageURLs:[],raster:{x:40,y:40,width:30,height:30,pixelScale:32,cropped:true}};
+  cache.set(artwork,a);cache.set(artwork,b);
+  assert.equal(cache.get(artwork,32,0,'drawing','a'),a);
+  assert.equal(cache.covered(artwork,32,0,'drawing',bounds,{x:5,y:5,width:20,height:20}),a);
+  assert.equal(cache.covered(artwork,32,0,'other',bounds,{x:5,y:5,width:20,height:20}),undefined);
+  assert.equal(cache.covered(artwork,32,0,'drawing',bounds,{x:25,y:25,width:20,height:20}),undefined);
+  const lease=cache.lease([a]);cache.maxBytes=10;cache.retain(new Set([b]),0);
+  assert.equal(a.texture.destroyed,0,'An old cropped layout remains protected until publication.');
+  lease.release();cache.retain(new Set([b]),0);assert.equal(a.texture.destroyed,1);
+  cache.invalidateImages(new Set(['unrelated']),0,1);
+  assert.equal(cache.get(artwork,32,1,'drawing','b'),b);
+  cache.clear();assert.equal(b.texture.destroyed,1);
+});
+
 test('image changes retain independent raster variants and invalidate shared image dependencies', () => {
   const cache = new EditorRasterCache({maxBytes:30}), artwork = {}, unrelated = {};
   const a = {...resource(),imageURLs:['a','shared']}, b = {...resource(2),imageURLs:['a','shared']};

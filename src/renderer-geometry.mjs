@@ -81,12 +81,13 @@ function paintFor(s, root, opacity) {
 // Only these produce primitives; other drawables need no paint.
 const drawsVector = s => s.type === 'poly' ? s.points.length >= 3 : s.type === 'circle' || (s.type === 'line' && s.thickness > 0);
 /** Raster density for a physical scale, rounded up to a quarter octave and
- * clamped to [0.5, 8]. Whole-octave rounding drew artwork at up to twice the
+ * with a minimum of 0.5. Allocation limits apply after visible cropping.
+ * Whole-octave rounding drew artwork at up to twice the
  * displayed density per axis (a fitted 2.05x view rasterized at 4x), which
  * quadrupled raster time, memory and uploads. Quarter octaves keep rasters at
  * or above the displayed density with at most 19% extra per axis, and still
  * bound re-rasterization while zooming to four steps per doubling. */
-export const rasterResolution = scale => Math.max(.5, Math.min(8, 2 ** (Math.ceil(Math.log2(scale || 1) * 4 - 1e-9) / 4)));
+export const rasterResolution = scale => Math.max(.5, 2 ** (Math.ceil(Math.log2(scale || 1) * 4 - 1e-9) / 4));
 /** Animated artwork changes size every tick, so exact-size texture recycling
  * almost never hits. Recycled artwork occupies the top-left of an allocation
  * at most a quarter larger per axis. */

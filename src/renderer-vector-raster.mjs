@@ -1,5 +1,27 @@
 import {messageError} from './localized-error.mjs';
 import {SHAPE_BYTES, SHAPE_FLOATS, requiresCompatibilityTexture} from './renderer-geometry.mjs';
+import {hasDrawableVfx} from './vfx-canvas.mjs';
+
+/** Native opaque outlines paint every expanded silhouette before the original
+ * primitives. Straight strokes and white-backed/filled circles can express
+ * that exact order with the existing vector isolation painter. Other native
+ * features retain Canvas; especially hollow rings and translucent outlines. */
+export function nativeOutlineVectorItems(items,resolution){
+  const style=items[0]?.fig?.segment_decode?.global_style;
+  if(!style?.u28||style.u30)return null;
+  const width=new Float32Array(new Uint32Array([style.u28]).buffer)[0];
+  if(!(width>0&&Number.isFinite(width)))return null;
+  for(const item of items){
+    if(item.fig?.segment_decode?.global_style!==style||item.opacity!==1||item.alpha!==1||
+      item._movieclipOwner||item._movieclipInner||hasDrawableVfx(item)||item.seg?.secondary||item.seg?.paint||
+      !(item.thickness>=0)||item.thickness>0&&item.thickness*resolution<2)return null;
+    if(item.type==='line'){if(item.points.length!==2)return null;}
+    else if(item.type==='circle'){if(!['circle','circleFill'].includes(item.seg.segment_kind)||Math.abs(item.length)*resolution<2)return null;}
+    else return null;
+  }
+  return [...items.map(item=>({...item,rgb:style.rgb,alpha:1,thickness:item.thickness+2*width*Math.abs(item.obj.scale??1),
+    ...(item.type==='circle'?{seg:{...item.seg,segment_kind:'circleFill'}}:{})})),...items];
+}
 
 /** Subpixel strokes retain native Canvas coverage. Repeated translucent hairlines
  * amplify even small antialiasing differences in a composited effect. */

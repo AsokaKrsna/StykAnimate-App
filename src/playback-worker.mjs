@@ -1,13 +1,14 @@
 import {errorMessageData, messageError} from './localized-error.mjs';
 
 import {vectorVfxSource} from './renderer-vfx-vector.mjs';
-import {vfxRasterScale, hasDrawableVfx, releaseVfxSurface} from './vfx-canvas.mjs';
+import {vfxRasterScale, hasDrawableVfx, releaseVfxSurface,drawableVfxPadding} from './vfx-canvas.mjs';
 import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {cameraAtTime} from './camera-motion.mjs';
 import {isolationStroke,isolationStrokeFits} from './renderer-vector-raster.mjs';
 import {meshOnlyItems,meshRasterSource,meshRasterBytes,meshRasterBuffers} from './renderer-mesh-raster.mjs';
 import {drawParallaxGeometry} from './parallax-draw.mjs';
 import {parallaxResolver} from './layer-parallax.mjs';
+import {rasterBounds} from './raster-view.mjs';
 import { PlaybackResources } from './playback-resources.mjs';
 export { PlaybackResources } from './playback-resources.mjs';
 import { evaluatedFrame, timeline, buildGeometry, drawGeometry, releaseGeometryResources, invalidateEvaluationCaches } from './pivot/geometry.mjs';
@@ -83,17 +84,8 @@ export function playbackVisibleBounds(report, frame, cameraEnabled = true, effec
 
 /** Retain the original object's pixel grid and resolution while allocating only
  * the visible subset. Two guard pixels preserve bilinear filtering and antialiasing. */
-export function playbackRasterBounds(bounds, visible, resolution, maxTextureDimension = 8192) {
-  const pixelScale = Math.min(resolution, maxTextureDimension / bounds.width, maxTextureDimension / bounds.height);
-  const fullWidth = Math.max(1, Math.ceil(bounds.width * pixelScale)), fullHeight = Math.max(1, Math.ceil(bounds.height * pixelScale));
-  const x0 = visible ? Math.max(0, Math.floor((visible.x - bounds.x) * pixelScale) - 2) : 0;
-  const y0 = visible ? Math.max(0, Math.floor((visible.y - bounds.y) * pixelScale) - 2) : 0;
-  const x1 = visible ? Math.min(fullWidth, Math.ceil((visible.x + visible.width - bounds.x) * pixelScale) + 2) : fullWidth;
-  const y1 = visible ? Math.min(fullHeight, Math.ceil((visible.y + visible.height - bounds.y) * pixelScale) + 2) : fullHeight;
-  if (x1 <= x0 || y1 <= y0) return null;
-  return { x: bounds.x + x0 / pixelScale, y: bounds.y + y0 / pixelScale,
-    width: (x1 - x0) / pixelScale, height: (y1 - y0) / pixelScale,
-    pixelWidth: x1 - x0, pixelHeight: y1 - y0, pixelScale, fullPixels: fullWidth * fullHeight };
+export function playbackRasterBounds(bounds, visible, resolution, maxTextureDimension = 8192, padding = 0) {
+  return rasterBounds(bounds, visible, resolution, maxTextureDimension,0,padding);
 }
 
 /** A compact immutable render packet. No scene graph is sent for vector figures. */
@@ -235,18 +227,22 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
       data=glyphTextureShape(glyph,g.root,transformIndex);
     } else if (descriptor.compatibility || rasterizeVectors) {
       descriptor.bounds??=objectBounds(items,resources);
-      const rasterResolution=vfxRasterScale(items,descriptor.bounds,resolution,maxTextureDimension);
+      const detail=resolution>8||descriptor.bounds.width*resolution>maxTextureDimension||descriptor.bounds.height*resolution>maxTextureDimension;
+      const padding=detail?(descriptor.padding??=items.reduce((n,item)=>Math.max(n,drawableVfxPadding(item)),0)):0;
+      const planned=detail?playbackRasterBounds(descriptor.bounds,visibleBounds,resolution,maxTextureDimension,padding):null;
+      if(detail&&!planned){clipping.culledObjects++;return;}
+      const rasterResolution=vfxRasterScale(items,planned??descriptor.bounds,resolution,maxTextureDimension);
       reducedImages ||= rasterResolution<resolution;
       let vectorIsolation = gpuIsolation && artworkView.isolated && vectorIsolates(resolution), isolationBounds;
       if (vectorIsolation) {
         descriptor.bounds ??= objectBounds(items, resources);
-        isolationBounds = playbackRasterBounds(descriptor.bounds, visibleBounds, rasterResolution, maxTextureDimension);
+        isolationBounds = playbackRasterBounds(descriptor.bounds, visibleBounds, rasterResolution, maxTextureDimension,padding);
         if (!isolationBounds) {clipping.culledObjects++; return;}
         vectorIsolation = vectorIsolates(isolationBounds.pixelScale);
       }
       let vectorVfx=gpuIsolation?vectorVfxSource(items,resolution):null;
-      if(vectorVfx){descriptor.bounds??=objectBounds(items,resources);const full=playbackRasterBounds(descriptor.bounds,null,rasterResolution,maxTextureDimension);
-        if(full.fullPixels<=16777216&&full.fullPixels*4<maxPacketBytes/2&&vectorVfxSource(items,full.pixelScale)){isolationBounds=full;}else vectorVfx=null;}
+      if(vectorVfx){descriptor.bounds??=objectBounds(items,resources);const full=playbackRasterBounds(descriptor.bounds,detail?visibleBounds:null,rasterResolution,maxTextureDimension,padding),pixels=full.pixelWidth*full.pixelHeight;
+        if(pixels<=16777216&&pixels*4<maxPacketBytes/2&&vectorVfxSource(items,full.pixelScale)){isolationBounds=full;}else vectorVfx=null;}
       if (items.every(item => item.opacity <= 0)) { clipping.culledObjects++; return; }
       group.compatibilityIndex = compatibility.length;
       if (vectorVfx || vectorIsolation || typeof OffscreenCanvas !== 'undefined') {
@@ -255,7 +251,7 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
           reducedImages ||= Boolean(resources?.pressureReduced);
         }
         if(!descriptor.bounds)descriptor.bounds=objectBounds(items,resources);
-        const bounds = isolationBounds || playbackRasterBounds(descriptor.bounds, visibleBounds, rasterResolution, maxTextureDimension);
+        const bounds = isolationBounds || playbackRasterBounds(descriptor.bounds, visibleBounds, rasterResolution, maxTextureDimension,padding);
         if (!bounds) { clipping.culledObjects++; return; }
         const { pixelScale, pixelWidth: width, pixelHeight: height } = bounds;
         clipping.originalPixels += bounds.fullPixels; clipping.retainedPixels += width * height;
