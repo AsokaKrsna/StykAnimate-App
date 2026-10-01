@@ -235,6 +235,12 @@ async function flushPendingOpens() {
   for (const file of files) await queueOpenFile(file);
 }
 
+function documentActionCurrent(checkpoint) {
+  return checkpoint === undefined || Boolean(checkpoint && typeof checkpoint.revision === 'string' &&
+    typeof checkpoint.saved === 'boolean' && checkpoint.revision === documentState.revision &&
+    (!checkpoint.saved || !documentState.dirty));
+}
+
 function registerIpc() {
   handle('styk:update-state', event => { trusted(event); return updates.snapshot(); });
   handle('styk:update-check', event => { trusted(event); void updates.check(); return updates.snapshot(); });
@@ -247,9 +253,11 @@ function registerIpc() {
     if (startup) startupShown = true;
     return { ...releaseInfo, version: app.getVersion() };
   });
-  handle('styk:update-restart', event => {
+  handle('styk:update-restart', (event, checkpoint) => {
     trusted(event);
+    if (!documentActionCurrent(checkpoint)) return false;
     return updates.restart(async () => {
+      if (!documentActionCurrent(checkpoint)) return false;
       const revision = documentState.revision;
       if (documentState.dirty) {
         const answer = await dialog.showMessageBox(window, {
@@ -261,7 +269,7 @@ function registerIpc() {
         if (answer.response !== 2) return false;
       }
       if (telemetry && !telemetryClosed) { await telemetry.close().catch(() => {}); telemetryClosed = true; }
-      if (documentState.revision !== revision) return false;
+      if (documentState.revision !== revision || !documentActionCurrent(checkpoint)) return false;
       quitting = true;
       return true;
     }, () => { quitting = false; });
@@ -604,11 +612,14 @@ function registerIpc() {
     await rememberRecent(result.filePath);
     return { saved: true, path: result.filePath };
   });
-  handle('styk:window', (event, action) => {
+  handle('styk:window', (event, action, checkpoint) => {
     trusted(event);
     if (action === 'minimize') window.minimize();
     else if (action === 'maximize') window.isMaximized() ? window.unmaximize() : window.maximize();
-    else if (action === 'close') window.close();
+    else if (action === 'close') {
+      if (!documentActionCurrent(checkpoint)) return false;
+      window.close();
+    }
     else throw messageError(new Error(''), 'desktop.main.errors.unknownWindowAction', {});
     return windowState();
   });

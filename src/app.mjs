@@ -55,6 +55,7 @@ import { DesktopTelemetryClient } from './telemetry-core.mjs';
 import { workload, documentComplexity } from './telemetry-workload.mjs';
 import { sizeBucket,complexityBucket,fpsBucket } from './telemetry-schema.mjs';
 import { BrowserRecoverySession, readBrowserRecovery } from './browser-recovery.mjs';
+import {DocumentSave, RecoveryDeadline, documentCheckpoint, matchesDocumentCheckpoint} from './document-save.mjs';
 import { PrivacyUI } from './privacy-ui.mjs';
 import { FeedbackUI } from './feedback-ui.mjs';
 import { UpdateUI } from './update-ui.mjs';
@@ -191,6 +192,8 @@ const editor = new Editor({ demo: false, propertyChannels: true, layerTimeline: 
   preparedScenes = new WeakMap(),
   exportJobs = new Set();
 const browserRecovery = desktop ? null : new BrowserRecoverySession();
+const manualSave = new DocumentSave(), recoveryDeadline = new RecoveryDeadline();
+let saveMutationEpoch = 0, finalizingDocument = false;
 let documentActivation = Promise.resolve();
 const audioEngine = new AudioEngine({desktop, onError: error => { pause(); fail(error); }});
 let audioPreparation, audioScrubController, audioScrubAt = 0;
@@ -224,7 +227,7 @@ async function runDocumentExport(format, consume, { recovery = false, controller
       figureUid: editor.selectedUid,
       tick: editor.tick,
       signal: controller.signal,
-      getRevision: () => `${editor.revision}:${editor.frameDraftRevision}`,
+      getRevision: () => `${editor.revision}:${editor.frameDraftRevision}:${saveMutationEpoch}`,
     });
     context.size = sizeBucket(blob.size);
     telemetry.performance.record('serialize',performance.now()-started);
@@ -2164,7 +2167,7 @@ function saveStateMessage(dirty) {
 }
 function updateTitle() {
   const name = editor.name || "Untitled", dirty = editor.dirty, message = saveStateMessage(dirty), words = interfaceText(message.key, message.params),
-    revision = `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}`;
+    revision = `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}:${saveMutationEpoch}`;
   if (name === shownTitle.name && dirty === shownTitle.dirty && revision === shownTitle.revision && words === shownTitle.words) return;
   if (name !== shownTitle.name || dirty !== shownTitle.dirty || words !== shownTitle.words) {
     localizedText(document.querySelector("title"), "app.stykanimate", {value: dirty ? "• " : "", name: name});
@@ -3715,8 +3718,20 @@ async function openSample(path) {
   status({messageKey: "app.decodingPivotFile", messageParams: {}}, false, true);
   try { await acceptImport(await importer.openSample(path,{project:/\.piv$/i.test(path)})); } catch (error) { throw persistentFailure(error); }
 }
-async function saveNative({ saveAs = false } = {}) {
-  finishCurrentEdit();
+function saveNative({ saveAs = false } = {}) {
+  if (!manualSave.active) finishCurrentEdit();
+  return manualSave.run({...documentCheckpoint(editor, state.documentToken, saveMutationEpoch), saveAs}, async () => {
+    savingDocument = true;
+    updateTitle();
+    try { return await performNativeSave({saveAs}); }
+    finally {
+      savingDocument = false;
+      updateTitle();
+      if (editor.dirty) scheduleRecovery();
+    }
+  });
+}
+async function performNativeSave({saveAs}) {
   const targetReport = editor.report, targetToken = state.documentToken;
   const targetName = editor._movieclipScopes?.[0]?.parent.name ?? editor.name;
   const controller = new AbortController();
@@ -3733,7 +3748,15 @@ async function saveNative({ saveAs = false } = {}) {
     if (targetReport !== editor.report || targetToken !== state.documentToken) { status({messageKey: "app.saveCancelledTheProjectChanged", messageParams: {}}); return false; }
     await drawingController?.barrier();
     if (targetReport !== editor.report || targetToken !== state.documentToken) { status({messageKey: "app.saveCancelledTheProjectChanged", messageParams: {}}); return false; }
-    while(editor._movieclipScopes?.length){await drawingBarrier(editor.report);editor.leaveMovieclip();}
+    while (editor._movieclipScopes?.length) {
+      const scopedReport = editor.report;
+      await drawingBarrier(scopedReport, {signal: controller.signal});
+      if (editor.report !== scopedReport || state.documentToken !== targetToken) {
+        status({messageKey: "app.saveCancelledTheProjectChanged", messageParams: {}});
+        return false;
+      }
+      editor.leaveMovieclip();
+    }
     interruptRecovery();
     status({messageKey: "app.savingProject", messageParams: {}}, false, true);
     const revision = editor.revision,
@@ -3741,9 +3764,8 @@ async function saveNative({ saveAs = false } = {}) {
       report = editor.report,
       documentToken = state.documentToken,
       name = editor.name;
+    const checkpoint = documentCheckpoint(editor, documentToken, saveMutationEpoch);
     let saved;
-    savingDocument = true;
-    updateTitle();
     try {
       saved = await runDocumentExport("styk", async (blob, signal) => {
         if (desktop?.beginProjectWrite) return writeNativeBlob(desktop, blob, {
@@ -3773,21 +3795,19 @@ async function saveNative({ saveAs = false } = {}) {
         return false;
       }
       throw error;
-    } finally {
-      savingDocument = false;
-      updateTitle();
     }
     if (saved) {
       if (editor.report === report && state.documentToken === documentToken) {
-        if (
-          editor.revision === revision &&
-          editor.frameDraftRevision === draftRevision
-        ) {
+        if (matchesDocumentCheckpoint(checkpoint, editor, state.documentToken, {epoch: saveMutationEpoch})) {
           editor.markSaved();
-          lastSave = { report, time: Date.now() };
-          if (desktop?.deleteRecovery) await desktop.deleteRecovery();
-          // A saved project has nothing left to recover; a stale copy would be offered on the next visit.
-          else if (!desktop) await browserRecovery.clear();
+          lastSave = {...checkpoint, time: Date.now()};
+          recoveryDeadline.reset();
+          // The project file has committed. Optional recovery cleanup must not
+          // turn that successful atomic save into a failed Save/Close result.
+          try {
+            if (desktop?.deleteRecovery) await desktop.deleteRecovery();
+            else if (!desktop) await browserRecovery.clear();
+          } catch (error) { fail(error); }
         }
       }
       updateTitle();
@@ -3800,12 +3820,40 @@ async function saveNative({ saveAs = false } = {}) {
         state.documentToken === documentToken &&
         editor.revision === revision &&
         editor.frameDraftRevision === draftRevision &&
+        saveMutationEpoch === checkpoint.epoch &&
         !editor.dirty,
     );
   } finally {
     // Aborts swap files on snapshot failure/cancellation; a committed sink is inert.
     await sink?.abort();
   }
+}
+/** Close/restart only the saved revision, including changes arriving during IPC. */
+async function finishDocumentAction(action, savedCheckpoint = null) {
+  if (finalizingDocument) return false;
+  finishCurrentEdit();
+  const checkpoint = savedCheckpoint || documentCheckpoint(editor, state.documentToken, saveMutationEpoch);
+  const current = () => matchesDocumentCheckpoint(checkpoint, editor, state.documentToken, {saved: Boolean(savedCheckpoint), epoch: saveMutationEpoch});
+  if (!current()) return false;
+  finalizingDocument = true;
+  try {
+    for (const flush of [() => workspaceLayout?.flushPreferences(), () => editorSettings?.flush(), () => nativeFrameClipboard?.flush()]) {
+      await flush();
+      if (!current()) return false;
+    }
+    await desktop?.setDocumentState({name: editor.name, dirty: editor.dirty,
+      revision: `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}:${saveMutationEpoch}`});
+    if (!current()) {
+      // Ensure the desktop retains the current dirty state if publication itself
+      // yielded to a new edit; no close or restart follows this acknowledgement.
+      await desktop?.setDocumentState({name: editor.name, dirty: editor.dirty,
+        revision: `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}:${saveMutationEpoch}`});
+      return false;
+    }
+    const result = await desktop?.[action]({saved: Boolean(savedCheckpoint),
+      revision: `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}:${saveMutationEpoch}`});
+    return result !== false;
+  } finally { finalizingDocument = false; }
 }
 /**
  * Shows `body` (trusted markup built here) in the shared #dialog under a
@@ -4321,24 +4369,9 @@ const actions = {
   'check-updates': () => updateNotice?.check(),
   'release-notes': () => releaseSplash.open(),
   donate: () => desktop?.openDonate(),
-  'restart-update': async () => {
-    finishCurrentEdit();
-    await workspaceLayout?.flushPreferences();
-    await editorSettings?.flush();
-    await nativeFrameClipboard?.flush();
-    await desktop?.setDocumentState({ name: editor.name, dirty: editor.dirty, revision: `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}` });
-    await desktop?.restartForUpdate();
-  },
-  'save-and-update': async () => { if (await saveNative()) await actions['restart-update'](); },
-  "save-and-close": async () => {
-    if (await saveNative()) {
-      await workspaceLayout?.flushPreferences();
-      await editorSettings?.flush();
-      await nativeFrameClipboard?.flush();
-      await desktop?.setDocumentState({ name: editor.name, dirty: false });
-      await desktop?.close();
-    }
-  },
+  'restart-update': () => finishDocumentAction('restartForUpdate'),
+  'save-and-update': async () => { if (await saveNative()) return finishDocumentAction('restartForUpdate', lastSave); return false; },
+  "save-and-close": async () => { if (await saveNative()) return finishDocumentAction('close', lastSave); return false; },
   new: async () => {
     if (await dialogs.confirmReplace()) {
       pause();
@@ -5442,6 +5475,15 @@ document.addEventListener('visibilitychange', () => {
 });
 editor.addEventListener("change", (e) => {
   const kind = e.detail?.kind;
+  // Some persisted metadata changes reuse the editor revision (selection and
+  // already-dirty metadata included). Save snapshots require a monotonic token.
+  if (kind !== 'saved') {
+    saveMutationEpoch++;
+    // Publish immediately during the final IPC handoff. Main-process guards
+    // cannot rely on a title update deferred to the next animation frame.
+    if (finalizingDocument) desktop?.setDocumentState?.({name: editor.name, dirty: editor.dirty,
+      revision: `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}:${saveMutationEpoch}`})?.catch(fail);
+  }
   if ((['toggle-selection', 'duplicate-pending'].includes(state.drag?.kind) || state.drag?.kind === 'tweener' && state.drag.press) &&
       ['document', 'seek', 'history', 'selection', 'edit'].includes(kind)) cancelDrag();
   if(['edit','history','document','preview','frame-draft'].includes(kind))playback.discardNativeSnapshot();
@@ -5605,27 +5647,39 @@ editor.addEventListener("change", (e) => {
 });
 function scheduleRecovery(delay = state.settings.autosaveSeconds * 1000 * (state.recoveryBackoff || 1)) {
   clearTimeout(state.recoveryTimer);
-  if (!state.settings.autosaveSeconds) return;
+  state.recoveryTimer = null;
+  const interval = state.settings.autosaveSeconds * 1000;
+  if (!interval || !editor.dirty) {
+    recoveryDeadline.reset();
+    return;
+  }
+  const project = editor._movieclipScopes?.[0]?.parent.report ?? editor.report;
+  const wait = recoveryDeadline.delay(project, interval, delay);
   state.recoveryTimer = setTimeout(async () => {
+    state.recoveryTimer = null;
     if (
       state.playing ||
-      state.drag ||
-      propertyControls?.active ||
+      editingGestureActive() ||
       state.scrubbing ||
+      manualSave.active ||
       exportJobs.size
     ) {
+      // An overdue checkpoint waits for a stable boundary without polling in a
+      // zero-delay loop or letting the next edit restart its entire deadline.
+      recoveryDeadline.retryAfter(1000);
       scheduleRecovery();
       return;
     }
     if (!editor.dirty) return;
-    const report = editor.report,
+    const checkpoint = documentCheckpoint(editor, state.documentToken, saveMutationEpoch),
       name = editor._movieclipScopes?.[0]?.parent.name ?? editor.name;
+    recoveryDeadline.retryAfter(Math.min(30000, Math.max(1000, interval * (state.recoveryBackoff || 1))));
     try {
       const saved = await runDocumentExport(
         "styk",
         async (blob, signal) => {
           if (
-            editor.report !== report ||
+            !matchesDocumentCheckpoint(checkpoint, editor, state.documentToken, {epoch: saveMutationEpoch}) ||
             !editor.dirty ||
             state.drag ||
             state.playing ||
@@ -5643,16 +5697,25 @@ function scheduleRecovery(delay = state.settings.autosaveSeconds * 1000 * (state
         },
         { recovery: true },
       );
-      if (saved) { state.recoveryBackoff = 1; state.recoveryFailed = false; }
+      if (saved && matchesDocumentCheckpoint(checkpoint, editor, state.documentToken, {epoch: saveMutationEpoch})) {
+        recoveryDeadline.reset();
+        state.recoveryBackoff = 1;
+        state.recoveryFailed = false;
+      }
     } catch (error) {
       if (error.name !== "AbortError") {
         // A full or blocked store fails on every edit: say so once, then retry less often.
         state.recoveryBackoff = Math.min(12, (state.recoveryBackoff || 1) * 2);
+        recoveryDeadline.retryAfter(Math.min(60000, interval * state.recoveryBackoff));
         if (!state.recoveryFailed) status({messageKey: "app.recoveryCopyCouldNotBeWritten", messageParams: {message: error.message}}, true);
         state.recoveryFailed = true;
       }
+    } finally {
+      // A cancelled snapshot still owes a checkpoint. The live document remains
+      // revision-checked and mutations continue to abort its current snapshot.
+      if (editor.dirty) scheduleRecovery();
     }
-  }, delay);
+  }, wait);
 }
 function offerRecovery() {
   if (desktop?.getRecoveryInfo) {
