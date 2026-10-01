@@ -3,7 +3,7 @@
 
 The render/edit loop never crosses this process boundary. This long-lived
 service only imports, validates, and exports the existing Pivot document schema.
-Original bytes live in a bounded cache; files opened by the user are never
+Original bytes live in bounded caches and active-document leases; user files are never
 modified. Run ``python backend/server.py --port 47831`` from the app directory.
 """
 from __future__ import annotations
@@ -108,6 +108,7 @@ MAX_SOURCE = 128 * 1024 * 1024
 MAX_DOCUMENT = 256 * 1024 * 1024
 MAX_CACHE = 384 * 1024 * 1024
 MAX_CACHE_ENTRIES = 24
+MAX_SOURCE_OWNERS = 16
 MAX_SAMPLE_COUNT = 5000
 IMPORT_SUFFIXES = {".piv", ".stk", ".styk", ".stkz", ".stykmov", ".json"}
 PRIVATE_PARTS = {".git", ".codex", ".agents", "__pycache__", "node_modules"}
@@ -373,13 +374,90 @@ class Source:
 
 
 class ProjectStore:
-    def __init__(self, root: Path, max_cache: int = MAX_CACHE):
+    def __init__(self, root: Path, max_cache: int = MAX_CACHE, *,
+                 max_retained_sources: int = MAX_CACHE, max_source_owners: int = MAX_SOURCE_OWNERS):
         self.root = root.resolve()
         self.max_cache = max_cache
         self.sources: OrderedDict[str, Source] = OrderedDict()
         self.cache_bytes = 0
+        # Active documents lease immutable original bytes, never a decoded pose
+        # graph or frame-wire buffer. A lease shares the cache's bytes rather than
+        # copying them, and survives ordinary LRU eviction until its owner exits.
+        self.source_owners: dict[str, str] = {}
+        self.retained_sources: dict[str, Source] = {}
+        self.retained_source_bytes = 0
+        self.max_retained_sources = max_retained_sources
+        self.max_source_owners = max_source_owners
+        self.closed = False
         self.lock = threading.RLock()
         self.decode_lock = threading.RLock()
+
+    @staticmethod
+    def _source_owner(owner_id: str) -> str:
+        if not isinstance(owner_id, str) or not re.fullmatch(r"[a-f0-9]{32}", owner_id):
+            raise ApiError(400, "invalid_source_owner", "Invalid original source owner.")
+        return owner_id
+
+    def _find_source(self, source_id: str) -> Source | None:
+        with self.lock:
+            entry = self.sources.get(source_id)
+            if entry is not None:
+                self.sources.move_to_end(source_id)
+            return entry if entry is not None else self.retained_sources.get(source_id)
+
+    def _retain_source(self, entry: Source, owner_id: str) -> bool:
+        self._source_owner(owner_id)
+        if entry.kind not in ("piv", "stk") or not entry.data:
+            return False  # Native projects already contain their original bytes.
+        with self.lock, jobs.publication():
+            if self.closed:
+                raise ApiError(503, "backend_closed", "The local codec is shutting down.")
+            old_id = self.source_owners.get(owner_id)
+            if old_id == entry.source_id:
+                return True
+            if old_id is None and len(self.source_owners) >= self.max_source_owners:
+                raise ApiError(503, "source_owner_limit", "Too many original sources are active. Close unused documents and try again.")
+            # The previous lease remains intact if a new lease cannot fit. When
+            # this owner is its last reference, replacement can reuse its budget.
+            remove_old = old_id is not None and sum(value == old_id for value in self.source_owners.values()) == 1
+            old_size = len(self.retained_sources[old_id].data) if remove_old else 0
+            added_size = 0 if entry.source_id in self.retained_sources else len(entry.data)
+            if self.retained_source_bytes - old_size + added_size > self.max_retained_sources:
+                raise ApiError(413, "source_retention_limit", "Active original sources exceed the retention limit. Close unused documents and try again.")
+            if remove_old:
+                self.retained_source_bytes -= old_size
+                del self.retained_sources[old_id]
+            if added_size:
+                self.retained_sources[entry.source_id] = Source(entry.source_id, entry.data,
+                    None, entry.digest, entry.filename, entry.kind, entry.version, entry.decode_ms)
+                self.retained_source_bytes += added_size
+            self.source_owners[owner_id] = entry.source_id
+        return True
+
+    def retain_source(self, source_id: str, owner_id: str) -> bool:
+        """Keep an active document's original beyond decoded-document eviction."""
+        self._source_owner(owner_id)
+        entry = self._find_source(source_id) if isinstance(source_id, str) else None
+        if entry is None:
+            raise ApiError(410, "source_expired", "The original source expired from memory. Reopen the original file before exporting.")
+        return self._retain_source(entry, owner_id)
+
+    def release_source(self, owner_id: str) -> None:
+        self._source_owner(owner_id)
+        with self.lock, jobs.publication():
+            source_id = self.source_owners.pop(owner_id, None)
+            if source_id is not None and source_id not in self.source_owners.values():
+                entry = self.retained_sources.pop(source_id)
+                self.retained_source_bytes -= len(entry.data)
+
+    def close(self) -> None:
+        with self.lock:
+            self.closed = True
+            self.source_owners.clear()
+            self.retained_sources.clear()
+            self.retained_source_bytes = 0
+            self.sources.clear()
+            self.cache_bytes = 0
 
     def _canonical_json(self, entry: Source) -> bytes:
         if entry.document_json is not None:
@@ -399,7 +477,13 @@ class ProjectStore:
 
     def _decode_canonical(self, entry: Source) -> dict:
         checkpoint()
-        document = piv_codec.decode_piv_bytes(entry.data, source_path=entry.filename)
+        if entry.kind == "stk":
+            with tempfile.TemporaryDirectory(prefix="stykanimate-import-") as directory:
+                path = Path(directory) / entry.filename
+                path.write_bytes(entry.data)
+                document = bridge.stk_document(path, entry.data)
+        else:
+            document = piv_codec.decode_piv_bytes(entry.data, source_path=entry.filename)
         for key in ("editable_paths", "_codec", "_stykWeb"):
             document.pop(key, None)
         compact_media_aliases(document)
@@ -413,8 +497,11 @@ class ProjectStore:
                     digest = document_digest(decoded_json(entry.document_json))
                 else:
                     digest = source_document_digest(self._decode_canonical(entry))
-                with jobs.publication():
+                with self.lock, jobs.publication():
                     entry.digest = digest
+                    retained = self.retained_sources.get(entry.source_id)
+                    if retained is not None:
+                        retained.digest = digest
             return entry.digest
 
     def samples(self) -> list[dict]:
@@ -438,7 +525,8 @@ class ProjectStore:
                     return sorted(result, key=lambda item: (item["kind"], item["name"].casefold()))
         return sorted(result, key=lambda item: (item["kind"], item["name"].casefold()))
 
-    def open(self, relative: str, *, as_json: bool = False, prefer_native: bool = False) -> dict | bytes:
+    def open(self, relative: str, *, as_json: bool = False, prefer_native: bool = False,
+             source_owner: str | None = None) -> dict | bytes:
         path = safe_child(self.root, relative)
         filename_only(path.name)
         if path.suffix.lower() == ".json":
@@ -446,15 +534,13 @@ class ProjectStore:
         if not path.is_file():
             raise ApiError(404, "file_not_found", "This project file no longer exists.")
         data = bridge.read_bounded(path, MAX_DOCUMENT if path.suffix.lower() in (".styk", ".stkz", ".stykmov") else MAX_SOURCE)
-        return self.import_bytes(data, path.name, as_json=as_json, prefer_native=prefer_native)
+        return self.import_bytes(data, path.name, as_json=as_json, prefer_native=prefer_native,
+                                 source_owner=source_owner)
 
     def source_record(self, source_id: str) -> tuple[bytes, bytes]:
         """Retained original binary source plus provenance metadata for a
         worker-side .styk build (mirrors what export embeds as _stykSource)."""
-        with self.lock:
-            entry = self.sources.get(source_id)
-            if entry:
-                self.sources.move_to_end(source_id)
+        entry = self._find_source(source_id)
         if entry is None:
             raise ApiError(410, "source_expired", "The original source expired from memory. Reopen the original file before exporting.")
         if entry.kind not in ("piv", "stk") or not entry.data:
@@ -465,8 +551,14 @@ class ProjectStore:
             "document_sha256": entry.digest, "document_digest_version": 3})
         return entry.data, meta
 
-    def import_bytes(self, data: bytes, filename: str, *, as_json: bool = False, prefer_native: bool = False) -> dict | bytes:
+    def import_bytes(self, data: bytes, filename: str, *, as_json: bool = False, prefer_native: bool = False,
+                     source_owner: str | None = None) -> dict | bytes:
         checkpoint()
+        if source_owner is not None:
+            self._source_owner(source_owner)
+        with self.lock:
+            if self.closed:
+                raise ApiError(503, "backend_closed", "The local codec is shutting down.")
         started = time.perf_counter()
         name = filename_only(filename)
         kind = Path(name).suffix[1:].lower()
@@ -476,13 +568,24 @@ class ProjectStore:
             raise ApiError(413, "file_too_large", "This file exceeds the import size limit.")
         if not data:
             raise ApiError(400, "empty_file", "This file is empty.")
+        if not isinstance(data, bytes):
+            if not isinstance(data, (bytearray, memoryview)):
+                raise ApiError(400, "invalid_source", "Import requires binary file bytes.")
+            data = bytes(data)  # Leased original bytes must be immutable.
         # STK names become editable figure names, so include the name in its key.
         key_data = data + (name.encode("utf-8") if kind == "stk" else b"")
         source_id = hashlib.sha256(kind.encode("ascii") + b"\0" + key_data).hexdigest()
         with self.lock:
             entry = self.sources.get(source_id)
+            retained_entry = self.retained_sources.get(source_id)
             if entry:
                 self.sources.move_to_end(source_id)
+        # PIV cache identity depends on bytes, not the chosen display filename.
+        # Keep the canonical source_path stable across an active lease's LRU
+        # eviction, just as ordinary cache hits already do for renamed copies.
+        canonical_name = retained_entry.filename if retained_entry is not None else name
+        if retained_entry is not None:
+            data = retained_entry.data
         cache_hit = entry is not None
         if entry is None:
             # Bounded serialization prevents parallel imports from multiplying
@@ -496,9 +599,9 @@ class ProjectStore:
                     validated_payload = None
                     if kind == "piv":
                         if prefer_native:
-                            document, validated_payload = fast_decode.decode_for_native_wire(data, source_path=name, with_payload=True)
+                            document, validated_payload = fast_decode.decode_for_native_wire(data, source_path=canonical_name, with_payload=True)
                         else:
-                            document = piv_codec.decode_piv_bytes(data, source_path=name)
+                            document = piv_codec.decode_piv_bytes(data, source_path=canonical_name)
                     elif kind == "stk":
                         # Only the verified legacy STK parser requires a path.
                         # Its temporary copy is private, bounded, and auto-removed.
@@ -552,12 +655,15 @@ class ProjectStore:
                     # Keeping its uploaded JSON as well doubles retained memory
                     # and made large projects save successfully but fail reopen.
                     retained_source = b"" if kind in ("styk", "stkz", "stykmov") else data
-                    entry = Source(source_id, retained_source, packed, None, name,
+                    entry = Source(source_id, retained_source, packed,
+                        retained_entry.digest if retained_entry is not None else None, canonical_name,
                         kind, document["version"], (time.perf_counter() - decode_started) * 1000)
                     entry.native_wire = wire_parts
                     if entry.retained_size > self.max_cache:
                         raise ApiError(413, "cache_limit", "The decoded project exceeds the source cache limit.")
                     with self.lock, jobs.publication():
+                        if self.closed:
+                            raise ApiError(503, "backend_closed", "The local codec is shutting down.")
                         self.sources[source_id] = entry
                         self.cache_bytes += entry.retained_size
                         while self.cache_bytes > self.max_cache or len(self.sources) > MAX_CACHE_ENTRIES:
@@ -571,16 +677,21 @@ class ProjectStore:
                     parts = import_wire.native_frame_wire(decoded_json(self._canonical_json(entry)), entry.data, piv_codec._unpack_source, encoded_json)
                     if parts and entry.retained_size + len(parts[0]) + len(parts[1]) <= self.max_cache:
                         with self.lock, jobs.publication():
+                            if self.closed:
+                                raise ApiError(503, "backend_closed", "The local codec is shutting down.")
                             entry.native_wire = parts
                             self.cache_bytes += len(parts[0]) + len(parts[1])
                             while self.cache_bytes > self.max_cache and len(self.sources) > 1:
                                 _, old = self.sources.popitem(last=False)
                                 self.cache_bytes -= old.retained_size
+        retained = self._retain_source(entry, source_owner) if source_owner is not None else False
         metadata = {"ok": True, "sourceId": source_id,
             "filename": name, "kind": kind, "version": entry.version,
             "timings": {"decode_ms": round(entry.decode_ms, 3), "cache_hit": cache_hit,
                 "total_ms": round((time.perf_counter() - started) * 1000, 3),
                 "source_bytes": len(data), "document_bytes": len(entry.document_json) if entry.document_json is not None else None}}
+        if retained:
+            metadata["sourceOwner"] = source_owner
         if prefer_native and entry.native_wire is not None:
             metadata["timings"]["transport"] = "native-v5-frames"
             result = import_wire.response_bytes(entry.native_wire, metadata, encoded_json)
@@ -627,10 +738,7 @@ class ProjectStore:
             mark("encode")
             return output, f"{base}.{format_name}"
         source_id = request.get("sourceId")
-        with self.lock:
-            entry = self.sources.get(source_id) if isinstance(source_id, str) else None
-            if entry:
-                self.sources.move_to_end(source_id)
+        entry = self._find_source(source_id) if isinstance(source_id, str) else None
         if source_id and entry is None:
             raise ApiError(410, "source_expired", "The original source expired from memory. Reopen the original file before exporting.")
         if entry and entry.kind in ("piv", "stk") and entry.digest is None:
@@ -739,6 +847,7 @@ class LocalServer(ThreadingHTTPServer):
     def server_close(self):
         self.jobs.close()
         super().server_close()
+        self.store.close()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -848,7 +957,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get("Origin"):
                 self.send_header("Access-Control-Allow-Origin", self.headers["Origin"])
             self.send_header("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Styk-Job-Id")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Styk-Job-Id, X-Styk-Source-Owner")
             self.send_header("Content-Length", "0")
             self.end_headers()
         except Exception as exc:
@@ -909,7 +1018,16 @@ class Handler(BaseHTTPRequestHandler):
                 self.server.jobs.cancel(parse_qs(parsed.query).get("id", [""])[0])
                 self._send(204, b"", "application/json")
                 return
-            if parsed.path not in ("/api/import", "/api/open", "/api/export"):
+            if parsed.path == "/api/source/release":
+                # Small ownership cleanup cannot be rejected just because the
+                # memory-heavy import/export queue is full.
+                request = decoded_json(self._body(4096))
+                if not isinstance(request, dict):
+                    raise ApiError(400, "invalid_request", "The request must be a JSON object.")
+                self.server.store.release_source(request.get("ownerId"))
+                self._send(204, b"", "application/json")
+                return
+            if parsed.path not in ("/api/import", "/api/open", "/api/export", "/api/source/retain"):
                 raise ApiError(404, "route_not_found", "Unknown codec endpoint.")
             with self._job():
                 self._project_post(parsed)
@@ -927,8 +1045,15 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/import":
             name = parse_qs(parsed.query).get("filename", ["imported.piv"])[0]
             result = self.server.store.import_bytes(self._body(import_size_limit(name)), name, as_json=True,
-                prefer_native=import_wire.CONTENT_TYPE in self.headers.get("Accept", ""))
+                prefer_native=import_wire.CONTENT_TYPE in self.headers.get("Accept", ""),
+                source_owner=self.headers.get("X-Styk-Source-Owner"))
             self._send(200, result, import_wire.CONTENT_TYPE if result.startswith(import_wire.MAGIC) else "application/json; charset=utf-8")
+        elif parsed.path == "/api/source/retain":
+            request = decoded_json(self._body(4096))
+            if not isinstance(request, dict):
+                raise ApiError(400, "invalid_request", "The request must be a JSON object.")
+            retained = self.server.store.retain_source(request.get("sourceId"), request.get("ownerId"))
+            self._json(200, {"ok": True, "retained": retained})
         elif parsed.path in ("/api/open", "/api/export"):
             started = time.perf_counter()
             body = self._body(MAX_DOCUMENT)
@@ -942,7 +1067,8 @@ class Handler(BaseHTTPRequestHandler):
                 raise ApiError(400, "invalid_request", "The request must be a JSON object.")
             if parsed.path == "/api/open":
                 result = self.server.store.open(request.get("path"), as_json=True,
-                    prefer_native=import_wire.CONTENT_TYPE in self.headers.get("Accept", ""))
+                    prefer_native=import_wire.CONTENT_TYPE in self.headers.get("Accept", ""),
+                    source_owner=self.headers.get("X-Styk-Source-Owner"))
                 self._send(200, result, import_wire.CONTENT_TYPE if result.startswith(import_wire.MAGIC) else "application/json; charset=utf-8")
             else:
                 data, name = self.server.store.export(request, timings=timings)

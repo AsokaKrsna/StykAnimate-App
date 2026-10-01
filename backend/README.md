@@ -23,6 +23,8 @@ tool is modified. It does not approximate unsupported files.
 | `POST /api/open` with `{path}` | Same import response; path is workspace-relative |
 | `POST /api/export` with `{document,sourceId?,format,filename?,figureTypeId?}` | Binary `.piv`, `.stk`, `.styk`, or `.stkz`, with `Content-Disposition` |
 | `GET /api/source?id=<sourceId>` | Original uploaded source bytes (`STYKSRC1` envelope) for worker-side container builds |
+| `POST /api/source/retain` with `{sourceId,ownerId}` | `{ok:true,retained}`; retain an active PIV/STK original beyond ordinary cache eviction |
+| `POST /api/source/release` with `{ownerId}` | 204; release that owner's original source, including repeated releases |
 
 Errors are non-2xx JSON `{ok:false,error,code}`. `source_expired` (410) explicitly
 requires reopening the original source; it never silently drops unknown bytes.
@@ -47,6 +49,33 @@ only for the established parser's path-based interface.
 Native imports retain their encoded document once; the upload itself is not
 retained a second time because the document already embeds its original source.
 This allows large native saves to reopen within the same cache bound.
+
+An active imported project owns a source lease separate from the decoded-document
+LRU. Import/open requests can send `X-Styk-Source-Owner`, a random 32-character
+lowercase hexadecimal identity unique to that pending import. The service leases
+validated PIV/STK bytes before returning a successful response and includes that
+identity as `sourceOwner`. Native projects need no additional lease because they
+already embed their original bytes. Only immutable source bytes and small
+provenance metadata are leased; decoded JSON and native frame buffers remain
+evictable. Cache and lease references share the same source allocation. Leases
+have an independent 384 MiB unique-source budget and a 16-owner limit, so the
+combined retained cache/lease data is bounded by 768 MiB before decoder/response
+working allocations. Shared owners count one original once.
+
+`/api/source` and source-based exports resolve a leased original after its decoded
+entry is evicted. Fingerprints remain deferred until export and are computed once
+from the validated original, including STK definition names and opaque Pivot data.
+Retaining a new source for an existing owner replaces its old lease only when the
+new lease fits; a failed or cancelled retain leaves the old lease intact. A native
+source retain returns `retained:false`. The editor adopts successful project
+leases and releases rejected imports, imported figures, replaced documents and
+disposed sessions. For cancelled requests it must finish `/api/cancel` before
+releasing that request's owner, preventing a queued import from publishing a late
+lease. Every lease disappears when the codec service closes, including the
+parent-process shutdown path. No additional original source files are written.
+These endpoints use the same loopback/origin/token checks as imports and exports.
+Retain uses the bounded codec queue; release is small control work that remains
+available even when that queue is full.
 
 No-op PIV/STK exports return identical imported bytes. Changed modern PIVs use
 the full document writer; changed legacy PIVs migrate through the existing
@@ -106,7 +135,7 @@ proxy supplies identities for other clients and sends cancellation when its
 upstream client disconnects, using a separate bounded control connection pool.
 
 The service admits at most 16 heavy requests, with one active request; queued
-uploads wait before body parsing. Health and cancellation stay outside this
+uploads wait before body parsing. Health, cancellation and source-release stay outside this
 queue. Cancellation checks occur at existing codec loop/stage boundaries and
 before source-cache publication. Stalled uploads are also cancellable. Native
 calls, JSON parsing/encoding, compression and individual deep copies finish
@@ -121,6 +150,9 @@ and `node tests/codec-cancellation.browser.mjs`. Rebuild and run
 `node scripts/verify-sidecar.mjs` when changing the packaged service.
 
 Run verification with `python -m unittest discover -s backend -p test_server.py`.
+Run `python -m unittest discover -s backend -p test_source_lifetime.py` for active
+source eviction, shared-owner and quota behavior, cancellation, native restart,
+exact original-byte preservation and HTTP authentication/shutdown checks.
 Tests cover the real 37-file PIV corpus, shipped and workspace STKs, edited
 exports, native-save reopening, parser equivalence, bounded invalid input,
 cache isolation, and actual HTTP binary uploads/downloads.
