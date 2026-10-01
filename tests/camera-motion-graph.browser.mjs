@@ -12,7 +12,7 @@ const field=key=>page.locator(`input[type="number"][data-motion-field="${key}"]`
 const graph=page.locator('[data-motion-graph]');
 const curve=key=>graph.locator(`[data-motion-curve="${key}"]`);
 const points=key=>curve(key).getAttribute('points');
-const state=()=>page.evaluate(()=>({clip:styk.editor.getCameraMotions()[0],undo:styk.editor._undo.length,tick:styk.editor.tick,rows:styk.timeline.tracks.map(t=>({id:t.id,kind:t.kind,clip:t.clip})),audioTop:styk.timeline.audioTop}));
+const state=()=>page.evaluate(()=>({clip:styk.editor.getCameraMotions()[0],undo:styk.editor._undo.length,tick:styk.editor.tick,rows:styk.timeline.tracks.map(t=>({id:t.id,kind:t.kind,clip:t.motions?.[0]})),audioTop:styk.timeline.audioTop}));
 try{
   await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>window.styk?.ready);
   await page.evaluate(()=>{const e=styk.editor;e.newDocument();e.addFigure();styk.settingsUI.commit({timelineMode:'advanced',theme:'light',onionCount:0});const id=e.addCameraMotion('wobble',{duration:48});styk.timeline._selectMotion(id);e.seek(12);});

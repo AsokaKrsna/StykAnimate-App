@@ -39,6 +39,16 @@ export const editorLayerFolderMethods = {
     }
     return this._layerEdit('Move layers to folder', [...selected.map(id => [['byId', id, 'folderId'], folderId, folderId === null]), [['order'], folderLayerOrder({...state, byId},order)]], {structural: true});
   },
+  /** Restacks every layer as `order` (back to front) and, with `folderId` given, moves `ids` into that folder (null:
+   * out of every folder), as one undo step. A folder's layers stay together. */
+  arrangeLayers(order, ids = [], folderId) {
+    const state = ensureLayerState(this.report), selected = members(state, ids), stack = [...order];
+    if (stack.length !== state.order.length || new Set(stack).size !== stack.length || stack.some(id => !Object.hasOwn(state.byId, id))) throw messageError(new Error(''), 'errors.editorLayers.includeEveryUserLayerExactlyOnceSceneAnd', {});
+    if (folderId != null && !Object.hasOwn(state.folders?.byId ?? {}, folderId)) throw messageError(new Error(''), 'errors.layerFolders.missingFolder');
+    const byId = {...state.byId}, moved = folderId === undefined ? [] : selected;
+    for (const id of moved) { byId[id] = {...byId[id]}; if (folderId === null) delete byId[id].folderId; else byId[id].folderId = folderId; }
+    return this._layerEdit('Move layers', [...moved.map(id => [['byId', id, 'folderId'], folderId, folderId === null]), [['order'], folderLayerOrder({...state, byId}, stack)]], {structural: true});
+  },
   deleteLayerFolder(id) {
     const state = ensureLayerState(this.report);
     if (!Object.hasOwn(state.folders?.byId ?? {}, id)) throw messageError(new Error(''), 'errors.layerFolders.missingFolder');

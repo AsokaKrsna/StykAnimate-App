@@ -31,6 +31,8 @@ What's new in each version of StykAnimate.
 - Onion skin is enabled when the app starts.
 - While joining figures, movable nodes are shown in red and static nodes in white.
 - A simpler Motion tab for camera moves, with a gallery that explains each preset and plain sliders for the settings that matter most.
+- Dragging layers in the timeline shows where they will land, moves several layers or a whole folder at once, and drops them into or out of folders.
+- Camera motions that don't overlap share one timeline row, so long animations with many shakes and impacts stay compact.
 - Redesigned onion skin markers on the timeline: drag them straight to the frame you want, without catching the playhead. You can hide them in onion skin settings.
 
 ### Fixed
@@ -56,6 +58,7 @@ What's new in each version of StykAnimate.
 
 ### Performance
 
+- Smoother scrolling through long layer lists in the timeline.
 - Quicker repeated saves for small projects and smaller exported movieclips.
 - Smoother zooming and panning, fewer pauses, and more responsive joints and selection when editing complex animations in Compatibility mode.
 - Much smoother playback of busy animations, with fewer pauses, especially on laptops without a dedicated graphics card and in Compatibility mode.

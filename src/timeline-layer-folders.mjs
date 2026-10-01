@@ -7,12 +7,17 @@ export const timelineLayerFolderMethods = {
     this.collapsedFolders.has(id) ? this.collapsedFolders.delete(id) : this.collapsedFolders.add(id);
     this._reindex(); this.update();
   },
+  /** New folder (around the selected layers with `group`): its row comes into view, with its layers when they fit, and
+   * opens its name for typing. */
   newLayerFolder(group = false) {
     return this._run(() => {
       const ids = group ? this.ids.filter(id => this.editor.getLayer(id)?.kind === 'layer') : [];
-      this.setLayerFilter('');
+      if (this.layerQuery) this.setLayerFilter('');
       const folder = this.editor.createLayerFolder(text('layerFolders.newFolder'), ids);
-      this.collapsedFolders.delete(folder.id); this.pendingRename = folder.id; this.update(); return folder;
+      this.collapsedFolders.delete(folder.id);
+      const last = this.tracks.findLast(row => row.folderId === folder.id);
+      if (last) this.revealRow(last.id);
+      this.renameRow(folder.id); return folder;
     });
   },
   layerFolderMenuItems() {

@@ -10,9 +10,6 @@
 .sheet-layer{position:absolute;left:0;right:0;height:32px;display:flex;align-items:center;gap:2px;padding:0 8px;border-bottom:1px solid var(--sheet-line);background:var(--sheet-surface)}
 .sheet-layer[data-selected=true]{background:var(--sheet-selected)}
 .sheet-layer[data-active=true]{box-shadow:inset 2px 0 var(--sheet-accent)}
-.sheet-layer[data-drop=true]{box-shadow:inset 0 2px var(--sheet-accent)}
-.sheet-layer[data-drop=before]{box-shadow:inset 0 2px var(--sheet-accent)}
-.sheet-layer[data-drop=after]{box-shadow:inset 0 -2px var(--sheet-accent)}
 .sheet-layer .sheet-layer-name{display:flex;justify-content:flex-start;gap:8px;flex:1;min-width:0;width:auto;padding:0 4px;text-align:left;color:inherit;font-size:11px}
 .sheet-layer-name>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sheet-layer .sheet-camera-disclosure{width:16px;height:24px;flex:none;padding:0;color:var(--sheet-camera-accent,var(--sheet-accent))}

@@ -2,6 +2,16 @@ import {OnionTimelineRange} from './onion-timeline-range.mjs';
 import {localizedAttribute} from './localization-bindings.mjs';
 import {installTimelineTouch} from './touch/timeline-touch.mjs';
 
+/** How fast a drag held `depth` px inside a 28px edge zone scrolls the timeline, in px per second (the same on every
+ * display, whatever its refresh rate). */
+export const EDGE=28,edgeSpeed=depth=>120+1080*Math.max(0,Math.min(1,depth/EDGE));
+/** The whole pixels an edge scroll at `speed` px per second moves in the frame at `now`. `clock` ({time, rest}) carries
+ * the last frame's time and the fraction of a pixel not yet moved. */
+export function edgeStep(clock,speed,now){
+  const moved=(clock.rest??0)+speed*Math.min(50,Math.max(0,now-(clock.time??now)))/1000,whole=Math.trunc(moved);
+  clock.time=now;clock.rest=moved-whole;return whole;
+}
+
 /** Shared view gestures; panning and zooming never enter document history. The zoom slider and
  * Fit timeline are the header's ruler tools (timeline-header.mjs), which the gesture leaves alone. */
 export function mountTimelineNavigation(host) {

@@ -44,6 +44,29 @@ test('moving, renaming and ungrouping folders retain layers and undo their metad
   e.undo();assert.deepEqual(e.serialize(),before);
   e.deleteLayer('layer-1');assert.equal(e.getLayerFolders().length,1);e.undo();assert.equal(e.getLayer('layer-1').folderId,f.id);
 });
+test('arranging layers restacks them and changes their folder in one undo step', () => {
+  const e=editor(), folder=e.createLayerFolder('Shot',['layer-1','layer-2']), start=e.serialize(), steps=e._undo.length;
+  // Into the folder, between its layers.
+  e.arrangeLayers(['layer-1','layer-4','layer-2','layer-3'],['layer-4'],folder.id);
+  assert.deepEqual(e.report._styk.layers.order,['layer-1','layer-4','layer-2','layer-3']);assert.equal(e.getLayer('layer-4').folderId,folder.id);
+  assert.equal(e._undo.length,steps+1);e.undo();assert.deepEqual(e.serialize(),start);e.redo();
+  // Out of the folder, to the front; the folder's own layers move as a block without a folder change.
+  e.arrangeLayers(['layer-1','layer-2','layer-3','layer-4'],['layer-4'],null);
+  assert.equal(e.getLayer('layer-4').folderId,undefined);assert.deepEqual(e.report._styk.layers.order,['layer-1','layer-2','layer-3','layer-4']);
+  e.arrangeLayers(['layer-3','layer-4','layer-1','layer-2'],['layer-1','layer-2']);
+  assert.deepEqual(e.report._styk.layers.order,['layer-3','layer-4','layer-1','layer-2']);assert.equal(e.getLayer('layer-1').folderId,folder.id);
+  // A stack that would split a folder keeps its layers together; an unchanged one records nothing.
+  e.arrangeLayers(['layer-1','layer-3','layer-2','layer-4']);
+  const order=e.report._styk.layers.order;assert.equal(Math.abs(order.indexOf('layer-1')-order.indexOf('layer-2')),1);
+  const count=e._undo.length;assert.equal(e.arrangeLayers(order),false);assert.equal(e._undo.length,count);
+  assert.throws(()=>e.arrangeLayers(['layer-1','layer-2','layer-3']));assert.throws(()=>e.arrangeLayers(order,['layer-3'],'folder-9'));assert.equal(e._undo.length,count);
+});
+test('the pinned rows leave room for three content rows before they scroll with them', () => {
+  const rows=lanes=>[{kind:'camera'},...Array.from({length:lanes},()=>({kind:'motion'})),{kind:'scene'},{kind:'layer'}];
+  assert.equal(sheetRowLayout(rows(2),{viewport:240}).pinned,true);
+  assert.equal(sheetRowLayout(rows(3),{viewport:240}).pinned,false);
+  assert.equal(sheetRowLayout(rows(8),{viewport:640}).pinned,true,'Half of a tall grid still pins');
+});
 test('collapse and folder search preserve visibility and fixed row geometry', () => {
   const e=editor(), f=e.createLayerFolder('Scene 1',['layer-1','layer-2']), before=e.serialize();
   const content=e.layers.filter(l=>l.kind==='layer').reverse();

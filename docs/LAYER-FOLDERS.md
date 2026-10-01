@@ -7,8 +7,9 @@ shrinks a range from the original selected row, skipping folder and effect rows.
 One selected layer remains active. The menu beside New layer in the list header
 holds everything the list can add: a layer, a drawing layer, **New folder** (an
 empty folder whose name opens for editing) and **Group selected layers in folder**. Double-click a folder name to
-rename it; its disclosure collapses its children. A layer name can be dragged
-onto a folder. The Simple timeline's Layers popover shows the same folders and
+rename it; its disclosure collapses its children. Creating a folder keeps the
+list where it is scrolled, brings the folder (and its layers when they fit) into
+view and opens its name; a query in Find layers is cleared first. The Simple timeline's Layers popover shows the same folders and
 supports the same modifier selection. Its foot keeps New layer as a word and
 the drawing layer, **New folder** (with immediate naming) and Filter layers as
 icons; the group button appears once two or more layers are selected. F2 renames a focused folder.
@@ -20,6 +21,30 @@ Search finds folder names as well as layer names, expanding matching children
 temporarily. Selecting a figure reveals its collapsed folder unless an unrelated
 layer focus is active. **Ungroup folder** removes the container and keeps every
 layer and frame.
+
+## Reordering by drag
+
+Drag a row of the Advanced layer list to restack it. A selected layer drags with
+the other selected layers, which keep their order; a folder's row drags its
+layers as a block. A line marks the gap the rows will land in, indented when
+that gap is inside a folder, and a chip with the name follows the pointer.
+
+| Drop | Result |
+| --- | --- |
+| Upper or lower half of a layer | Above or below it, in its folder if it has one. |
+| Below a folder's last layer, pointer left of the indent | Below the folder, outside it. |
+| A folder's row (it lights up) | Into the folder, in front of its layers; a collapsed folder opens. |
+| Top quarter of a folder's row | Above the folder, outside it. |
+| A dragged folder | Above or below a layer or a whole folder, never inside one. |
+
+Holding the drag within 10 pixels of the list's top or foot, or past it, scrolls
+the rows, faster further out and only once the pointer has moved toward that
+edge. Escape cancels, and a drop that changes nothing records nothing. The drop
+is one `arrangeLayers` command (one undo step) carrying the whole stack and the
+dragged layers' folder. Rows hidden by a search, a filter or a collapsed folder
+keep their place relative to the rows around them. A press without a drag still
+selects the layer or toggles the folder. Touch screens reorder from the layer
+menu. `timeline-layer-drag.mjs` owns the gesture.
 
 Empty folders remain available while focusing layers and can be found by name.
 Adding a new layer during focus includes it in the focused set; closing a search
@@ -54,7 +79,10 @@ Implementation: `layer-folders.mjs` validates and projects optional layer metada
 enter the exposure sheet or frame-editing commands. Collapse state belongs to
 each timeline view and is reset when replacing the document.
 
-Verification: `node --test tests/layer-folders.test.mjs` and
+Verification: `node tests/timeline-layer-drag.browser.mjs` covers dragging one
+layer, several and a folder, into, inside and out of folders, cancelling, undo
+steps and naming a folder created while scrolled.
+`node --test tests/layer-folders.test.mjs` and
 `node tests/layer-folders.browser.mjs` cover save/reload, undo, grouping order,
 moving and ungrouping, invalid references, collapse, search, row geometry, menus,
 and both timeline views.

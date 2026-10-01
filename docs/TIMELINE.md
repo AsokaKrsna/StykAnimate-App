@@ -135,10 +135,26 @@ its centred playhead instead.
 
 A drag held within 28 pixels of the grid's edge scrolls it for as long as the
 pointer stays there, faster nearer the edge: sideways for every drag, and up or
-down for ranges and moved frames (a ruler scrub scrolls time only). Once the rows
+down for ranges and moved frames (a ruler scrub scrolls time only). The speed is
+set per second (120 to 1,200 pixels), so it is the same at every refresh rate,
+and a press that starts inside an edge zone scrolls only once the pointer moves
+toward that edge: selecting in the first row under the pinned ones leaves the
+grid still. Once the rows
 no longer fit, they
 scroll up to three row heights past the last layer, so the bottom layers clear
 the scrollbar and the "N more" button.
+
+Camera and Scene, with the Camera's motion lanes and the Scene's effect lanes,
+stay pinned under the ruler while they take at most half of the grid's height or
+leave room for three content rows; a taller block scrolls with the layers.
+
+A wheel over the layer names scrolls the rows like one over the grid: a mouse
+notch glides to its place and notches add up, a trackpad's small steps apply
+directly, and reduced motion jumps. Each visible row keeps its label node while
+it stays in view, so a scroll moves the nodes and fills only the row that came
+into view; the nodes stay in row order for the keyboard. In an 85-row list with
+21 rows in view, a scroll frame's timeline work fell from 4.0 ms to 1.3 ms
+(labels from 2.5 ms to 0.2 ms; Canvas 2D test browser, Ryzen 5 5500).
 
 Run `node tests/timeline-navigation.browser.mjs`.
 

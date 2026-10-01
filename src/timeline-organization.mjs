@@ -15,6 +15,8 @@ export function organizeTimelineRows(rows, query = '', focusedIds = null) {
 export const timelineOrganizationMethods = {
   setLayerFilter(query = '', focusedIds = this.focusedLayerIds, {lock = focusedIds === this.focusedLayerIds && Boolean(this.editor.getLayerFocus()?.lock)} = {}) {
     this._cancelGesture();
+    // The rows start again from the top when the list shows something else, not when the same list is asked for again.
+    const changed = query !== (this.layerQuery ?? '') || focusedIds !== this.focusedLayerIds;
     this.layerQuery = query;
     this.focusedLayerIds = focusedIds;
     this.layerSearch.value = query;
@@ -26,7 +28,7 @@ export const timelineOrganizationMethods = {
     this.selectedLayers = new Set([...this.selectedLayers].filter(id => visible.has(id)));
     if (!visible.has(this.selectedTrackId)) this.selectedTrackId = this.tracks.find(row => row.kind === 'layer')?.id ?? 'camera';
     if (!this.selectedLayers.size) this.selectedLayers.add(this.selectedTrackId);
-    this.scroll.scrollTop = 0;
+    if (changed) this.scroll.scrollTop = 0;
     this.update();
   },
   focusSelectedLayers({lock = false, ids} = {}) {
@@ -43,7 +45,11 @@ export const timelineOrganizationMethods = {
     if (!this.tracks.some(row => row.id === this.selectedTrackId) && !this.focusedLayerIds) {
       const id = this.selectedTrackId;this.setLayerFilter('', null);this.selectedTrackId = id;this.selectedLayers = new Set([id]);
     }
-    const index = this.tracks.findIndex(row => row.id === this.selectedTrackId), layout = this.layout;
+    timelineOrganizationMethods.revealRow.call(this, this.selectedTrackId);
+  },
+  /** Scrolls the rows just far enough to show row `id` between the pinned block (or the ruler) and the grid's foot. */
+  revealRow(id) {
+    const index = this.tracks.findIndex(row => row.id === id), layout = this.layout;
     if (index < 0 || !layout || layout.pinned && index < layout.system) return;
     // The scrolling rows show between the pinned block (or the ruler) and the grid's foot (timeline-rows.mjs).
     const top = layout.top(index), bottom = top + layout.size(index), offset = this._offsetY();

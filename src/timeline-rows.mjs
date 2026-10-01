@@ -12,9 +12,9 @@
  * Scene's effect lanes at the row height. The content rows below them share
  * one height, so a content row's top is arithmetic. The system rows are
  * pinned under the ruler (the content rows scroll beneath them) while they
- * take at most half of the grid's height; a taller block (many camera
- * motions in a short timeline) scrolls with the content, so every row stays
- * reachable.
+ * take at most half of the grid's height or leave room for three content
+ * rows; a taller block (many camera motions playing at once in a short
+ * timeline) scrolls with the content, so every row stays reachable.
  */
 export const ROW = 32, HEADER = 32, SYSTEM_ROW = 24, SHORT_ROW = 28, SHORT_HEADER = 24;
 /** The touch interface's rows (docs/TOUCH.md): a fingertip's height for every lane, a ruler a thumb can scrub. */
@@ -42,7 +42,7 @@ export function sheetRowLayout(tracks = [], {short = false, viewport = Infinity,
     const size = tracks[system].kind === 'camera' || tracks[system].kind === 'scene' ? systemRow : row;
     tops.push(systemHeight); sizes.push(size); systemHeight += size; system++;
   }
-  const count = tracks.length, pinned = system > 0 && systemHeight <= Math.max(0, viewport - header) / 2;
+  const count = tracks.length, room = Math.max(0, viewport - header), pinned = system > 0 && systemHeight <= Math.max(room / 2, room - 3 * row);
   return {
     header, row, count, system, systemHeight, pinned,
     contentTop: header + (pinned ? systemHeight : 0),

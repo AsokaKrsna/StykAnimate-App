@@ -4,6 +4,7 @@ import {initializeLayerSheet} from '../src/editor-layer-sheet.mjs';
 import {Editor} from '../src/editor.mjs';
 import {createCameraMotion,sampleCameraMotion,validateCameraMotion,cameraAtTime} from '../src/camera-motion.mjs';
 import {cameraSamplingReport} from '../src/camera-motion-bake.mjs';
+import {packMotionLanes} from '../src/camera-motion-timeline.mjs';
 import {parallaxResolver} from '../src/layer-parallax.mjs';
 import {evaluatedFrame,buildGeometry} from '../src/pivot/geometry.mjs';
 import {cameraMatrix} from '../src/renderer-geometry.mjs';
@@ -14,6 +15,13 @@ import {snapshotPoseFrame} from '../src/pose-snapshot.mjs';
 const near=(a,b)=>assert.ok(Math.abs(a-b)<.002,`${a} != ${b}`);
 function fixture(){const e=new Editor({demo:false});e.addFigure();initializeLayerSheet(e.report);e._invalidate({timing:true});return e;}
 function at(e,tick){const rows=e.timeline,index=rows.findLastIndex(r=>r.start<=tick),row=rows[Math.max(0,index)];return evaluatedFrame(e.report,Math.max(0,index),row.count?(tick-row.start)/row.count:0,tick);}
+test('motions that never play together share a timeline lane; overlapping ones stack',()=>{
+  const clip=(id,start,duration)=>({id,start,duration}),lanes=clips=>packMotionLanes(clips).map(lane=>lane.map(c=>c.id));
+  assert.deepEqual(lanes([]),[]);
+  assert.deepEqual(lanes(Array.from({length:10},(_,i)=>clip(`m${i}`,i*20,12))),[['m0','m1','m2','m3','m4','m5','m6','m7','m8','m9']]);
+  // A clip may start on the frame the one before it ends; clips come in start order whatever their saved order.
+  assert.deepEqual(lanes([clip('late',12,4),clip('early',0,12),clip('long',6,40),clip('third',10,3)]),[['early','late'],['long'],['third']]);
+});
 test('seeded motion seeks identically, overlaps add, and boundaries return neutral',()=>{
   const clip=createCameraMotion('shake','a',10,48),state={version:1,clips:[clip]};validateCameraMotion(state);
   const a=sampleCameraMotion(state,24);for(const t of [57,10,35,13,0])sampleCameraMotion(state,t);assert.deepEqual(a,sampleCameraMotion(state,24));
