@@ -6,18 +6,16 @@ What's new in each version of StykAnimate.
 
 ## [Unreleased]
 
+## [1.2.5]
+
+Layer folders, camera follow and smoother editing
+
 ### Added
 
 - Layer folders with quick creation and a searchable filter to organize your timeline.
 - Playback ranges to loop a chosen section of your animation.
 - Automatic updates for the Linux AppImage, with a prompt to save your work before restarting.
-- Phones and tablets: a touch interface made for fingers, with layouts for holding the device upright or on its side and panels you swipe away.
-- Touch gestures: tap with two fingers to undo and three to redo, and press and hold anything to see its menu.
-- Bend, stretch and the other right-click and modifier-key actions on touch screens, from buttons beside the canvas.
-- Draw with your finger on a phone or tablet until you pick up a pen, or choose Always in Settings to draw with a finger on any touch screen.
-- On touch screens, swipe the timeline to scrub under a fixed playhead, and add keys, change timing or select frames from buttons above it.
 - Move a layer up or down from its menu in the timeline.
-- A separate pack of 15 guns with classic Pivot silhouettes, easy-to-grab reload controls, ammunition and editable example animations.
 - Auto key in the Advanced timeline: turn it on (K) and every change you make adds a keyframe at the playhead.
 - Camera follow: right-click figures and choose Follow with camera to keep them in frame, with smooth catch-up, look ahead, a dead zone and auto zoom. Projects that use it need this version or newer.
 
@@ -32,7 +30,7 @@ What's new in each version of StykAnimate.
 - While joining figures, movable nodes are shown in red and static nodes in white.
 - A simpler Motion tab for camera moves, with a gallery that explains each preset and plain sliders for the settings that matter most.
 - Dragging layers in the timeline shows where they will land, moves several layers or a whole folder at once, and drops them into or out of folders.
-- Camera motions share one compact timeline row, colour-coded by type, that only grows where motions overlap. Hover a motion to see its name and frames.
+- Camera motions share one compact timeline row, color-coded by type, that only grows where motions overlap. Hover a motion to see its name and frames.
 - Redesigned onion skin markers on the timeline: drag them straight to the frame you want, without catching the playhead. You can hide them in onion skin settings.
 
 ### Fixed
@@ -55,7 +53,6 @@ What's new in each version of StykAnimate.
 - Clicking a frame in the Simple timeline keeps your current selection instead of selecting every figure.
 - Copying, pasting or duplicating a figure now keeps its effects.
 - Bending a connector now follows your pointer smoothly, and also works with Move joint in Build.
-- Changing a frame's easing works again when the app is set to a language other than English.
 - Adding parts to a figure in an imported Stick Nodes project no longer stops the saved project from opening.
 
 ### Performance
