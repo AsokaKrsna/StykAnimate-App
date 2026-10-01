@@ -134,3 +134,69 @@ export async function preparedArtworkVfxParity({rendererURL='../src/renderer.mjs
     return {checks,rows,errors,backend:current.stats.backend};
   }finally{resources.dispose();for(const renderer of renderers)renderer.destroy();}
 }
+
+/** Scene effects filter the camera image, including its background and the
+ * margin the effects sample. The WebGPU camera source stays on the device;
+ * the Compatibility renderer paints the same scene through Canvas. Both must
+ * agree for every background kind, with and without a transformed camera. */
+export async function sceneVfxCameraParity({rendererURL='../src/renderer.mjs',deviceSource=true,onProgress=()=>{}}={}){
+  const {createRenderer}=await import(rendererURL);
+  const width=384,height=288,checks=[],rows=[],errors=[],renderers=[];
+  const verify=(condition,message,details)=>{check(condition,message,details);checks.push(message);onProgress({checks:checks.length,message});};
+  const make=async forceCanvas2D=>{
+    const renderer=await createRenderer(document.createElement('canvas'),{forceCanvas2D,gpuDrawing:false,asyncArtwork:false});
+    renderer.resize(width,height,1);renderers.push(renderer);
+    renderer.device?.addEventListener('uncapturederror',event=>errors.push(event.error.message));return renderer;
+  };
+  const backgrounds={
+    color:(report,frame)=>{report._styk.layers.fixed.scene.visible=true;frame._stykBackgroundColor=0xff496787;},
+    gradient:(report,frame)=>{report._styk.layers.fixed.scene.visible=true;report.backgrounds=[{background_id:1,kind:3,color_a:0xff234567,color_b:0xffbbaacc,x1:.13,y1:.07,x2:.91,y2:.82}];frame.background_id=1;},
+    'gradient mix':(report,frame)=>{report._styk.layers.fixed.scene.visible=true;report.backgrounds=[{background_id:1,kind:3,color_a:0xff234567,color_b:0xffbbaacc,x1:.13,y1:.07,x2:.91,y2:.82},
+      {background_id:2,kind:2,color:0xff6a397b}];frame.background_id=1;frame.background_id_b=2;frame.background_mix=93;},
+    radial:(report,frame)=>{report._styk.layers.fixed.scene.visible=true;report.backgrounds=[{background_id:1,kind:4,color_a:0xff203050,color_b:0xffffe0a0,x1:.4,y1:.45,x2:.1,y2:.9}];frame.background_id=1;},
+    painted:(report,frame)=>{report._styk.layers.fixed.scene.visible=true;report.backgrounds=[{background_id:1,kind:2,color:0xffffffff,
+      paint:{type:'diamond',angle:20,stops:[{offset:0,color:[250,220,120],opacity:1},{offset:.6,color:[60,120,200],opacity:1},{offset:1,color:[20,30,60],opacity:1}]}}];frame.background_id=1;},
+  };
+  const cameras={still:{is_default:true,x:0,y:0,scale:1,angle_rad:0},moved:{is_default:false,x:14.3,y:-9.6,scale:1.6,angle_rad:.21}};
+  try{
+    const gpu=await make(false),canvas=await make(true);
+    verify(gpu.device&&gpu.stats.backend==='WebGPU','The scene effect regression executes the real WebGPU renderer');
+    for(const [backgroundName,apply] of Object.entries(backgrounds))for(const [cameraName,camera] of Object.entries(cameras))for(const cameraEnabled of [true,false]){
+      const s=scene({});s.frame.objects[0]._stykVfx=undefined;apply(s.report,s.frame);s.frame.camera={...camera};
+      s.frame._stykVfx={figure:[effect('blur','scene',{radius:3})]};s.geometry=buildGeometry(s.report,s.frame);
+      const view={scale:1.2,x:38.3,y:28.7},options={report:s.report,frame:s.frame,geometry:s.geometry,view,cameraEnabled,clipToCanvas:cameraEnabled,editorBackgroundColor:undefined};
+      const name=`${backgroundName}, ${cameraName} camera, ${cameraEnabled?'camera view':'world view'}`;
+      const paints=gpu.vfxViewport?.cameraSource?.stats?.paints??0;
+      gpu.render(options);canvas.render(options);await gpu.device.queue.onSubmittedWorkDone();
+      if(deviceSource)verify((gpu.vfxViewport.cameraSource.stats.paints??0)===paints+1,`${name}: the camera image is painted on the device`);
+      const diff=difference(read(gpu.canvas),read(canvas.canvas));
+      // The two renderers already differ along the artboard edge (about 1% of
+      // these pixels) and on diamond paint (under 4%), with either camera source.
+      verify(diff.painted>2000&&diff.mean<1&&diff.far<=diff.pixels*.04,`${name}: the device camera image matches the Canvas camera image (${diff.mean.toFixed(4)})`,diff);
+      rows.push({name,diff});
+    }
+    if(!deviceSource)return {checks,rows,errors,backend:gpu.stats.backend};
+    // Solid and gradient backgrounds are drawn by the device; a painted one is
+    // uploaded when it or the camera changes, not for every camera paint.
+    const source=gpu.vfxViewport.cameraSource,animate=async(apply,cameraFor)=>{
+      const s=scene({});s.frame.objects[0]._stykVfx=undefined;apply(s.report,s.frame);
+      s.frame._stykVfx={figure:[effect('blur','scene',{radius:3})]};
+      const before={...source.stats};
+      for(let step=0;step<4;step++){
+        const frame={...s.frame,camera:cameraFor(step),objects:[{...s.frame.objects[0],root_x:120+step*7}]},geometry=buildGeometry(s.report,frame);
+        gpu.render({report:s.report,frame,geometry,view:{scale:1.2,x:38.3,y:28.7},cameraEnabled:true});
+      }
+      await gpu.device.queue.onSubmittedWorkDone();
+      return {paints:source.stats.paints-before.paints,uploads:source.stats.backgroundUploads-before.backgroundUploads};
+    };
+    const moving=step=>({is_default:false,x:4+step*3,y:-2,scale:1+step*.1,angle_rad:0});
+    let counts=await animate(backgrounds.gradient,moving);
+    verify(counts.paints===4&&counts.uploads===0,'A gradient background follows a moving camera without painting or uploading pixels',counts);
+    counts=await animate(backgrounds.painted,()=>cameras.moved);
+    verify(counts.paints===4&&counts.uploads===1,'A painted background that does not change is uploaded once while the scene animates',counts);
+    counts=await animate(backgrounds.painted,moving);
+    verify(counts.paints===4&&counts.uploads===4,'A painted background is uploaded again when the camera moves',counts);
+    verify(!errors.length,'The device camera image produces no GPU validation errors',errors);
+    return {checks,rows,errors,backend:gpu.stats.backend};
+  }finally{for(const renderer of renderers)renderer.destroy();}
+}

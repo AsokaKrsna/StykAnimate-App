@@ -1383,7 +1383,8 @@ class WebGPURenderer {
   }
   background(options, resolveTexture = descriptor => this.backgroundTexture(descriptor)) {
     const { report, frame } = options, w = report.canvas_width, h = report.canvas_height;
-    const bounds = backgroundBounds(frame, w, h, options.cameraEnabled !== false, report), output = [];
+    // `backgroundViewport` widens the camera view the background covers.
+    const bounds = backgroundBounds(frame, w, h, options.cameraEnabled !== false, report, options.backgroundViewport), output = [];
     const override = editorBackgroundColor(options) ?? sceneBackgroundColor(report, frame);
     if (override !== undefined) return [{data: new Float32Array(shapeRecord({
       a: [bounds.x, bounds.y, bounds.x + bounds.width, bounds.y + bounds.height],

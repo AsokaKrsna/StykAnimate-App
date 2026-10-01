@@ -79,6 +79,8 @@ paints, editing and playback keep their existing warm scratch allocations;
 accepted background work releases those pixels before reserving worker scratch.
 Eviction, replacement and disposal end the old source lifetime.
 
+The GPU Camera image for scene effects never leaves the device. `CameraGpuSource` renders the retained or prepared artwork into its own texture, over the scene background, and the effect executor filters that texture. A background color clears the pass; solid and gradient backgrounds draw as the renderer's own shape records over the camera view widened by the effect sampling margin (`backgroundViewport`), so a moving camera costs nothing; painted and image backgrounds use the native Canvas painter on a software surface that is uploaded only when the background, camera or size changes (`stats.backgroundUploads`). Previously the artwork was drawn from a WebGPU canvas into a 2D canvas for the background and copied back for filtering, which waited on the graphics process twice for every presented frame with scene effects (20-55 ms on Linux/Vulkan). The `sceneVfxCameraParity` fixture compares the device image with the Compatibility renderer's for color, gradient, mixed, radial and painted backgrounds under still and transformed cameras.
+
 GPU camera sources also track the settled layout's raster density when that
 layout contains compatibility textures or native outline artwork. Reaching the
 camera source size cap does not make later layout textures equivalent: the

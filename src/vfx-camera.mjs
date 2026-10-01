@@ -39,7 +39,9 @@ export function cameraSceneCovers(options,dpr,width,height){
 /** Process the camera and its sampling neighborhood before projecting the
  * cropped result into the viewport. Panning never changes effect coordinates. */
 export class CameraVfx {
- constructor({paint,getPaintRevision,getSource,releaseSource,retainSource,refine}={}){Object.assign(this,{paint,getPaintRevision,getSource,releaseSource,retainSource,refine});this.sourceOwned=true;this.canvas=new OffscreenCanvas(1,1);this.context=this.canvas.getContext('2d');}
+ /** `paint` supplies the scene from a renderer; with `texturePaint` it returns
+  * a GPU texture and this owner allocates no Canvas pixels for it. */
+ constructor({paint,texturePaint=false,getPaintRevision,getSource,releaseSource,retainSource,refine}={}){Object.assign(this,{paint,texturePaint:Boolean(paint&&texturePaint),getPaintRevision,getSource,releaseSource,retainSource,refine});this.sourceOwned=true;this.canvas=new OffscreenCanvas(1,1);this.context=this.canvas.getContext('2d');}
  matchesSource(source){
   const current=this.targetSource;
   return Boolean(current&&!this.viewChanging&&!this.liveEditing&&!this.playing&&this.frame===source.frame&&
@@ -126,10 +128,13 @@ export class CameraVfx {
    if(!this.paint)this.releaseSource?.({repaint:true});
    this.sourceOwned=true;
    const sourceWidth=plan?.width??width,sourceHeight=plan?.height??height;
-   if(this.canvas.width!==sourceWidth)this.canvas.width=sourceWidth;if(this.canvas.height!==sourceHeight)this.canvas.height=sourceHeight;
-   if(this.paint)this.paint(this.context,options,sourceWidth,sourceHeight,plan);
-   else {const drawables=cameraSceneDrawables(options);
-   drawExportScene(this.context,report,frame,{...geometry,drawables},resources);}
+   if(this.texturePaint)this.sourceTexture=this.paint(null,options,sourceWidth,sourceHeight,plan);
+   else{
+    if(this.canvas.width!==sourceWidth)this.canvas.width=sourceWidth;if(this.canvas.height!==sourceHeight)this.canvas.height=sourceHeight;
+    if(this.paint)this.paint(this.context,options,sourceWidth,sourceHeight,plan);
+    else {const drawables=cameraSceneDrawables(options);
+    drawExportScene(this.context,report,frame,{...geometry,drawables},resources);}
+   }
    this.geometry=geometry;this.preparedFrame=preparedFrame;this.frame=frame;this.signature=signature;this.resources=resources;this.drawingInputs=liveDrawingInputs;
    if(this.paint){this.paintRevision=paintRevision;this.report=report;this.paintedWidth=width;this.paintedHeight=height;}
    if(!this.paint){this.report=report;this.contentSignature=contentSignature;
@@ -159,14 +164,15 @@ export class CameraVfx {
    const width=prepared.width+2*pad,height=prepared.height+2*pad;
    if(!fitsVfxSurface(width,height,exec.device.limits.maxTextureDimension2D))throw vfxSurfaceError();
    if(this.filteredWidth!==width||this.filteredHeight!==height){this.filtered?.destroy();this.filteredWidth=width;this.filteredHeight=height;this.filtered=exec.device.createTexture({label:'VFX filtered camera',size:[width,height],format:'rgba8unorm',usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_SRC|GPUTextureUsage.COPY_DST|GPUTextureUsage.RENDER_ATTACHMENT});}
-   const out=stack.length?exec.run(this.canvas,stack,{scale:prepared.width/report.canvas_width,origin:{x:-pad,y:-pad},outputSize:{width:prepared.width,height:prepared.height},texture:true}):null;
+   const source=this.texturePaint?{texture:this.sourceTexture,width,height}:this.canvas;
+   const out=stack.length?exec.run(source,stack,{scale:prepared.width/report.canvas_width,origin:{x:-pad,y:-pad},outputSize:{width:prepared.width,height:prepared.height},texture:true}):null;
    const encoder=exec.device.createCommandEncoder();
    if(out)encoder.copyTextureToTexture({texture:out.texture},{texture:this.filtered},[width,height]);
-   else exec.device.queue.copyExternalImageToTexture({source:this.canvas},{texture:this.filtered,premultipliedAlpha:true},[prepared.width,prepared.height]);
+   else if(!this.texturePaint)exec.device.queue.copyExternalImageToTexture({source:this.canvas},{texture:this.filtered,premultipliedAlpha:true},[prepared.width,prepared.height]);
    exec.device.queue.submit([encoder.finish()]);
    this.filterPad=pad;
   }
   return {texture:this.filtered,pad:this.filterPad??0,surface:{width:prepared.width,height:prepared.height},affine:prepared.affine,report};
  }
- destroy(){if(!this.paint)this.releaseSource?.();releaseGeometryResources(this.context);this.filtered?.destroy();this.canvas.width=this.canvas.height=1;this.geometry=this.preparedFrame=this.frame=this.resources=this.drawingInputs=this.report=null;this.contentSignature=this.signature=this.targetSource=undefined;}
+ destroy(){if(!this.paint)this.releaseSource?.();releaseGeometryResources(this.context);this.filtered?.destroy();this.sourceTexture=null;this.canvas.width=this.canvas.height=1;this.geometry=this.preparedFrame=this.frame=this.resources=this.drawingInputs=this.report=null;this.contentSignature=this.signature=this.targetSource=undefined;}
 }

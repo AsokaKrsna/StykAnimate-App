@@ -1,14 +1,9 @@
 import {activeVfx,vfxStack} from './vfx.mjs';
 import {vfxGPUStats} from './vfx-gpu.mjs';
 import {CameraVfx} from './vfx-camera.mjs';
-import {CameraGpuSource} from './vfx-camera-gpu.mjs';
+import {CameraGpuSource,fullscreenTextureShader as shader} from './vfx-camera-gpu.mjs';
 import {vfxWebGPUFor} from './vfx-webgpu.mjs';
 import {onionLayerEnd} from './onion-surface-cache.mjs';
-const shader=`@group(0) @binding(0) var source:texture_2d<f32>;
-@group(0) @binding(1) var sourceSampler:sampler;
-struct VOut{ @builtin(position) position:vec4f, @location(0) uv:vec2f };
-@vertex fn vertex(@builtin(vertex_index) i:u32)->VOut {let p=vec2f(f32((i<<1u)&2u),f32(i&2u));return VOut(vec4f(p*2.-1.,0.,1.),vec2f(p.x,1.-p.y));}
-@fragment fn fragment(@location(0) uv:vec2f)->@location(0) vec4f {return textureSampleLevel(source,sourceSampler,uv,0.);}`;
 // Project the filtered camera surface over the artboard rect: v covers
 // [0,1]^2 across the report canvas, affine maps it into viewport pixels, and
 // uv.xy/zw select the filtered texture's unpadded centre.
@@ -30,7 +25,7 @@ export const hasSceneVfx=frame=>Boolean(activeVfx(vfxStack(frame)).length);
 export class ViewportVfx{
  constructor(renderer){this.renderer=renderer;const d=renderer.device,module=d.createShaderModule({code:shader,label:'VFX final composition'}),quadModule=d.createShaderModule({code:quadShader,label:'VFX camera projection'});this.pipeline=d.createRenderPipeline({layout:'auto',vertex:{module,entryPoint:'vertex'},fragment:{module,entryPoint:'fragment',targets:[{format:renderer.format}]},multisample:{count:renderer.msaaCount}});this.quadPipeline=d.createRenderPipeline({layout:'auto',vertex:{module:quadModule,entryPoint:'vertex'},fragment:{module:quadModule,entryPoint:'fragment',targets:[{format:renderer.format,blend:{color:{srcFactor:'one',dstFactor:'one-minus-src-alpha',operation:'add'},alpha:{srcFactor:'one',dstFactor:'one-minus-src-alpha',operation:'add'}}}]},multisample:{count:renderer.msaaCount}});this.quadUniform=d.createBuffer({size:48,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});this.quadFloats=new Float32Array(12);}
  render(options){const r=this.renderer,d=r.device,w=r.canvas.width,h=r.canvas.height;
-  if(!this.camera){this.cameraSource=new CameraGpuSource(r);this.camera=new CameraVfx({paint:(...args)=>this.cameraSource.paint(...args),getPaintRevision:()=>this.cameraSource.paintRevision()});}
+  if(!this.camera){this.cameraSource=new CameraGpuSource(r);this.camera=new CameraVfx({paint:(...args)=>this.cameraSource.paint(...args),texturePaint:true,getPaintRevision:()=>this.cameraSource.paintRevision()});}
   const camera=this.camera.renderTexture({...options,resourceRevision:[r.generation,r.drawingGpu?.presentationKey]},r.dpr,r.resources,vfxWebGPUFor(d));
   if(this.width!==w||this.height!==h||this.format!==r.format){this.texture?.destroy();this.width=w;this.height=h;this.format=r.format;this.texture=d.createTexture({label:'VFX processed viewport',size:[w,h],format:r.format,usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST|GPUTextureUsage.RENDER_ATTACHMENT});this.bindGroup=d.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:this.texture.createView()},{binding:1,resource:r.sampler}]});}
   const encoder=d.createCommandEncoder();
@@ -50,7 +45,7 @@ export class ViewportVfx{
    pass=r.onionComposite.draw(encoder,destination,pass,r.layout,i,end).pass;i=end-1;
   }
   if(options.canvasHandles)r.handleRenderer.draw(pass);pass.end();d.queue.submit([encoder.finish()]);
-  r.stats.vfx={...vfxGPUStats(),viewportBytes:w*h*8,cameraBytes:this.camera?this.camera.canvas.width*this.camera.canvas.height*24:0};
+  r.stats.vfx={...vfxGPUStats(),viewportBytes:w*h*8,cameraBytes:(this.cameraSource?.width??0)*(this.cameraSource?.height??0)*24};
  }
  destroy(){this.texture?.destroy();this.quadUniform?.destroy();this.camera?.destroy();this.cameraSource?.destroy();}
 }
