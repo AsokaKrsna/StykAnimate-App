@@ -3,6 +3,7 @@ import {createFrame,createObject,emptyDocument} from '../src/demo.mjs';
 import {buildGeometry,drawGeometry,releaseGeometryResources} from '../src/pivot/geometry.mjs';
 import {cameraMatrix} from '../src/renderer-geometry.mjs';
 import {yieldSceneTask} from '../src/scene-preparation.mjs';
+import {GESTURE_STAND_IN_PIXELS} from '../src/raster-view.mjs';
 
 const MiB=1024*1024;
 const check=(condition,message,details)=>{if(!condition)throw Object.assign(Error(message),{details});};
@@ -135,6 +136,23 @@ export async function zoomGestureState({forceCanvas2D=false,rendererURL='../src/
     // slightly versus a newly quantized crop. The no-gesture baseline has the
     // same variance (GPU mean .0793 / alpha max 16; Canvas .0746 / 15).
     await compareFresh(options,'exposed crop',{mean:.1,alphaMax:16});bounded();
+
+    // Panning a close-up past its held crop paints one bounded crop of the
+    // widened view: the whole artwork would be far softer at this density.
+    // The crop covers further panning; settling restores the requested detail.
+    options=optionsFor(native,64);await submit(options);
+    const held=resources(renderer)[0];
+    options={...options,view:{...options.view,x:options.view.x-300},viewChanging:true};const beforePan=rasterCount(renderer);await submit(options);
+    const standIn=resources(renderer)[0];
+    verify(standIn!==held&&standIn.raster?.cropped&&standIn.resolution<=held.resolution&&
+      standIn.raster.pixelWidth*standIn.raster.pixelHeight<=GESTURE_STAND_IN_PIXELS,'Panning past a held crop paints a bounded crop of the widened view',
+      {held:held.raster,standIn:standIn.raster,resolution:standIn.resolution});
+    verify(newRasters(renderer,beforePan)<=1,'Leaving held coverage by panning paints at most one stand-in');
+    options={...options,view:{...options.view,x:options.view.x-150,y:options.view.y+100}};const beforeMore=rasterCount(renderer);await submit(options);
+    verify(resources(renderer)[0]===standIn&&newRasters(renderer,beforeMore)===0,'The pan stand-in covers further panning without painting');
+    await submit({...options,viewChanging:false});
+    verify(resources(renderer)[0].resolution===held.resolution,'Settling after a pan restores the requested density');
+    await compareFresh(options,'pan stand-in',{mean:.1,alphaMax:16});bounded();
 
     const onionFrame=createFrame([createObject(native.report.figure_types[0],1,203,202)]);
     const onionFrames=[{frame:onionFrame,geometry:buildGeometry(native.report,onionFrame),opacity:.35}];

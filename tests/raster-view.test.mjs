@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {rasterBounds,rasterCovers,rasterViewport,gestureProxyResolution} from '../src/raster-view.mjs';
+import {rasterBounds,rasterCovers,rasterViewport,gestureProxyResolution,gestureStandIn} from '../src/raster-view.mjs';
 import {rasterResolution} from '../src/renderer-geometry.mjs';
 
 test('preview density follows high zoom without a hard 8x ceiling',()=>{
@@ -83,3 +83,25 @@ test('a navigation proxy covers the whole artwork within a few megapixels and ne
   }
   assert.ok(gestureProxyResolution(8,{x:0,y:0,width:0,height:0})>0);
 });
+
+test('a pan stand-in crops the widened view at the density that fits, unless the whole artwork is as sharp',()=>{
+  const large={x:0,y:0,width:10000,height:6000},visible={x:4100,y:2900,width:40,height:20},area=plan=>plan.pixelWidth*plan.pixelHeight,pixels=1<<20;
+  const standIn=gestureStandIn(large,visible,64,{maxPixels:pixels,padding:3});
+  assert.ok(standIn.plan.cropped&&standIn.density===standIn.plan.pixelScale);
+  assert.ok(area(standIn.plan)<=pixels&&area(standIn.plan)>pixels/2,'The crop uses most of its allowance.');
+  assert.ok(standIn.density<64&&standIn.density>gestureProxyResolution(64,large,8192,pixels));
+  // Most of half a view of travel in any direction stays covered, effect halo included.
+  for(const [dx,dy] of [[-19,0],[19,0],[0,-9],[0,9]])
+    assert.ok(rasterCovers(standIn.plan,large,{...visible,x:visible.x+dx,y:visible.y+dy}),`${dx},${dy}`);
+  assert.equal(rasterCovers(standIn.plan,large,{...visible,x:visible.x+30}),false);
+  // A view that fits keeps its own density.
+  const sharp=gestureStandIn(large,visible,8,{maxPixels:pixels});
+  assert.equal(sharp.density,8);assert.ok(sharp.plan.cropped&&rasterCovers(sharp.plan,large,visible));
+  // Artwork within the widened view is painted whole, as sharp as fits.
+  const small={x:0,y:0,width:100,height:80},whole=gestureStandIn(small,{x:-10,y:-10,width:120,height:100},20,{maxPixels:pixels});
+  assert.equal(whole.plan,undefined);
+  assert.ok(whole.density>gestureProxyResolution(20,small,8192,pixels)&&Math.ceil(100*whole.density)*Math.ceil(80*whole.density)<=pixels);
+  assert.equal(gestureStandIn(large,null,64).plan,undefined,'Without a view the whole artwork stands in.');
+  assert.equal(gestureStandIn(large,{x:20000,y:20000,width:10,height:10},64).plan,null,'Nothing near the view needs pixels.');
+});
+

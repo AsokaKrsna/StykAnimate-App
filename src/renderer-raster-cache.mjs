@@ -36,12 +36,14 @@ export class EditorRasterCache {
       return resource;
     }
   }
-  /** The sharpest retained raster of the whole artwork. Navigation uses it for
-   * coverage an outgrown crop no longer has, without painting new pixels. */
-  complete(artwork,generation,contentKey='') {
+  /** The sharpest retained raster of the whole artwork or, given the
+   * artwork's bounds and a view, of a crop that covers that view. Navigation
+   * uses it for coverage an outgrown crop no longer has, without painting. */
+  sharpest(artwork,generation,contentKey='',bounds=null,visible=null) {
     let best;
     for(const resource of this.variants.get(artwork)?.values() ?? []) {
-      if(resource.destroyed || resource.raster || resource.generation!==generation || (resource.contentKey??'')!==contentKey)continue;
+      if(resource.destroyed || resource.generation!==generation || (resource.contentKey??'')!==contentKey ||
+        resource.raster&&!(bounds&&visible&&rasterCovers(resource.raster,bounds,visible)))continue;
       if(!best || resource.resolution>best.resolution)best=resource;
     }
     if(!best)return undefined;

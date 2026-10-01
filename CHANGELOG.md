@@ -43,7 +43,7 @@ What's new in each version of StykAnimate.
 - Recovery copies are scheduled more reliably during frequent editing.
 - Fixed multiple layer selections and searches being lost during editing.
 - Fixed figures and text staying blurry when zooming far into the canvas.
-- Fixed long freezes when zooming animations that use effects or onion skins.
+- Fixed long freezes when zooming or panning animations that use effects or onion skins.
 - Fixed blur, glow, and shadow effects shifting or failing at certain positions.
 - Fixed drawings disappearing with VFX enabled or changing layer position after the first stroke.
 - Fixed onion skins disappearing behind lower layers or skipping nearby drawings in animations with many layers.

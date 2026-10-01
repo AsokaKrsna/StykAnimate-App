@@ -67,3 +67,33 @@ export function gestureProxyResolution(resolution, bounds, maxDimension=8192, ma
   return Math.max(1e-6,Math.min(resolution,8,maxDimension/Math.max(1,bounds.width),maxDimension/Math.max(1,bounds.height),
     Math.sqrt(maxPixels/Math.max(1,bounds.width*bounds.height))));
 }
+
+/** Pixels in one stand-in a pan paints for artwork its held crop no longer
+ * covers. Painting cost grows with the pixel count, so this bounds the pause
+ * a stand-in adds to the gesture. */
+export const GESTURE_STAND_IN_PIXELS = 1024*1024;
+
+/** A pan's stand-in for artwork its held crop no longer covers: the view
+ * widened by half its size on every side, cropped on the artwork's grid at
+ * the highest density that fits `maxPixels`, so one bounded paint covers a
+ * long pan. The whole artwork replaces the crop when that is as sharp.
+ * Returns the crop (undefined for the whole artwork, null when nothing is
+ * visible) and its density; the settled view restores the requested one. */
+export function gestureStandIn(bounds, visible, resolution, {maxDimension=8192, maxPixels=GESTURE_STAND_IN_PIXELS, padding=0}={}) {
+  const whole={plan:undefined,density:gestureProxyResolution(resolution,bounds,maxDimension,maxPixels)};
+  if(!visible)return whole;
+  const view={x:visible.x-visible.width/2,y:visible.y-visible.height/2,width:visible.width*2,height:visible.height*2};
+  const width=Math.min(bounds.x+bounds.width,view.x+view.width+padding)-Math.max(bounds.x,view.x-padding);
+  const height=Math.min(bounds.y+bounds.height,view.y+view.height+padding)-Math.max(bounds.y,view.y-padding);
+  if(!(width>0&&height>0))return {plan:null,density:whole.density};
+  let density=Math.min(resolution,Math.sqrt(maxPixels/Math.max(1e-12,width*height)));
+  for(let attempt=0;attempt<4&&density>whole.density;attempt++){
+    const plan=rasterBounds(bounds,view,density,maxDimension,0,padding);
+    if(!plan)return {plan:null,density};
+    const pixels=plan.pixelWidth*plan.pixelHeight;
+    // Guard texels and whole-pixel rounding can exceed the estimate slightly.
+    if(pixels<=maxPixels)return plan.pixelScale<=whole.density?whole:{plan:plan.cropped?plan:undefined,density:plan.pixelScale};
+    density=plan.pixelScale*Math.min(.98,Math.sqrt(maxPixels/pixels));
+  }
+  return whole;
+}

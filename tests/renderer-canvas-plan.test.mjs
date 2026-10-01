@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {canvasCoverageBounds,canvasBoundsOutside,canvasArtworkCropSafe,canvasArtworkPlan,canvasArtworkPlanWithin,canvasLayerBounds} from '../src/renderer-canvas-plan.mjs';
-import {rasterCovers} from '../src/raster-view.mjs';
+import {canvasCoverageBounds,canvasBoundsOutside,canvasArtworkCropSafe,canvasArtworkPlan,canvasArtworkPlanWithin,canvasGestureStandIn,canvasLayerBounds} from '../src/renderer-canvas-plan.mjs';
+import {rasterCovers,gestureProxyResolution,GESTURE_STAND_IN_PIXELS} from '../src/raster-view.mjs';
 import {createDrawingFigure} from '../src/drawing-model.mjs';
 
 const bounds={x:0,y:0,width:1000,height:800};
@@ -87,3 +87,15 @@ test('a raster allowance lowers the planned density until the raster fits and ke
   assert.equal(whole.plan?.cropped??false,false);assert.ok(whole.density<6&&whole.plan.pixelWidth*whole.plan.pixelHeight<=40000);
   assert.equal(canvasArtworkPlanWithin(bounds,{x:5000,y:5000,width:10,height:10},24,{maxPixels:1000}).plan,null);
 });
+
+test('Canvas pans crop a stand-in only where settled detail crops; zooming out shows the whole artwork',()=>{
+  const large={x:0,y:0,width:10000,height:6000},view={x:4100,y:2900,width:40,height:20},area=plan=>plan.pixelWidth*plan.pixelHeight;
+  const pan=canvasGestureStandIn(large,view,64,false,4*1024*1024,3);
+  assert.ok(pan.plan.cropped&&area(pan.plan)<=GESTURE_STAND_IN_PIXELS&&rasterCovers(pan.plan,large,view));
+  assert.ok(area(canvasGestureStandIn(large,view,64,false,1<<18,3).plan)<=1<<18,'A shared allowance bounds the crop.');
+  assert.deepEqual(canvasGestureStandIn(large,view,64,true,4*1024*1024,3),{plan:undefined,density:gestureProxyResolution(64,large,4096,4*1024*1024)});
+  // Settled artwork at an ordinary density is whole: a crop would stay in its place.
+  const small={x:0,y:0,width:300,height:200};
+  assert.deepEqual(canvasGestureStandIn(small,{x:100,y:50,width:40,height:30},4,false,1<<20),{plan:undefined,density:4});
+});
+

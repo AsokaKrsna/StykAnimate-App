@@ -139,12 +139,26 @@ test('navigation finds the sharpest retained raster of the whole artwork, never 
   const crop={...resource(45),contentKey:'drawing',regionKey:'crop',raster:{x:0,y:0,width:30,height:30,pixelScale:45,cropped:true}};
   const stale={...resource(8,0),contentKey:'earlier'},elsewhere={...resource(4),contentKey:'drawing'};
   cache.set(artwork,coarse);cache.set(artwork,fitted);cache.set(artwork,crop);cache.set(artwork,stale);cache.set(other,elsewhere);
-  assert.equal(cache.complete(artwork,0,'drawing'),fitted);
-  assert.equal(cache.complete(artwork,1,'drawing'),undefined,'Another resource generation has no usable pixels.');
-  assert.equal(cache.complete({},0,'drawing'),undefined);
+  assert.equal(cache.sharpest(artwork,0,'drawing'),fitted);
+  assert.equal(cache.sharpest(artwork,1,'drawing'),undefined,'Another resource generation has no usable pixels.');
+  assert.equal(cache.sharpest({},0,'drawing'),undefined);
   // Presenting the retained raster makes it the most recently used entry.
   cache.maxBytes=10;cache.retain(new Set(),0);
   assert.equal(fitted.texture.destroyed,0);assert.equal(crop.texture.destroyed,1);assert.equal(coarse.texture.destroyed,1);
-  cache.delete(fitted);assert.equal(cache.complete(artwork,0,'drawing'),undefined);
+  cache.delete(fitted);assert.equal(cache.sharpest(artwork,0,'drawing'),undefined);
   cache.clear();
 });
+
+test('a pan reuses the sharpest retained raster that covers its view, including a crop',()=>{
+  const cache=new EditorRasterCache({maxBytes:100}),artwork={},bounds={x:0,y:0,width:100,height:100};
+  const fitted={...resource(2),contentKey:'d'};
+  const near={...resource(40),contentKey:'d',regionKey:'a',raster:{x:0,y:0,width:30,height:30,pixelScale:40,cropped:true}};
+  const far={...resource(64),contentKey:'d',regionKey:'b',raster:{x:60,y:60,width:30,height:30,pixelScale:64,cropped:true}};
+  cache.set(artwork,fitted);cache.set(artwork,near);cache.set(artwork,far);
+  assert.equal(cache.sharpest(artwork,0,'d',bounds,{x:5,y:5,width:10,height:10}),near);
+  assert.equal(cache.sharpest(artwork,0,'d',bounds,{x:65,y:65,width:10,height:10}),far);
+  assert.equal(cache.sharpest(artwork,0,'d',bounds,{x:40,y:40,width:10,height:10}),fitted,'Crops that miss the view do not count.');
+  assert.equal(cache.sharpest(artwork,0,'d'),fitted,'Without a view only the whole artwork counts.');
+  cache.clear();
+});
+

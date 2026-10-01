@@ -1,6 +1,6 @@
 import {hasDrawableVfx} from './vfx-canvas.mjs';
 import {drawingMetadata} from './drawing-model.mjs';
-import {rasterBounds} from './raster-view.mjs';
+import {rasterBounds,gestureProxyResolution,gestureStandIn,GESTURE_STAND_IN_PIXELS} from './raster-view.mjs';
 
 /** Ordinary paths and verified media have bounded coverage. Effect domains,
  * nested clips and unverified media retain their complete painter path. */
@@ -65,6 +65,17 @@ export function canvasArtworkPlanWithin(bounds, visible, resolution, {maxPixels=
     if(plan===null||area(plan,density)<=maxPixels)break;
   }
   return {plan,density};
+}
+
+/** The stand-in Canvas paints for artwork a navigating view's held raster no
+ * longer covers. Zooming out shows the whole artwork within `maxPixels`, as
+ * does a density whose settled raster is the whole artwork: a full-density
+ * crop would stay in its place with different native edges. Otherwise a pan
+ * gets gestureStandIn's crop. */
+export function canvasGestureStandIn(bounds, visible, resolution, zoomingOut, maxPixels, padding=0, maxDimension=4096) {
+  const required=resolution>8||bounds.width*resolution>maxDimension||bounds.height*resolution>maxDimension;
+  if(zoomingOut||!required)return {plan:undefined,density:gestureProxyResolution(resolution,bounds,maxDimension,maxPixels)};
+  return gestureStandIn(bounds,visible,resolution,{maxDimension,maxPixels:Math.min(GESTURE_STAND_IN_PIXELS,maxPixels),padding});
 }
 
 /** Device-pixel union, clipped to an admitted viewport plus its pan margin.

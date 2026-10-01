@@ -1413,8 +1413,12 @@ const wheelZoom = createWheelZoom({
   reducedMotion: () => Boolean(reducedMotionQuery?.matches),
   onSettled: requestRender,
 });
-let canvasPinch;
-function viewGestureActive() { return wheelZoom.interacting || canvasPinch?.active || drawingController?.touchNavigation?.active || state.drag?.kind === 'zoom'; }
+let canvasPinch, panIdle = null;
+// Zooming and panning both hold the view's rasters until the gesture ends (renderer.md).
+function viewGestureActive() { return wheelZoom.interacting || panIdle !== null || canvasPinch?.active || drawingController?.touchNavigation?.active || drawingController?.gesture?.kind === 'pan' || ['zoom', 'pan'].includes(state.drag?.kind); }
+// A pan ends once the view has been still for 100 ms, which paints full
+// detail: wheel panning has no end event, and quick drag strokes stay one gesture.
+function continuePan() { clearTimeout(panIdle); panIdle = setTimeout(() => { panIdle = null; requestRender(); }, 100); }
 function fitSelection() {
   flushPoseMove();
   const b = selectionBounds();
@@ -3173,6 +3177,7 @@ function endDrag(event, {keepPointer = false} = {}) {
   if (!keepPointer) releaseCanvasPointer();
   if (!drag) return;
   viewport.classList.remove("dragging");
+  if (drag.kind === "pan") continuePan();
   if (drag.kind === "maybe-bend" && drag.contextMenuOnPress && event) {
     overlay.dispatchEvent(new MouseEvent("contextmenu", {bubbles: true, cancelable: true,
       clientX: event.clientX, clientY: event.clientY, button: 2}));
@@ -3351,6 +3356,7 @@ viewport.addEventListener(
     if (!shouldZoom) {
       state.view.x -= e.shiftKey ? e.deltaY : e.deltaX;
       state.view.y -= e.shiftKey ? e.deltaX : e.deltaY;
+      continuePan();
       placeArtboard();
       requestRender();
     } else
