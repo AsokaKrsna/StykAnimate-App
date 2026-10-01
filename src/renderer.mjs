@@ -393,7 +393,7 @@ class CanvasFallback {
   }
   drawOnionScene(ctx, groups, start, scale, hiddenUids, parallax) {
     const first = groups[start], matrix = ctx.getTransform();
-    const end = onionLayerEnd(groups,start), cached = this.onionLayers.acquire(first.onionIndex);
+    const end = onionLayerEnd(groups,start), cached = this.onionLayers.acquire(first.onionLayerKey ?? first.onionIndex);
     const valid=cached?.members?.length===end-start&&
       ['a','b','c','d','e','f'].every(k=>cached.matrix[k]===matrix[k])&&!changedDrawingRaster(cached.drawingInputs)&&
       cached.members.every((member,index)=>{const group=groups[start+index],uid=group.g.obj.unique_id,depth=parallax(uid);
@@ -590,7 +590,7 @@ class CanvasFallback {
     const generatorPlan=generatorBatch&&generatorSchedule(generatorBatch,hiddenUids);
     const walker=generatorPlan&&!generatorPlan.empty?scheduleWalker(generatorPlan,draws=>{drawGeneratorDraws(ctx,generatorBatch,draws);}):null;
     walker?.begin();
-    const groups = composeSceneGroups(geometry, onions, frame);
+    const groups = composeSceneGroups(geometry, onions, frame, report);
     if (!onions.length) this.clearOnionArtwork();
     else this.onionLayers.begin(onionLayerKeys(groups),this.canvas.width,this.canvas.height);
     const paint = {scale, hiddenUids, parallax, dragTranslations, walker, frame};
@@ -1209,7 +1209,7 @@ class WebGPURenderer {
       onionScenes.push({frame, geometry: options.vfxEnabled===false?vfxPreviewGeometry(scene):connectedVfxGeometry(scene,frame,options.report,options.hiddenUids), opacity: onion.opacity, beforeUid: onion.beforeUid, showOnTop: onion.showOnTop});
     }
     this.onionScenes = onionScenes;
-    const groups = composeSceneGroups(geometry, onionScenes, options.frame);
+    const groups = composeSceneGroups(geometry, onionScenes, options.frame, options.report);
     // Plan the complete next set before allocating it. Aliases count repeated
     // artwork once; lower raster detail leaves editable vector geometry intact.
     const uniqueArtwork = new Set(), texturePlans = [];
@@ -1250,10 +1250,10 @@ class WebGPURenderer {
     this.stats.previewReduced = this.previewRasterScale < 1;
     let index = 1, shapeCount = 0, compatibilityCount = 0, cached = 0;
     for (const bg of this.background(options)) { next.push({ key: `background-${next.length}`, transform: 0, root: { x: 0, y: 0 }, count: bg.data.length / SHAPE_FLOATS, data: bg.data, texture: bg.texture }); }
-    for (const { g, items, opacity, key, isOnion, onionIndex } of groups) {
+    for (const { g, items, opacity, key, isOnion, onionIndex, onionLayerKey } of groups) {
       if (this.vectorCache.has(g)) cached++;
       const entry = yield* this.objectEntrySteps(g, items, isOnion ? 1 : opacity, key, index++, scale, isOnion);
-      if(isOnion)entry.onionIndex=onionIndex;
+      if(isOnion){entry.onionIndex=onionIndex;entry.onionLayerKey=onionLayerKey;}
       if (entry.texture) compatibilityCount++;
       next.push(entry);
       yield {phase: 'GPU primitives', completed: index - 1, total: groups.length};

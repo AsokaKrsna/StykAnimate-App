@@ -16,11 +16,35 @@ export function drawingOnionSamples(editor,settings){
   for(const layer of editor.layers??[]){if(!layer.drawing||!layer.visible)continue;const track=editor.report._styk?.layerSheet?.tracks[layer.id];if(!track)continue;
     const found=sheetKeyAt(track,editor.tick),current=found.index+(editor.tick>=track.end?1:0),step=Math.max(1,settings.onionStep??1);
     for(const direction of [-1,1]){
-      const wanted=direction<0?settings.onionBefore:settings.onionAfter;let distance=0,seen=0;
+      const span=direction<0?settings.onionRangeBefore:settings.onionRangeAfter;
+      const wanted=span==null?(direction<0?settings.onionBefore:settings.onionAfter):Infinity;let distance=0,seen=0;
       for(let index=current+direction;index>=0&&index<track.keys.length&&distance<wanted;index+=direction){
-        const key=track.keys[index];if(key.value?.frameId==null)continue;
+        const key=track.keys[index];if(span!=null&&direction*(key.tick-editor.tick)>span)break;if(key.value?.frameId==null)continue;
         if(seen++%step)continue;
         samples.push({tick:key.tick,direction,distance:++distance,drawingLayer:layer.id});
+      }
+    }
+  }
+  return samples;
+}
+
+/** Independently timed layers must not lose a neighbour to keys on Camera,
+ * Scene or another layer. Keep the chosen frame-distance range and spacing. */
+export function layerOnionSamples(editor,settings){
+  const samples=[],sheet=editor.report._styk?.layerSheet;
+  if(!sheet||settings.onionMode==='frames')return samples;
+  for(const id of editor.report._styk.layers.order){
+    const layer=editor.getLayer(id),track=sheet.tracks[id];if(!layer.visible||layer.drawing||!track)continue;
+    const found=sheetKeyAt(track,editor.tick),step=Math.max(1,settings.onionStep??1);
+    for(const direction of [-1,1]){
+      const span=direction<0?settings.onionRangeBefore:settings.onionRangeAfter;
+      const wanted=span==null?(direction<0?settings.onionBefore:settings.onionAfter):Infinity;
+      let index=found.index+(direction>0?1:found.key?.tick===editor.tick?-1:0),distance=0,seen=0;
+      for(;index>=0&&index<track.keys.length&&distance<wanted;index+=direction){
+        const key=track.keys[index];if(span!=null&&direction*(key.tick-editor.tick)>span)break;
+        if(key.empty||key.value?.frameId===null)continue;
+        if(++seen%step)continue;
+        samples.push({tick:key.tick,direction,distance:++distance,sampleLayer:id});
       }
     }
   }
@@ -134,6 +158,7 @@ export class OnionSkinCache {
       editor.addEventListener('change',this.listener);
       this.report=null;
     }
+    const samplingSettings=settings;
     if(settings.onionRangeBefore!=null||settings.onionRangeAfter!=null){
       const range=onionRangeSnapshot(editor,settings);
       settings={...settings,onionBefore:range.before.count,onionAfter:range.after.count};
@@ -158,7 +183,7 @@ export class OnionSkinCache {
     this.draftBaseline=baseline;
     const signature = JSON.stringify([editor.frameIndex,editor.tick,editor.layerRevision,settings.onionBefore,settings.onionAfter,settings.onionStep,
       settings.onionMode,settings.onionScope,settings.onionJoined,settings.onionOpacity,settings.onionFade,settings.onionTint,
-      settings.onionBeforeColor,settings.onionAfterColor,settings.onionShowOnTop,[...selected],hiddenKey]);
+      settings.onionBeforeColor,settings.onionAfterColor,settings.onionShowOnTop,samplingSettings.onionRangeBefore,samplingSettings.onionRangeAfter,[...selected],hiddenKey]);
     if (this.last?.signature === signature) return this.last.frames;
     const frames = [], rows = editor.timeline;
     // The Add pose is the next, not-yet-stored frame. Its nearest predecessor
@@ -166,8 +191,8 @@ export class OnionSkinCache {
     const sourceReport=adding?storedFrameReport(report,{validate:false}):report;
     const currentIndex=adding?rows.length:editor.frameIndex;
     const currentTick=adding?editor.totalTicks:editor.tick;
-    // Both timeline views sample authored scene keys. The legacy channel path
-    // remains available for documents that have not adopted the layer sheet.
+    // Layer sheets sample each layer below. Legacy authored channels still
+    // use the scene-key timeline shared by both timeline views.
     const authoredKeys=!adding && settings.onionMode!=='frames' && (layerSheet || report._styk?.animation?.channels?.length);
     let keyTicks, previousKey, nextKey;
     if(authoredKeys){
@@ -183,7 +208,8 @@ export class OnionSkinCache {
       : Math.max(0,Math.floor((direction<0?currentIndex+(!adding&&editor.tick>rows[editor.frameIndex]?.start?1:0):rows.length-1-currentIndex)/settings.onionStep));
     const before=Math.min(settings.onionBefore,available(-1)),after=Math.min(settings.onionAfter,available(1));
     const candidates=[];
-    for (let distance = Math.max(before,after); distance > 0; distance--) {
+    const independentLayers=layerSheet&&settings.onionMode!=='frames';
+    if(!independentLayers)for (let distance = Math.max(before,after); distance > 0; distance--) {
       for (const direction of [-1,1]) {
         if (distance > (direction < 0 ? before : after)) continue;
         let index = currentIndex + direction * distance * settings.onionStep, tick, ratio = 0;
@@ -203,12 +229,12 @@ export class OnionSkinCache {
         candidates.push({index,tick,ratio,distance,direction});
       }
     }
-    for(const candidate of drawingOnionSamples(editor,settings)){
+    for(const candidate of [...(independentLayers?layerOnionSamples(editor,samplingSettings):[]),...drawingOnionSamples(editor,samplingSettings)]){
       let index=0;for(let i=0;i<rows.length&&rows[i].start<=candidate.tick;i++)index=i;
-      candidates.push({...candidate,index,ratio:rows[index].count?(candidate.tick-rows[index].start)/rows[index].count:0});
+      candidates.push({...candidate,sampleLayer:candidate.sampleLayer??candidate.drawingLayer,index,ratio:rows[index].count?(candidate.tick-rows[index].start)/rows[index].count:0});
     }
     candidates.sort((a,b)=>b.distance-a.distance);
-    for(const {index,tick,ratio,distance,direction,drawingLayer} of candidates){
+    for(const {index,tick,ratio,distance,direction,sampleLayer} of candidates){
         const id=`${index}:${tick}`;
         let sample=this.samples.get(id);
         if(!sample || sample.dirtyUids || sample.stale){
@@ -233,12 +259,12 @@ export class OnionSkinCache {
           const queue=[...included];for(let i=0;i<queue.length;i++)for(const uid of links.get(queue[i])??[])if(!included.has(uid)){included.add(uid);queue.push(uid);}
         }
         const color = settings.onionTint ? (direction<0?settings.onionBeforeColor:settings.onionAfterColor) : null;
-        const styleKey=JSON.stringify([color,included?[...included]:null,hiddenKey,editor.layerRevision,drawingLayer,settings.onionMode]);
+        const styleKey=JSON.stringify([color,included?[...included]:null,hiddenKey,editor.layerRevision,sampleLayer,settings.onionMode]);
         let cache=this.styles.get(sample.geometry);if(!cache)this.styles.set(sample.geometry,cache=new Map());
         let geometry=cache.get(styleKey);
         if(!geometry){
           const rgb=color?.slice(1).match(/../g).map(value=>parseInt(value,16));
-          const orderedObjects=sample.geometry.orderedObjects.filter(g=>(!included||included.has(g.obj.unique_id))&&!hidden.has(g.obj.unique_id)&&(settings.onionMode==='frames'||(drawingLayer?editor.layerForUid(g.obj.unique_id)===drawingLayer:!editor.getLayer(editor.layerForUid(g.obj.unique_id))?.drawing))).map(g=>{
+          const orderedObjects=sample.geometry.orderedObjects.filter(g=>(!included||included.has(g.obj.unique_id))&&!hidden.has(g.obj.unique_id)&&(settings.onionMode==='frames'||(sampleLayer?editor.layerForUid(g.obj.unique_id)===sampleLayer:!editor.getLayer(editor.layerForUid(g.obj.unique_id))?.drawing))).map(g=>{
             if(!rgb)return g;
             let styles=this.objectStyles.get(g);if(!styles)this.objectStyles.set(g,styles=new Map());
             let styled=styles.get(color);

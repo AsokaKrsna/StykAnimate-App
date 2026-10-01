@@ -8,7 +8,7 @@ export function onionLayerEnd(entries, start) {
 export function onionLayerKeys(entries) {
   const keys = [];
   for (let i = 0; i < entries.length; i++) if (entries[i].isOnion) {
-    keys.push(entries[i].onionIndex); i = onionLayerEnd(entries, i) - 1;
+    keys.push(entries[i].onionLayerKey ?? entries[i].onionIndex); i = onionLayerEnd(entries, i) - 1;
   }
   return keys;
 }

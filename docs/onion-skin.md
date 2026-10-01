@@ -4,8 +4,10 @@ Onion skin starts enabled each session. Press O or use the timeline's Onion skin
 button to toggle it; its range and appearance preferences stay saved.
 
 Onion skin samples the same `evaluatedFrame` scene as the editor and renderer.
-Keyframe mode chooses times from `sheetKeyTimes` when a layer sheet exists, matching
-the Simple filmstrip's combined scene keys. Native keyframes remain compatibility
+Keyframe mode samples each visible user layer's keys independently when a layer
+sheet exists. Camera, Scene and other layers cannot use up its neighbouring poses;
+blank exposures are skipped. The selected range still measures output-frame
+distance, and Step spaces the keys within each layer. Native keyframes remain compatibility
 sources; their indices do not identify authored layer keys. Legacy documents use
 their animation-channel keys or native frames. Output-frame mode samples neighboring
 ticks independently of key spacing.
@@ -27,6 +29,9 @@ tint, and selection changes reuse sampled geometry. Shared-definition changes
 invalidate geometry even when the layer-sheet state is unchanged.
 
 Completed ghost pixels belong to the renderer, separately from sampled geometry.
+By default ghosts sit immediately behind the current artwork on their own layer,
+above lower layers such as an opaque floor. A blank current layer retains the same
+place in the stack. Show on top still places all ghosts above current artwork.
 Both backends cache contiguous ghost layers within a hardware-derived memory
 budget, retaining committed pixels during live poses. View, visibility, resource,
 and sampled-geometry changes invalidate the affected layer. The
@@ -40,6 +45,8 @@ Regression checks cover both the legacy reader and the app's layer timeline:
 - `node --test tests/onion-performance.test.mjs`
 - `node scripts/benchmark-onion-skin.mjs` compares onion on/off and asserts work budgets
 - `node tests/onion-selection.browser.mjs` with the local server running
+- `node tests/drawing-onion-layering.browser.mjs` checks both renderers against
+  opaque-floor pixels, blank/undo, visibility changes and drawing previews.
 - `node tests/onion-performance.browser.mjs` verifies pointer drags and pixel parity on WebGPU and Canvas
 - `node tests/onion-composite-cache.browser.mjs` starts its own server and checks pixel invalidation, memory pressure, and disposal on both backends
 

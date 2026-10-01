@@ -50,16 +50,16 @@ test('layer key insertion, retiming, removal, blanks and history refresh the ena
   editor.redo();
   assert.deepEqual(roots(cache.get(editor, settings)), [[200], [300]]);
   editor.sheetInsertKey(['layer-1'], 18, {blank: true});
-  assert.deepEqual(roots(cache.get(editor, settings)), [[200], []]);
+  assert.deepEqual(roots(cache.get(editor, settings)), [[200], [300]]);
 });
 
-test('key sampling uses the union of layer keys and output sampling uses ticks', () => {
+test('key sampling follows each layer independently and output sampling uses ticks', () => {
   const editor = fixture(), cache = new OnionSkinCache();
   const overlay = editor.createLayer('Overlay');
   editor.sheetInsertKey([overlay.id], 5, {blank: true});
   editor.seek(10);
   assert.deepEqual(roots(cache.get(editor, settings)), [[100], [300]]);
-  assert.deepEqual(roots(cache.get(editor, {...settings, onionStep: 2})), [[100]]);
+  assert.deepEqual(roots(cache.get(editor, {...settings, onionStep: 2})), []);
   editor.sheetInsertKey(['layer-1'], 15); editor.seek(15); editor.select(1); editor.updateObject({root_x: 250});
   editor.sheetSetEasing(['layer-1'], 10, 15, {interpolation: 'linear'});
   editor.seek(12);

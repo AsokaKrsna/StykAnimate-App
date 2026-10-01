@@ -33,3 +33,14 @@ test('empty current artwork still anchors its skin at the native figure position
   assert.deepEqual(composeSceneGroups(current, [{geometry: scene([2]), beforeUid: 2}], frame).map(group => group.key), [1, 'onion-0:2', 3]);
   assert.deepEqual(composeSceneGroups(current, [{geometry: scene([9]), beforeUid: 9}], frame).map(group => group.key), [1, 3]);
 });
+
+test('layer skins stay above lower artwork, including layers with blank current exposures', () => {
+  const layers={order:['floor','ink','front'],defaultLayerId:'floor',assignments:{2:'ink',3:'front',20:'ink'}};
+  const report={_styk:{layers}},current=scene([1,2,3]),onions=[{geometry:scene([1,20,3]),opacity:.4}];
+  const keys=groups=>groups.map(group=>group.key);
+  assert.deepEqual(keys(composeSceneGroups(current,onions,undefined,report)),['onion-0:1',1,'onion-0:20',2,'onion-0:3',3]);
+  assert.deepEqual(keys(composeSceneGroups(scene([1,3]),onions,undefined,report)),['onion-0:1',1,'onion-0:20','onion-0:3',3]);
+  const groups=composeSceneGroups(current,onions,undefined,report);
+  assert.deepEqual(groups.filter(group=>group.isOnion).map(group=>group.onionLayerKey),['floor:0','ink:0','front:0']);
+  assert.deepEqual(keys(composeSceneGroups(current,[{...onions[0],showOnTop:true}],undefined,report)),[1,2,3,'onion-0:1','onion-0:20','onion-0:3']);
+});

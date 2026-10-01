@@ -77,7 +77,7 @@ export class OnionComposite {
   }
   draw(encoder, destination, pass, entries, start, end, timestampWrites) {
     const r = this.renderer;
-    const cached = this.cache.acquire(entries[start].onionIndex);
+    const cached = this.cache.acquire(entries[start].onionLayerKey ?? entries[start].onionIndex);
     const valid = cached?.revision === this.revision && cached.members?.length === end-start &&
       cached.members.every((m,i) => {
         const e = entries[start+i], at = e.transform*4;

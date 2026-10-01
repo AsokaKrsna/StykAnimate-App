@@ -132,9 +132,11 @@ Painting anywhere in a hold edits its owning cel. Painting a blank exposure
 creates a cel; its creation and first stroke undo together. Painting beyond a
 layer end requires an explicit key first. Erasing everything retains the key.
 Drawing rows carry a brush icon, DRAW badge and tinted exposure spans; wide
-exposures display small cel thumbnails. Existing onion settings apply, with
-key mode sampling distinct neighboring drawing exposures. Frame mode keeps
-its explicit frame-based sampling.
+exposures display small cel thumbnails. First-stroke previews use the same layer
+order as committed drawings and playback, including while other layers are hidden.
+Existing onion settings apply, with key mode sampling distinct neighboring drawing
+exposures inside the selected frame range. Ghosts stay above lower layers and behind
+the current artwork on their own layer. Frame mode keeps its explicit frame-based sampling.
 
 ## Document contract
 
