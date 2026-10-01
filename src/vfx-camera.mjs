@@ -8,6 +8,8 @@ import {activeVfx,vfxStack,vfxPadding} from './vfx.mjs';
 import {fitsVfxSurface,vfxSurfaceError} from './vfx-surface.mjs';
 import {vfxSurfaceDimension} from './vfx-gpu.mjs';
 import {sceneVfxPlan,checkSceneVfxPlan} from './vfx-scene.mjs';
+import {frameImageDrawables} from './scene-preparation.mjs';
+import {drawingRasterInputs,sameDrawingRaster} from './drawing-render-dependencies.mjs';
 
 /** Process the camera and its sampling neighborhood before projecting the
  * cropped result into the viewport. Panning never changes effect coordinates. */
@@ -28,7 +30,8 @@ export class CameraVfx {
   const hidden=preparedFrame?preparedFrame.uids.filter(uid=>hiddenUids?.has(uid)):geometry?.orderedObjects?.filter(g=>hiddenUids?.has(g.obj.unique_id)).map(g=>g.obj.unique_id)??[];
   const plan=this.paint?checkSceneVfxPlan(sceneVfxPlan(frame,width,height,undefined,width/report.canvas_width),vfxSurfaceDimension()):null;
   const signature=JSON.stringify([options.resourceRevision,report._styk?.layers?.order.map(id=>report._styk.layers.byId[id].parallax),camera,width,height,plan?.pad,frame.background_id,frame.background_id_b,frame.background_mix,frame._stykBackgroundColor,hidden,dragTranslations instanceof Map?[...dragTranslations]:dragTranslations]);
-  const stale=this.geometry!==geometry||this.preparedFrame!==preparedFrame||this.frame!==frame||this.signature!==signature||this.resources!==resources;
+  const drawingInputs=preparedFrame?null:drawingRasterInputs(frameImageDrawables(geometry).filter(item=>!hiddenUids?.has(item.obj.unique_id)&&layerVisible(report,item.obj.unique_id)),resources);
+  const stale=this.geometry!==geometry||this.preparedFrame!==preparedFrame||this.frame!==frame||this.signature!==signature||this.resources!==resources||!sameDrawingRaster(this.drawingInputs,drawingInputs);
   if(stale){
    const sourceWidth=plan?.width??width,sourceHeight=plan?.height??height;
    if(this.canvas.width!==sourceWidth)this.canvas.width=sourceWidth;if(this.canvas.height!==sourceHeight)this.canvas.height=sourceHeight;
@@ -38,7 +41,7 @@ export class CameraVfx {
     const point=p=>p&&({x:p.x+delta.x,y:p.y+delta.y});return {...item,start:point(item.start),end:point(item.end),points:item.points?.map(point),obj:{...item.obj,root_x:item.obj.root_x+delta.x,root_y:item.obj.root_y+delta.y}};
    });
    drawExportScene(this.context,report,frame,{...geometry,drawables},resources);}
-   this.geometry=geometry;this.preparedFrame=preparedFrame;this.frame=frame;this.signature=signature;this.resources=resources;
+   this.geometry=geometry;this.preparedFrame=preparedFrame;this.frame=frame;this.signature=signature;this.resources=resources;this.drawingInputs=drawingInputs;
   }
   const c=Math.cos(angle)*scale,s=Math.sin(angle)*scale,x=cx+(camera.x??0)-c*cx+s*cy,y=cy+(camera.y??0)-s*cx-c*cy;
   const affine=world?[c*zoom,s*zoom,-s*zoom,c*zoom,(view.x??0)*dpr+x*zoom,(view.y??0)*dpr+y*zoom]:[zoom,0,0,zoom,(view.x??0)*dpr,(view.y??0)*dpr];
@@ -68,5 +71,5 @@ export class CameraVfx {
   }
   return {texture:this.filtered,pad:this.filterPad??0,surface:{width:prepared.width,height:prepared.height},affine:prepared.affine,report};
  }
- destroy(){releaseGeometryResources(this.context);this.filtered?.destroy();this.canvas.width=this.canvas.height=1;this.geometry=this.preparedFrame=this.frame=this.resources=null;}
+ destroy(){releaseGeometryResources(this.context);this.filtered?.destroy();this.canvas.width=this.canvas.height=1;this.geometry=this.preparedFrame=this.frame=this.resources=this.drawingInputs=null;}
 }

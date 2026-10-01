@@ -317,3 +317,26 @@ invalidates derived layouts. Layout replacement, cancellation and disposal
 release owned textures. Drawing GPU bytes are included in renderer accounting.
 View rotation transforms both artwork and stage clipping, and is excluded from
 exported camera state.
+
+## Scene effects and live drawing readiness
+
+The completed camera image retains snapshots of the live drawing presenters it
+samples. Geometry identity alone does not establish pixel readiness: decoding,
+preview publication, store replacement and resource disposal can all change its
+source. Camera invalidation compares presenter/owner/store identity and stamp;
+compatibility-raster cache hits validate the same dependencies before reuse.
+
+The camera GPU painter prepares drawing tiles for its own matrix and padded
+surface, at camera raster density rather than the editor viewport's DPR. Its
+coverage includes live drag, parallax and translation-only retained source
+offsets. GPU upload/reduction progress and provisional brush/session changes
+also advance camera readiness; unchanged complete frames reuse their image.
+The camera scratch path samples independently through `EditorRasterCache` and
+refreshes direct drawing bounds for live growth. Temporary shape overrides,
+shared uniforms/transforms and leases restore even on failure, and existing
+cache admission bounds camera-only variants. The camera does not own another
+tile or artwork cache.
+
+Scene VFX keeps onions outside the filtered camera source and redraws them over
+the finished camera overlay. Ordinary layer composition places ghosts at their
+layer boundaries; the existing Scene VFX overlay is a separate composition rule.

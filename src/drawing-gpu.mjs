@@ -20,6 +20,7 @@ import {ATLAS_BYTES,TIP_SIZE,GRAIN_SIZE,brushAtlas,ensureTexture,tipBase} from '
  * the stroke's read-back pixels are committed through the normal editor
  * transaction. */
 export const GPU_NONE=0xffffffff;
+let presentationOwner=0;
 const UNRESOLVED=0xfffffffe;
 const TEXELS=TILE*TILE,WORDS=24,MAX_LEVEL=8,UPLOADS_PER_FRAME=2048,MAX_DISPATCH=65535;
 
@@ -345,7 +346,7 @@ class GrowableBuffer {
 export class DrawingGpu {
   constructor(renderer,{maxBytes=512*1024*1024,initialSlots=1024}={}){
     const device=renderer.device,limit=Math.min(device.limits.maxStorageBufferBindingSize,device.limits.maxBufferSize);
-    Object.assign(this,{renderer,device,token:{},frame:0,capacity:0,free:[],lru:new Map(),tiles:new WeakMap(),states:new WeakMap(),sessions:new Set(),
+    Object.assign(this,{renderer,device,token:{},presentationOwner:++presentationOwner,frame:0,capacity:0,free:[],lru:new Map(),tiles:new WeakMap(),states:new WeakMap(),sessions:new Set(),
       maxSlots:Math.max(64,Math.floor(Math.min(maxBytes,limit)/TILE_BYTES)),uploads:0,incomplete:false,reduce:Array.from({length:MAX_LEVEL+1},()=>[]),
       words:new Uint32Array(WORDS*256),instanceCount:0,stats:{slots:0,capacity:0,uploads:0,reductions:0,strokeDispatches:0,evictions:0}});
     this.floats=new Float32Array(this.words.buffer);this.ints=new Int32Array(this.words.buffer);
@@ -383,6 +384,9 @@ export class DrawingGpu {
     if(!this.displayPipelines.has(count))this.displayPipelines.set(count,await this.device.createRenderPipelineAsync(this.displayDescriptor(count)));
   }
   get enabled(){return !this.destroyed;}
+  // Camera pixels can refine or show a provisional stroke before CPU pixels
+  // publish. Stable complete tile residency leaves this key unchanged.
+  get presentationKey(){return `${this.presentationOwner}:${this.stats.uploads}:${this.stats.reductions}:${this.stats.strokeDispatches}:${this.stats.evictions}:${this.sessions.size}`;}
   grow(slots){
     slots=Math.min(this.maxSlots,slots);if(slots<=this.capacity)return false;
     this.pool.ensure(slots*TILE_BYTES,{preserve:true});

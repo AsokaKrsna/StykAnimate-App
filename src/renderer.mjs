@@ -30,6 +30,7 @@ import {glyphTextureDescriptor,drawGlyphMask,glyphTextureShape} from './renderer
 import { uploadShapeLayoutSteps, SHAPE_UPLOAD_RECORDS } from './renderer-upload.mjs';
 import { backgroundImageAssets, frameImageAssets, createSceneImages, consumeSceneSteps } from './scene-preparation.mjs';
 import {drawingMatrix,drawingPixelMatrix,drawingMetadata} from './drawing-model.mjs';
+import {drawingRasterInputs,drawingRasterKey,changedDrawingRaster,sameDrawingRaster} from './drawing-render-dependencies.mjs';
 import {DrawingGpu,gpuDrawingEligible} from './drawing-gpu.mjs';
 import {GeneratorGpu} from './vfx-generator-gpu.mjs';
 import {prewarmAtlas} from './vfx-generator-atlas.mjs';
@@ -43,13 +44,6 @@ function drawingAlpha(item){
   for(let inner=item._movieclipInner;inner;inner=inner.inner)alpha*=inner.owner.opacity;
   return alpha;
 }
-function drawingRasterInputs(items,resources){
-  let inputs=null;
-  for(const item of items)if(drawingMetadata(item.fig)){const entry=resources.drawing?.(item.fig);if(entry)(inputs??=[]).push({entry,stamp:entry.stamp,store:entry.store});}
-  return inputs;
-}
-const changedDrawingRaster=inputs=>inputs?.some(({entry,stamp,store})=>entry.disposed||entry.stamp!==stamp||entry.store!==store);
-const drawingRasterKey=inputs=>inputs?.map(({entry,stamp})=>entry.id+":"+stamp+":"+(entry.owner?.surfaceVersion??0)).join("|")??"";
 function renderPreviewVfx(renderer,field,create,render) {
   if(performance.now()<renderer.vfxRetryAt)return false;
   try {
@@ -840,7 +834,8 @@ class WebGPURenderer {
     const resolution = Math.min(desired * (this.previewRasterScale || 1), Math.sqrt(workingBudget / 4 / Math.max(1, bounds.width * bounds.height)));
     const drawingInputs=drawingRasterInputs(items,this.resources),contentKey=drawingRasterKey(drawingInputs);
     const cached = cache.get(artwork, resolution, this.generation,contentKey);
-    if (cached) return cached;
+    if (cached&&sameDrawingRaster(cached.drawingInputs,drawingInputs)) return cached;
+    if (cached) cache.delete(cached);
     const previous = cache.previous(artwork);
     const imageURLs = [...new Set(items.filter(item => item.type === 'image' && item.asset).map(item => this.resources.url(item.asset)))];
     const reason=!previous?'uncached':previous.destroyed?'released':previous.generation!==this.generation?'generation':'resolution';
@@ -1470,17 +1465,19 @@ class WebGPURenderer {
   }
   /** Visible level-0 pixel rect and display level for a GPU drawing entry,
    * matching the scratch path's mip choice. */
-  gpuDrawingView(entry,camera){
+  gpuDrawingView(entry,camera,{width=this.width,height=this.height,dpr=this.dpr,translation}={}){
     const {absolute:m,matrix,alpha}=entry.gpuDrawing,cd=camera[0]*camera[3]-camera[1]*camera[2],md=m[0]*m[3]-m[1]*m[2];
     let rect=null;
     if(Math.abs(cd)>1e-12&&Math.abs(md)>1e-12){
       const toWorld=p=>({x:(camera[3]*(p.x-camera[4])-camera[2]*(p.y-camera[5]))/cd,y:(camera[0]*(p.y-camera[5])-camera[1]*(p.x-camera[4]))/cd});
-      const toPixel=p=>({x:(m[3]*(p.x-m[4])-m[2]*(p.y-m[5]))/md,y:(m[0]*(p.y-m[5])-m[1]*(p.x-m[4]))/md});
-      const ps=[[0,0],[this.width,0],[this.width,this.height],[0,this.height]].map(([x,y])=>toPixel(toWorld({x,y})));
+      const depth=this.rasterParallax?.(entry.uid),move=this.rasterDrag?.get?.(entry.uid)||this.rasterDrag?.[entry.uid];
+      const shift=translation??{x:(depth?.x||0)+(move?.x||0),y:(depth?.y||0)+(move?.y||0)},mx=m[4]+shift.x,my=m[5]+shift.y;
+      const toPixel=p=>({x:(m[3]*(p.x-mx)-m[2]*(p.y-my))/md,y:(m[0]*(p.y-my)-m[1]*(p.x-mx))/md});
+      const ps=[[0,0],[width,0],[width,height],[0,height]].map(([x,y])=>toPixel(toWorld({x,y})));
       const x=Math.min(...ps.map(p=>p.x)),y=Math.min(...ps.map(p=>p.y));
       rect={x,y,width:Math.max(...ps.map(p=>p.x))-x,height:Math.max(...ps.map(p=>p.y))-y};
     }
-    const deviceScale=Math.max(1e-9,Math.hypot(camera[0],camera[1])*this.dpr*Math.hypot(m[0],m[1]));
+    const deviceScale=Math.max(1e-9,Math.hypot(camera[0],camera[1])*dpr*Math.hypot(m[0],m[1]));
     return {matrix,alpha,rect,transform:entry.transform,level:Math.max(0,Math.min(8,Math.floor(-Math.log2(deviceScale))))};
   }
   destroy() {
