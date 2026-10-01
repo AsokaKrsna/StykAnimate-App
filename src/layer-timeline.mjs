@@ -11,6 +11,8 @@ import {mountTimelineNavigation} from './timeline-navigation.mjs';
 import {showKeyframeEasingPopover} from './keyframe-easing-popover.mjs';
 import {keyEasing} from './keyframe-easing.mjs';
 import {LAYER_COLORS} from './layers.mjs';
+import {layerFolderRows} from './layer-folders.mjs';
+import {timelineLayerFolderMethods} from './timeline-layer-folders.mjs';
 import {organizeTimelineRows,timelineOrganizationMethods} from './timeline-organization.mjs';
 import {motionRows,paintMotionRow,cameraMotionTimelineMethods} from './camera-motion-timeline.mjs';
 import {attachTimelineHotkeys} from './timeline-hotkeys.mjs';
@@ -53,7 +55,7 @@ export class Timeline{
     const search=this.searchField=element('label',head,'sheet-search');localizedMarkup(search, icon('search'));search.hidden=true;
     this.layerSearch=element('input',search);this.layerSearch.type='search';localizedAttribute(this.layerSearch, "placeholder", 'timeline.findLayers', {});localizedAttribute(this.layerSearch, 'aria-label', 'timeline.findLayers', {});
     this._on(this.layerSearch,'input',()=>this.setLayerFilter(this.layerSearch.value));
-    this._on(this.layerSearch,'keydown',event=>{event.stopPropagation();if(event.key==='Escape'){event.preventDefault();this.setLayerFilter('',null);this.scroll.focus();}if(event.key==='Enter'){event.preventDefault();this.revealSelectedLayer();this.scroll.focus();}});
+    this._on(this.layerSearch,'keydown',event=>{event.stopPropagation();if(event.key==='Escape'){event.preventDefault();this.setLayerFilter('');this.scroll.focus();}if(event.key==='Enter'){event.preventDefault();this.revealSelectedLayer();this.scroll.focus();}});
     this._on(this.layerSearch,'blur',()=>this._syncOrganization());
     this.clearSearch=this._button(search,'close',sayTimeline(null,'timeline.clearFind'),()=>this.setLayerFilter(''));this.clearSearch.hidden=true;
     localizedAttribute(this.clearSearch,'aria-label','timeline.clearFind');localizedAttribute(this.clearSearch,'title','timeline.clearFind');
@@ -78,7 +80,7 @@ export class Timeline{
     this.headerTools=this.header?.frameTools??element('div',null,'sheet-header-tools');
     this.live=element('div',this.root,'sheet-live');this.live.setAttribute('role','status');this.live.setAttribute('aria-live','polite');
     this._on(this.scroll,'scroll',()=>{this._cachedOffsetX=undefined;this.update();});this._on(this.scroll,'pointerdown',event=>this._pointerDown(event));this._on(this.scroll,'pointermove',event=>this._pointerMove(event));this._on(this.scroll,'pointerup',event=>this._pointerUp(event));this._on(this.scroll,'pointercancel',()=>this._cancelGesture());this._on(this.scroll,'lostpointercapture',()=>{if(!this.gesture?.touch)this._cancelGesture();});
-    this._on(this.scroll,'contextmenu',event=>{event.preventDefault();const hit=this._hit(event);if(hit.row<0||!this.tracks[hit.row])return this._menu(event,{view:true});if(this.tracks[hit.row]?.kind.startsWith('vfx')){this._selectVfxRow(this.tracks[hit.row]);return;}if(!this._contains(hit))this._selectCell(hit);this._menu(event);});
+    this._on(this.scroll,'contextmenu',event=>{event.preventDefault();const hit=this._hit(event);if(hit.row<0||!this.tracks[hit.row])return this._menu(event,{view:true});if(this.tracks[hit.row]?.kind==='folder')return this.folderMenu(event,this.tracks[hit.row].id);if(this.tracks[hit.row]?.kind.startsWith('vfx')){this._selectVfxRow(this.tracks[hit.row]);return;}if(!this._contains(hit))this._selectCell(hit);this._menu(event);});
     this._on(this.scroll,'dblclick',event=>this._doubleClick(event));
     this._on(this.main,'pointerleave',()=>{if(!this.gesture){this.hover=null;this.update();}});
     this._on(this.scroll,'keydown',event=>this._keyDown(event));this._on(this.labelViewport,'wheel',event=>{event.preventDefault();this.scroll.scrollTop+=event.deltaY;},{passive:false});
@@ -89,7 +91,7 @@ export class Timeline{
     this._on(this.divider,'keydown',event=>{if(!["ArrowLeft","ArrowRight","Home"].includes(event.key))return;event.preventDefault();event.stopPropagation();this.labelWidth=event.key==='Home'?220:clamp(this.labelWidth+(event.key==='ArrowRight'?1:-1)*(event.shiftKey?40:10),140,420);this.root.style.setProperty('--sheet-label',`${this.labelWidth}px`);this.resize();});
     this._on(this.divider,'dblclick',()=>{this.labelWidth=220;this.root.style.setProperty('--sheet-label','220px');this.resize();});
     this._on(this.divider,'lostpointercapture',()=>{this._columnDrag=null;});
-    this._on(editor,'change' ,event=>{const d=event.detail??{};if(d.kind==='document'){this.cameraMotionsCollapsed=false;this.layerQuery='';this.focusedLayerIds=null;this.layerSearch.value='';}
+    this._on(editor,'change' ,event=>{const d=event.detail??{};if(d.kind==='document'){this.cameraMotionsCollapsed=false;this.collapsedFolders=new Set();this.layerQuery='';this.focusedLayerIds=null;this.layerSearch.value='';}
       if(d.kind==='vfx-channels'&&this.gesture?.kind.startsWith('vfx'))this._cancelGesture();
       if(d.kind==='vfx-selection'||d.kind==='vfx-target'||d.kind==='selection'&&editor._vfxTimelineVisible||d.kind==='document'||d.structural||d.layers||d.timing||d.layerSheet)this._reindex();
       else if(this.motionState!==editor.report._styk.cameraMotion)this._refreshMotionRows();
@@ -114,13 +116,15 @@ export class Timeline{
   get selectedFrameIndices(){return this.editor.timeline.filter(row=>row.start>=this.start&&row.start<=this.end).map(row=>row.index);}
   get loopRange(){return this.end>this.start?{start:this.start,end:this.end+1}:null;}
   _reindex(){
+    this.focusedLayerIds=this.editor.getLayerFocus()?.ids??null;
     if(!this.editor.report._styk.layerSheet){initializeLayerSheet(this.editor.report);this.editor._invalidate({timing:true});}
     this.motionState=this.editor.report._styk.cameraMotion;
-    this.tracks=organizeTimelineRows([this.editor.getLayer('camera'),...(this.cameraMotionsCollapsed?[]:motionRows(this.editor)),this.editor.getLayer('scene'),...this.editor.layers.filter(l=>l.kind==='layer').reverse()],this.layerQuery,this.focusedLayerIds);
+    this.collapsedFolders??=new Set();
+    this.tracks=organizeTimelineRows([this.editor.getLayer('camera'),...(this.cameraMotionsCollapsed?[]:motionRows(this.editor)),this.editor.getLayer('scene'),...layerFolderRows(this.editor.layers.filter(l=>l.kind==='layer').reverse(),this.editor.report._styk.layers,this.layerQuery||this.focusedLayerIds?new Set():this.collapsedFolders)],this.layerQuery,this.focusedLayerIds);
     this.tracks=this._effectRows(this.tracks);
     this.visibleLayerCount=this.tracks.reduce((count,row)=>count+(row.kind==='layer'?1:0),0);
     const editor=this.editor;
-    this.trackById=new Map(this.tracks.map(layer=>[layer.id,{...layer,target:layer.kind==='layer'?{kind:'layer',id:layer.id}:{kind:layer.kind},get keys(){return layer.kind==='motion'?[]:editor.layerFrameKeys(layer.id);}}]));
+    this.trackById=new Map(this.tracks.map(layer=>[layer.id,{...layer,target:layer.kind==='layer'?{kind:'layer',id:layer.id}:{kind:layer.kind},get keys(){return ['motion','folder'].includes(layer.kind)?[]:editor.layerFrameKeys(layer.id);}}]));
     if(!this.editor.getLayer(this.selectedTrackId))this.selectedTrackId=this.editor.activeLayerId;
     this.selectedLayers=new Set([...this.selectedLayers].filter(id=>this.editor.getLayer(id)));if(!this.selectedLayers.size)this.selectedLayers.add(this.selectedTrackId);
     this.labelSignature=null;this.dirty=true;
@@ -298,6 +302,7 @@ export class Timeline{
   _paintRow(ctx,index,y,size,first,last,sx){
     const layer=this.tracks[index],c=this.colors,step=this.pxPerTick,w=this.width;
     if(layer.kind.startsWith('vfx')){paintVfxRow(this,ctx,layer,y,size);return;}
+    if(layer.kind==='folder')return;
     if(layer.kind==='motion'){paintMotionRow(this,ctx,layer,y,size);return;}
     const track=this.editor.report._styk.layerSheet.tracks[layer.id],cy=y+size/2;
     const color=layer.kind==='camera'?c['camera-accent']:layer.kind==='scene'?c['scene-accent']:c.ink;
@@ -410,8 +415,8 @@ export class Timeline{
       let node=this.labels[slot];if(!node){
         node=element('div',this.labelViewport,'sheet-layer');node.setAttribute('role','row');
         const disclosure=element('button',node,'icon-button sheet-camera-disclosure');disclosure.type='button';localizedMarkup(disclosure, icon('chevron-right'));
-        this._on(disclosure,'click',event=>{event.stopPropagation();this._setCameraMotionsCollapsed(!this.cameraMotionsCollapsed);});
-        this._on(disclosure,'keydown',event=>{if(["ArrowLeft","ArrowRight"].includes(event.key)){event.preventDefault();event.stopPropagation();this._setCameraMotionsCollapsed(event.key==='ArrowLeft');}});
+        this._on(disclosure,'click',event=>{event.stopPropagation();if(this.tracks.find(row=>row.id===node._id)?.kind==='folder')this.toggleLayerFolder(node._id);else this._setCameraMotionsCollapsed(!this.cameraMotionsCollapsed);});
+        this._on(disclosure,'keydown',event=>{if(["ArrowLeft","ArrowRight"].includes(event.key)){event.preventDefault();event.stopPropagation();if(this.tracks.find(row=>row.id===node._id)?.kind==='folder'){const closed=this.collapsedFolders.has(node._id);if(closed!==(event.key==='ArrowLeft'))this.toggleLayerFolder(node._id);}else this._setCameraMotionsCollapsed(event.key==='ArrowLeft');}});
         node._disclosure=disclosure;
         const name=this._button(node,'layers',interfaceText("layerTimeline.selectLayer2"),event=>this._selectLayer(node._id,event));name.classList.add('sheet-layer-name');element('span',name);
         const channels=element('button',node,'vfx-channel-trigger');channels.type='button';localizedMarkup(channels, icon('sliders'));localizedAttribute(channels, 'aria-label', "layerTimeline.visibleEffectKeys", {});channels.setAttribute('aria-haspopup','dialog');element('span',channels);node._channels=channels;this._on(channels,'click',event=>{event.stopPropagation();this._run(()=>this._openVfxChannels(channels));});
@@ -419,10 +424,10 @@ export class Timeline{
         const eye=this._button(node,'eye',interfaceText("layerTimeline.toggleLayerVisibility"),()=>{const row=this.tracks.find(t=>t.id===node._id);if(row?.kind.startsWith('vfx'))return;return row?.kind==='motion'?this.editor.setCameraMotion(row.id,{enabled:!row.visible}):this.editor.setLayerVisible(node._id,!row.visible);});eye.classList.add('sheet-layer-state');
         const lock=this._button(node,'lock',interfaceText("layerTimeline.toggleLayerLock"),()=>this.editor.setLayerLocked(node._id,!this.editor.getLayer(node._id).locked));lock.classList.add('sheet-layer-state');
         name.draggable=true;this._on(name,'dragstart',event=>{this.dragLayer=node._id;event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',node._id);});
-        this._on(node,'dragover',event=>{if(this.dragLayer&&this.dragLayer!==node._id&&this.editor.getLayer(node._id)?.kind==='layer'){event.preventDefault();const box=node.getBoundingClientRect();node.dataset.drop=event.clientY<box.top+box.height/2?'before':'after';}});this._on(node,'dragleave',()=>delete node.dataset.drop);
-        this._on(node,'drop',event=>{event.preventDefault();const before=node.dataset.drop==='before';delete node.dataset.drop;const from=this.dragLayer;this.dragLayer=null;if(from&&from!==node._id&&this.editor.getLayer(node._id)?.kind==='layer')this._run(()=>{const order=this.editor.report._styk.layers.order.filter(id=>id!==from);this.editor.moveLayerTo(from,order.indexOf(node._id)+(before?1:0));});});
+        this._on(node,'dragover',event=>{if(this.dragLayer&&this.dragLayer!==node._id&&(this.editor.getLayer(node._id)?.kind==='layer'||this.tracks.find(row=>row.id===node._id)?.kind==='folder')){event.preventDefault();const box=node.getBoundingClientRect();node.dataset.drop=event.clientY<box.top+box.height/2?'before':'after';}});this._on(node,'dragleave',()=>delete node.dataset.drop);
+        this._on(node,'drop',event=>{event.preventDefault();const before=node.dataset.drop==='before';delete node.dataset.drop;const from=this.dragLayer;this.dragLayer=null;if(from&&this.tracks.find(row=>row.id===node._id)?.kind==='folder')return this._run(()=>this.editor.moveLayersToFolder([from],node._id));if(from&&from!==node._id&&this.editor.getLayer(node._id)?.kind==='layer')this._run(()=>{const order=this.editor.report._styk.layers.order.filter(id=>id!==from);this.editor.moveLayerTo(from,order.indexOf(node._id)+(before?1:0));});});
         this._on(name,'dragend',()=>{this.dragLayer=null;for(const label of this.labels)delete label.dataset.drop;});
-        node._name=name;node._eye=eye;node._lock=lock;this._on(node,'contextmenu',event=>{event.preventDefault();this._selectLayer(node._id,event);if(this.tracks.find(t=>t.id===node._id)?.kind.startsWith('vfx'))return;this._menu(event,{layer:true});});this.labels.push(node);
+        node._name=name;node._eye=eye;node._lock=lock;this._on(node,'contextmenu',event=>{event.preventDefault();if(this.tracks.find(row=>row.id===node._id)?.kind==='folder')return this.folderMenu(event,node._id);if(!this.selectedLayers.has(node._id))this._selectLayer(node._id,event);else this.selectedTrackId=node._id;if(this.tracks.find(t=>t.id===node._id)?.kind.startsWith('vfx'))return;this._menu(event,{layer:true});});this.labels.push(node);
       }
       const index=rows[slot],layer=this.tracks[index],size=layout.size(index),still=index<pinned;node.hidden=false;node._id=layer.id;node.dataset.layerId=layer.id;node.dataset.selected=String(layer.kind==='motion'?this.editor._selectedCameraMotion===layer.id:this.selectedLayers.has(layer.id));node.dataset.active=String(layer.id===this.editor.activeLayerId);node.style.transform=`translateY(${layout.top(index)-(still?0:sy)}px)`;
       // Pinned rows stay over the rows that scroll beneath them; each row is as tall as the canvas draws it.
@@ -431,13 +436,13 @@ export class Timeline{
       node.style.setProperty('--layer-color',LAYER_COLORS[layer.color]??'transparent');node.dataset.color=layer.color??'';node.dataset.kind=layer.kind;node.dataset.drawing=String(Boolean(layer.drawing));node.dataset.hidden=String(layer.visible===false);node.dataset.locked=String(Boolean(layer.locked));node.setAttribute('aria-selected',node.dataset.selected);
       // One marker per row: Camera's and Scene's type glyph, a motion or effect lane's glyph, a layer's colour dot (a
       // drawing layer adds a muted brush after its name).
-      const visualKind=layer.drawing?'drawing':layer.kind;if(node._kind!==visualKind){const lead=layer.kind==='vfx'?vfxIcon('effects'):['camera','scene','motion'].includes(layer.kind)?icon(layer.kind==='motion'?'activity':layer.kind):'<span class="ui-dot sheet-layer-dot" aria-hidden="true"></span>';
+      const visualKind=layer.drawing?'drawing':layer.kind;if(node._kind!==visualKind){const lead=layer.kind==='vfx'?vfxIcon('effects'):['camera','scene','motion','folder'].includes(layer.kind)?icon(layer.kind==='motion'?'activity':layer.kind):'<span class="ui-dot sheet-layer-dot" aria-hidden="true"></span>';
         localizedMarkup(node._name, `${lead}<span class="sheet-layer-text"></span>${layer.drawing?icon('brush','sheet-layer-kind'):''}`);node._text=node._name.querySelector('.sheet-layer-text');node._dot=node._name.querySelector('.sheet-layer-dot');node._kind=visualKind;node._dotColor=null;}
       const dotColor=LAYER_COLORS[layer.color]??'var(--sheet-layer)';if(node._dot&&node._dotColor!==dotColor){node._dotColor=dotColor;node._dot.style.setProperty('--dot',dotColor);}
-      node._name.draggable=layer.kind==='layer';node._lock.hidden=layer.kind==='motion'||layer.kind.startsWith('vfx');node._eye.hidden=layer.kind.startsWith('vfx');
+      node.style.setProperty('--folder-indent',layer.folderId?'16px':'0px');node._name.draggable=layer.kind==='layer';node._lock.hidden=layer.kind==='motion'||layer.kind.startsWith('vfx');node._eye.hidden=layer.kind.startsWith('vfx')||layer.kind==='folder';node._lock.hidden||=layer.kind==='folder';node._lock.disabled=Boolean(layer.focusLocked);
       const clip=layer.kind==='vfx'&&layer.clips.find(c=>c.id===this.editor._selectedVfxClip);node._channels.hidden=!clip||!Object.values(clip.keys).some(keys=>keys.length);if(clip){const label=vfxChannelLabel(this.editor,clip);const caption=vfxChannelMessage(this.editor,clip);localizedText(node._channels.lastChild,caption.messageKey,caption.messageParams);localizedAttribute(node._channels, "title", "layerTimeline.visibleEffectKeys2", {label: caption});}
-      node._disclosure.hidden=layer.kind!=='camera'||!this.editor.getCameraMotions().length;
-      node._disclosure.setAttribute('aria-expanded',String(!this.cameraMotionsCollapsed));localizedAttribute(node._disclosure, "title", "layerTimeline.cameraMotions", {value: this.cameraMotionsCollapsed?{messageKey: "layerTimeline.expand"}:{messageKey: "layerTimeline.collapse"}});node._disclosure.setAttribute('aria-label',node._disclosure.title);
+      node._disclosure.hidden=layer.kind!=='folder'&&(layer.kind!=='camera'||!this.editor.getCameraMotions().length);
+      node._disclosure.setAttribute('aria-expanded',String(layer.kind==='folder'?!layer.collapsed:!this.cameraMotionsCollapsed));localizedAttribute(node._disclosure, "title", "layerTimeline.cameraMotions", {value: this.cameraMotionsCollapsed?{messageKey: "layerTimeline.expand"}:{messageKey: "layerTimeline.collapse"}});node._disclosure.setAttribute('aria-label',node._disclosure.title);if(layer.kind==='folder'){for(const attribute of ['title','aria-label'])localizedAttribute(node._disclosure,attribute,layer.collapsed?'layerFolders.expand':'layerFolders.collapse',{name:layer.name});}
       const name = layer.kind === 'camera' ? {messageKey: 'layerTimeline.camera'} : layer.kind === 'scene' ? {messageKey: 'layerTimeline.scene'} : layer.kind === 'motion' ? {messageKey: layer.nameKey} : layer.name;
       const suffix = layer.kind === 'camera' && this.cameraMotionsCollapsed ? {messageKey: 'layerTimeline.motionCount', messageParams: {count: this.editor.getCameraMotions().length}}
         : layer.parallax?.enabled ? {messageKey: 'layerTimeline.parallaxPercent', messageParams: {percent: Math.round(layer.parallax.x * 100)}} : '';
@@ -454,6 +459,7 @@ export class Timeline{
   }
   _selectLayer(id,event={}){
     if(typeof id==='object')id=id._id;
+    if(this.tracks.find(row=>row.id===id)?.kind==='folder')return this.toggleLayerFolder(id);
     if(this.tracks.find(t=>t.id===id)?.kind.startsWith('vfx'))return this._selectVfxRow(this.tracks.find(t=>t.id===id));
     this.editor._selectedVfxClip=null;
     if(this.tracks.find(t=>t.id===id)?.kind==='motion')return this._selectMotion(id);
@@ -464,11 +470,11 @@ export class Timeline{
     this.selectedTrackId=id;this.editor.selectSheetLayer(id,{contents:id!=='camera'});this.onTrackSelect?.(this.trackById.get(id));this.update();
   }
   // The app re-applies its selected track on every interface update. When that
-  // track is already the only selection there is nothing to reveal or repaint;
+  // track is already selected there is nothing to reveal or repaint;
   // reading the scroll position then would force layout mid-update.
-  selectTrack(id){if(id?.startsWith('figure:'))id=this.editor.layerForUid(Number(id.slice(7)));if(this.editor.getLayer(id)){if(this.selectedTrackId===id&&this.selectedLayers.size===1&&this.selectedLayers.has(id))return;this.selectedTrackId=id;this.selectedLayers=new Set([id]);this.revealSelectedLayer();this.update();}}
-  _renameLayer(node){const layer=this.editor.getLayer(node._id);if(layer?.kind!=='layer')return;const input=element('input',null,'sheet-layer-rename');node._name.after(input);localizedAttribute(input, 'aria-label', "layerTimeline.rename", {name: layer.name});input.value=layer.name;node._name.hidden=true;input.focus();input.select();let done=false;
-    const finish=save=>{if(done)return;done=true;if(save&&input.value!==layer.name)this._run(()=>this.editor.renameLayer(layer.id,input.value));input.remove();node._name.hidden=false;this.update();};input.addEventListener('blur',()=>finish(true),{once:true});input.addEventListener('keydown',event=>{event.stopPropagation();if(event.key==='Enter')finish(true);if(event.key==='Escape')finish(false);});}
+  selectTrack(id){if(id?.startsWith('figure:'))id=this.editor.layerForUid(Number(id.slice(7)));if(this.editor.getLayer(id)){if(this.selectedTrackId===id&&this.selectedLayers.has(id))return;this.selectedTrackId=id;this.selectedLayers=new Set([id]);this.revealSelectedLayer();this.update();}}
+  _renameLayer(node){const layer=this.editor.getLayer(node._id);const folder=this.tracks.find(row=>row.id===node._id&&row.kind==='folder');if(!layer&&!folder)return;if(layer?.kind!=='layer'&&!folder)return;const target=folder??layer;const input=element('input',null,'sheet-layer-rename');node._name.after(input);localizedAttribute(input, 'aria-label', "layerTimeline.rename", {name: target.name});input.value=target.name;node._name.hidden=true;input.focus();input.select();let done=false;
+    const finish=save=>{if(done)return;done=true;if(save&&input.value!==target.name)this._run(()=>folder?this.editor.renameLayerFolder(target.id,input.value):this.editor.renameLayer(target.id,input.value));input.remove();node._name.hidden=false;this.update();};input.addEventListener('blur',()=>finish(true),{once:true});input.addEventListener('keydown',event=>{event.stopPropagation();if(event.key==='Enter')finish(true);if(event.key==='Escape')finish(false);});}
   /** The cell under a pointer: its frame and row (-1 on the ruler; pinned rows do not scroll). */
   _hit(event){const rect=this.scroll.getBoundingClientRect(),x=event.clientX-rect.left,y=event.clientY-rect.top,layout=this.layout;
     const row=y<layout.header?-1:layout.pinned&&y<layout.contentTop?layout.at(y-layout.header):layout.at(y-layout.header+this._offsetY());
@@ -476,7 +482,7 @@ export class Timeline{
   _contains(hit){return hit.row>=0&&this.selectedLayers.has(this.tracks[hit.row]?.id)&&hit.tick>=this.start&&hit.tick<=this.end;}
   _selectCell(hit,{extend=false,notify=true}={}){
     const wait=this.beforeCommand?.();if(wait)return wait.then(()=>this._selectCell(hit,{extend,notify})).catch(error=>this.onError?.(error));
-    const layer=this.tracks[hit.row];if(!layer)return;if(layer.kind.startsWith('vfx'))return this._selectVfxRow(layer);if(layer.kind==='motion')return this._selectMotion(layer.id);this.editor._selectedCameraMotion=null;const changed=this.selectedTrackId!==layer.id,anchor=this.anchor??{tick:this.start,row:this.tracks.findIndex(l=>l.id===this.selectedTrackId)};
+    const layer=this.tracks[hit.row];if(!layer||layer.kind==='folder')return;if(layer.kind.startsWith('vfx'))return this._selectVfxRow(layer);if(layer.kind==='motion')return this._selectMotion(layer.id);this.editor._selectedCameraMotion=null;const changed=this.selectedTrackId!==layer.id,anchor=this.anchor??{tick:this.start,row:this.tracks.findIndex(l=>l.id===this.selectedTrackId)};
     if(extend){this.start=Math.min(anchor.tick,hit.tick);this.end=Math.max(anchor.tick,hit.tick);this.selectedLayers=new Set(this.tracks.slice(Math.min(anchor.row,hit.row),Math.max(anchor.row,hit.row)+1).map(l=>l.id));}
     else{this.start=this.end=hit.tick;this.selectedLayers=new Set([layer.id]);this.anchor={tick:hit.tick,row:hit.row};}
     this.selectedTrackId=layer.id;
@@ -488,7 +494,7 @@ export class Timeline{
     this.update();
   }
   _doubleClick(event){
-    const hit=this._hit(event),layer=this.tracks[hit.row];if(!layer)return;if(layer.kind.startsWith('vfx'))return this._selectVfxRow(layer);if(layer.kind==='motion')return this._selectMotion(layer.id);
+    const hit=this._hit(event),layer=this.tracks[hit.row];if(!layer)return;if(layer.kind==='folder')return this.toggleLayerFolder(layer.id);if(layer.kind.startsWith('vfx'))return this._selectVfxRow(layer);if(layer.kind==='motion')return this._selectMotion(layer.id);
     const track=this.editor.report._styk.layerSheet.tracks[layer.id],{key,next}=sheetKeyAt(track,hit.tick);
     if(key?.tick!==hit.tick){this._selectCell(hit);this.addTrackKey();}
     else{if(!this._contains(hit))this._selectCell(hit);this.showEasingPopover(event);}
@@ -526,6 +532,7 @@ export class Timeline{
     try{this.scroll.setPointerCapture(event.pointerId);}catch{/* a replayed tap's finger has already lifted (touch/timeline-touch.mjs) */}this.scroll.focus({preventScroll:true});
     if(hit.row<0){this.gesture={kind:'scrub',pointer:event.pointerId};this.onScrubStart?.();this.pendingScrub=hit.tick;this.update(false);event.preventDefault();return;}
     this.audio?.clearSelection();
+    if(this.tracks[hit.row]?.kind==='folder'){this.toggleLayerFolder(this.tracks[hit.row].id);event.preventDefault();return;}
     if(this._motionDown(event,hit))return;
     const selected=this._contains(hit),span=this._resizeHit(hit),layer=this.tracks[hit.row];
     if(span&&!event.shiftKey&&!event.altKey){this.gesture={kind:'resize',span,hit,pointer:event.pointerId,x:event.clientX,y:event.clientY,delta:0};event.preventDefault();return;}
@@ -602,17 +609,18 @@ export class Timeline{
   cutSelection(){if(this.editor._selectedCameraMotion)return this._copyMotion(true);this.editor._cameraMotionClipboard=null;const ids=this.ids,start=this.start,end=this.end;return this._clipboard('copy',()=>{this.editor.sheetCopyFrames(ids,start,end);this.editor.sheetRemoveFrames(ids,start,end);return this.editor._sheetClipboard;});}
   pasteSelection(){const ids=this.ids,start=this.start,operation=kind=>{if(kind==='camera-motion'){const id=this.editor.pasteCameraMotion(Math.floor(this.editor.tick));this._selectMotion(id);return id;}if(kind&&kind!=='sheet')throw messageError(new Error(''), "errors.layerTimeline.pasteTheCopiedFiguresOnTheCanvas", {});return pasteSheetClipboard(this.editor,ids,start);};return this._run(()=>this.sharedClipboard?this.sharedClipboard.paste(null,operation):operation(this.editor._cameraMotionClipboard?'camera-motion':null));}
   _clipboard(action,operation){return this._run(()=>this.sharedClipboard?this.sharedClipboard[action]('sheet',operation):operation());}
-  selectAll(){this.selectedLayers=new Set(this.tracks.filter(t=>t.kind!=='motion').map(t=>t.id));this.start=0;this.end=this.editor.totalTicks-1;this.update();}
+  selectAll(){this.selectedLayers=new Set(this.tracks.filter(t=>this.editor.getLayer(t.id)).map(t=>t.id));this.start=0;this.end=this.editor.totalTicks-1;this.update();}
   /** New layer (or a drawing layer): its row opens its name for typing once it is painted. */
-  newLayer(kind='layer'){return this._run(()=>{const layer=kind==='drawing'?this.editor.createDrawingLayer():this.editor.createLayer();this.setLayerFilter('',null);this._selectLayer(layer.id);this.revealSelectedLayer();this.pendingRename=layer.id;this.update();return layer;});}
+  newLayer(kind='layer'){return this._run(()=>{const focus=this.editor.getLayerFocus(),layer=kind==='drawing'?this.editor.createDrawingLayer():this.editor.createLayer();this.setLayerFilter('',focus?new Set([...focus.ids,layer.id]):null,{lock:Boolean(focus?.lock)});this._selectLayer(layer.id);this.revealSelectedLayer();this.pendingRename=layer.id;this.update();return layer;});}
   /** Find layers: the field takes the title's place and the focus. */
-  openLayerSearch(){this.searchField.hidden=false;this.labelTitle.hidden=true;this.layerSearch.focus();this.layerSearch.select();}
+  openLayerSearch(){this.searchField.hidden=false;this.labelTitle.hidden=true;this.layerSearch.focus();this.layerSearch.select();this._syncOrganization();}
   deleteLayer(){return this._run(()=>this.onDeleteLayer?this.onDeleteLayer(this.selectedTrackId):this.editor.deleteLayerAsync(this.selectedTrackId));}
   reorderLayer(direction){const order=this.editor.report._styk.layers.order,index=order.indexOf(this.selectedTrackId);if(index>=0)return this._run(()=>this.editor.moveLayerTo(this.selectedTrackId,clamp(index-direction,0,order.length-1)));}
   _keyDown(event){if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='f'){event.preventDefault();event.stopPropagation();this.openLayerSearch();return;}if(event.key==='F2'){event.preventDefault();const node=this.labels.find(node=>!node.hidden&&node._id===this.selectedTrackId);if(node)this._renameLayer(node);return;}if(this._motionKey(event))return;if(this.ownsHotkeys&&this.hotkeys.keydown(event,['timeline']))event.stopPropagation();}
   _menu(event,{layer=false,view=false}={}){
     const editor=this.editor,selected=editor.getLayer(this.selectedTrackId),locked=this.ids.some(id=>editor.getLayer(id)?.locked);
     // The grid's own menu (the ruler, the empty rows): the view, then the layers, then Camera and Scene.
+    if(this.tracks.find(row=>row.id===this.selectedTrackId)?.kind==='folder')return this.folderMenu(event,this.selectedTrackId);
     if(view)return showTimelineMenu(this,event,[[
       {heading:interfaceText("layerTimeline.view")},
       {label:interfaceText("layerTimeline.fitAnimation"), labelKey: "layerTimeline.fitAnimation",symbol:'fit',action:()=>this.fitFrameRange()},
@@ -620,6 +628,7 @@ export class Timeline{
       {label:interfaceText("layerTimeline.revealPlayhead"), labelKey: "layerTimeline.revealPlayhead",symbol:'chevron-right',action:()=>this.revealPlayhead()},
     ],[
       {heading:interfaceText("layerTimeline.layers")},
+      ...this.layerFolderMenuItems(),
       {label:interfaceText("layerTimeline.findLayers"), labelKey: "layerTimeline.findLayers",symbol:'search',shortcut:'Ctrl+F',action:()=>this.openLayerSearch()},
       {label:this.focusedLayerIds?interfaceText("layerTimeline.showAllLayers"):interfaceText("layerTimeline.focusSelectedLayers"), labelKey: (this.focusedLayerIds ? "layerTimeline.showAllLayers" : "layerTimeline.focusSelectedLayers"), labelParams: (this.focusedLayerIds ? {} : {}),symbol:'layers',action:()=>this.focusSelectedLayers()},
       {label:interfaceText("layerTimeline.showAllLayersOnCanvas"), labelKey: "layerTimeline.showAllLayersOnCanvas",symbol:'eye',action:()=>editor.movieclipBatch(interfaceText("layerTimeline.showAllLayers"),()=>{for(const layer of editor.layers)if(layer.kind==='layer')editor.setLayerVisible(layer.id,true);})},
@@ -633,17 +642,19 @@ export class Timeline{
       !locked&&{label:motion.enabled?interfaceText("layerTimeline.muteMotion"):interfaceText("layerTimeline.enableMotion"), labelKey: (motion.enabled ? "layerTimeline.muteMotion" : "layerTimeline.enableMotion"), labelParams: (motion.enabled ? {} : {}),symbol:motion.enabled?'eye-off':'eye',action:()=>editor.setCameraMotion(motion.id,{enabled:!motion.enabled})},
       !locked&&{label:interfaceText("layerTimeline.duplicateMotion"), labelKey: "layerTimeline.duplicateMotion",symbol:'duplicate',action:()=>{editor._selectedCameraMotion=editor.duplicateCameraMotion(motion.id);}},
       !locked&&motion.enabled&&{label:interfaceText("layerTimeline.bakeClipRange"), labelKey: "layerTimeline.bakeClipRange",symbol:'diamond',action:()=>editor.bakeCameraMotion({start:motion.start,end:motion.start+motion.duration})},
-      locked&&{label:interfaceText("layerTimeline.unlockCamera"), labelKey: "layerTimeline.unlockCamera",symbol:'unlock',action:()=>editor.setLayerLocked('camera',false)},
+      locked&&{disabled:editor.isLayerFocusLocked('camera'),label:interfaceText("layerTimeline.unlockCamera"), labelKey: "layerTimeline.unlockCamera",symbol:'unlock',action:()=>editor.setLayerLocked('camera',false)},
     ],[!locked&&{label:interfaceText("layerTimeline.deleteMotion"), labelKey: "layerTimeline.deleteMotion",symbol:'trash',danger:true,action:()=>editor.deleteCameraMotion(motion.id)}]]);
     // A layer's menu: named after the layer; its colour a submenu; New layer; Delete last.
     const own=selected?.kind==='layer',several=this.ids.filter(id=>editor.getLayer(id)?.kind==='layer').length>1;
     if(layer)return showTimelineMenu(this,event,[
       [selected&&{heading:selected.name},
+       ...this.layerFolderMenuItems(),
        own&&{label:interfaceText("layerTimeline.renameLayer"), labelKey: "layerTimeline.renameLayer",symbol:'text',shortcut:'F2',action:()=>{const node=this.labels.find(node=>node._id===selected.id);if(node)this._renameLayer(node);}},
        own&&{label:interfaceText("layerTimeline.layerColor"), labelKey: "layerTimeline.layerColor",symbol:'palette',submenu:[[{label:interfaceText("layerTimeline.noColor"), labelKey: "layerTimeline.noColor",swatch:'var(--sheet-layer)',checked:!selected.color,action:()=>editor.setLayerColor([selected.id],null)},...Object.keys(LAYER_COLORS).map(color=>({label:interfaceText(layerColorMessages[color]),labelKey:layerColorMessages[color],swatch:LAYER_COLORS[color],checked:selected.color===color,action:()=>editor.setLayerColor([selected.id],color)}))]]},
        {label:selected?.visible===false?interfaceText("layerTimeline.showLayer"):interfaceText("layerTimeline.hideLayer"), labelKey: (selected?.visible===false ? "layerTimeline.showLayer" : "layerTimeline.hideLayer"), labelParams: (selected?.visible===false ? {} : {}),symbol:selected?.visible===false?'eye':'eye-off',action:()=>editor.setLayerVisible(selected.id,selected.visible===false)},
-       {label:selected?.locked?interfaceText("layerTimeline.unlockLayer"):interfaceText("layerTimeline.lockLayer"), labelKey: (selected?.locked ? "layerTimeline.unlockLayer" : "layerTimeline.lockLayer"), labelParams: (selected?.locked ? {} : {}),symbol:selected?.locked?'unlock':'lock',action:()=>editor.setLayerLocked(selected.id,!selected.locked)},
-       own&&{label:several?interfaceText("layerTimeline.focusSelectedLayers"):interfaceText("layerTimeline.focusThisLayer"), labelKey: (several ? "layerTimeline.focusSelectedLayers" : "layerTimeline.focusThisLayer"), labelParams: (several ? {} : {}),symbol:'layers',action:()=>several?this.focusSelectedLayers():this.setLayerFilter('',new Set([selected.id]))}],
+       {disabled:Boolean(selected?.focusLocked),label:selected?.savedLocked?interfaceText("layerTimeline.unlockLayer"):interfaceText("layerTimeline.lockLayer"), labelKey: (selected?.savedLocked ? "layerTimeline.unlockLayer" : "layerTimeline.lockLayer"),symbol:selected?.savedLocked?'unlock':'lock',action:()=>editor.setLayerLocked(selected.id,!selected.savedLocked)},
+       own&&{label:several?interfaceText("layerTimeline.focusSelectedLayers"):interfaceText("layerTimeline.focusThisLayer"), labelKey: (several ? "layerTimeline.focusSelectedLayers" : "layerTimeline.focusThisLayer"), labelParams: (several ? {} : {}),symbol:'layers',action:()=>this.focusSelectedLayers({ids:several?this.ids:[selected.id]})},
+       own&&{label:interfaceText('timelineOrganization.focusAndLock'),labelKey:'timelineOrganization.focusAndLock',symbol:'lock',action:()=>this.focusSelectedLayers({lock:true,ids:several?this.ids:[selected.id]})}],
       // Moving a layer in the stack without dragging its name (a finger, a keyboard): up is toward the top row.
       own?[{label:interfaceText("layerTimeline.moveLayerUp"), labelKey: "layerTimeline.moveLayerUp",symbol:'up',disabled:editor.report._styk.layers.order.at(-1)===selected.id,action:()=>this.reorderLayer(-1)},
        {label:interfaceText("layerTimeline.moveLayerDown"), labelKey: "layerTimeline.moveLayerDown",symbol:'down',disabled:editor.report._styk.layers.order[0]===selected.id,action:()=>this.reorderLayer(1)}]:null,
@@ -671,12 +682,14 @@ export class Timeline{
        canPaste&&!locked&&{label:interfaceText("layerTimeline.pasteFrames"), labelKey: "layerTimeline.pasteFrames",shortcut:this.shortcut('paste'),symbol:'clipboard',action:()=>this.pasteSelection()}],
       [hasKey&&!locked&&{label:interfaceText("layerTimeline.deleteSelectedKeys"), labelKey: "layerTimeline.deleteSelectedKeys",shortcut:this.shortcut('delete'),symbol:'minus',action:()=>this.clearKeys()},
        hasFrames&&!locked&&{label:interfaceText("layerTimeline.removeFrames"), labelKey: "layerTimeline.removeFrames",shortcut:this.shortcut('remove-frames'),symbol:'trash',danger:true,action:()=>this.removeFrames()},
-       locked&&{label:interfaceText("layerTimeline.unlockLayers"), labelKey: "layerTimeline.unlockLayers",symbol:'unlock',action:()=>{for(const id of this.ids)editor.setLayerLocked(id,false);}}],
+       locked&&{disabled:this.ids.some(id=>editor.isLayerFocusLocked(id)),label:interfaceText("layerTimeline.unlockLayers"), labelKey: "layerTimeline.unlockLayers",symbol:'unlock',action:()=>{for(const id of this.ids)editor.setLayerLocked(id,false);}}],
     ]);
   }
-  destroy(){this.disposed=true;this._unmountTouchActions();cancelAnimationFrame(this._centerFrame??0);this.audio?.destroy();this._cancelGesture();this.events.abort();this.menuEvents?.abort();this.observer.disconnect();if(this.raf)cancelAnimationFrame(this.raf);this.menu?.remove();this.easingPopover?.hidePopover();this.headerTools.classList.remove('audio-selection');this.onionRange.destroy();this.root.remove();}
+  destroy(){this.editor.clearLayerFocus();this.disposed=true;this._unmountTouchActions();cancelAnimationFrame(this._centerFrame??0);this.audio?.destroy();this._cancelGesture();this.events.abort();this.menuEvents?.abort();this.observer.disconnect();if(this.raf)cancelAnimationFrame(this.raf);this.menu?.remove();this.easingPopover?.hidePopover();this.headerTools.classList.remove('audio-selection');this.onionRange.destroy();this.root.remove();}
 }
 
 Object.assign(Timeline.prototype,cameraMotionTimelineMethods,timelineOrganizationMethods,timelineTouchMethods);
 
 installVfxTimeline(Timeline);
+
+Object.assign(Timeline.prototype,timelineLayerFolderMethods);

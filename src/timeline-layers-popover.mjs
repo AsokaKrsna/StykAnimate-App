@@ -17,6 +17,7 @@ import {t as interfaceText, messageText as sayTimeline} from './localization.mjs
 import {createPopover} from './ui/ui-popover.mjs';
 import {icon} from './icons.mjs';
 import {LAYER_COLORS} from './layers.mjs';
+import {layerFolderRows} from './layer-folders.mjs';
 
 const element = (tag, parent, className, text) => {
   const node = document.createElement(tag);
@@ -33,6 +34,10 @@ const element = (tag, parent, className, text) => {
 export function createLayersPopover({anchor, editor, run, overlays = null, t = null, topInset = 0}) {
   const say = (key, params) => sayTimeline(t, key, params);
   const events = new AbortController();
+  const collapsedFolders = new Set();
+  editor.addEventListener('change', event => {
+    if (event.detail?.kind === 'document') collapsedFolders.clear();
+  }, {signal: events.signal});
   const list = element('div', null, 'tl-layers-list');
   list.setAttribute('role', 'list');
   localizedAttribute(list, 'aria-label', "layers.list", {});
@@ -48,6 +53,7 @@ export function createLayersPopover({anchor, editor, run, overlays = null, t = n
   };
   footButton('plus', say("layers.newLayer"), () => editor.selectSheetLayer(editor.createLayer().id, {contents: false}), {label: {key: "layers.newLayer", params: {}}});
   footButton('brush', say("layers.drawingLayer"), () => editor.selectSheetLayer(editor.createDrawingLayer().id, {contents: false}), {label: {key: "layers.drawingLayer", params: {}}});
+  footButton('folder', interfaceText('layerFolders.group'), () => editor.createLayerFolder(interfaceText('layerFolders.newFolder'), [editor.activeLayerId].filter(id=>editor.getLayer(id)?.kind==='layer')), {label:{key:'layerFolders.group',params:{}}});
 
   let changes = null;
   const popover = createPopover({
@@ -79,16 +85,25 @@ export function createLayersPopover({anchor, editor, run, overlays = null, t = n
     const active = editor.activeLayerId, focused = list.contains(document.activeElement) ? document.activeElement : null;
     const refocus = focused && {id: focused.closest('[data-layer-id]')?.dataset.layerId, index: [...focused.parentElement.children].indexOf(focused),
       pick: focused.matches('.tl-layers-pick')};
-    const rows = editor.getLayers().filter(layer => layer.kind === 'layer').reverse().map(layer => {
+    const rows = layerFolderRows(editor.getLayers().filter(layer => layer.kind === 'layer').reverse(), editor.report._styk.layers, collapsedFolders).map(layer => {
       const row = element('div', null, 'ui-list-row tl-layers-row');
       row.setAttribute('role', 'listitem');
       row.dataset.layerId = layer.id;
       row.dataset.hidden = String(layer.visible === false);
       row.setAttribute('aria-current', String(layer.id === active));
+      row.style.paddingInlineStart = layer.folderId ? '18px' : '';
       const pick = element('button', row, 'tl-layers-pick');
       pick.type = 'button';
       pick.setAttribute('aria-pressed', String(layer.id === active));
       pick.setAttribute('aria-description', say("layers.choose", {name: layer.name}));
+      if(layer.kind==='folder') {
+        localizedMarkup(pick, `${icon(layer.collapsed?'chevron-right':'chevron-down')}${icon('folder')}<span class="ui-list-row-label"></span>`);
+        pick.querySelector('.ui-list-row-label').textContent=layer.name;
+        pick.setAttribute('aria-expanded',String(!layer.collapsed));
+        localizedAttribute(pick,'aria-label',layer.collapsed?'layerFolders.expand':'layerFolders.collapse',{name:layer.name});
+        pick.addEventListener('click',()=>{collapsedFolders.has(layer.id)?collapsedFolders.delete(layer.id):collapsedFolders.add(layer.id);render();});
+        return row;
+      }
       const dot = element('span', pick, 'ui-dot');
       dot.setAttribute('aria-hidden', 'true');
       dot.style.setProperty('--dot', LAYER_COLORS[layer.color] ?? 'var(--sheet-layer)');

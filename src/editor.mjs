@@ -24,6 +24,8 @@ import {editorCombineMethods} from './editor-combine.mjs';
 import {editorRigMethods} from './editor-rig.mjs';
 import {editorSelectionMethods} from './editor-selection.mjs';
 import {editorLayerMethods} from './editor-layers.mjs';
+import {editorLayerFolderMethods} from './editor-layer-folders.mjs';
+import {editorLayerFocusMethods} from './editor-layer-focus.mjs';
 import {editorLayerAsyncMethods} from './editor-layer-async.mjs';
 import {ensureLayerState, validateLayerState, layerLocked} from './layers.mjs';
 import {editorAnimationMethods} from './editor-animation.mjs';
@@ -206,6 +208,8 @@ export class Editor extends EventTarget {
   get hasFigureClipboard() { return Boolean(this._figureClipboard || this._selectionClipboard); }
 
   _emit(kind, detail = {}) {
+    if(kind==='document')this.clearLayerFocus({notify:false});
+    else if(detail.layers||detail.structural||kind==='history')this.reconcileLayerFocus();
     if(kind==='seek')this._followSheetSelection();
     if(kind==='selection'&&!detail.sheetSelection)this._sheetSelection=null;
     if(detail.structural&&kind!=='document'){this._loadedFigureNames=null;this._loadedTimelineTracks=null;}
@@ -260,7 +264,7 @@ export class Editor extends EventTarget {
   _restoreSelection(state) {
     this.frameIndex = clamp(state.frameIndex, 0, this.report.keyframes.length - 1);
     this.tick = clamp(state.tick, 0, Math.max(0, this.totalTicks - 1));
-    const existing = new Set((this.selectionFrame?.objects ?? []).map(o => o.unique_id));
+    const existing = new Set((this.selectionFrame?.objects ?? []).filter(o=>!this.isFigureFocusLocked(o.unique_id)).map(o => o.unique_id));
     this.selectedUid = existing.has(state.uid) ? state.uid : null;
     this.selectedUids = new Set((state.uids ?? [state.uid]).filter(uid => existing.has(uid)));
     if (!this.selectedUids.has(this.selectedUid)) this._selectedUid = [...this.selectedUids].at(-1) ?? null;
@@ -273,7 +277,7 @@ export class Editor extends EventTarget {
     this._segmentSelection = ids.size > 1 && ids.has(active) ? {uid:this.selectedUid,active,ids} : null;
     const layers = this.report._styk?.layers;
     if (layers) layers.activeId = this.getLayer(state.activeLayerId) ? state.activeLayerId : layers.defaultLayerId;
-    this._sheetSelection=state.sheetSelection?{...state.sheetSelection}:null;
+    this._sheetSelection=state.sheetSelection&&!this.isLayerFocusLocked(state.sheetSelection.id)?{...state.sheetSelection}:null;
   }
   _record(command) {
     if (this._authoredPoseEdit?.transaction && (command.kind === 'import'||this.report._styk?.layerSheet&&command.kind==='project')) return;
@@ -532,6 +536,7 @@ export class Editor extends EventTarget {
     return this;
   }
   select(uid, joint = -1, {toggle = false, add = false} = {}) {
+    if(uid!=null&&this.isFigureFocusLocked(uid)&&this.selectionFrame.objects.some(object=>object.unique_id===uid))return this.object;
     if (this.branchSelected && uid === this.selectedUid && joint === this.selectedJoint && !toggle && !add) return this.object;
     this._polygonSelection = null;
     this._segmentSelection = null;
@@ -549,7 +554,7 @@ export class Editor extends EventTarget {
   }
   selectMany(uids) {
     this._branchSelection = null;
-    const existing = new Set(this.selectionFrame.objects.map(o => o.unique_id));
+    const existing = new Set(this.selectionFrame.objects.filter(o=>!this.isFigureFocusLocked(o.unique_id)).map(o => o.unique_id));
     this.selectedUids = new Set([...uids].filter(uid => existing.has(uid)));
     this._selectedUid = [...this.selectedUids].at(-1) ?? null; this.selectedJoint = -1;
     this._emit('selection'); return this.selectedObjects;
@@ -737,7 +742,7 @@ export class Editor extends EventTarget {
   deleteFigure() {
     return this.deleteSelection();
   }
-  _selectIds(uids) { this._branchSelection = null; this.selectedUids = new Set(uids); this._selectedUid = [...this.selectedUids].at(-1) ?? null; this.selectedJoint = -1; }
+  _selectIds(uids) { this._branchSelection = null; this.selectedUids = new Set([...uids].filter(uid=>!this.isFigureFocusLocked(uid))); this._selectedUid = [...this.selectedUids].at(-1) ?? null; this.selectedJoint = -1; }
   deleteSelection() {
     if (this.branchSelected) return this.deleteSegment();
     const selected = new Set(this.selectedObjects.map(o => o.unique_id)); if (!selected.size) return false;
@@ -1726,7 +1731,7 @@ Object.assign(Editor.prototype, editorCombineMethods);
 Object.assign(Editor.prototype, editorRigMethods);
 Object.assign(Editor.prototype, editorRigConstraintMethods, editorSpatialMethods);
 Object.assign(Editor.prototype, editorSelectionMethods);
-Object.assign(Editor.prototype, editorLayerMethods);
+Object.assign(Editor.prototype, editorLayerMethods, editorLayerFolderMethods, editorLayerFocusMethods);
 Object.assign(Editor.prototype, editorLayerAsyncMethods);
 Object.defineProperties(Editor.prototype, Object.getOwnPropertyDescriptors(editorAnimationMethods));
 Object.assign(Editor.prototype, editorFrameMethods);

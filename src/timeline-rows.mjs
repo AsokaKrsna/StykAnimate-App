@@ -38,7 +38,7 @@ export function sheetRowLayout(tracks = [], {short = false, viewport = Infinity,
   const header = touch ? TOUCH_HEADER : short ? SHORT_HEADER : HEADER, row = touch ? TOUCH_ROW : short ? SHORT_ROW : ROW, tops = [], sizes = [];
   const systemRow = touch ? TOUCH_SYSTEM_ROW : SYSTEM_ROW;
   let system = 0, systemHeight = 0;
-  while (system < tracks.length && tracks[system].kind !== 'layer') {
+  while (system < tracks.length && !['layer', 'folder'].includes(tracks[system].kind)) {
     const size = tracks[system].kind === 'camera' || tracks[system].kind === 'scene' ? systemRow : row;
     tops.push(systemHeight); sizes.push(size); systemHeight += size; system++;
   }

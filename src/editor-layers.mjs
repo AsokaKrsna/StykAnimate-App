@@ -1,6 +1,7 @@
 import {messageError} from './localized-error.mjs';
 import {ensureLayerState, validateLayerState, layerIdForUid, FIXED_LAYER_IDS, LAYER_COLORS} from './layers.mjs';
 import {planLayerMembershipMigration} from './editor-layer-migration.mjs';
+import {folderLayerOrder} from './layer-folders.mjs';
 const owns = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 const clone = value => structuredClone(value);
 const cleanName = name => { if (typeof name !== 'string' || !name.trim() || name.trim().length > 160) throw messageError(new Error(''), "errors.editorLayers.layerNamesNeed1160Characters", {}); return name.trim(); };
@@ -50,8 +51,8 @@ export const editorLayerMethods = {
     if (this._layerDescriptors) return this._layerDescriptors;
     const state = ensureLayerState(this.report);
     const fixed = FIXED_LAYER_IDS.map(id => ({id, kind: id, name: id === 'scene' ? 'Scene' : 'Camera',
-      permanent: true, visible: state.fixed?.[id]?.visible !== false, locked: state.fixed?.[id]?.locked === true, figureUids: []}));
-    return this._layerDescriptors = [...fixed, ...state.order.map(id => ({id, kind: 'layer', ...state.byId[id], permanent: false, figureUids: this.getLayerFigureUids(id)}))];
+      permanent: true, visible: state.fixed?.[id]?.visible !== false, savedLocked: state.fixed?.[id]?.locked === true, focusLocked: this.isLayerFocusLocked(id), locked: state.fixed?.[id]?.locked === true || this.isLayerFocusLocked(id), figureUids: []}));
+    return this._layerDescriptors = [...fixed, ...state.order.map(id => ({id, kind: 'layer', ...state.byId[id], savedLocked: state.byId[id].locked, focusLocked: this.isLayerFocusLocked(id), locked: state.byId[id].locked || this.isLayerFocusLocked(id), permanent: false, figureUids: this.getLayerFigureUids(id)}))];
   },
   getLayer(id) { return this.getLayers().find(layer => layer.id === id) ?? null; },
   layerForUid(uid) { return layerIdForUid(this.report, uid); },
@@ -109,13 +110,15 @@ export const editorLayerMethods = {
     for (const change of changes) write(state, change.path, change[direction]);
     this._layerChanged({reindex: true});
   },
-  createLayer(name, {index, activate = true, drawing = false} = {}) {
+  createLayer(name, {index, activate = true, drawing = false, folderId} = {}) {
     const state = ensureLayerState(this.report), id = `layer-${state.nextId}`;
     if (state.order.length >= 10000) throw messageError(new Error(''), "errors.editorLayers.aProjectSupportsAtMost10000User", {});
     const insertion = index ?? state.order.length;
     if (!Number.isInteger(insertion) || insertion < 0 || insertion > state.order.length) throw messageError(new Error(''), "errors.editorLayers.invalidLayerPosition", {});
+    folderId??=state.byId[state.order[insertion-1]]?.folderId===state.byId[state.order[insertion]]?.folderId?state.byId[state.order[insertion]]?.folderId:undefined;
+    if(folderId!==undefined&&!Object.hasOwn(state.folders?.byId??{},folderId))throw messageError(new Error(''), 'errors.layerFolders.missingFolder');
     const title = cleanName(name ?? `Layer ${state.nextId}`), order = state.order.slice(); order.splice(insertion, 0, id);
-    this._layerEdit('Create layer', [[['byId', id], {name: title, visible: true, locked: false, ...(drawing ? {drawing:{version:1}} : {})}], [['order'], order], [['nextId'], state.nextId + 1]],
+    this._layerEdit('Create layer', [[['byId', id], {name: title, visible: true, locked: false, ...(folderId?{folderId}:{}), ...(drawing ? {drawing:{version:1}} : {})}], [['order'], folderLayerOrder({...state,byId:{...state.byId,[id]:{folderId}}},order)], [['nextId'], state.nextId + 1]],
       {structural: true, reindex: true, activeId: activate ? id : undefined}); return this.getLayer(id);
   },
   renameLayer(id, name) {
@@ -150,7 +153,7 @@ export const editorLayerMethods = {
   reorderLayers(ids) {
     const state = ensureLayerState(this.report), order = [...ids];
     if (order.length !== state.order.length || new Set(order).size !== order.length || order.some(id => !owns(state.byId, id))) throw messageError(new Error(''), "errors.editorLayers.includeEveryUserLayerExactlyOnceSceneAnd", {});
-    return this._layerEdit('Reorder layers', [[['order'], order]], {structural: true});
+    return this._layerEdit('Reorder layers', [[['order'], folderLayerOrder(state, order)]], {structural: true});
   },
   moveLayerTo(id, index) {
     const state = ensureLayerState(this.report), from = state.order.indexOf(id);

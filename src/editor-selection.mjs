@@ -4,11 +4,13 @@ import {frameOrder, setOrder} from './pivot/structure.mjs';
 import {objectBounds} from './renderer-geometry.mjs';
 import {segmentBranchIndices} from './editor-builder.mjs';
 import {builderStyleTargets} from './editor-builder-style.mjs';
+import {figureFocusLocked} from './editor-layer-focus.mjs';
 
 const validIds = (uids, existing) => new Set([...uids].filter(uid => existing.has(uid)));
 
 /** Selection is UI state: it must not invalidate scene caches or command history. */
 function applySelection(editor, ids, preferred = editor.selectedUid) {
+  ids = new Set([...ids].filter(uid => !figureFocusLocked(editor.report, uid)));
   editor._branchSelection = null;
   const active = editor.selectedUid;
   const nextActive = ids.has(preferred) ? preferred : [...ids].at(-1) ?? null;
@@ -97,6 +99,7 @@ export const editorSelectionMethods = {
   },
 
   selectPolygon(uid, index) {
+    if (figureFocusLocked(this.report, uid)) return false;
     const object = this.selectionFrame.objects.find(object => object.unique_id === uid);
     const figure = this.report.figure_types.find(figure => figure.figure_type_id === object?.figure_type_id);
     const polygon = figure?.polyfills?.[index];if(!polygon)return false;
@@ -106,6 +109,7 @@ export const editorSelectionMethods = {
   },
   /** Toggle stable native handles inside one figure, without editing its pose. */
   toggleSegment(uid, joint) {
+    if (figureFocusLocked(this.report, uid)) return false;
     this._polygonSelection = null;
     const object = this.selectionFrame.objects.find(object => object.unique_id === uid);
     const figure = this.report.figure_types.find(figure => figure.figure_type_id === object?.figure_type_id);
@@ -121,6 +125,7 @@ export const editorSelectionMethods = {
   },
 
   selectBranch(uid, joint) {
+    if (figureFocusLocked(this.report, uid)) return false;
     this._segmentSelection = null;
     const objects = this.selectionFrame.objects, slot = objects.findIndex(o => o.unique_id === uid);
     const figure = this.report.figure_types.find(f => f.figure_type_id === objects[slot]?.figure_type_id);
@@ -137,7 +142,7 @@ export const editorSelectionMethods = {
     const queue = [slot];
     for (let i = 0; i < queue.length; i++) for (const child of children.get(queue[i]) ?? [])
       if (!slots.has(child)) { slots.add(child); queue.push(child); }
-    this.selectedUids = new Set(objects.filter((_, i) => slots.has(i)).map(o => o.unique_id));
+    this.selectedUids = new Set(objects.filter((object, i) => slots.has(i) && !figureFocusLocked(this.report, object.unique_id)).map(o => o.unique_id));
     this._selectedUid = uid; this.selectedJoint = joint;
     this._branchSelection = {uid, joint};
     this._emit('selection'); return true;

@@ -1,5 +1,7 @@
 import {messageError} from './localized-error.mjs';
 import {validateParallax} from './layer-parallax.mjs';
+import {validateLayerFolders} from './layer-folders.mjs';
+import {figureFocusLocked} from './editor-layer-focus.mjs';
 /** Persistent user layers. Native object slots and join references never change. */
 export const FIXED_LAYER_IDS = Object.freeze(['scene', 'camera']);
 export const LAYER_COLORS = Object.freeze({blue:'#3399ee',violet:'#9966dd',rose:'#df6690',orange:'#d99035',green:'#43a878',teal:'#36a8b5'});
@@ -42,6 +44,7 @@ export function* validateLayerStateSteps(state) {
     for (const id of FIXED_LAYER_IDS) if (state.fixed[id] &&
       (typeof state.fixed[id].visible !== 'boolean' || typeof state.fixed[id].locked !== 'boolean')) throw messageError(new Error(''), "errors.layers.invalidPermanentTrackProperties", {});
   }
+  validateLayerFolders(state);
   return state;
 }
 export function ensureLayerState(report) {
@@ -59,7 +62,7 @@ export function layerIdForUid(report, uid) {
   return state ? (owns(state.assignments, String(uid)) ? state.assignments[String(uid)] : state.defaultLayerId) : 'layer-1';
 }
 export function layerVisible(report, uid) { const state = report._styk?.layers; return state?.byId[layerIdForUid(report, uid)]?.visible !== false; }
-export function layerLocked(report, uid) { const state = report._styk?.layers; return state?.byId[layerIdForUid(report, uid)]?.locked === true; }
+export function layerLocked(report, uid) { const state = report._styk?.layers; return state?.byId[layerIdForUid(report, uid)]?.locked === true || figureFocusLocked(report, uid); }
 
 /** Back-to-front grouping preserves the source order within each user layer. */
 export function applyLayerOrder(report, frame) {

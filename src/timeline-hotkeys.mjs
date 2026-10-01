@@ -30,7 +30,14 @@ export function runTimelineHotkey(timeline, id, event = {}) {
     if (filmstrip) timeline.selectFrame(timeline.selectedIndex + direction, {extend});
     else {
       const row = timeline.tracks.findIndex(t => t.id === timeline.selectedTrackId);
-      timeline._run(() => timeline._selectCell({row:clamp(row + (id === 'timeline-layer-up' ? -1 : id === 'timeline-layer-down' ? 1 : 0), 0, timeline.tracks.length - 1), tick:Math.max(0, timeline.editor.tick + (id.startsWith('timeline-layer-') ? 0 : direction))}, {extend}));
+      let nextRow = row;
+      if(id.startsWith('timeline-layer-')) {
+        const step=id==='timeline-layer-up'?-1:1;
+        let candidate=row+step;
+        while(candidate>=0&&candidate<timeline.tracks.length&&timeline.tracks[candidate].kind==='folder')candidate+=step;
+        if(candidate>=0&&candidate<timeline.tracks.length)nextRow=candidate;
+      }
+      timeline._run(() => timeline._selectCell({row:clamp(nextRow, 0, timeline.tracks.length - 1), tick:Math.max(0, timeline.editor.tick + (id.startsWith('timeline-layer-') ? 0 : direction))}, {extend}));
       timeline.revealPlayhead();
     }
     return true;

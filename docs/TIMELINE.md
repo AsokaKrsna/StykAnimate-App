@@ -47,6 +47,11 @@ bottom of a scrolled sheet and a later explicit selection change.
 
 ## Independent layer and property tracks
 
+User layers can be grouped in collapsible folders in both timeline views. See
+[Layer folders](LAYER-FOLDERS.md) for ordering, saving and editing behavior.
+[Layer focus](LAYER-FOCUS.md) describes persistent multi-layer focus and the
+temporary Focus and lock option.
+
 The default Advanced timeline uses the actual user layers, with permanent Scene
 and Camera tracks above them. User layers appear front-most first, matching the
 layer browser. Disclosure opens layer pose channels, figures, and their property
@@ -113,6 +118,20 @@ projection test indexes 20,000 collapsed layers without materializing native key
 tables; reading six visible rows requests six cached tables. This evidence covers
 timeline-to-engine commands; composition and output-pose equivalence are separate
 engine acceptance checks.
+
+## Playback range
+
+Both timelines expose **Playback range** beside Loop and in Timeline ⋯. Enter
+inclusive output-frame limits (50–100 plays all 51 frames), or **Use selection**.
+Simple selections include each selected card's full exposure and inbetweens.
+Limits remain independent of later editing selections; Loop repeats them, and
+disabling Loop plays to the last selected frame and stops. **Entire animation**
+clears the limits. Frame numbers clamp to the current duration; shortening a
+document clamps the range, while a new document or timeline-mode switch clears
+it. Playback limits are session UI state and do not change saved timing or exports.
+
+Run `node --test tests/playback-window.test.mjs` and
+`node tests/playback-range.browser.mjs`.
 
 ## Whole-document frame editing
 

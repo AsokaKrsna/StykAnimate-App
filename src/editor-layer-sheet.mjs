@@ -398,7 +398,7 @@ export const editorLayerSheetMethods={
     const ownLayer=isDrawingLayer(plan.layers.byId[owner]);
     if(ownLayer){
       const id=`layer-${plan.layers.nextId}`,order=plan.layers.order.slice();order.splice(order.indexOf(owner)+1,0,id);
-      plan.layers.byId[id]={name:String(layerName).slice(0,120)||'Movieclip',visible:true,locked:false};plan.layers.order=order;plan.layers.nextId++;owner=id;
+      plan.layers.byId[id]={name:String(layerName).slice(0,120)||'Movieclip',visible:true,locked:false,...(plan.layers.byId[owner]?.folderId?{folderId:plan.layers.byId[owner].folderId}:{})};plan.layers.order=order;plan.layers.nextId++;owner=id;
     }
     plan.layers.assignments[instance.unique_id]=owner;
     if(ownLayer){
@@ -553,13 +553,14 @@ export const editorLayerSheetMethods={
     for(;;){const step=steps.next();if(step.done)return commitSheetDeletion(this,step.value);}
   },
   selectSheetLayer(id,{contents=true}={}){
-    if(!this.getLayer(id))return false;this.setActiveLayer(id);this._sheetSelection={id,contents};
+    if(!this.getLayer(id)||this.isLayerFocusLocked(id))return false;this.setActiveLayer(id);this._sheetSelection={id,contents};
     if(contents)this._followSheetSelection();this._emit('selection',{sheetSelection:true});return true;
   },
   /** Keep the current figure selection across seeks (Simple frame navigation). */
   keepSelectionOnSeek(){if(this._sheetSelection?.contents)this._sheetSelection={...this._sheetSelection,contents:false};},
   _followSheetSelection(){
     const selection=this._sheetSelection;if(!selection?.contents||!this.report._styk.layerSheet)return;
+    if(this.isLayerFocusLocked(selection.id)){this._sheetSelection=null;return;}
     const objects=this.evaluatedFrame.objects.filter(o=>this.layerForUid(o.unique_id)===selection.id);
     if(objects.length!==this.selectedUids.size||objects.some(o=>!this.selectedUids.has(o.unique_id)))this.selectedUids=new Set(objects.map(o=>o.unique_id));
     this._selectedUid=objects.find(o=>!o.join)?.unique_id??objects[0]?.unique_id??null;this.selectedJoint=-1;this._branchSelection=null;

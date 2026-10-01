@@ -2,16 +2,24 @@ import {localizedAttribute,localizedText} from './localization-bindings.mjs';
 /** View-only layer projection. Never changes document order or visibility. */
 export function organizeTimelineRows(rows, query = '', focusedIds = null) {
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
-  return rows.filter(row => row.kind !== 'layer' ||
-    ((!focusedIds || focusedIds.has(row.id)) && terms.every(term => row.name.toLocaleLowerCase().includes(term))));
+  const matches = row => terms.every(term => row.name.toLocaleLowerCase().includes(term));
+  const folderMatches = new Set();
+  if (terms.length) for (const row of rows) if (row.kind === 'folder' && matches(row))
+    for (const id of row.layerIds ?? []) folderMatches.add(id);
+  const visible = new Set(rows.filter(row => row.kind === 'layer' &&
+    (!focusedIds || focusedIds.has(row.id)) && (matches(row) || folderMatches.has(row.id))).map(row => row.id));
+  return rows.filter(row => row.kind === 'layer' ? visible.has(row.id) : row.kind === 'folder' ?
+    (row.layerIds ?? []).some(id => visible.has(id)) || !(row.layerIds?.length) && matches(row) || !terms.length && !focusedIds : true);
 }
 
 export const timelineOrganizationMethods = {
-  setLayerFilter(query = '', focusedIds = this.focusedLayerIds) {
+  setLayerFilter(query = '', focusedIds = this.focusedLayerIds, {lock = focusedIds === this.focusedLayerIds && Boolean(this.editor.getLayerFocus()?.lock)} = {}) {
     this._cancelGesture();
     this.layerQuery = query;
     this.focusedLayerIds = focusedIds;
     this.layerSearch.value = query;
+    this.editor.setLayerFocus(focusedIds, {lock});
+    this.focusedLayerIds = this.editor.getLayerFocus()?.ids ?? null;
     this.anchor = this.hover = null;
     this._reindex();
     const visible = new Set(this.tracks.map(row => row.id));
@@ -21,13 +29,17 @@ export const timelineOrganizationMethods = {
     this.scroll.scrollTop = 0;
     this.update();
   },
-  focusSelectedLayers() {
-    const ids = new Set(this.ids.filter(id => this.editor.getLayer(id)?.kind === 'layer'));
-    if (!this.focusedLayerIds && !ids.size) { localizedText(this.live, "timelineOrganization.selectAFigureLayerToFocus", {}); return; }
-    this.setLayerFilter(this.layerQuery, this.focusedLayerIds ? null : ids);
+  focusSelectedLayers({lock = false, ids} = {}) {
+    const selected = new Set((ids ?? this.ids).filter(id => this.editor.getLayer(id)?.kind === 'layer'));
+    if (!this.focusedLayerIds && !selected.size) { localizedText(this.live, "timelineOrganization.selectAFigureLayerToFocus", {}); return; }
+    this.setLayerFilter(this.layerQuery, this.focusedLayerIds && !lock && ids === undefined ? null : selected.size ? selected : this.focusedLayerIds, {lock});
   },
   revealSelectedLayer() {
-    if (!this.tracks.some(row => row.id === this.selectedTrackId)) {
+    const folderId = this.editor?.getLayer(this.selectedTrackId)?.folderId;
+    if (!this.focusedLayerIds && folderId && this.collapsedFolders?.delete(folderId)) this._reindex();
+    // Selection on the canvas can belong to a layer outside this list. Focus
+    // remains until Show all; a name search can still reveal its selection.
+    if (!this.tracks.some(row => row.id === this.selectedTrackId) && !this.focusedLayerIds) {
       const id = this.selectedTrackId;this.setLayerFilter('', null);this.selectedTrackId = id;this.selectedLayers = new Set([id]);
     }
     const index = this.tracks.findIndex(row => row.id === this.selectedTrackId), layout = this.layout;
@@ -45,6 +57,7 @@ export const timelineOrganizationMethods = {
     this._scrollToX(Math.max(0, start * this.pxPerTick - 16));
   },
   _syncOrganization() {
+    this.focusedLayerIds = this.editor.getLayerFocus()?.ids ?? null;
     const count = this.visibleLayerCount;
     const total = this.editor.report._styk.layers.order.length;
     const hidden=!this.layerQuery,focused=String(Boolean(this.focusedLayerIds));
@@ -55,10 +68,11 @@ export const timelineOrganizationMethods = {
     const word=this.focusLayersButton.querySelector('.ui-label');if(word)localizedText(word,this.focusedLayerIds?'timelineOrganization.showAll':'timelineOrganization.focus');
     // The layer list's header: Show all while a focus is on (a layer's menu focuses it), New layer's kind
     // for the workspace (Draw makes drawing layers), and the find field in the title's place while it is used.
-    const focusHidden=!this.focusedLayerIds;
+    const searching=Boolean(this.layerQuery)||document.activeElement===this.layerSearch;
+    const focusHidden=!this.focusedLayerIds||searching;
     if(this.focusLayersButton.hidden!==focusHidden)this.focusLayersButton.hidden=focusHidden;
     if(this.newLayerButton)localizedAttribute(this.newLayerButton,'aria-label',this._drawWorkspace?.()?'timeline.newDrawingLayer':'timeline.newLayer');
-    if(this.searchField){const open=Boolean(this.layerQuery)||document.activeElement===this.layerSearch;if(this.searchField.hidden!==!open)this.searchField.hidden=!open;if(this.labelTitle.hidden!==open)this.labelTitle.hidden=open;}
+    if(this.searchField){if(this.searchField.hidden!==!searching)this.searchField.hidden=!searching;if(this.labelTitle.hidden!==searching)this.labelTitle.hidden=searching;}
     const emptyHidden=count>0||!(this.layerQuery||this.focusedLayerIds);
     if(this.emptyLayers.hidden!==emptyHidden)this.emptyLayers.hidden=emptyHidden;
   },

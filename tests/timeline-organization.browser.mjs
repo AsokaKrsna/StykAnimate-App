@@ -21,7 +21,24 @@ assert.equal(await page.getByRole('searchbox',{name:'Find layers'}).isVisible(),
 await page.evaluate(()=>{styk.timeline.selectTrack('layer-2');styk.timeline.focusSelectedLayers();});await settle();
 assert.ok(await page.getByRole('button',{name:'Show all layers',exact:true}).isVisible());
 assert.deepEqual(await page.evaluate(()=>styk.timeline.tracks.filter(r=>r.kind==='layer').map(r=>r.id)),['layer-2']);assert.equal(await snapshot(),before);
-await page.evaluate(()=>styk.timeline.selectTrack('layer-4'));await settle();assert.equal(await page.evaluate(()=>styk.timeline.selectedTrackId),'layer-4');assert.equal(await page.evaluate(()=>styk.timeline.focusedLayerIds),null);
+await page.evaluate(()=>styk.timeline.selectTrack('layer-4'));await settle();assert.equal(await page.evaluate(()=>styk.timeline.selectedTrackId),'layer-4');assert.deepEqual(await page.evaluate(()=>[...styk.timeline.focusedLayerIds]),['layer-2']);
+assert.deepEqual(await page.evaluate(()=>styk.timeline.tracks.filter(r=>r.kind==='layer').map(r=>r.id)),['layer-2']);
+await page.getByRole('button',{name:'Show all layers',exact:true}).click();await settle();assert.equal(await page.evaluate(()=>styk.timeline.focusedLayerIds),null);
+
+// Multiple selected rows survive UI refresh and the layer's context menu.
+await page.getByRole('button',{name:'Select layer Character body',exact:true}).click();
+await page.getByRole('button',{name:'Select layer Character hands',exact:true}).click({modifiers:['Control']});await settle();
+assert.deepEqual((await page.evaluate(()=>styk.timeline.ids)).sort(),['layer-2','layer-3']);
+await page.getByRole('button',{name:'Select layer Character hands',exact:true}).click({button:'right'});
+const beforeFocusLock=await snapshot(),focusHistory=await page.evaluate(()=>styk.editor._undo.length);
+await page.getByRole('menuitem',{name:'Focus and lock',exact:true}).click();await settle();
+assert.deepEqual((await page.evaluate(()=>[...styk.editor.getLayerFocus().ids])).sort(),['layer-2','layer-3']);
+assert.equal(await page.evaluate(()=>styk.editor.getLayerFocus().lock),true);
+assert.equal(await page.getByRole('button',{name:'Unlock Camera',exact:true}).isDisabled(),true);
+assert.equal(await snapshot(),beforeFocusLock,'Temporary focus locks do not author saved layer flags');
+assert.equal(await page.evaluate(()=>styk.editor._undo.length),focusHistory);
+await page.getByRole('button',{name:'Show all layers',exact:true}).click();await settle();
+assert.equal(await page.evaluate(()=>styk.editor.getLayerFocus()),null);
 const divider=page.getByRole('separator',{name:'Resize layer names'});await divider.focus();await divider.press('ArrowRight');assert.equal(await page.evaluate(()=>styk.timeline.labelWidth),230);await divider.press('Home');assert.equal(await page.evaluate(()=>styk.timeline.labelWidth),220);
 await page.getByRole('grid',{name:'Layer frames'}).press('Control+f');assert.ok(await page.getByRole('searchbox',{name:'Find layers'}).evaluate(e=>document.activeElement===e));await page.keyboard.press('Escape');
 await page.getByRole('button',{name:'Fit timeline',exact:true}).click();await settle();assert.ok(await page.evaluate(()=>styk.timeline.pxPerTick>=1));

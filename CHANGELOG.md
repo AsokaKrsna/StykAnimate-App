@@ -8,6 +8,8 @@ What's new in each version of StykAnimate.
 
 ### Added
 
+- Layer folders to organize and collapse groups of layers in the timeline.
+- Playback ranges to loop a chosen section of your animation.
 - Automatic updates for the Linux AppImage, with a prompt to save your work before restarting.
 - Phones and tablets: a touch interface made for fingers, with layouts for holding the device upright or on its side and panels you swipe away.
 - Touch gestures: tap with two fingers to undo and three to redo, and press and hold anything to see its menu.
@@ -21,6 +23,7 @@ What's new in each version of StykAnimate.
 
 ### Changed
 
+- Layer focus stays active until you turn it off, with support for multiple layers and Focus and lock to protect other artwork while you work.
 - Zooming the canvas with the mouse wheel is smooth and easier to control.
 - Complete interface translations for all 26 supported non-English languages, with right-to-left layouts and clearer text in narrow windows.
 - Onion skin is enabled when the app starts.
@@ -30,6 +33,8 @@ What's new in each version of StykAnimate.
 
 ### Fixed
 
+- Fixed new drawings changing their layer position between the first stroke and playback.
+- Fixed onion skins disappearing behind lower layers or skipping nearby drawings in animations with many layers.
 - Fixed repeated captions in controls and panels when changing the interface language.
 - Fixed Settings running off the edge of very narrow windows.
 - Browser downloads now keep your work recoverable until a file save is confirmed.

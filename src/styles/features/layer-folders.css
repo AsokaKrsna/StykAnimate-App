@@ -1,0 +1,6 @@
+@layer features {
+  .sheet-layer-name { margin-inline-start: var(--folder-indent, 0px); }
+  .sheet-layer[data-kind="folder"] { background: var(--surface-2); }
+  .sheet-layer[data-kind="folder"] .sheet-layer-name { font-weight: 600; }
+  .sheet-layer:where([data-kind="folder"]) .sheet-camera-disclosure[aria-expanded="true"] svg { transform: rotate(90deg); }
+}

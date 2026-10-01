@@ -1,0 +1,31 @@
+# Layer focus
+
+In the Advanced timeline, Ctrl/Command-click layer names to select several layers
+and choose **Focus selected layers** from a layer's context menu. Focus filters
+the timeline list while every layer keeps its existing canvas visibility. Selecting
+a figure from another layer leaves the focused list in place. **Show all layers**
+in the list header ends focus.
+
+**Focus and lock** also prevents selecting or editing figures on other layers.
+Their artwork remains visible as a reference. It accepts the same multiple-layer
+selection; Camera and Scene are temporarily locked too. The saved eye and lock
+settings are preserved, so Show all restores those settings exactly.
+
+Focus is session state owned by `src/editor-layer-focus.mjs`, separate from the
+document's layer metadata. A weak map associates the focused layer IDs and the
+temporary lock with the live report only. Copies used for saving, export and
+playback do not inherit this editing restriction. Layer descriptors expose
+`savedLocked`, `focusLocked` and the effective `locked` value, and the existing
+figure lock predicate includes the temporary lock. Focus changes invalidate
+selection/layer UI without changing document revision or undo history.
+
+Document replacement and timeline disposal clear focus. Deleting a focused layer
+prunes it from the set; deleting the last focused layer ends focus. Figure, connected
+group and marquee selection all enforce the same temporary selection boundary.
+Metadata edits such as renaming or folder organization remain available.
+
+Focused regression coverage lives in `tests/editor-layer-focus.test.mjs`,
+`tests/layer-focus.browser.mjs` and the timeline organization browser regression.
+These check selection across layers,
+multiple focused layers, rejected pose/key edits, unchanged saved locks and history,
+and cleanup when a project or its focused layers change.

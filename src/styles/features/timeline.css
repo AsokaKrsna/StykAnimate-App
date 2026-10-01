@@ -135,6 +135,7 @@
   .layer-timeline .sheet-label-head { gap: var(--space-1); padding-inline: var(--island-pad) var(--space-1); }
   .sheet-label-head > .sheet-label-title { flex: 1; min-inline-size: 0; font: var(--type-eyebrow); color: var(--text-3); }
   .sheet-label-head > .sheet-focus { --_px: var(--space-2); flex: none; }
+  .sheet-label-head:has(:where(.sheet-focus:not([hidden]))) > .sheet-label-title { display: none; }
   .sheet-label-head > .sheet-focus[aria-pressed="true"] { --_bg: var(--accent-soft); --_bg-hover: var(--accent-soft-hover); color: var(--accent-text-strong); }
   .sheet-label-head > .sheet-new-layer > .ui-split-more { block-size: var(--control-sm); }
   /* Under the short tier's 24px ruler the header's buttons are 24px too. */
