@@ -6,6 +6,8 @@ import {diagnosticDetails} from './telemetry-schema.mjs';
 import {NATIVE_FRAME_CONTENT_TYPE, unpackNativeFrameResponse} from './import-wire.mjs';
 import {decodeDocument, normalizeDecodedDocument, verifyEmbeddedSource} from './native-container.mjs';
 import {codecRequest} from './codec-request.mjs';
+import {bytesToBase64} from './base64.mjs';
+import {decodeSourceRecord} from './source-record.mjs';
 const pending = new Map();
 const receipts = new Map();
 
@@ -49,6 +51,7 @@ async function importRequest(message, signal) {
   }
   const headers = {Accept: `${NATIVE_FRAME_CONTENT_TYPE}, application/json`};
   if (message.jobId) headers['X-Styk-Job-Id'] = message.jobId;
+  if (message.sourceOwner) headers['X-Styk-Source-Owner'] = message.sourceOwner;
   if (message.token) headers.Authorization = `Bearer ${message.token}`;
   let path, body;
   if (message.operation === 'import') {
@@ -114,10 +117,30 @@ async function importRequest(message, signal) {
     throw error;
   }
   if (!result || typeof result !== 'object' || !result.document) throw messageError(new Error(''), "errors.importWorker.theFileServiceReturnedNoEditableDocument", {});
+  // Native source bytes are embedded in the document, including JSON aliases
+  // and the service fallback for unavailable container codecs.
+  if (['styk','stkz','stykmov'].includes(result.kind)) result.sourceId = null;
   const parsed = performance.now();
   result.timings = {...result.timings, worker_fetch_ms: +(received - started).toFixed(3),
     worker_parse_ms: +(parsed - received).toFixed(3), worker_ms: +(parsed - started).toFixed(3)};
   return result;
+}
+
+async function embedBrowserSource(result,message,signal) {
+  if (!message.codecPort || !result.sourceOwner || !result.sourceId) return;
+  // The browser codec can restart on cancellation. Adopt a self-contained
+  // verified original before publishing the editable project to the page.
+  const headers = {'X-Styk-Job-Id':message.jobId};
+  const response = await codecRequest(message, `/api/source?id=${encodeURIComponent(result.sourceId)}`, {headers,signal});
+  if (!response.ok) throw Object.assign(messageError(new Error(''), 'errors.documentExportWorker.theFileServiceReturnedAnInvalidSourceRecord', {}), {status:response.status});
+  const source = decodeSourceRecord(await response.arrayBuffer());
+  result.document._stykSource = {...source.metadata,source_base64:bytesToBase64(source.bytes)};
+  await verifyEmbeddedSource(result.document);
+  result.timings.document_bytes = Number(result.timings.document_bytes || 0) + result.document._stykSource.source_base64.length;
+  await codecRequest(message, '/api/source/release', {method:'POST',headers:{...headers,'Content-Type':'application/json'},
+    body:JSON.stringify({ownerId:result.sourceOwner}),signal});
+  result.sourceId = null;
+  delete result.sourceOwner;
 }
 
 self.addEventListener('message', event => {
@@ -135,6 +158,7 @@ self.addEventListener('message', event => {
   let stage = 'decode';
   importRequest(message, controller.signal).then(async result => {
     stage = 'prepare';
+    if (!controller.signal.aborted) await embedBrowserSource(result,message,controller.signal);
     if (!controller.signal.aborted) await sendResult(message.id, result, controller.signal);
   }).catch(error => {
     if (!controller.signal.aborted) self.postMessage({id: message.id, ok: false, error: errorMessage(error, stage)});

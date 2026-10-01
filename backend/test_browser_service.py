@@ -79,6 +79,32 @@ class BrowserCodecTests(unittest.TestCase):
         if body.startswith(import_wire.MAGIC):
             self.assertEqual(headers["Content-Type"], import_wire.CONTENT_TYPE)
 
+    def test_project_original_lease_survives_cache_eviction_and_releases_idempotently(self):
+        owner = "a" * 32
+        imported = json.loads(self.call("POST", "/api/import?filename=blank.piv", blank_piv(),
+                                        {"X-Styk-Source-Owner": owner})[2])
+        self.assertEqual(imported["sourceOwner"], owner)
+        self.codec.store.sources.clear()
+        self.codec.store.cache_bytes = 0
+        status, _, body = self.call("GET", f"/api/source?id={imported['sourceId']}")
+        self.assertEqual((status, body[:8]), (200, b"STYKSRC1"))
+        request = json.dumps({"ownerId": owner}).encode()
+        for _ in range(2):
+            self.assertEqual(self.call("POST", "/api/source/release", request)[0], 204)
+        self.assertEqual(self.call("GET", f"/api/source?id={imported['sourceId']}")[0], 410)
+
+    def test_original_lease_controls_validate_requests_and_share_original_bytes(self):
+        imported = json.loads(self.call("POST", "/api/import?filename=blank.piv", blank_piv())[2])
+        owner = "b" * 32
+        request = json.dumps({"sourceId": imported["sourceId"], "ownerId": owner}).encode()
+        status, _, body = self.call("POST", "/api/source/retain", request)
+        self.assertEqual((status, json.loads(body)), (200, {"ok": True, "retained": True}))
+        self.assertEqual(self.codec.store.retained_source_bytes, len(blank_piv()))
+        for path in ("/api/source/retain", "/api/source/release"):
+            self.assertEqual(self.call("POST", path, b"[]")[0], 400)
+            self.assertEqual(self.call("POST", path, b"x" * 4097)[0], 413)
+            self.assertEqual(self.call("POST", path, b'{"ownerId":"wrong"}')[0], 400)
+
     def test_bad_files_become_json_errors_like_the_http_handler(self):
         status, headers, body = self.call("POST", "/api/import?filename=broken.piv", b"not a pivot file at all")
         self.assertEqual(status, 422)

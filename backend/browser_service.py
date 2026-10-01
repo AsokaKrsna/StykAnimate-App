@@ -41,7 +41,7 @@ class BrowserCodec:
         self.max_source, self.max_document = max_source, max_document
         # The root is only used to list and open workspace files, which this
         # transport never exposes.
-        self.store = server.ProjectStore(Path("/"), max_cache=max_cache)
+        self.store = server.ProjectStore(Path("/"), max_cache=max_cache, max_retained_sources=max_source)
 
     def _limit(self, filename: str) -> int:
         return self.max_document if server.is_native_document(filename) else self.max_source
@@ -79,7 +79,8 @@ class BrowserCodec:
             name = query.get("filename", ["imported.piv"])[0]
             if len(body) > self._limit(name):
                 raise server.ApiError(413, "body_too_large", "The request exceeds the configured size limit.")
-            result = self.store.import_bytes(body, name, as_json=True, prefer_native=prefer_native)
+            result = self.store.import_bytes(body, name, as_json=True, prefer_native=prefer_native,
+                                             source_owner=headers.get("x-styk-source-owner"))
             kind = import_wire.CONTENT_TYPE if result.startswith(import_wire.MAGIC) else "application/json; charset=utf-8"
             return 200, {"Content-Type": kind}, result
         if method == "POST" and path == "/api/export":
@@ -96,6 +97,17 @@ class BrowserCodec:
                          **server.response_metadata(filename=name, timings=timings, request_bytes=len(body))}, data
         if method == "POST" and path == "/api/open":
             raise server.ApiError(404, "workspace_unavailable", "Opening files by path needs the desktop app.")
+        if method == "POST" and path in ("/api/source/retain", "/api/source/release"):
+            if len(body) > 4096:
+                raise server.ApiError(413, "body_too_large", "The request exceeds the configured size limit.")
+            request = server.decoded_json(body)
+            if not isinstance(request, dict):
+                raise server.ApiError(400, "invalid_request", "The request must be a JSON object.")
+            if path == "/api/source/retain":
+                retained = self.store.retain_source(request.get("sourceId"), request.get("ownerId"))
+                return self._json(200, {"ok": True, "retained": retained})
+            self.store.release_source(request.get("ownerId"))
+            return 204, {"Content-Type": "application/json"}, b""
         raise server.ApiError(404, "route_not_found", "Unknown codec endpoint.")
 
 

@@ -5,6 +5,7 @@ import { applyDocumentChunk } from './document-transport.mjs';
 import {materializeNativeFrames} from './import-wire.mjs';
 import {nativePlaybackSnapshot} from './playback-native.mjs';
 import {codecJob} from './codec-job.mjs';
+import {codecRequest} from './codec-request.mjs';
 export class ImportClient {
   // The desktop codec requires its per-launch token; the browser dev server has none.
   constructor({baseURL = globalThis.location?.origin, token = globalThis.stykDesktop?.apiToken || '', timeoutMs = 180000,
@@ -16,6 +17,8 @@ export class ImportClient {
     this.sequence = 0;
     this.cancelGeneration = 0;
     this.pending = new Map();
+    this.sourceOwners = new Set();
+    this.activeSourceOwner = null;
     this.disposed = false;
     this.failure = null;
     this.workerURL=workerURL;this._startWorker();
@@ -46,10 +49,10 @@ export class ImportClient {
         if(this.pending.get(message.id)!==request) return;
         const snapshot=nativePlaybackSnapshot(result.document,buffer,offset,nativeMeta,result.timings.native_pose_bytes_estimate);
         if(snapshot)result.playbackFrames=snapshot;
-        this.pending.delete(message.id);clearTimeout(request.timer);request.backendJob.finish();request.resolve(result);
+        this.pending.delete(message.id);clearTimeout(request.timer);this._complete(request,result);
       },error=>{
         if(this.pending.get(message.id)!==request) return;
-        this.pending.delete(message.id);clearTimeout(request.timer);request.backendJob.cancel();request.reject(error);
+        this.pending.delete(message.id);clearTimeout(request.timer);this._cancelRequest(request);request.reject(error);
       });
       return;
     }
@@ -58,15 +61,15 @@ export class ImportClient {
         request.document = applyDocumentChunk(request.document, message.chunk);
         this.worker.postMessage({ operation: 'ack', id: message.id, sequence: message.sequence });
       } catch (error) {
-        this.pending.delete(message.id); clearTimeout(request.timer); request.backendJob.cancel(); this.worker.postMessage({ operation: 'cancel', id: message.id }); request.reject(error);
+        this.pending.delete(message.id); clearTimeout(request.timer); this._cancelRequest(request); this.worker.postMessage({ operation: 'cancel', id: message.id }); request.reject(error);
       }
       return;
     }
     this.pending.delete(message.id);
     clearTimeout(request.timer);
-    if (message.ok) { request.backendJob.finish(); request.resolve(message.complete ? { ...message.result, document: request.document } : message.result); }
+    if (message.ok) { this._complete(request,message.complete ? { ...message.result, document: request.document } : message.result); }
     else {
-      request.backendJob.cancel();
+      this._cancelRequest(request);
       const error = restoreMessageError((message.error?.message ? new Error(message.error?.message) : messageError(new Error(''), "errors.importClient.thisFileCouldNotBeImported")), message.error);
       if (message.error?.code) error.code = message.error.code;
       if (message.error?.status) error.status = message.error.status;
@@ -76,23 +79,70 @@ export class ImportClient {
     }
   }
 
+  _complete(request,result) {
+    if (request.sourceOwner && result?.sourceId && result.sourceOwner !== request.sourceOwner) {
+      this._cancelRequest(request);
+      request.reject(messageError(new Error(''), 'errors.documentExportWorker.theFileServiceReturnedAnInvalidSourceRecord', {}));
+      return;
+    }
+    request.backendJob.finish();
+    // Native files already carry their original source. Imports without a
+    // retained source never leave an empty lease behind.
+    if (result?.sourceOwner !== request.sourceOwner || !result?.sourceId) void this.releaseSource(request.sourceOwner);
+    request.resolve(result);
+  }
+
+  _cancelRequest(request) {
+    // A queued import could publish its owner after an early release. Wait for
+    // the independent cancellation acknowledgement before scheduling cleanup.
+    const cancelled = request.backendJob.cancel();
+    if (request.sourceOwner) void this.releaseSource(request.sourceOwner,cancelled);
+  }
+
+  /** Transfer the imported original's lifetime to the accepted project. */
+  adoptSource(result) {
+    const owner = this.sourceOwners.has(result?.sourceOwner) ? result.sourceOwner : null;
+    const previous = this.activeSourceOwner;
+    this.activeSourceOwner = owner;
+    if (previous && previous !== owner) void this.releaseSource(previous);
+  }
+
+  /** Release an unaccepted result, or the accepted project being replaced. */
+  async releaseSource(result,cancelled) {
+    const ownerId = typeof result === 'string' ? result : result?.sourceOwner;
+    if (!ownerId || !this.sourceOwners.delete(ownerId)) return;
+    if (this.activeSourceOwner === ownerId) this.activeSourceOwner = null;
+    await cancelled;
+    const job = codecJob(this.baseURL, this.token);
+    try {
+      const link = job.link();
+      const headers = {'Content-Type':'application/json',...(this.token ? {Authorization:`Bearer ${this.token}`} : {})};
+      await codecRequest({baseURL:this.baseURL,...link.fields}, '/api/source/release', {
+        method:'POST',headers,body:JSON.stringify({ownerId}),signal:AbortSignal.timeout(10000),keepalive:true,
+      });
+      job.finish();
+    } catch { job.cancel(); }
+  }
+
   _fail(error) {
     if(!this.disposed)this.diagnostics?.recovery('import_worker','started');
     this.failure = error;
     this.worker.terminate();
     for (const request of this.pending.values()) {
       clearTimeout(request.timer);
-      request.backendJob.cancel();
+      this._cancelRequest(request);
       request.reject(error);
     }
     this.pending.clear();
   }
 
-  _request(operation, payload, transfer = [], onProgress) {
+  _request(operation, payload, transfer = [], onProgress, project = false) {
     if (this.disposed) return Promise.reject(messageError(new Error(''), "errors.importClient.theFileImporterHasBeenDisposed", {}));
     // Retry only the user's next operation; never silently repeat a failed one.
     if(this.failure){try{this._startWorker();}catch(error){this.diagnostics?.recovery('import_worker','failed');return Promise.reject(error);}}
     const id = ++this.sequence, backendJob = codecJob(this.baseURL, this.token);
+    const sourceOwner = project ? crypto.randomUUID().replaceAll('-','') : undefined;
+    if (sourceOwner) this.sourceOwners.add(sourceOwner);
     return new Promise((resolve, reject) => {
       const timer = this.timeoutMs > 0 ? setTimeout(() => {
         const error = messageError(new Error(''), "errors.importClient.theFileImportTimedOutTryOpeningA", {});
@@ -101,20 +151,21 @@ export class ImportClient {
         this._fail(error);
       }, this.timeoutMs) : null;
       const succeeded=value=>{this.diagnostics?.recovery('import_worker','recovered');resolve(value);};
-      this.pending.set(id, {resolve:succeeded, reject, timer, onProgress, backendJob});
+      const request = {resolve:succeeded, reject, timer, onProgress, backendJob, sourceOwner};
+      this.pending.set(id, request);
       try {
         const link = backendJob.link();
-        this.worker.postMessage({id, operation, baseURL: this.baseURL, token: this.token, jobId: backendJob.id, ...link.fields, ...payload}, [...transfer, ...link.transfer]);
+        this.worker.postMessage({id, operation, baseURL: this.baseURL, token: this.token, jobId: backendJob.id, sourceOwner, ...link.fields, ...payload}, [...transfer, ...link.transfer]);
       } catch (error) {
         clearTimeout(timer);
         this.pending.delete(id);
-        backendJob.cancel();
+        this._cancelRequest(request);
         reject(error);
       }
     });
   }
 
-  async importFile(file,{entryIndex,onProgress}={}) {
+  async importFile(file,{entryIndex,onProgress,project=false}={}) {
     if (this.disposed) throw messageError(new Error(''), "errors.importClient.theFileImporterHasBeenDisposed", {});
     if (!file || typeof file.arrayBuffer !== 'function' || typeof file.name !== 'string') {
       throw messageError(new TypeError(''), "errors.importClient.chooseAStykanimatePivotOrStickNodesFile", {});
@@ -125,30 +176,31 @@ export class ImportClient {
     const generation=this.cancelGeneration,bytes = await file.arrayBuffer();
     if(generation!==this.cancelGeneration)throw messageError(new DOMException('', 'AbortError'), "errors.importClient.importSuperseded", {});
     // Transfer ownership rather than structured-cloning a second upload buffer.
-    return this._request('import', {filename: file.name, bytes,entryIndex}, [bytes],onProgress);
+    return this._request('import', {filename: file.name, bytes,entryIndex}, [bytes],onProgress,project);
   }
 
   cancelPending() {
     this.cancelGeneration++;
-    for(const [id,request] of this.pending){clearTimeout(request.timer);request.backendJob.cancel();this.worker.postMessage({operation:'cancel',id});request.reject(messageError(new DOMException('', 'AbortError'), "errors.importClient.importSuperseded", {}));}
+    for(const [id,request] of this.pending){clearTimeout(request.timer);this._cancelRequest(request);this.worker.postMessage({operation:'cancel',id});request.reject(messageError(new DOMException('', 'AbortError'), "errors.importClient.importSuperseded", {}));}
     this.pending.clear();
   }
 
-  importNative(file) {
+  importNative(file,options) {
     if (!/\.(styk|stkz|stykmov|json)$/i.test(file?.name || '')) {
       return Promise.reject(messageError(new Error(''), "errors.importClient.chooseAStykProjectStkzFigureStykmovMovieclip", {}));
     }
-    return this.importFile(file);
+    return this.importFile(file,options);
   }
 
-  openSample(path) {
+  openSample(path,{project=false}={}) {
     if (typeof path !== 'string' || !path) return Promise.reject(messageError(new Error(''), "errors.importClient.chooseAProjectFromTheLibrary", {}));
-    return this._request('open', {path});
+    return this._request('open', {path},[],undefined,project);
   }
 
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
     this._fail(messageError(new Error(''), "errors.importClient.theFileImporterHasBeenDisposed", {}));
+    for (const owner of this.sourceOwners) void this.releaseSource(owner);
   }
 }

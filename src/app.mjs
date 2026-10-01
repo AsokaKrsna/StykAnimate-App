@@ -3367,6 +3367,7 @@ async function acceptImport(
   name,
   { replaceApproved = false, openToken } = {},
 ) {
+  try {
   let report = result.document ?? result.report ?? result;
   if (report.format === "stykanimate") report = report.document;
   const savedDraft = Boolean(report._styk?.simpleFrameDraft);
@@ -3423,6 +3424,8 @@ async function acceptImport(
             : undefined,
         },
       );
+      state.sourceId = result.sourceId || null;
+      importer.adoptSource(result);
       if(result.playbackFrames) {
         const importedReport=editor.report,revision=editor.revision,draft=editor.frameDraftRevision;
         playback.stageNativeSnapshot(importedReport,result.playbackFrames,{revision,
@@ -3435,7 +3438,6 @@ async function acceptImport(
         initialScene.dispose();
       }
     }
-    state.sourceId = result.sourceId || null;
     if (!initialScene?.activated) {
       state.hidden.clear();
       state.locked.clear();
@@ -3460,6 +3462,9 @@ async function acceptImport(
   );
   warmPlayback({immediate:true});
   return true;
+  } finally {
+    if (result.sourceOwner !== importer.activeSourceOwner) void importer.releaseSource(result);
+  }
 }
 function cancelSpritePlacement() {
   spriteImportController?.abort();
@@ -3597,14 +3602,15 @@ async function importMediaFile(
 }
 async function chooseSticknodesFile(file,isCurrent=()=>true) {
   const onProgress=p=>{if(isCurrent())status(`${p.phase || interfaceText("app.importing2")}…`,false,true);};
-  let result=await importer.importFile(file,{onProgress});
-  if(!isCurrent())return null;
+  let result=await importer.importFile(file,{onProgress,project:/\.piv$/i.test(file.name)});
+  if(!isCurrent()){void importer.releaseSource(result);return null;}
   if(result.kind==='sticknodes-archive'){
     const index=await dialogs.chooseSticknodesEntry(result.entries);
     if(index===null||!isCurrent())return null;
     result=await importer.importFile(file,{entryIndex:index,onProgress});
   }
-  return isCurrent()?result:null;
+  if(!isCurrent()){void importer.releaseSource(result);return null;}
+  return result;
 }
 async function importFiles(files) {
   telemetry.performance.resources('before_open');
@@ -3642,7 +3648,7 @@ async function importFilesTracked(files) {
         continue;
       }
       const result = await chooseSticknodesFile(file,()=>seq===importSequence);
-      if (!result || seq !== importSequence) { outcome = 'cancelled'; return false; }
+      if (!result || seq !== importSequence) { void importer.releaseSource(result); outcome = 'cancelled'; return false; }
       if (telemetry.consent.diagnostics) context.complexity = documentComplexity(result.document);
       telemetry.operation({ ...context, operation: 'import', stage: 'decode', outcome: 'succeeded' }, result.timings?.decode_ms);
       telemetry.performance.record('decode',result.timings?.decode_ms);
@@ -3707,7 +3713,7 @@ async function acceptNativeFileTracked(result) {
 async function openSample(path) {
   pause();
   status({messageKey: "app.decodingPivotFile", messageParams: {}}, false, true);
-  try { await acceptImport(await importer.openSample(path)); } catch (error) { throw persistentFailure(error); }
+  try { await acceptImport(await importer.openSample(path,{project:/\.piv$/i.test(path)})); } catch (error) { throw persistentFailure(error); }
 }
 async function saveNative({ saveAs = false } = {}) {
   finishCurrentEdit();
@@ -4337,12 +4343,13 @@ const actions = {
     if (await dialogs.confirmReplace()) {
       pause();
       editor.newDocument();
+      state.sourceId = null;
+      importer.adoptSource(null);
       telemetry.performance.resources('closed');telemetry.performance.closedAt=performance.now();
       if (desktop?.activateDocument)
         state.documentToken = (
           await desktop.activateDocument({})
         ).documentToken;
-      state.sourceId = null;
       fit();
     }
   },
@@ -5729,11 +5736,12 @@ function showRecovery(record, records = [record]) {
           )
             return;
           await editor.loadAsync(record.document, record.name);
+          state.sourceId = null;
+          importer.adoptSource(null);
           if (desktop?.activateDocument)
             state.documentToken = (
               await desktop.activateDocument({})
             ).documentToken;
-          state.sourceId = null;
         }
         editor.dirty = true;
         await reservation?.commit();
@@ -5776,6 +5784,7 @@ if (desktop) {
   desktop.onBackendError?.(fail);
 }
 window.addEventListener("pagehide", () => clipboardWorker.dispose());
+window.addEventListener("pagehide", event => { if (!event.persisted) importer.dispose(); });
 window.addEventListener("pagehide", event => { if (!event.persisted) browserRecovery?.dispose(); });
 window.addEventListener("beforeunload", (e) => {
   if (editor.dirty && !desktop) {

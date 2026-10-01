@@ -89,7 +89,7 @@ async function startDesktopHost({appRoot, resourcesPath, packaged=false, onError
   }
 
   function forward(request,response,pathname) {
-    const control=pathname==='/api/cancel', collection=control?controls:jobs;
+    const control=pathname==='/api/cancel'||pathname==='/api/source/release', collection=control?controls:jobs;
     if (control ? controls.size>=4 : jobs.size+cancellations.size>=maxApiRequests) { reject(response,error(503,'backend_busy',"desktop.webHost.errors.backendBusy")); return; }
     const cancellable=['/api/import','/api/open','/api/export','/api/source'].includes(pathname);
     const identity=cancellable?(request.headers['x-styk-job-id']||randomBytes(16).toString('hex')):null;

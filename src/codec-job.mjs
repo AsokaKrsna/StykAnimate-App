@@ -20,7 +20,7 @@ export function codecMode(scope = globalThis) {
 
 export function codecJob(baseURL, token = '', {mode = codecMode(), host} = {}) {
   const id = crypto.randomUUID().replaceAll('-', '');
-  let settled = false;
+  let settled = false, cancellation;
   if (mode === 'browser') {
     const codec = host ?? browserCodecHost();
     codec.register(id);
@@ -28,9 +28,10 @@ export function codecJob(baseURL, token = '', {mode = codecMode(), host} = {}) {
       link() { return codec.link(id); },
       finish() { settled = true; codec.release(id); },
       cancel() {
-        if (settled) return;
+        if (settled) return cancellation;
         settled = true;
         codec.cancel(id);
+        return cancellation = Promise.resolve();
       },
     };
   }
@@ -38,12 +39,12 @@ export function codecJob(baseURL, token = '', {mode = codecMode(), host} = {}) {
     link() { return {fields: {}, transfer: []}; },
     finish() { settled = true; },
     cancel() {
-      if (settled) return;
+      if (settled) return cancellation;
       settled = true;
       const headers = token ? {Authorization: `Bearer ${token}`} : {};
       // No document data crosses this control request. It has an independent
       // lifetime from the worker/fetch being cancelled and a bounded timeout.
-      void fetch(new URL(`/api/cancel?id=${id}`, baseURL), {method: 'POST', body: '', headers,
+      return cancellation = fetch(new URL(`/api/cancel?id=${id}`, baseURL), {method: 'POST', body: '', headers,
         signal: AbortSignal.timeout(2000), keepalive: true}).catch(() => {});
     },
   };

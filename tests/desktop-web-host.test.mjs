@@ -181,3 +181,25 @@ test('static and proxy paths reject traversal, escaped links, private files and 
   assert.equal((await request(f.host.origin,'/api/export',{method:'POST',headers:{'Content-Length':256*1024*1024+1}}).result).status,413);
   assert.equal(f.host.pendingRequests,0);
 });
+
+test('original-source cleanup has control capacity when the conversion queue is full',async t=>{
+  const f=await fixture(t),conversions=[];
+  const upstream=await codec(t,(req,res)=>{
+    if(req.url==='/api/source/release'){
+      assert.equal(req.headers.authorization,'Bearer local-test');
+      const chunks=[];req.on('data',chunk=>chunks.push(chunk));
+      req.on('end',()=>{assert.deepEqual(JSON.parse(Buffer.concat(chunks)),{ownerId:'a'.repeat(32)});res.writeHead(204);res.end();});
+      return;
+    }
+    conversions.push(res);
+  });
+  f.resolve(upstream);await f.host.ready;
+  const first=request(f.host.origin,'/api/source?id=first'),second=request(f.host.origin,'/api/source?id=second');
+  first.result.catch(()=>{});second.result.catch(()=>{});
+  await until(()=>conversions.length===2);
+  assert.equal((await request(f.host.origin,'/api/source?id=full').result).status,503);
+  const body=JSON.stringify({ownerId:'a'.repeat(32)});
+  assert.equal((await request(f.host.origin,'/api/source/release',{method:'POST',body,
+    headers:{Authorization:'Bearer local-test','Content-Type':'application/json','Content-Length':Buffer.byteLength(body)}}).result).status,204);
+  first.cancel();second.cancel();await assert.rejects(first.result);await assert.rejects(second.result);
+});
