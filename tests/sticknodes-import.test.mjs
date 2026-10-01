@@ -39,6 +39,17 @@ test('synthetic full project retains real clip assets, sprites, text, transport 
  const before=geometry(doc).drawables.map(d=>[d.type,d.points]);synchronizeExistingDerived(transferred);assert.deepEqual(geometry(transferred).drawables.map(d=>[d.type,d.points]),before);
  const editor=new Editor();editor.load(transferred);editor.enterMovieclip(clips[0].figure_type_id);const duration=editor.totalTicks;editor.select(editor.evaluatedFrame.objects[0].unique_id);editor.moveSelection(4,5);editor.leaveMovieclip();editor.undo();editor.redo();assert.equal(movieclipAsset(editor.report.figure_types.find(f=>f.figure_type_id===clips[0].figure_type_id)).duration,duration);
 });
+test('editing an imported figure that a movieclip also uses saves a reopenable project',async()=>{
+ const fixture=JSON.parse(await readFile(new URL('./sticknodes-synthetic.json',import.meta.url))),{document:doc}=await importStickNodes(Buffer.from(fixture.base64,'base64'),{filename:'synthetic.stknds'});
+ let transferred;for(const chunk of documentChunks(doc,{maxBytes:2048,sharedFigures:true}))transferred=applyDocumentChunk(transferred,chunk);
+ const editor=new Editor();editor.load(transferred);
+ const object=editor.frame.objects.find(o=>!movieclipAsset(editor.report.figure_types.find(f=>f.figure_type_id===o.figure_type_id))&&editor.report.figure_types.some(f=>movieclipAsset(f)?.document.keyframes.some(k=>k.objects.some(c=>c.figure_type_id===o.figure_type_id))));
+ assert.ok(object,'fixture scene and movieclip share a figure type');
+ const reopen=()=>prepareEditorLoad(JSON.parse(JSON.stringify(editor.serialize())));
+ editor.select(object.unique_id);const root=editor.figure.segments[0].segment_id;
+ editor.addSegments([{parentId:root,type:'circle',length:40}]);reopen();
+ editor.undo();reopen();
+});
 test('source shape primitives use shared geometry and preserve transparent circle holes',()=>{
  const s={seg:{segment_id:1,primitive_code:3,_sticknodes:{kind:'triangle'}},obj:{scale:2},points:[],start:{x:0,y:0},end:{x:100,y:0},angle:0,length:100,thickness:20};
  assert.deepEqual(sticknodesDrawables(s)[0].points,[{x:0,y:-10},{x:0,y:10},{x:100,y:0}]);

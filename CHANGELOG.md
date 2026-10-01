@@ -56,6 +56,7 @@ What's new in each version of StykAnimate.
 - Copying, pasting or duplicating a figure now keeps its effects.
 - Bending a connector now follows your pointer smoothly, and also works with Move joint in Build.
 - Changing a frame's easing works again when the app is set to a language other than English.
+- Adding parts to a figure in an imported Stick Nodes project no longer stops the saved project from opening.
 
 ### Performance
 

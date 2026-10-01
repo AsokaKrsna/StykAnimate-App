@@ -139,7 +139,10 @@ export async function importStickNodes(input,{filename='project.stknds',signal,o
   if(result.at(-1)?.duration_raw>1){const last=result.at(-1);last.duration_raw--;result.push({...last,duration_raw:1});}
   return {frames:result,usedTypes,ticks:tick};
  }
- for(const clip of doc.movieclips){const figure=clipFigures[clip.index],converted=await framesFor(clip.frames,clip,clipDurations[clip.index]);figure._styk.movieclip.document.keyframes=converted.frames.length?converted.frames:[nativeFrame([])];figure._styk.movieclip.document.backgrounds=backgrounds;figure._styk.movieclip.document.figure_types=definitions.filter(f=>converted.usedTypes.has(f.figure_type_id));}
+ // Each clip document owns its figure definitions, as it does once saved and
+ // reopened: editors change definitions in place and extend only their own
+ // document's poses. Movieclip definitions are replaced on edit, never changed.
+ for(const clip of doc.movieclips){const figure=clipFigures[clip.index],converted=await framesFor(clip.frames,clip,clipDurations[clip.index]);figure._styk.movieclip.document.keyframes=converted.frames.length?converted.frames:[nativeFrame([])];figure._styk.movieclip.document.backgrounds=backgrounds;figure._styk.movieclip.document.figure_types=definitions.filter(f=>converted.usedTypes.has(f.figure_type_id)).map(f=>f._styk?.movieclip?f:structuredClone(f));}
  let document,kind;
  if(doc.format==='nodes'){const info=figureInfo[0],object=nativeObject(info.figure,1,960,540);object.scale=Math.abs(doc.getFigure(0).scale??1);if(doc.getFigure(0).scale<0)object.angles=object.angles.map(a=>a+Math.PI);document=nativeDocument(doc.name,24,[info.figure],[nativeFrame([object])]);kind='stkz';}
  else if(doc.format==='nodemc'){const figure=clipFigures[0],object=nativeObject(figure,1,960,540);object._stykMovieclip={start:0,end:null,offset:0,speed:1,mode:'loop'};document=nativeDocument(doc.name,doc.header.settings.fps,[figure],[nativeFrame([object])]);kind='stykmov';}
