@@ -14,6 +14,28 @@ import {drawingRasterInputs,publishedDrawingRasterInputs,sameDrawingRaster} from
 import {canRefineDrawingItems} from './renderer-preview-drawings.mjs';
 import {cameraSceneDrawables,cameraRefinementScene} from './renderer-camera-scene.mjs';
 
+/** Viewport placement of the processed camera image, in device pixels. */
+export function cameraSceneAffine({report,frame,view={},cameraEnabled},dpr=1){
+ const camera=effectiveCamera(report,frame)??{},scale=camera.scale??1,angle=camera.angle_rad??0,cx=report.canvas_width/2,cy=report.canvas_height/2,zoom=(view.scale??1)*dpr;
+ if(cameraEnabled!==false)return [zoom,0,0,zoom,(view.x??0)*dpr,(view.y??0)*dpr];
+ const c=Math.cos(angle)*scale,s=Math.sin(angle)*scale,x=cx+(camera.x??0)-c*cx+s*cy,y=cy+(camera.y??0)-s*cx-c*cy;
+ return [c*zoom,s*zoom,-s*zoom,c*zoom,(view.x??0)*dpr+x*zoom,(view.y??0)*dpr+y*zoom];
+}
+/** Whether the camera image replaces every pixel of a width x height canvas.
+ * `render` clears its projected artboard before drawing, so artwork painted
+ * underneath a covering image is never presented. */
+export function cameraSceneCovers(options,dpr,width,height){
+ const [a,b,c,d,e,f]=cameraSceneAffine(options,dpr),det=a*d-b*c,{canvas_width,canvas_height}=options.report;
+ if(!Number.isFinite(det)||Math.abs(det)<1e-12||!(width>0&&height>0))return false;
+ // Keep one device pixel inside the projected edge, away from its antialiasing.
+ const margin=1/Math.sqrt(Math.abs(det));
+ for(const [px,py] of [[0,0],[width,0],[width,height],[0,height]]){
+  const x=(d*(px-e)-c*(py-f))/det,y=(a*(py-f)-b*(px-e))/det;
+  if(!(x>=margin&&y>=margin&&x<=canvas_width-margin&&y<=canvas_height-margin))return false;
+ }
+ return true;
+}
+
 /** Process the camera and its sampling neighborhood before projecting the
  * cropped result into the viewport. Panning never changes effect coordinates. */
 export class CameraVfx {
@@ -28,7 +50,7 @@ export class CameraVfx {
  #prepare(options,dpr,resources){
   if(!this.context||this.context.isContextLost?.())throw Object.assign(messageError(new Error(''), "errors.vfxCamera.theCameraEffectsCanvasIsUnavailable", {}),{telemetryCode:'device_lost',telemetryStage:'prepare'});
   const {report,frame,view={},geometry,preparedFrame,hiddenUids,dragTranslations}=options;
-  const camera=effectiveCamera(report,frame)??{},scale=camera.scale??1,angle=camera.angle_rad??0,cx=report.canvas_width/2,cy=report.canvas_height/2;
+  const camera=effectiveCamera(report,frame)??{},scale=camera.scale??1;
   // The software path re-rasterizes the camera image on every change; halve
   // its cap while the scene is live so drags and playback stay responsive.
   const padding=vfxPadding(vfxStack(frame),1,Math.max(report.canvas_width,report.canvas_height));
@@ -73,8 +95,12 @@ export class CameraVfx {
     if(entry)entry.deferDensity=true;
     retained=true;
     width=borrowed?record.width:this.canvas.width;height=borrowed?record.height:this.canvas.height;
-  }else if(!this.paint&&!options.viewChanging&&!options.playing&&!options.liveEditing&&entry?.deferDensity&&(unchanged||samePublication)&&record.report===report&&
+  }else if(!this.paint&&!options.viewChanging&&!options.playing&&!options.liveEditing&&entry&&(entry.deferDensity||samePublication&&!unchanged)&&(unchanged||samePublication)&&record.report===report&&
     record.contentSignature===contentSignature&&retainedMedia&&(record.width!==width||record.height!==height||!unchanged)&&this.refine){
+    // A derived drawing preview completing under unchanged published tiles
+    // cannot obsolete the displayed scene. Hold it, as navigation does, while
+    // the worker captures the published pixels instead of repainting here.
+    entry.deferDensity=true;
     const items=cameraSceneDrawables(options),scene=cameraRefinementScene(options,items,resources);
     if(scene&&this.refine({entry,target,scene,items,valid:()=>this.matchesSource(target)})){
       retained=true;
@@ -109,8 +135,7 @@ export class CameraVfx {
    }
    surface=this.canvas;
   }
-  const c=Math.cos(angle)*scale,s=Math.sin(angle)*scale,x=cx+(camera.x??0)-c*cx+s*cy,y=cy+(camera.y??0)-s*cx-c*cy;
-  const affine=world?[c*zoom,s*zoom,-s*zoom,c*zoom,(view.x??0)*dpr+x*zoom,(view.y??0)*dpr+y*zoom]:[zoom,0,0,zoom,(view.x??0)*dpr,(view.y??0)*dpr];
+  const affine=cameraSceneAffine(options,dpr);
   return {report,frame,width,height,affine,stale,plan,surface};
  }
  render(context,options,dpr,resources){

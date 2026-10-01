@@ -4,6 +4,7 @@ import {createRenderer} from '../src/renderer.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {defaultFigure,createObject,createFrame} from '../src/demo.mjs';
 import {createDrawingFigure} from '../src/drawing-model.mjs';
+import {createVfx} from '../src/vfx.mjs';
 
 function canvas(){
   const calls=[],surface={width:1,height:1,clientWidth:640,clientHeight:480,addEventListener(){},removeEventListener(){}};
@@ -80,7 +81,7 @@ test('removing scene effects releases obsolete camera pixels and scratch before 
   source.width=320;source.height=240;
   try{
     renderer.vfxCamera=camera;renderer.artwork.set(camera,entry);renderer.artworkBytes=entry.bytes;
-    renderer.refinement={cancel(item){cancelled.push(item);},dispose(){}};
+    renderer.refinement={cancel(item){cancelled.push(item);},warm(){},dispose(){}};
     // Ownership must end even if the destination cannot currently paint.
     renderer.contextLost=true;renderer.render({report,frame,geometry});
     assert.ok(cancelled.includes(entry));assert.equal(releases,1);
@@ -100,5 +101,36 @@ test('hidden drawing layer snapshots never request presenters and disposal drops
     renderer.sceneLayers={report,width:640,height:480,dpr:1,clip:true,matrix,margin:0,first:1,last:0,members:[member],below:{canvas:canvas(),bounds:{x:0,y:0,width:1,height:1}}};
     assert.ok(renderer.sceneLayerPlan([{g,items,opacity:1}],{report},matrix,{hiddenUids:new Set([2]),parallax:()=>({x:0,y:0})},()=>{}));
     renderer.clearArtwork();assert.equal(renderer.lastSceneGroups,null);assert.equal(renderer.sceneLayers,null);
+  }finally{renderer.destroy();}
+});
+
+test('object artwork under a covering camera image is neither painted nor refined, and remains the failure fallback',async()=>{
+  const surface=canvas(),context=surface.getContext('2d');
+  // The scene renderer only needs call-through drawing state here.
+  const permissive=new Proxy(context,{get:(target,key)=>key in target?target[key]:key==='isContextLost'?()=>false:key==='getTransform'?()=>({a:1,b:0,c:0,d:1,e:0,f:0}):()=>{}});
+  surface.getContext=()=>permissive;
+  const renderer=await createRenderer(surface,{forceCanvas2D:true,asyncArtwork:false});
+  const report={canvas_width:320,canvas_height:240,figure_types:[defaultFigure()]};
+  const frame=createFrame([createObject(report.figure_types[0],1,160,120)]);
+  frame._stykVfx={figure:[createVfx('blur','covering-scene')]};
+  const geometry=buildGeometry(report,frame);let painted=0,camera=0,fail=false;
+  try{
+    renderer.resize(320,240,1);
+    renderer.paintGroups=(...args)=>{painted++;return 7;};
+    renderer.vfxCamera={render(){camera++;if(fail)throw new Error('camera preview failed');},destroy(){}};
+    renderer.options.onError=()=>{};
+    const fitted={report,frame,geometry,cameraEnabled:false,clipToCanvas:false,view:{x:16,y:16,scale:.9}};
+    renderer.render(fitted);
+    assert.equal(painted,1,'A view showing space around the camera image still paints its objects.');assert.equal(camera,1);
+    const covered={...fitted,view:{x:-1440,y:-1080,scale:10}};
+    renderer.render(covered);
+    assert.equal(painted,1,'Objects erased by the camera image are not rasterized.');assert.equal(camera,2);
+    assert.equal(renderer.stats.primitives,geometry.drawables.length,'Presented primitive counts keep their meaning.');
+    fail=true;renderer.vfxCamera={render(){camera++;throw new Error('camera preview failed');},destroy(){}};
+    renderer.render(covered);
+    assert.equal(painted,2,'A failed camera preview shows the unfiltered objects in the same paint.');
+    assert.ok(renderer.vfxRetryAt>performance.now());
+    renderer.render(covered);
+    assert.equal(painted,3,'Backed-off camera previews keep painting objects.');assert.equal(camera,3);
   }finally{renderer.destroy();}
 });

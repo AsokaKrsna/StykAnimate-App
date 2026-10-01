@@ -15,6 +15,11 @@ self.onmessage=async({data})=>{
       snapshot=applyDocumentChunk(snapshot,data.chunk);
       self.postMessage({id:data.id});return;
     }
+    if(data.kind==='preview-warm'){
+      // Module loading only: no snapshot, scratch surface or resource owner.
+      await Promise.all([import('./renderer-raster-capture.mjs'),import('./renderer-preview-drawing-resources.mjs'),import('./drawing-composite-transport.mjs'),import('./playback-resources.mjs')]);
+      self.postMessage({id:data.id});return;
+    }
     if((data.kind==='preview-raster'||data.kind==='preview-raster-plan')&&snapshot){
       const source=snapshot,snapshotBytes=bytes;snapshot=null;bytes=0;previewActive=true;
       try{

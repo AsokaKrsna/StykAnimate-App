@@ -10,6 +10,14 @@ export class CanvasRasterRefinement {
   }
   get pending(){return this.jobs.size>0;}
   whenReady(){return this.completion??Promise.resolve();}
+  /** Load the worker and its capture modules before settlement needs them:
+   * a cold module graph otherwise delays the first refined pixels by far more
+   * than their capture. Warming transfers no scene and reserves no pixels.
+   * Cancellation may close the worker; the next editing paint replaces it. */
+  warm(){
+    if(this.closed||this.warming||this.pumping||this.worker.active!==false)return;
+    const warming=this.warming=this.worker.request('preview-warm',{}).catch(()=>{}).finally(()=>{if(this.warming===warming)this.warming=null;});
+  }
   request(key,description){
     if(this.closed)return false;
     const previous=this.jobs.get(key);
@@ -53,7 +61,9 @@ export class CanvasRasterRefinement {
         if(this.priority===job)this.priority=null;this.running=job;
         let bitmap,snapshotPending=false;
         try{
-          if(!job.valid())continue;
+          // The worker admits one request at a time, including its warm-up.
+          while(this.warming)await this.warming;
+          if(job.controller.signal.aborted||this.jobs.get(job.key)!==job||!job.valid())continue;
           let maxBytes=job.allowance();
           if(!(maxBytes>=job.bytes))throw Object.assign(new RangeError('Preview refinement exceeds the existing artwork allowance.'),{code:'preview_raster_budget'});
           this.stats.bytes=maxBytes;

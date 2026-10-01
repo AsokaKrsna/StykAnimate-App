@@ -55,6 +55,21 @@ refinement; borrowing a packet for the camera monitor preserves it. The app
 reconciles background suspension after rendering in both directions, since
 cancelling the last capture can leave an otherwise idle view with no next paint.
 
+Editing paints keep the capture worker loaded: the first paint, and the first
+paint after a cancellation closed a running worker, start a replacement that
+loads its capture modules without a scene, scratch surface or reservation.
+Queued jobs wait for that load because the worker admits one request at a
+time. Playback never starts a worker, and injected workers without a lifetime
+signal are not warmed. A cold module graph otherwise delays the first refined
+pixels by far more than their capture.
+
+The Compatibility camera image clears and replaces its projected artboard.
+When that projection covers the whole viewport, object artwork and generator
+draws beneath it are not presented, so the renderer neither paints nor refines
+them and only the scene capture is requested; their cached rasters age
+normally. A view showing space around the camera image, a backed-off camera
+preview, or a camera failure in the same paint uses the ordinary object painter.
+
 Unchanged camera effects with native artwork and published version-two drawing
 cels retain their completed scene during navigation and refine its settled
 density through the same queue. Hidden figure images do not block this path. The existing
@@ -74,7 +89,9 @@ read this dependency.
 A cold drawing scene retains live presentation dependencies, since its derived
 preview may still be incomplete. Covered navigation can compare unchanged
 published tiles while holding those pixels. Settlement requests a complete
-published capture after a live-preview change even at unchanged dimensions;
+published capture after a live-preview change even at unchanged dimensions,
+and a settled view that was never navigated does the same when a derived
+preview completes, holding the displayed scene instead of repainting it;
 only worker adoption makes publication the retained source authority. Derived
 preview completions then leave that source valid. Changed pixels, publication,
 revision, ownership, loading state or pinned selections invalidate it immediately.

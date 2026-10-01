@@ -272,3 +272,40 @@ test('malformed native preflight cannot enlarge a reservation or reach the paint
     }finally{queue.dispose();}
   }
 });
+
+test('warming loads a closed worker once, precedes the first job and follows a cancellation that closed it',async()=>{
+  class WarmWorker extends Worker {
+    active=false;warms=[];
+    request(kind,payload,options){
+      if(kind!=='preview-warm'){this.active=true;return super.request(kind,payload,options);}
+      this.calls.push({kind,payload});this.active=true;this.maximum=Math.max(this.maximum,++this.outstanding);
+      return new Promise((resolve,reject)=>this.warms.push({resolve,reject})).finally(()=>this.outstanding--);
+    }
+    dispose(){super.dispose();this.active=false;for(const warm of this.warms.splice(0))warm.reject(new DOMException('closed','AbortError'));}
+  }
+  const worker=new WarmWorker(),queue=new CanvasRasterRefinement({worker}),order=[];
+  try{
+    queue.warm();queue.warm();
+    assert.deepEqual(worker.calls.map(call=>call.kind),['preview-warm'],'Repeated paints share one warm-up without a scene transfer.');
+    assert.equal(queue.stats.bytes,0);assert.equal(queue.pending,false);
+    const key={};queue.request(key,description({install:()=>{order.push('installed');return true;}}));
+    await new Promise(resolve=>setTimeout(resolve,5));
+    assert.equal(worker.calls.length,1,'The serial worker receives no job request while it is loading.');
+    worker.warms.shift().resolve({});await waitFor(()=>worker.captures.length===1);
+    assert.equal(worker.maximum,1);queue.warm();assert.equal(worker.calls.filter(call=>call.kind==='preview-warm').length,1,'A loaded or busy worker is not warmed again.');
+    queue.cancel();assert.equal(worker.disposed,1);worker.captures.shift().resolve(bitmap());await queue.whenReady();
+    assert.deepEqual(order,[]);
+    queue.warm();assert.equal(worker.calls.filter(call=>call.kind==='preview-warm').length,2,'The next editing paint replaces a worker closed by cancellation.');
+    // A warm-up failure must not strand later work.
+    worker.warms.shift().reject(new Error('load failed'));await new Promise(resolve=>setTimeout(resolve,0));
+    const retry={};queue.request(retry,description({install:()=>{order.push('retry');return true;}}));
+    await waitFor(()=>worker.captures.length===1);worker.captures.shift().resolve(bitmap());await queue.whenReady();
+    assert.deepEqual(order,['retry']);assert.equal(queue.stats.failed,0);
+  }finally{queue.dispose();}
+  queue.warm();assert.equal(worker.calls.filter(call=>call.kind==='preview-warm').length,2,'A disposed queue never reopens its worker.');
+});
+
+test('injected workers without a lifetime signal are never warmed',()=>{
+  const worker=new Worker(),queue=new CanvasRasterRefinement({worker});
+  try{queue.warm();assert.equal(worker.calls.length,0);}finally{queue.dispose();}
+});

@@ -15,13 +15,13 @@ function workerEnvironment(run){
 }
 
 test('drawing worker remains lazy and enforces its existing pending limit',()=>workerEnvironment(async instances=>{
-  const owner=new DrawingWorker();assert.equal(instances.length,0);
-  const one=owner.request('one'),two=owner.request('two');
+  const owner=new DrawingWorker();assert.equal(instances.length,0);assert.equal(owner.active,false);
+  const one=owner.request('one'),two=owner.request('two');assert.equal(owner.active,true);
   await assert.rejects(owner.request('three'),/busy/);
   assert.equal(instances.length,1);assert.equal(instances[0].sent.length,2);
   instances[0].reply({id:1,value:'first'});instances[0].reply({id:2,value:'second'});
   assert.equal((await one).value,'first');assert.equal((await two).value,'second');
-  assert.equal(owner.pending.size,0);owner.dispose();
+  assert.equal(owner.pending.size,0);owner.dispose();assert.equal(owner.active,false);
 }));
 
 test('individual drawing failures retain the worker and close unexpected bitmap results',()=>workerEnvironment(async instances=>{

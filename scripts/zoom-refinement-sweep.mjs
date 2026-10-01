@@ -33,7 +33,7 @@ export async function zoomRefinementSweep({editor,resources,baselineRendererURL,
   const fitted=Math.min((width-128)/editor.report.canvas_width,(height-16)/editor.report.canvas_height);
   const view=scale=>({scale,x:width/2-editor.report.canvas_width/2*scale,y:height/2-editor.report.canvas_height/2*scale});
   const matches=diff=>diff.mean<meanTolerance&&diff.alphaMax<=alphaTolerance;
-  let currentOptions,currentRow,unsubscribeResources,memoryTimer,repaintVersion=0;
+  let currentOptions,currentRow,currentPhase='idle',unsubscribeResources,memoryTimer,repaintVersion=0;
   const memory=renderer=>({publishedBytes:renderer.artworkBytes??renderer.rasterCache?.stats.activeBytes??0,
     reservedBytes:renderer.stats.artworkRefinement?.bytes??0,pending:renderer.stats.artworkRefinement?.pending??0,
     budgetBytes:renderer.artworkBudget??renderer.rasterCache?.maxBytes??0});
@@ -77,7 +77,9 @@ export async function zoomRefinementSweep({editor,resources,baselineRendererURL,
     for(let i=0;i<2;i++){
       const renderer=await modules[i].createRenderer(document.createElement('canvas'),{forceCanvas2D,resources,onInvalidate:i===1?()=>{
         if(!currentOptions||!currentRow||renderer.destroyed)return;
-        const start=performance.now();repaintVersion++;renderer.render(currentOptions);currentRow.callbacks.push(performance.now()-start);sampleMemory(renderer,currentRow);
+        const start=performance.now();repaintVersion++;renderer.render(currentOptions);const cpuMs=performance.now()-start;currentRow.callbacks.push(cpuMs);
+        // Publications after settlement present refined pixels; the first is the first visibly sharper paint.
+        currentRow.publications.push({phase:currentPhase,atMs:currentRow.settledAt===undefined?null:start+cpuMs-currentRow.settledAt,cpuMs});sampleMemory(renderer,currentRow);
       }:undefined});
       renderer.resize(width,height,dpr);renderer.device?.addEventListener('uncapturederror',event=>errors.push(event.error.message));renderers.push(renderer);
     }
@@ -86,12 +88,12 @@ export async function zoomRefinementSweep({editor,resources,baselineRendererURL,
       repaintVersion++;
       for(let i=0;i<renderers.length;i++){
         const start=performance.now();renderers[i].render(currentOptions);
-        currentRow.resourceCallbacks.push({variant:i?'current':'baseline',cpuMs:performance.now()-start});
+        currentRow.resourceCallbacks.push({variant:i?'current':'baseline',cpuMs:performance.now()-start,phase:currentPhase});
         if(i)sampleMemory(renderers[i],currentRow);
       }
     });
     for(const tick of requested){
-      const row={tick,callbacks:[],resourceCallbacks:[]};rows.push(row);currentRow=row;
+      const row={tick,callbacks:[],publications:[],resourceCallbacks:[]};rows.push(row);currentRow=row;currentPhase='prepare';
       try{
         if(!Number.isInteger(tick)||tick<0||tick>=totalTicks)throw new RangeError('Sweep tick exceeds the native timeline.');
         const evaluationStart=performance.now();editor.seek(tick);const frame=editor.evaluatedFrame,geometry=editor.geometry;
@@ -103,23 +105,25 @@ export async function zoomRefinementSweep({editor,resources,baselineRendererURL,
         row.readyDrawingCels=drawingFigures.filter(figure=>resources?.drawing?.(figure)?.store).length;
         if(row.readyDrawingCels!==row.drawingCels)throw new Error('The sweep requires decoded presenters for every visible version 2 drawing cel.');
         const base={report:editor.report,frame,geometry,cameraEnabled:false,clipToCanvas:false},normal={...base,view:view(fitted),viewChanging:false};
-        currentOptions=normal;const normalPixels=[];row.initialReadbacks=[];
+        currentOptions=normal;currentPhase='initial';const normalPixels=[];row.initialReadbacks=[];
         for(let i=0;i<2;i++){
           row[i?'currentInitial':'baselineInitial']=await submit(renderers[i],normal);
           row.initialReadbacks.push({variant:i?'current':'baseline',repaintVersion});normalPixels.push(pixels(renderers[i].canvas));
         }
         row.initialDifference=difference(normalPixels[1],normalPixels[0]);row.rawInitialPassed=matches(row.initialDifference);
-        const stable=await stableInitial(normal);row.stableInitialDifference=stable.difference;row.stableInitialReadbacks=stable.readbacks;
+        currentPhase='initialDrain';const stable=await stableInitial(normal);row.stableInitialDifference=stable.difference;row.stableInitialReadbacks=stable.readbacks;
         row.stableInitialPassed=matches(row.stableInitialDifference);
         sampleMemory(renderers[1],row);memoryTimer=setInterval(()=>sampleMemory(renderers[1],row),8);
         const changing={...base,view:view(fitted*Math.exp(2.4)),viewChanging:true},settled={...changing,viewChanging:false};
-        currentOptions=changing;row.baselineGesture=await submit(renderers[0],changing);row.currentGesture=await submit(renderers[1],changing);
+        currentOptions=changing;currentPhase='gesture';row.baselineGesture=await submit(renderers[0],changing);row.currentGesture=await submit(renderers[1],changing);
         const completedBefore=renderers[1].stats.artworkRefinement?.completed??0,failedBefore=renderers[1].stats.artworkRefinement?.failed??0;
-        row.baselineSettle=await submit(renderers[0],settled);currentOptions=settled;const readyStart=performance.now();
-        row.currentSettle=await submit(renderers[1],settled);sampleMemory(renderers[1],row);await drain();
-        row.readyMs=performance.now()-readyStart;row.currentReady=await submit(renderers[1],settled);sampleMemory(renderers[1],row);
+        currentPhase='settle';row.baselineSettle=await submit(renderers[0],settled);currentOptions=settled;const readyStart=performance.now();row.settledAt=readyStart;
+        row.currentSettle=await submit(renderers[1],settled);sampleMemory(renderers[1],row);currentPhase='refinement';await drain();
+        row.readyMs=performance.now()-readyStart;currentPhase='steady';row.currentReady=await submit(renderers[1],settled);sampleMemory(renderers[1],row);
         row.baselineSteady=await submit(renderers[0],settled);row.currentSteady=await submit(renderers[1],settled);
-        await drain();sampleMemory(renderers[1],row);clearInterval(memoryTimer);memoryTimer=null;
+        await drain();sampleMemory(renderers[1],row);clearInterval(memoryTimer);memoryTimer=null;currentPhase='verify';
+        // First refined publication after settlement; null when this view needed no refinement.
+        row.firstPublicationMs=row.publications.find(publication=>publication.atMs!==null)?.atMs??null;
         row.workerCompleted=(renderers[1].stats.artworkRefinement?.completed??0)-completedBefore;
         row.workerFailed=(renderers[1].stats.artworkRefinement?.failed??0)-failedBefore;row.finalMemory=memory(renderers[1]);
         row.lastRefinementError=renderers[1].stats.lastRefinementError??null;
@@ -138,7 +142,7 @@ export async function zoomRefinementSweep({editor,resources,baselineRendererURL,
         row.withinArtworkAllowance=row.peakCombinedBytes<=row.budgetBytes;
         row.passed=row.stableInitialPassed&&matches(row.settledDifference)&&row.coldReferencePassed&&row.withinArtworkAllowance&&!row.workerFailed&&!row.finalMemory.pending&&!row.finalMemory.reservedBytes;
       }catch(error){row.passed=false;row.error={name:error.name,message:error.message};}
-      finally{clearInterval(memoryTimer);memoryTimer=null;currentOptions=null;currentRow=null;
+      finally{clearInterval(memoryTimer);memoryTimer=null;currentOptions=null;currentRow=null;currentPhase='idle';
         // Optional audit cleanup happens after all render/pixel measurements.
         try{await afterFrame?.({tick});}catch(error){row.passed=false;row.afterFrameError={name:error.name,message:error.message};}
         onProgress({tick,completed:rows.length,total:requested.length,passed:row.passed,
@@ -152,6 +156,7 @@ export async function zoomRefinementSweep({editor,resources,baselineRendererURL,
     timings.currentReady=summary(rows.flatMap(row=>row.currentReady?[row.currentReady.cpuMs]:[]));
     timings.currentResourceCallbacks=summary(rows.flatMap(row=>row.resourceCallbacks.filter(callback=>callback.variant==='current').map(callback=>callback.cpuMs)));
     timings.callbacks=summary(rows.flatMap(row=>row.callbacks));timings.workerReady=summary(rows.flatMap(row=>Number.isFinite(row.readyMs)?[row.readyMs]:[]));
+    timings.firstPublication=summary(rows.flatMap(row=>Number.isFinite(row.firstPublicationMs)?[row.firstPublicationMs]:[]));
     return {totalTicks,checkedTicks:rows.length,forceCanvas2D,width,height,dpr,initialScale:fitted,finalScale:fitted*Math.exp(2.4),meanTolerance,alphaTolerance,
       backend:renderers.map(renderer=>renderer.stats.backend),errors,timings,passed:rows.every(row=>row.passed)&&!errors.length,failedTicks:rows.filter(row=>!row.passed).map(row=>row.tick),
       baselineColdVarianceTicks:rows.filter(row=>row.baselineColdVariance).map(row=>row.tick),rows};

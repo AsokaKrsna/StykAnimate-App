@@ -22,6 +22,9 @@ test('native drawing preflight retains one restored snapshot until capture and p
       if(reply.error)throw Object.assign(new Error(reply.error),{code:reply.code});
       return reply;
     };
+    await request('preview-warm');
+    assert.equal(allocations,0);assert.equal(prepared,0,'Warming loads capture modules without a snapshot, surface or drawing owner.');
+    await assert.rejects(request('preview-raster',{width:16,height:16,matrix:[1,0,0,1,0,0],maxBytes:1024*1024}),/Missing drawing composite snapshot/);
     const fig={figure_type_id:1,_styk:{drawing:{version:2,celId:'cel',revision:3}},image_assets:[{styk_tiles:TILE_BLOB_PREFIX+Buffer.from(assembleTileBlobBytes([])).toString('base64')}]};
     const items=[{type:'image',slot:0,opacity:1,obj:{unique_id:1,scale:1},fig}];
     await sendDrawingComposite({request},items,{maxBytes:1024*1024});

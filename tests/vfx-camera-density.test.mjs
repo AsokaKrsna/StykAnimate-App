@@ -1,6 +1,6 @@
 import test,{beforeEach,afterEach} from 'node:test';
 import assert from 'node:assert/strict';
-import {CameraVfx} from '../src/vfx-camera.mjs';
+import {CameraVfx,cameraSceneAffine,cameraSceneCovers} from '../src/vfx-camera.mjs';
 import {initVfxDevice,releaseVfxDevice,vfxSurfaceDimension} from '../src/vfx-gpu.mjs';
 import {createLayerState} from '../src/layers.mjs';
 
@@ -209,6 +209,25 @@ test('published drawing scene gestures and pending jobs compare pixels without p
   }finally{camera.destroy();}
 });
 
+test('a derived preview completing at a settled cold view requests the published capture instead of repainting',()=>{
+  const {options,drawing,resources}=drawingFixture();let entry,request,requested=0;
+  const camera=new CameraVfx({getSource:()=>entry,releaseSource(){entry=null;},
+    retainSource(cameraSource){return entry={canvas:cameraSource.canvas,cameraSource};},refine(spec){requested++;request=spec;return true;}});
+  try{
+    run(camera,options,resources);const initial=entry;assert.equal(camera.context.clears,1);assert.equal(requested,0,'An unchanged cold scene needs no capture.');
+    run(camera,options,resources);assert.equal(requested,0);
+    // No navigation happened: the preview worker finished under unchanged published tiles.
+    drawing.stamp++;run(camera,options,resources);
+    assert.equal(camera.context.clears,1,'The displayed scene is held rather than repainted on the UI thread.');
+    assert.equal(requested,1);assert.equal(entry,initial);assert.equal(entry.deferDensity,true);
+    assert.equal(request.target.width,initial.cameraSource.width);assert.equal(request.target.drawingInputs[0].published,true);assert.ok(request.valid());
+    assert.equal(entry.cameraSource.drawingInputs[0].published,false,'Only bitmap adoption can promote publication authority.');
+    // Editing and changed published pixels keep their immediate paint.
+    run(camera,{...options,liveEditing:true},resources);assert.equal(camera.context.clears,2);assert.equal(request.valid(),false);
+    drawing.stamp++;drawing.pixelStamp++;run(camera,options,resources);assert.equal(camera.context.clears,3);assert.equal(requested,1);
+  }finally{camera.destroy();}
+});
+
 test('drawing publication and live ownership changes reject pending scene captures immediately',()=>{
   const mutations=[
     drawing=>{drawing.pinned=true;},drawing=>{drawing.transient=true;},drawing=>{drawing.loading={};},
@@ -246,4 +265,24 @@ test('rejected scene jobs and legacy/GPU drawing cameras retain immediate live-p
       assert.equal(gpu?paints:legacy.context.clears,2);assert.equal(legacy.drawingInputs[0].published,false);
     }finally{legacy.destroy();}
   }
+});
+
+test('camera image coverage follows the projected artboard, including a transformed world-view camera',()=>{
+  const report={canvas_width:320,canvas_height:240},frame={objects:[]};
+  const centered=scale=>({x:480-160*scale,y:360-120*scale,scale});
+  assert.equal(cameraSceneCovers({report,frame,view:centered(1)},1,960,720),false,'A fitted view shows space around the artboard.');
+  assert.equal(cameraSceneCovers({report,frame,view:centered(3)},1,960,720),false,'Exact edge alignment keeps object painting for the antialiased border.');
+  assert.equal(cameraSceneCovers({report,frame,view:centered(3.1)},1,960,720),true);
+  assert.equal(cameraSceneCovers({report,frame,view:centered(3.1)},2,1920,1440),true,'Device pixel ratio scales both the image and the canvas.');
+  assert.equal(cameraSceneCovers({report,frame,view:{x:480-160*8+900,y:360-120*8,scale:8}},1,960,720),false,'Panning past the edge exposes objects again.');
+  assert.deepEqual(cameraSceneAffine({report,frame,view:{x:5,y:7,scale:2}},2),[4,0,0,4,10,14]);
+  // In the neutral editor view the image follows the document camera.
+  const moved={objects:[],camera:{x:400,y:0,scale:1,angle_rad:0}},world={report,frame:moved,view:centered(8),cameraEnabled:false};
+  assert.equal(cameraSceneAffine(world,1)[4],centered(8).x+400*8);
+  assert.equal(cameraSceneCovers(world,1,960,720),false,'A camera framing another region does not cover this viewport.');
+  assert.equal(cameraSceneCovers({...world,cameraEnabled:true},1,960,720),true,'The camera view presents the image at the artboard.');
+  const turned={objects:[],camera:{x:0,y:0,scale:1,angle_rad:Math.PI/4}};
+  assert.equal(cameraSceneCovers({report,frame:turned,view:centered(3.1),cameraEnabled:false},1,960,720),false,'A rotated image leaves viewport corners uncovered.');
+  assert.equal(cameraSceneCovers({report,frame:turned,view:centered(12),cameraEnabled:false},1,960,720),true);
+  assert.equal(cameraSceneCovers({report,frame,view:centered(8),cameraEnabled:false},1,0,720),false);
 });

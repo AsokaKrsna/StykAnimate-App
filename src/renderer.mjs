@@ -9,7 +9,7 @@ import {GpuTiming,requestInstrumentedDevice} from './gpu-timing.mjs';
 import {gpuStartupBudget} from './gpu-startup.mjs';
 import {normalizeMsaaCount, viewportBackingSize} from './preview-quality.mjs';
 import {ViewportVfx,hasSceneVfx} from './vfx-viewport.mjs';
-import {CameraVfx} from './vfx-camera.mjs';
+import {CameraVfx,cameraSceneCovers} from './vfx-camera.mjs';
 import {initVfxDevice,releaseVfxDevice} from './vfx-gpu.mjs';
 import {hasDrawableVfx,vfxRasterScale,drawableVfxPadding,configureVfxSoftwareResources} from './vfx-canvas.mjs';
 import {vfxPreviewOptions,vfxPreviewGeometry} from './vfx-preview.mjs';
@@ -856,11 +856,13 @@ class CanvasFallback {
   /** Admit against the whole visible working set, rather than evicting a
    * retained figure merely because a new figure appears earlier in painter
    * order. The existing raster map remains the only pixel owner. */
-  protectVisibleArtwork(groups,{hiddenUids,parallax,dragTranslations,scale},matrix){
+  protectVisibleArtwork(groups,{hiddenUids,parallax,dragTranslations,scale},matrix,sceneCovers=false){
     const visible=rasterViewport(matrix.map(value=>value*this.dpr),this.canvas.width,this.canvas.height),protectedItems=new Set();
     const camera=hasSceneVfx(this.last?.frame)&&this.artwork.get(this.vfxCamera);
     if(camera&&!camera.destroyed){camera.frame=this.artworkFrame;protectedItems.add(camera);}
-    for(const group of groups){
+    // Object rasters under a covering camera image are not presented: they
+    // age normally, yielding their allowance to the scene capture.
+    for(const group of sceneCovers?[]:groups){
       const uid=group.g.obj.unique_id;
       if(group.isOnion||hiddenUids?.has(uid))continue;
       const {source,items}=opacityArtwork(group.g,group.items),cached=this.artwork.get(source);
@@ -883,6 +885,9 @@ class CanvasFallback {
       this.refinementContext?.projection!==projection||previous?.artworkRevision!==options.artworkRevision){
       this.refinement?.cancel();this.refinementContext={projection};
     }
+    // Editing paints keep the capture worker loaded, including after a
+    // cancellation above closed it; playback never starts one.
+    if(!options.playing)this.refinement?.warm();
     this.last = options; const start = performance.now(), ctx = this.context;
     if(this.vfxCamera&&!hasSceneVfx(options.frame))this.releaseCameraArtwork(this.vfxCamera);
     if (this.destroyed || this.contextLost || !ctx || ctx.isContextLost?.()) return;
@@ -910,12 +915,17 @@ class CanvasFallback {
     const generatorBatch=offsetGeneratorBatch(budgetedGeneratorBatch(report,frame,geometry,{enabled:options.vfxEnabled!==false,budget:SOFTWARE_PARTICLE_BUDGET,budgetMs:INTERACTIVE_SAMPLING_MS}),uid=>{const depth=parallax(uid),move=dragTranslations?.get?.(uid);return {x:depth.x+(move?.x||0),y:depth.y+(move?.y||0)};});
     const generatorPlan=generatorBatch&&generatorSchedule(generatorBatch,hiddenUids);
     const walker=generatorPlan&&!generatorPlan.empty?scheduleWalker(generatorPlan,draws=>{drawGeneratorDraws(ctx,generatorBatch,draws);}):null;
-    walker?.begin();
     const groups = composeSceneGroups(geometry, onions, frame, report);
     if (!onions.length) this.clearOnionArtwork();
     else this.onionLayers.begin(onionLayerKeys(groups),this.canvas.width,this.canvas.height);
     const paint = {scale, hiddenUids, parallax, dragTranslations, walker, frame};
-    this.protectVisibleArtwork(groups,paint,matrix);
+    // The camera image clears and replaces its projected artboard. When that
+    // covers the whole viewport, object artwork and generators painted here
+    // would be erased unseen, so neither rasterize nor refine them. A failed
+    // or backed-off camera preview paints them below as the visible fallback.
+    const sceneCovers=hasSceneVfx(frame)&&performance.now()>=(this.vfxRetryAt||0)&&cameraSceneCovers({report,frame,view,cameraEnabled:options.cameraEnabled},this.dpr,this.canvas.width,this.canvas.height);
+    const paintObjects=()=>{walker?.begin();const count=this.paintGroups(ctx, groups, 0, groups.length, paint);walker?.end();return count;};
+    this.protectVisibleArtwork(groups,paint,matrix,sceneCovers);
     const layers = options.liveEditing && !walker && !hasSceneVfx(frame) ? this.sceneLayerPlan(groups, options, matrix, paint, clipArtboard) : null;
     if (!layers) this.clearSceneLayers();
     this.lastSceneGroups = groups.map(group => {const hidden=Boolean(hiddenUids?.has(group.g.obj.unique_id));return {g:group.g,hidden,drawingInputs:hidden?null:drawingRasterInputs(group.items,this.resources)};});
@@ -926,13 +936,14 @@ class CanvasFallback {
       blit(layers.below);
       primitives = layers.primitives + this.paintGroups(ctx, groups, layers.first, layers.last + 1, paint);
       if (layers.above) blit(layers.above);
-    } else primitives = this.paintGroups(ctx, groups, 0, groups.length, paint);
-    walker?.end();
+    } else if(sceneCovers) for(const group of groups) {if(!group.isOnion&&!hiddenUids?.has(group.g.obj.unique_id))primitives+=group.items.length;}
+    else primitives = paintObjects();
     if(generatorBatch?.incomplete)queueMicrotask(()=>this.options.onInvalidate?.());
     ctx.restore();
     if(hasSceneVfx(frame)){
-      renderPreviewVfx(this,'vfxCamera',()=>this.createCameraVfx(),camera=>camera.render(ctx,{...options,geometry,generatorBatch},this.dpr,this.resources));
+      const presented=renderPreviewVfx(this,'vfxCamera',()=>this.createCameraVfx(),camera=>camera.render(ctx,{...options,geometry,generatorBatch},this.dpr,this.resources));
       ctx.save();ctx.scale(this.dpr,this.dpr);if(options.clipToCanvas!==false)clipArtboard();ctx.transform(...matrix);
+      if(sceneCovers&&!presented)paintObjects();
       for(let i=0;i<groups.length;i++)if(groups[i].isOnion)i=this.drawOnionScene(ctx,groups,i,scale,hiddenUids,parallax)-1;
       ctx.restore();
     }

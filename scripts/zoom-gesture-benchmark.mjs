@@ -1,6 +1,6 @@
 /** In-page paired benchmark. Call with the same evaluated scene/resources and
  * a frozen baseline renderer URL; no document data is saved by this module. */
-export async function zoomGestureBenchmark({rendererURL='/src/renderer.mjs',forceCanvas2D=false,report,frame,geometry,resources,width=960,height=432,dpr=1,defer=false,steps=32,onProgress=()=>{},awaitRefinement=false,subscribeResources,waitResourcesReady}) {
+export async function zoomGestureBenchmark({rendererURL='/src/renderer.mjs',forceCanvas2D=false,report,frame,geometry,resources,width=960,height=432,dpr=1,defer=false,steps=32,onProgress=()=>{},awaitRefinement=false,subscribeResources,waitResourcesReady,warmWorker=false}) {
   const {createRenderer}=await import(rendererURL),rows=[],errors=[],callbacks=[],resourceCallbacks=[],tasks=[],callbackFences=new Set();
   let renderer,latestOptions,latestPhase,observer,memoryTimer,gestureStart,gestureEnd,refinementStart,refinementEnd,refinement,unsubscribeResources,repaintVersion=0;
   let gestureLongTasks=[],postSettlementLongTasks=[],interactionLongTasks=[],interactionPhaseBounds=[];
@@ -52,6 +52,13 @@ export async function zoomGestureBenchmark({rendererURL='/src/renderer.mjs',forc
     renderer.resize(width,height,dpr);renderer.device?.addEventListener('uncapturederror',e=>errors.push(e.error.message));
     unsubscribeResources=subscribeResources?.(()=>repaint('resources'));
     await submit(viewAt(0),false,'initial');
+    // A fresh renderer per trial starts its capture worker cold. The app keeps
+    // one renderer; waiting here (untimed) measures that established state.
+    if(warmWorker&&renderer.refinement){
+      // Renderers that predate warming load their worker with an empty snapshot header.
+      if(renderer.refinement.warm)await renderer.refinement.warming;
+      else await renderer.refinement.worker.request('composite-chunk',{chunk:{header:true,estimatedBytes:64},maxBytes:1024*1024});
+    }
     if(awaitRefinement){
       // End the initial paint's task before observing the interaction. Canvas
       // submission otherwise resumes in a microtask within that same task.
@@ -120,7 +127,12 @@ export async function zoomGestureBenchmark({rendererURL='/src/renderer.mjs',forc
     const copy=new OffscreenCanvas(renderer.canvas.width,renderer.canvas.height),context=copy.getContext('2d',{willReadFrequently:true});context.drawImage(renderer.canvas,0,0);
     let pixels;try{pixels=context.getImageData(0,0,copy.width,copy.height).data;}finally{copy.width=copy.height=1;}
     const percentile=values=>{const v=[...values].sort((a,b)=>a-b);return {p50:v[Math.floor(v.length*.5)],p95:v[Math.max(0,Math.ceil(v.length*.95)-1)],max:v.at(-1)};};
-    if(refinement){refinement.callbackCount=refinement.callbacks.length;refinement.callbackCpuMs=refinement.callbackCount?percentile(refinement.callbacks.map(row=>row.cpuMs)):{p50:null,p95:null,max:null};}
+    if(refinement){
+      // Refined pixels reach the canvas in publication repaints. Record when the
+      // first, half and last of them finished, relative to the settlement paint.
+      const published=refinement.callbacks.map(row=>row.at+row.cpuMs-refinementStart);
+      refinement.firstPublicationMs=published[0]??null;refinement.halfPublicationMs=published[Math.ceil(published.length/2)-1]??null;refinement.lastPublicationMs=published.at(-1)??null;
+      refinement.callbackCount=refinement.callbacks.length;refinement.callbackCpuMs=refinement.callbackCount?percentile(refinement.callbacks.map(row=>row.cpuMs)):{p50:null,p95:null,max:null};}
     const group=phase=>{const list=rows.filter(r=>r.phase===phase);return {cpuMs:percentile(list.map(r=>r.cpuMs)),completeMs:percentile(list.map(r=>r.completeMs)),rasters:list.reduce((n,r)=>n+r.rasters,0),uploadBytes:list.reduce((n,r)=>n+r.uploadBytes,0)};};
     return {backend:renderer.stats.backend,adapter:renderer.stats.adapter,width,height,dpr,steps,defer,objects:geometry.objects.size,drawables:geometry.drawables.length,errors,
       gesture:group('gesture'),settle:group('settle'),steady:group('steady'),peakBytes:Math.max(...rows.map(r=>r.bytes)),peakActiveBytes:Math.max(...rows.map(r=>r.activeBytes)),

@@ -6,6 +6,8 @@ export class DrawingWorker {
   constructor(url=new URL('./drawing-worker.mjs',import.meta.url),{maxPending=2}={}) {
     this.url=url;this.maxPending=maxPending;this.next=1;this.pending=new Map();
   }
+  /** Whether a worker is loaded or loading; false after cancellation closed it. */
+  get active(){return Boolean(this.worker);}
   request(kind,payload,{signal,transfer}={}) {
     if(signal?.aborted)return Promise.reject(messageError(new DOMException('', 'AbortError'), "errors.drawingResources.drawingOperationCancelled", {}));
     if(this.pending.size>=this.maxPending)return Promise.reject(messageError(new Error(''), "errors.drawingResources.drawingWorkerIsBusyWaitForTheCurrent", {}));
