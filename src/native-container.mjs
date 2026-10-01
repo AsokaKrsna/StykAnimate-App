@@ -86,6 +86,16 @@ export function createContainerCompressionCache({maxBytes = 64 * 1024 * 1024, ma
     throw new RangeError('Invalid compression cache capacity.');
   const entries = new Map();
   let byteLength = 0;
+  const insert = (key, blob) => {
+    if (blob.size > maxBytes || !maxEntries) return;
+    const previous = entries.get(key);
+    if (previous) { byteLength -= previous.size; entries.delete(key); }
+    while (entries.size >= maxEntries || byteLength + blob.size > maxBytes) {
+      const oldest = entries.keys().next().value;
+      byteLength -= entries.get(oldest).size; entries.delete(oldest);
+    }
+    entries.set(key, blob); byteLength += blob.size;
+  };
   return {
     get byteLength() { return byteLength; },
     get size() { return entries.size; },
@@ -96,14 +106,21 @@ export function createContainerCompressionCache({maxBytes = 64 * 1024 * 1024, ma
     },
     put(key, bytes) {
       if (bytes.byteLength > maxBytes || !maxEntries) return;
-      const blob = new Blob([bytes]);
-      const previous = entries.get(key);
-      if (previous) { byteLength -= previous.size; entries.delete(key); }
-      while (entries.size >= maxEntries || byteLength + blob.size > maxBytes) {
-        const oldest = entries.keys().next().value;
-        byteLength -= entries.get(oldest).size; entries.delete(oldest);
+      insert(key, new Blob([bytes]));
+    },
+    // Worker retirement transfers only immutable compressed blocks. Snapshot
+    // metadata is copied; Blob values remain safe to structured-clone.
+    snapshot() { return [...entries].map(([key, blob]) => ({key, blob})); },
+    restore(snapshot) {
+      entries.clear(); byteLength = 0;
+      if (!Array.isArray(snapshot) || !maxEntries) return;
+      const keyPattern = /^(?:2:3|1:default):(0|[1-9]\d{0,8}):[a-f0-9]{64}$/;
+      for (const entry of snapshot.slice(-maxEntries)) {
+        if (!entry || typeof entry.key !== 'string' || entry.key.length > 128 || !(entry.blob instanceof Blob)) continue;
+        const match = keyPattern.exec(entry.key);
+        if (!match || Number(match[1]) > MAX_SKELETON_BYTES) continue;
+        insert(entry.key, entry.blob);
       }
-      entries.set(key, blob); byteLength += blob.size;
     },
     clear() { entries.clear(); byteLength = 0; },
   };
@@ -365,6 +382,7 @@ function jsonStringBytes(value) {
  *  Integers stay exact; floats use f32 only when every value round-trips. */
 function arrayType(values) {
   let ints = true, min = Infinity, max = -Infinity, f32 = true;
+  let jsonBytes = 2 + Math.max(0, values.length - 1);
   for (const v of values) {
     if (typeof v !== 'number' || !Number.isFinite(v)) return null;
     if (Number.isInteger(v)) {
@@ -372,16 +390,18 @@ function arrayType(values) {
       if (v < min) min = v; if (v > max) max = v;
     } else ints = false;
     if (f32 && Math.fround(v) !== v) f32 = false;
+    jsonBytes += String(v).length;
   }
+  const result = type => ({type, jsonBytes});
   if (ints) {
     if (min >= 0) {
-      if (max <= 0xff) return 'u8';
-      if (max <= 0xffff) return 'u16';
-      if (max <= 0xffffffff) return 'u32';
-    } else if (min >= -0x80000000 && max <= 0x7fffffff) return 'i32';
-    return 'f64';
+      if (max <= 0xff) return result('u8');
+      if (max <= 0xffff) return result('u16');
+      if (max <= 0xffffffff) return result('u32');
+    } else if (min >= -0x80000000 && max <= 0x7fffffff) return result('i32');
+    return result('f64');
   }
-  return f32 ? 'f32' : 'f64';
+  return result(f32 ? 'f32' : 'f64');
 }
 
 /** Walk an editable document and produce the v2 skeleton + binary sections.
@@ -393,13 +413,45 @@ function arrayType(values) {
  *  gives each one's offset for use in a caller-written S2S marker. */
 export function liftDocument(document, {preBlobs = [], maxBytes = MAX_BYTES} = {}) {
   const arrays = [], blobs = [], seenArrays = new Map(), seenBlobs = new Map();
-  let arraysLength = 0, blobsLength = 0;
+  const preBlobRanges = new Map();
+  // Repeated field names and short labels are common in dense scenes. Keep
+  // this admission memo local and bounded; large payload strings are excluded.
+  const stringSizes = new Map();
+  const stringSize = value => {
+    if (value.length > 128) return jsonStringBytes(value);
+    const cached = stringSizes.get(value);
+    if (cached !== undefined) return cached;
+    const length = jsonStringBytes(value);
+    if (stringSizes.size < 512) stringSizes.set(value, length);
+    return length;
+  };
+  let arraysLength = 0, blobsLength = 0, jsonBytes = 0, allocationBytes = 0;
+  const maxMaterializedBytes = maxBytes * 4;
+  const admit = length => {
+    if (!Number.isSafeInteger(length) || length > maxMaterializedBytes - jsonBytes) throw documentTooLarge();
+    jsonBytes += length;
+  };
+  const checkAllocation = () => {
+    if (allocationBytes + arraysLength + blobsLength > maxMaterializedBytes) throw documentTooLarge();
+  };
+  const admitPayload = (prefix, encodedLength) => {
+    admit(stringSize(prefix) + encodedLength);
+    allocationBytes += encodedLength; checkAllocation();
+  };
   const blobOffsets = preBlobs.map(bytes => {
     if (bytes.byteLength > maxBytes - blobsLength) throw documentTooLarge();
+    if (!preBlobRanges.has(bytes)) preBlobRanges.set(bytes, {s: 1, o: blobsLength, n: bytes.byteLength});
     const o = blobsLength; blobs.push(bytes); blobsLength += bytes.byteLength; return o;
   });
   const align = (length, type) => length + ((TYPE_BYTES[type] - (length % TYPE_BYTES[type])) % TYPE_BYTES[type]);
   const lift = (value, key) => {
+    // Only explicit reserved payloads in known base64 fields can replace a
+    // string with owned bytes. Foreign typed-array fields retain JSON behavior.
+    const preBlob = B64_FIELDS.has(key) && preBlobRanges.get(value);
+    if (preBlob) {
+      admitPayload('', 4 * Math.ceil(preBlob.n / 3));
+      return `S2S:${preBlob.s}:${preBlob.o}:${preBlob.n}`;
+    }
     if (typeof value === 'string') {
       if (value.length >= LIFT_MIN_STRING) {
         let base64 = null, prefix = '';
@@ -410,38 +462,52 @@ export function liftDocument(document, {preBlobs = [], maxBytes = MAX_BYTES} = {
         }
         if (base64 !== null) {
           const hit = seenBlobs.get(base64);
-          if (hit) return prefix ? `S2D:${hit.s}:${hit.o}:${hit.n}:${prefix}` : `S2S:${hit.s}:${hit.o}:${hit.n}`;
+          if (hit) {
+            admitPayload(prefix, base64.length);
+            return prefix ? `S2D:${hit.s}:${hit.o}:${hit.n}:${prefix}` : `S2S:${hit.s}:${hit.o}:${hit.n}`;
+          }
           const decodedLength = base64.length / 4 * 3 > maxBytes - blobsLength ? canonicalBase64Length(base64) : null;
           if (decodedLength !== null && decodedLength > maxBytes - blobsLength) throw documentTooLarge();
-          try {
-            const bytes = base64ToBytes(base64);
-            if (bytesToBase64(bytes) !== base64) return ESCAPABLE.test(value) ? 'S2E:' + value : value;
+          let bytes;
+          try { bytes = base64ToBytes(base64); if (bytesToBase64(bytes) !== base64) bytes = null; }
+          catch { bytes = null; }
+          if (bytes) {
             const s = 1, o = blobsLength, n = bytes.byteLength;
+            if (n > maxBytes - blobsLength) throw documentTooLarge();
+            admitPayload(prefix, base64.length);
             blobs.push(bytes); blobsLength += n; seenBlobs.set(base64, {s, o, n});
+            checkAllocation();
             return prefix ? `S2D:${s}:${o}:${n}:${prefix}` : `S2S:${s}:${o}:${n}`;
-          } catch { return ESCAPABLE.test(value) ? 'S2E:' + value : value; }
+          }
         }
       }
+      admit(stringSize(value));
       return ESCAPABLE.test(value) ? 'S2E:' + value : value;
     }
     if (Array.isArray(value)) {
-      const type = value.length >= LIFT_MIN_ARRAY ? arrayType(value) : null;
-      if (type) {
-        const hit = seenArrays.get(value);
-        if (hit) return hit;
+      const hit = seenArrays.get(value);
+      if (hit) { admit(hit.jsonBytes); return hit.marker; }
+      const numeric = value.length >= LIFT_MIN_ARRAY ? arrayType(value) : null;
+      if (numeric) {
+        const {type, jsonBytes} = numeric;
+        admit(jsonBytes);
         const offset = align(arraysLength, type);
         if (value.length > Math.floor((maxBytes - offset) / TYPE_BYTES[type])) throw documentTooLarge();
         arraysLength = offset + value.length * TYPE_BYTES[type];
+        allocationBytes += value.length * 48; checkAllocation();
         const marker = `S2B:${type}:0:${offset}:${value.length}`;
         arrays.push({type, value, offset});
-        seenArrays.set(value, marker);
+        seenArrays.set(value, {marker, jsonBytes});
         return marker;
       }
+      admit(2 + Math.max(0, value.length - 1));
       return value.map(item => lift(item, ''));
     }
     if (value && typeof value === 'object') {
-      const out = {};
-      for (const key of Object.keys(value)) {
+      const out = {}, keys = Object.keys(value);
+      admit(2 + Math.max(0, keys.length - 1));
+      for (const key of keys) {
+        admit(stringSize(key) + 1);
         const lifted = lift(value[key], key);
         // A literal "__proto__" key survives JSON and the transport; assigning
         // it normally would invoke the prototype setter and drop the field.
@@ -450,6 +516,7 @@ export function liftDocument(document, {preBlobs = [], maxBytes = MAX_BYTES} = {
       }
       return out;
     }
+    admit(value == null ? 4 : String(value).length);
     return value;
   };
   const skeleton = lift(document, '');
@@ -460,8 +527,6 @@ export function liftDocument(document, {preBlobs = [], maxBytes = MAX_BYTES} = {
   let offset = 0;
   for (const bytes of blobs) { blobsBytes.set(bytes, offset); offset += bytes.byteLength; }
   const sections = [{kind: 1, bytes: arraysBytes}, {kind: 2, bytes: blobsBytes}];
-  try { materializeMarkers(skeleton, sections, {maxMaterializedBytes: maxBytes * 4, validateOnly: true}); }
-  catch (error) { if (!error.code) error.code = 'document_too_large'; throw error; }
   return {skeleton, sections, blobOffsets};
 }
 
@@ -493,9 +558,10 @@ export async function encodeContainerV2Parts(lifted, kind, options = {}) {
   const {cache, stats} = options;
   if (stats) Object.assign(stats, {hits: 0, misses: 0, rawBytesReused: 0, compressedBytesReused: 0});
   const skeletonBytes = encoder.encode(JSON.stringify(lifted.skeleton));
+  const sectionRawBytes = lifted.sections.reduce((sum, section) => sum + section.bytes.byteLength, 0);
   if (skeletonBytes.byteLength > MAX_SKELETON_BYTES ||
       lifted.sections.some(section => section.bytes.byteLength > MAX_BYTES) ||
-      skeletonBytes.byteLength + lifted.sections.reduce((sum, section) => sum + section.bytes.byteLength * 3, 0) > MAX_BYTES * 4)
+      skeletonBytes.byteLength + sectionRawBytes * 3 > MAX_BYTES * 4)
     throw Object.assign(messageError(new Error(''), "errors.nativeContainer.theStykanimateDocumentExceedsTheUncompressedSizeLimit", {}), {code:'document_too_large'});
   if (!Object.hasOwn(MAGIC, kind) || lifted.sections.length > 64 || lifted.sections.some(section =>
       ![1, 2].includes(section.kind) || !(section.bytes instanceof Uint8Array)))
@@ -528,7 +594,8 @@ export async function encodeContainerV2Parts(lifted, kind, options = {}) {
     records.set(section.digest, pos + 24);
     pos += SECTION;
   }
-  if (stats) Object.assign(stats, {cacheBytes: cache?.byteLength || 0, cacheEntries: cache?.size || 0});
+  if (stats) Object.assign(stats, {cacheBytes: cache?.byteLength || 0, cacheEntries: cache?.size || 0,
+    container_raw_bytes: skeletonBytes.byteLength + sectionRawBytes});
   return {parts: [out, jsonPacked.bytes, records, ...packed.map(section => section.stored)], byteLength: total};
 }
 

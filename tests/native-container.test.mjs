@@ -87,18 +87,53 @@ test('writer rejects excess lifted data before allocating its sections', () => {
   assert.equal(liftDocument({data_base64: '=' + encoded.slice(1)}, {maxBytes: 20000}).skeleton.data_base64[0], '=');
 });
 
+test('reserved binary source fields admit every reference and preserve foreign typed arrays', async () => {
+  const bytes = new Uint8Array([0, 1, 2, 255]);
+  const document = {_stykSource: {source_base64: bytes}, media: {data_base64: bytes}, foreign: bytes,
+    literal: 'S2E:literal', zero: {source_base64: new Uint8Array()}};
+  const empty = document.zero.source_base64;
+  const lifted = liftDocument(document, {preBlobs: [bytes, empty]});
+  assert.equal(lifted.skeleton._stykSource.source_base64, 'S2S:1:0:4');
+  assert.equal(lifted.skeleton.media.data_base64, 'S2S:1:0:4');
+  assert.equal(lifted.skeleton.zero.source_base64, 'S2S:1:4:0');
+  assert.deepEqual(lifted.skeleton.foreign, {'0': 0, '1': 1, '2': 2, '3': 255});
+  assert.deepEqual(liftDocument({source_base64: bytes}).skeleton, {source_base64: {'0': 0, '1': 1, '2': 2, '3': 255}});
+  const cache = createContainerCompressionCache();
+  const first = (await decodeDocument(await encodeContainerV2(lifted, 'styk', {cache}), 'styk')).document;
+  assert.equal(first._stykSource.source_base64, bytesToBase64(bytes));
+  assert.equal(first.media.data_base64, first._stykSource.source_base64);
+  assert.equal(first.zero.source_base64, ''); assert.equal(first.literal, document.literal);
+  bytes[0] = 77;
+  const stats = {}, updated = await encodeContainerV2(liftDocument(document, {preBlobs: [bytes, empty]}), 'styk', {cache, stats});
+  assert.equal((await decodeDocument(updated, 'styk')).document._stykSource.source_base64, bytesToBase64(bytes));
+  assert.ok(stats.misses > 0);
+  const many = new Uint8Array(100), repeated = {a: {source_base64: many}, b: {source_base64: many},
+    c: {source_base64: many}, d: {source_base64: many}};
+  assert.throws(() => liftDocument(repeated, {preBlobs: [many], maxBytes: 150}), error => error.code === 'document_too_large');
+  assert.doesNotThrow(() => liftDocument({a: {source_base64: many}}, {preBlobs: [many], maxBytes: 150}));
+});
+
 test('multipart output and bounded compression reuse preserve bytes and edit independence', async () => {
   const a = floats(), document = {a, alias: a, independent: a.slice(), data_base64: bytesToBase64(new Uint8Array(80000))};
   const cache = createContainerCompressionCache({maxBytes: 1024 * 1024, maxEntries: 8});
   const firstStats = {}, first = await encodeContainerV2Parts(liftDocument(document), 'styk', {cache, stats: firstStats});
   const firstBytes = new Uint8Array(await new Blob(first.parts).arrayBuffer());
   assert.equal(first.byteLength, firstBytes.length); assert.equal(firstStats.misses, 3);
+  const rawLifted = liftDocument(document);
+  assert.equal(firstStats.container_raw_bytes, new TextEncoder().encode(JSON.stringify(rawLifted.skeleton)).length +
+    rawLifted.sections.reduce((sum, section) => sum + section.bytes.length, 0));
   // A caller owns miss-result arrays; changing one cannot corrupt the cache.
   first.parts[1].fill(0);
   const secondStats = {}, second = await encodeContainerV2Parts(liftDocument(document), 'styk', {cache, stats: secondStats});
   assert.equal(secondStats.hits, 3);
   assert.deepEqual(new Uint8Array(await new Blob(second.parts).arrayBuffer()), firstBytes);
   assert.deepEqual(await encodeContainerV2(liftDocument(document), 'styk', {cache}), firstBytes);
+  const restored = createContainerCompressionCache({maxBytes: 1024 * 1024, maxEntries: 8});
+  const snapshot = cache.snapshot(); restored.restore(structuredClone(snapshot));
+  snapshot.length = 0; // Caller-owned metadata cannot alter retained blocks.
+  const restoredStats = {};
+  assert.deepEqual(await encodeContainerV2(liftDocument(document), 'styk', {cache: restored, stats: restoredStats}), firstBytes);
+  assert.equal(restoredStats.hits, 3); assert.equal(restored.byteLength, cache.byteLength);
   const decoded = (await decodeDocument(firstBytes, 'styk')).document;
   assert.equal(decoded.a, decoded.alias); assert.notEqual(decoded.a, decoded.independent);
   decoded.a[0] = 999; assert.notEqual(decoded.independent[0], 999);
@@ -120,6 +155,16 @@ test('multipart output and bounded compression reuse preserve bytes and edit ind
   assert.equal(bounded.get('b'), undefined); assert.ok(bounded.get('a')); assert.ok(bounded.get('c'));
   bounded.put('oversized', new Uint8Array(21)); assert.equal(bounded.get('oversized'), undefined);
   assert.equal(bounded.byteLength, 16); assert.equal(bounded.size, 2);
+  const key = length => `1:default:${length}:${'0'.repeat(64)}`;
+  bounded.restore([{key: key(3), blob: new Blob([new Uint8Array(8)])},
+    {key: key(4), blob: new Blob([new Uint8Array(8)])}, {key: key(5), blob: new Blob([new Uint8Array(8)])}]);
+  assert.equal(bounded.size, 2); assert.equal(bounded.byteLength, 16); assert.equal(bounded.get(key(3)), undefined);
+  for (const invalid of [null, {}, {key: 'wrong', blob: new Blob()}, {key: key(1), blob: new Uint8Array()},
+    {key: key(500000000), blob: new Blob()}, {key: 'x'.repeat(200), blob: new Blob()},
+    {key: key(1), blob: new Blob([new Uint8Array(21)])}]) {
+    bounded.restore([invalid]); assert.equal(bounded.size, 0); assert.equal(bounded.byteLength, 0);
+  }
+  bounded.restore({}); assert.equal(bounded.size, 0);
 });
 
 test('v2 round-trips a document losslessly', async () => {
