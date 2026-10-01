@@ -410,6 +410,73 @@ class SourceLifetimeHttpTests(unittest.TestCase):
         self.assertEqual(self.store.source_owners, {A: first["sourceId"]})
         self.assertEqual(self.store.source_record(first["sourceId"])[0], source_bytes())
 
+    def test_release_cancels_retaining_import_when_separate_cancel_was_not_received(self):
+        first = self.store.import_bytes(source_bytes(), "active.piv", source_owner=A)
+        entered, finish = threading.Event(), threading.Event()
+        retain = self.store._retain_source
+        def hold_before_publication(entry, owner_id):
+            entered.set()
+            self.assertTrue(finish.wait(5))
+            return retain(entry, owner_id)
+        with mock.patch.object(self.store, "_retain_source", side_effect=hold_before_publication):
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                pending = pool.submit(self.request, "POST", "/api/import?filename=pending.piv", source_bytes(1),
+                    {"X-Styk-Source-Owner": B, "X-Styk-Job-Id": C})
+                try:
+                    self.assertTrue(entered.wait(5))
+                    status, data = self.request("POST", "/api/source/release", server.encoded_json({"ownerId": B, "jobId": C}))
+                    self.assertEqual((status, data), (204, b""))
+                finally:
+                    finish.set()
+                with self.assertRaises((ConnectionError, http.client.RemoteDisconnected, OSError)):
+                    pending.result(5)
+        deadline = time.monotonic() + 5
+        while self.service.jobs.snapshot()["active"]:
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(.005)
+        self.assertEqual(self.store.source_owners, {A: first["sourceId"]})
+        self.assertEqual(self.store.source_record(first["sourceId"])[0], source_bytes())
+
+    def test_release_cancels_queued_import_before_its_upload_is_read(self):
+        first = self.store.import_bytes(source_bytes(), "active.piv", source_owner=A)
+        started, finish, reads = threading.Event(), threading.Event(), []
+        def hold_active():
+            with self.service.jobs.enter("d" * 32):
+                started.set()
+                self.assertTrue(finish.wait(5))
+        read_body = server.Handler._body
+        def observed(handler, limit):
+            reads.append(handler.headers.get("X-Styk-Job-Id"))
+            return read_body(handler, limit)
+        with ThreadPoolExecutor(max_workers=2) as pool, mock.patch.object(server.Handler, "_body", observed):
+            active = pool.submit(hold_active)
+            self.assertTrue(started.wait(5))
+            pending = pool.submit(self.request, "POST", "/api/import?filename=pending.piv", source_bytes(1),
+                {"X-Styk-Source-Owner": B, "X-Styk-Job-Id": C})
+            try:
+                deadline = time.monotonic() + 5
+                while self.service.jobs.snapshot()["queued"] != 1:
+                    self.assertLess(time.monotonic(), deadline)
+                    time.sleep(.005)
+                status, data = self.request("POST", "/api/source/release", server.encoded_json({"ownerId": B, "jobId": C}))
+                self.assertEqual((status, data), (204, b""))
+                with self.assertRaises((ConnectionError, http.client.RemoteDisconnected, OSError)):
+                    pending.result(5)
+                self.assertNotIn(C, reads)
+                self.assertEqual(self.store.source_owners, {A: first["sourceId"]})
+                self.assertEqual(self.store.source_record(first["sourceId"])[0], source_bytes())
+            finally:
+                finish.set()
+            active.result(5)
+
+    def test_invalid_optional_job_cannot_release_an_active_original(self):
+        first = self.store.import_bytes(source_bytes(), "active.piv", source_owner=A)
+        for job_id in (None, "invalid", "f" * 33, 4):
+            status, data = self.request("POST", "/api/source/release", server.encoded_json({"ownerId": A, "jobId": job_id}))
+            self.assertEqual(status, 400, data)
+            self.assertEqual(json.loads(data)["code"], "invalid_job")
+            self.assertEqual(self.store.source_owners, {A: first["sourceId"]})
+
 
 if __name__ == "__main__":
     unittest.main()

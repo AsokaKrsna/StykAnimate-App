@@ -24,7 +24,7 @@ tool is modified. It does not approximate unsupported files.
 | `POST /api/export` with `{document,sourceId?,format,filename?,figureTypeId?}` | Binary `.piv`, `.stk`, `.styk`, or `.stkz`, with `Content-Disposition` |
 | `GET /api/source?id=<sourceId>` | Original uploaded source bytes (`STYKSRC1` envelope) for worker-side container builds |
 | `POST /api/source/retain` with `{sourceId,ownerId}` | `{ok:true,retained}`; retain an active PIV/STK original beyond ordinary cache eviction |
-| `POST /api/source/release` with `{ownerId}` | 204; release that owner's original source, including repeated releases |
+| `POST /api/source/release` with `{ownerId,jobId?}` | 204; cancel that pending job when supplied, then release the owner's original source |
 
 Errors are non-2xx JSON `{ok:false,error,code}`. `source_expired` (410) explicitly
 requires reopening the original source; it never silently drops unknown bytes.
@@ -69,9 +69,12 @@ Retaining a new source for an existing owner replaces its old lease only when th
 new lease fits; a failed or cancelled retain leaves the old lease intact. A native
 source retain returns `retained:false`. The editor adopts successful project
 leases and releases rejected imports, imported figures, replaced documents and
-disposed sessions. For cancelled requests it must finish `/api/cancel` before
-releasing that request's owner, preventing a queued import from publishing a late
-lease. Every lease disappears when the codec service closes, including the
+disposed sessions. For cancelled requests, release includes the import's `jobId`
+so the service cancels pending work before removing its lease in the same
+acknowledged control request. This prevents a late lease even when a separate
+`/api/cancel` request times out or fails. A 204 confirms cleanup; a network error
+or non-success response does not. Every lease disappears when the codec service
+closes, including the
 parent-process shutdown path. No additional original source files are written.
 These endpoints use the same loopback/origin/token checks as imports and exports.
 Retain uses the bounded codec queue; release is small control work that remains

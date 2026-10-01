@@ -1024,7 +1024,14 @@ class Handler(BaseHTTPRequestHandler):
                 request = decoded_json(self._body(4096))
                 if not isinstance(request, dict):
                     raise ApiError(400, "invalid_request", "The request must be a JSON object.")
-                self.server.store.release_source(request.get("ownerId"))
+                owner_id = self.server.store._source_owner(request.get("ownerId"))
+                if "jobId" in request:
+                    # Cancellation and lease removal share one acknowledged
+                    # control request. Publication is ordered by JobRegistry's
+                    # condition: a completed lease is removed; a still-pending
+                    # import cannot publish after this cancellation barrier.
+                    self.server.jobs.cancel(request["jobId"])
+                self.server.store.release_source(owner_id)
                 self._send(204, b"", "application/json")
                 return
             if parsed.path not in ("/api/import", "/api/open", "/api/export", "/api/source/retain"):
