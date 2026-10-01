@@ -4,11 +4,12 @@ import {setImmediate as nextTask} from 'node:timers/promises';
 import {ImportClient} from '../src/import-client.mjs';
 import {decodeSourceRecord} from '../src/source-record.mjs';
 
-function environment(t,{cancel}={}) {
+function environment(t,{cancel,release}={}) {
   const workers=[],controls=[];
   t.mock.method(globalThis,'fetch',async(url,options)=>{
     const request={url:new URL(url),options};controls.push(request);
-    if(request.url.pathname==='/api/cancel' && cancel)await cancel();
+    if(request.url.pathname==='/api/cancel' && cancel){const response=await cancel();if(response)return response;}
+    if(request.url.pathname==='/api/source/release' && release)return release(request);
     return new Response(null,{status:204});
   });
   class Worker extends EventTarget {
@@ -72,6 +73,44 @@ test('import worker failure cleans pending owners and keeps the accepted origina
   const pending=client.openSample('failed.piv',{project:true}),b=worker.messages.at(-1);worker.fail();
   await assert.rejects(pending,{telemetryCode:'worker_failed'});await nextTask();
   assert.equal(client.activeSourceOwner,a.sourceOwner);assert.deepEqual(released(controls),[b.sourceOwner]);
+});
+
+for (const failure of ['network','rejected']) test(`cleanup repeats the cancelled import identity after ${failure} cancellation failure`,async t=>{
+  const {client,workers,controls}=environment(t,{cancel:()=>{if(failure==='network')throw new TypeError('Network failed');return new Response(null,{status:503});}}),worker=workers[0];
+  const project=client.openSample('accepted.piv',{project:true}),a=worker.messages[0];complete(worker,a);client.adoptSource(await project);
+  const pending=client.openSample('queued.piv',{project:true}),b=worker.messages.at(-1);
+  client.cancelPending();await assert.rejects(pending,{name:'AbortError'});await nextTask();
+  const cleanup=controls.find(request=>request.url.pathname==='/api/source/release');
+  assert.deepEqual(JSON.parse(cleanup.options.body),{ownerId:b.sourceOwner,jobId:b.jobId});
+  assert.equal(client.activeSourceOwner,a.sourceOwner);assert.deepEqual(released(controls),[b.sourceOwner]);
+  complete(worker,b);assert.equal(client.activeSourceOwner,a.sourceOwner);
+});
+
+test('bulk source cleanup is serialized and retries temporary control-capacity failure',async t=>{
+  let active=0,maxActive=0,attempts=0;
+  const {client,workers,controls}=environment(t,{release:async()=>{
+    active++;maxActive=Math.max(maxActive,active);await nextTask();active--;attempts++;
+    return new Response(null,{status:attempts===1?503:204});
+  }}),worker=workers[0],results=[];
+  for(let i=0;i<8;i++){
+    const pending=client.openSample(`project-${i}.piv`,{project:true}),message=worker.messages.at(-1);
+    complete(worker,message);results.push(await pending);
+  }
+  await Promise.all(results.map(result=>client.releaseSource(result)));
+  assert.equal(maxActive,1);assert.equal(attempts,9);assert.equal(client.sourceOwners.size,0);
+  assert.deepEqual(new Set(released(controls)),new Set(results.map(result=>result.sourceOwner)));
+});
+
+test('pending and releasing originals share a bounded owner budget',async t=>{
+  let finish;const cancelled=new Promise(resolve=>finish=resolve);
+  const {client,workers}=environment(t,{cancel:()=>cancelled}),pending=[];
+  for(let i=0;i<16;i++)pending.push(client.openSample(`project-${i}.piv`,{project:true}));
+  await assert.rejects(client.openSample('over-budget.piv',{project:true}),{code:'source_retention_limit',status:413});
+  assert.equal(workers[0].messages.length,16);assert.equal(client.sourceOwners.size,16);
+  client.cancelPending();await Promise.all(pending.map(request=>assert.rejects(request,{name:'AbortError'})));
+  await assert.rejects(client.openSample('cleanup-still-pending.piv',{project:true}),{code:'source_retention_limit'});
+  finish();await client.sourceRelease;assert.equal(client.sourceOwners.size,0);
+  const next=client.openSample('available-again.piv',{project:true}),message=workers[0].messages.at(-1);complete(workers[0],message);await next;
 });
 
 test('a backend result without the requested lease cannot replace an accepted original',async t=>{

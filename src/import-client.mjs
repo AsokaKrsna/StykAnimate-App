@@ -17,8 +17,9 @@ export class ImportClient {
     this.sequence = 0;
     this.cancelGeneration = 0;
     this.pending = new Map();
-    this.sourceOwners = new Set();
+    this.sourceOwners = new Map();
     this.activeSourceOwner = null;
+    this.sourceRelease = Promise.resolve();
     this.disposed = false;
     this.failure = null;
     this.workerURL=workerURL;this._startWorker();
@@ -93,35 +94,45 @@ export class ImportClient {
   }
 
   _cancelRequest(request) {
-    // A queued import could publish its owner after an early release. Wait for
-    // the independent cancellation acknowledgement before scheduling cleanup.
+    // Stop work promptly, then repeat its identity in cleanup so the service
+    // also orders cancellation before release if this control request fails.
     const cancelled = request.backendJob.cancel();
-    if (request.sourceOwner) void this.releaseSource(request.sourceOwner,cancelled);
+    if (request.sourceOwner) void this.releaseSource(request.sourceOwner,cancelled,request.backendJob.id);
   }
 
   /** Transfer the imported original's lifetime to the accepted project. */
   adoptSource(result) {
-    const owner = this.sourceOwners.has(result?.sourceOwner) ? result.sourceOwner : null;
+    const owner = this.sourceOwners.get(result?.sourceOwner) === 'owned' ? result.sourceOwner : null;
     const previous = this.activeSourceOwner;
     this.activeSourceOwner = owner;
     if (previous && previous !== owner) void this.releaseSource(previous);
   }
 
   /** Release an unaccepted result, or the accepted project being replaced. */
-  async releaseSource(result,cancelled) {
+  async releaseSource(result,cancelled,jobId) {
     const ownerId = typeof result === 'string' ? result : result?.sourceOwner;
-    if (!ownerId || !this.sourceOwners.delete(ownerId)) return;
+    if (!ownerId || this.sourceOwners.get(ownerId) !== 'owned') return;
+    this.sourceOwners.set(ownerId,'releasing');
     if (this.activeSourceOwner === ownerId) this.activeSourceOwner = null;
-    await cancelled;
-    const job = codecJob(this.baseURL, this.token);
-    try {
-      const link = job.link();
-      const headers = {'Content-Type':'application/json',...(this.token ? {Authorization:`Bearer ${this.token}`} : {})};
-      await codecRequest({baseURL:this.baseURL,...link.fields}, '/api/source/release', {
-        method:'POST',headers,body:JSON.stringify({ownerId}),signal:AbortSignal.timeout(10000),keepalive:true,
-      });
-      job.finish();
-    } catch { job.cancel(); }
+    // Bulk cancellation shares four small control slots with other clients.
+    // Keep one cleanup request in flight and retry temporary transport failure.
+    this.sourceRelease = this.sourceRelease.then(async () => {
+      await cancelled;
+      for (let attempt=0; attempt<3; attempt++) {
+        const job = codecJob(this.baseURL, this.token);
+        try {
+          const link = job.link();
+          const headers = {'Content-Type':'application/json',...(this.token ? {Authorization:`Bearer ${this.token}`} : {})};
+          const response = await codecRequest({baseURL:this.baseURL,...link.fields}, '/api/source/release', {
+            method:'POST',headers,body:JSON.stringify({ownerId,...(jobId ? {jobId} : {})}),signal:AbortSignal.timeout(10000),keepalive:true,
+          });
+          if (response.ok || response.status < 500) return;
+        } catch { /* A transient transport failure must not drop queued cleanup. */ }
+        finally { job.finish(); }
+        if (attempt<2) await new Promise(resolve=>setTimeout(resolve,250*(attempt+1)));
+      }
+    }).finally(() => this.sourceOwners.delete(ownerId));
+    await this.sourceRelease;
   }
 
   _fail(error) {
@@ -138,11 +149,13 @@ export class ImportClient {
 
   _request(operation, payload, transfer = [], onProgress, project = false) {
     if (this.disposed) return Promise.reject(messageError(new Error(''), "errors.importClient.theFileImporterHasBeenDisposed", {}));
+    if (project && this.sourceOwners.size >= 16) return Promise.reject(Object.assign(
+      messageError(new Error(''), 'errors.importClient.thisFileCouldNotBeImported', {}), {code:'source_retention_limit',status:413}));
     // Retry only the user's next operation; never silently repeat a failed one.
     if(this.failure){try{this._startWorker();}catch(error){this.diagnostics?.recovery('import_worker','failed');return Promise.reject(error);}}
     const id = ++this.sequence, backendJob = codecJob(this.baseURL, this.token);
     const sourceOwner = project ? crypto.randomUUID().replaceAll('-','') : undefined;
-    if (sourceOwner) this.sourceOwners.add(sourceOwner);
+    if (sourceOwner) this.sourceOwners.set(sourceOwner,'owned');
     return new Promise((resolve, reject) => {
       const timer = this.timeoutMs > 0 ? setTimeout(() => {
         const error = messageError(new Error(''), "errors.importClient.theFileImportTimedOutTryOpeningA", {});
@@ -201,6 +214,6 @@ export class ImportClient {
     if (this.disposed) return;
     this.disposed = true;
     this._fail(messageError(new Error(''), "errors.importClient.theFileImporterHasBeenDisposed", {}));
-    for (const owner of this.sourceOwners) void this.releaseSource(owner);
+    for (const owner of this.sourceOwners.keys()) void this.releaseSource(owner);
   }
 }
