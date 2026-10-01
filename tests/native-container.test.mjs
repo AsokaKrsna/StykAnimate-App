@@ -3,7 +3,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildContainerV1, buildContainerV2, encodeContainerV2, decodeDocument, liftDocument,
-  normalizeDecodedDocument, bytesToBase64, base64ToBytes} from '../src/native-container.mjs';
+  normalizeDecodedDocument, bytesToBase64, base64ToBytes, inflate, deflate, materializeMarkers,
+  encodeContainerV2Parts, createContainerCompressionCache} from '../src/native-container.mjs';
 
 const floats = () => Array.from({length: 64}, (_, i) => Math.sin(i) * 180);
 
@@ -13,12 +14,112 @@ test('sectioned metadata has a separate bound while payload and aggregate limits
     [2,385*1024*1024,/uncompressed size/],[2,300*1024*1024,/invalid payload length/]]) {
     const malformed=bytes.slice(),view=new DataView(malformed.buffer);
     view.setUint8(4,version);view.setBigUint64(8,BigInt(raw),true);
+    if(version===1)view.setUint8(5,1);
     await assert.rejects(decodeDocument(malformed,'styk'),message);
   }
   await assert.rejects(encodeContainerV2({skeleton:{},sections:[{bytes:{byteLength:257*1024*1024}}]},'styk'),
     error=>error.code==='document_too_large');
   await assert.rejects(encodeContainerV2({skeleton:{},sections:[{bytes:{byteLength:200*1024*1024}},{bytes:{byteLength:200*1024*1024}}]},'styk'),
     error=>error.code==='document_too_large');
+});
+
+test('zlib inflation rejects oversized, incomplete, and concatenated streams', async () => {
+  const payload = new TextEncoder().encode('z'.repeat(1024 * 1024));
+  const packed = await deflate(payload);
+  await assert.rejects(inflate(packed, 8192), /uncompressed size/);
+  assert.deepEqual(await inflate(packed, payload.length), payload);
+  await assert.rejects(inflate(packed.subarray(0, packed.length - 1), payload.length));
+  await assert.rejects(inflate(new Uint8Array([...packed, ...packed]), payload.length));
+});
+
+test('v2 rejects reserved fields, section kinds, codecs and unsafe lengths', async () => {
+  const bytes = await buildContainerV2({a: floats()}, 'styk');
+  const sectionOffset = 60 + Number(new DataView(bytes.buffer).getBigUint64(16, true));
+  for (const relative of [2, 4, 56, 63]) {
+    const damaged = bytes.slice(); damaged[sectionOffset + relative] = 1;
+    await assert.rejects(decodeDocument(damaged, 'styk'), /Unsupported/);
+  }
+  for (const [relative, value] of [[0, 3], [1, 3]]) {
+    const damaged = bytes.slice(); damaged[sectionOffset + relative] = value;
+    await assert.rejects(decodeDocument(damaged, 'styk'), /section kind|Unsupported/);
+  }
+  for (const relative of [8, 16]) {
+    const damaged = bytes.slice();
+    new DataView(damaged.buffer).setBigUint64(sectionOffset + relative, 2n ** 63n, true);
+    await assert.rejects(decodeDocument(damaged, 'styk'), /section table/);
+  }
+  await assert.rejects(decodeDocument(bytes.subarray(0, 56), 'styk'), /truncated/);
+});
+
+test('materialization admits repeated references before changing the skeleton', () => {
+  const bytes = new Uint8Array(60), marker = 'S2S:0:0:60';
+  const document = {a: marker, b: marker};
+  assert.throws(() => materializeMarkers(document, [{kind: 2, bytes}], {maxMaterializedBytes: 200}), /uncompressed size/);
+  assert.deepEqual(document, {a: marker, b: marker});
+  assert.equal(materializeMarkers({a: marker}, [{kind: 2, bytes}], {maxMaterializedBytes: 200}).a, bytesToBase64(bytes));
+  const numeric = {a: 'S2B:u8:0:0:32'};
+  assert.throws(() => materializeMarkers(numeric, [{kind: 1, bytes: new Uint8Array(32)}], {maxMaterializedBytes: 1000}), /uncompressed size/);
+  for (const marker of ['S2B:u8:0:0:9007199254740993', 'S2B:u8:9007199254740993:0:0', 'S2S:0:9007199254740993:0'])
+    assert.throws(() => materializeMarkers({a: marker}, [{kind: 1, bytes}]), /section reference/);
+});
+
+test('unaligned stored numeric ranges restore exact values and existing aliases', () => {
+  const bytes = new Uint8Array(1 + 16), view = new DataView(bytes.buffer);
+  view.setFloat64(1, .125, true); view.setFloat64(9, -1e300, true);
+  const marker = 'S2B:f64:0:0:2';
+  const out = materializeMarkers({a: marker, b: marker}, [{kind: 1, bytes: bytes.subarray(1)}]);
+  assert.deepEqual(out.a, [.125, -1e300]); assert.equal(out.a, out.b);
+});
+
+test('drawing payloads, literal markers and unknown metadata remain lossless', async () => {
+  const document = {styk_tiles: 'data:application/x-styk-tiles;base64,' + bytesToBase64(new Uint8Array(80000)),
+    literal: 'S2B:f64:0:0:3', escaped: 'S2E:a', future: JSON.parse('{"__proto__":{"retained":true}}')};
+  assert.match(liftDocument(document).skeleton.styk_tiles, /^S2D:/);
+  assert.deepEqual((await decodeDocument(await buildContainerV2(document, 'styk'), 'styk')).document, document);
+});
+
+test('writer rejects excess lifted data before allocating its sections', () => {
+  assert.throws(() => liftDocument({a: floats()}, {maxBytes: 100}), error => error.code === 'document_too_large');
+  assert.throws(() => liftDocument({}, {preBlobs: [new Uint8Array(101)], maxBytes: 100}), error => error.code === 'document_too_large');
+  const encoded = bytesToBase64(new Uint8Array(50000));
+  assert.throws(() => liftDocument({data_base64: encoded}, {maxBytes: 100}), error => error.code === 'document_too_large');
+  // Noncanonical opaque fields remain inline; they are not decoded as blobs.
+  assert.equal(liftDocument({data_base64: '=' + encoded.slice(1)}, {maxBytes: 20000}).skeleton.data_base64[0], '=');
+});
+
+test('multipart output and bounded compression reuse preserve bytes and edit independence', async () => {
+  const a = floats(), document = {a, alias: a, independent: a.slice(), data_base64: bytesToBase64(new Uint8Array(80000))};
+  const cache = createContainerCompressionCache({maxBytes: 1024 * 1024, maxEntries: 8});
+  const firstStats = {}, first = await encodeContainerV2Parts(liftDocument(document), 'styk', {cache, stats: firstStats});
+  const firstBytes = new Uint8Array(await new Blob(first.parts).arrayBuffer());
+  assert.equal(first.byteLength, firstBytes.length); assert.equal(firstStats.misses, 3);
+  // A caller owns miss-result arrays; changing one cannot corrupt the cache.
+  first.parts[1].fill(0);
+  const secondStats = {}, second = await encodeContainerV2Parts(liftDocument(document), 'styk', {cache, stats: secondStats});
+  assert.equal(secondStats.hits, 3);
+  assert.deepEqual(new Uint8Array(await new Blob(second.parts).arrayBuffer()), firstBytes);
+  assert.deepEqual(await encodeContainerV2(liftDocument(document), 'styk', {cache}), firstBytes);
+  const decoded = (await decodeDocument(firstBytes, 'styk')).document;
+  assert.equal(decoded.a, decoded.alias); assert.notEqual(decoded.a, decoded.independent);
+  decoded.a[0] = 999; assert.notEqual(decoded.independent[0], 999);
+  document.a[0] = 1.25;
+  const changedStats = {}, changed = await encodeContainerV2Parts(liftDocument(document), 'styk', {cache, stats: changedStats});
+  assert.equal(changedStats.hits, 2); assert.equal(changedStats.misses, 1);
+  assert.deepEqual((await decodeDocument(new Uint8Array(await new Blob(changed.parts).arrayBuffer()), 'styk')).document, document);
+  // Mutating emitted bytes cannot corrupt the cache's immutable retained block.
+  for (const part of first.parts) if (part instanceof Uint8Array) part.fill(0);
+  assert.deepEqual(await encodeContainerV2(liftDocument({...document, a, alias: a}), 'styk', {cache}),
+    await encodeContainerV2(liftDocument(document), 'styk'));
+  cache.clear(); assert.equal(cache.byteLength, 0); assert.equal(cache.size, 0);
+  const tiny = createContainerCompressionCache({maxBytes: 20, maxEntries: 1});
+  await encodeContainerV2Parts(liftDocument(document), 'styk', {cache: tiny});
+  assert.ok(tiny.byteLength <= 20); assert.ok(tiny.size <= 1);
+  const bounded = createContainerCompressionCache({maxBytes: 20, maxEntries: 2});
+  bounded.put('a', new Uint8Array(8)); bounded.put('b', new Uint8Array(8));
+  bounded.get('a'); bounded.put('c', new Uint8Array(8));
+  assert.equal(bounded.get('b'), undefined); assert.ok(bounded.get('a')); assert.ok(bounded.get('c'));
+  bounded.put('oversized', new Uint8Array(21)); assert.equal(bounded.get('oversized'), undefined);
+  assert.equal(bounded.byteLength, 16); assert.equal(bounded.size, 2);
 });
 
 test('v2 round-trips a document losslessly', async () => {

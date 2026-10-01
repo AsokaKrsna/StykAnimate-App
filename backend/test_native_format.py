@@ -1,10 +1,23 @@
 import base64
 import hashlib
 import json
+import struct
 import unittest
 import zlib
+from unittest import mock
 
 import native_format as native
+
+
+def sectioned(skeleton, sections):
+    payload = json.dumps(skeleton, ensure_ascii=False, separators=(',', ':')).encode()
+    packed = zlib.compress(payload)
+    records, blobs = [], []
+    for kind, codec, raw, stored in sections:
+        records.append(native.SECTION.pack(kind, codec, 0, 0, len(raw), len(stored), hashlib.sha256(raw).digest()))
+        blobs.append(stored)
+    return b''.join([native.HEADER.pack(b'STYK', 2, 1, 0, len(payload), len(packed), hashlib.sha256(payload).digest()),
+                     struct.pack('<I', len(sections)), packed, *records, *blobs])
 
 
 class NativeFormatTests(unittest.TestCase):
@@ -54,6 +67,91 @@ class NativeFormatTests(unittest.TestCase):
 
 
 class NativeFormatV2Tests(unittest.TestCase):
+    def test_zlib_sections_and_skeleton_are_bounded_and_strict(self):
+        raw = b'x' * (1024 * 1024)
+        packed = zlib.compress(raw)
+        with self.assertRaisesRegex(ValueError, 'payload length'):
+            native._unpack(1, packed, 32)
+        self.assertEqual(native._unpack(1, packed, len(raw)), raw)
+        for damaged in (packed[:-1], packed + b'x', packed + packed):
+            with self.subTest(length=len(damaged)), self.assertRaises(ValueError):
+                native._unpack(1, damaged, len(raw))
+        skeleton = {'blob': 'S2S:0:0:3'}
+        for stored in (zlib.compress(b'abc') + b'garbage', zlib.compress(b'abc') + zlib.compress(b'abc')):
+            with self.assertRaisesRegex(ValueError, 'payload length'):
+                native.decode(sectioned(skeleton, [(2, 1, b'abc', stored)]))
+
+    def test_reserved_fields_kinds_codecs_and_lengths_are_rejected(self):
+        encoded = sectioned({'a': 'S2B:u8:0:0:3'}, [(1, 0, b'abc', b'abc')])
+        offset = native.HEADER.size + 4 + native.HEADER.unpack_from(encoded)[5]
+        for relative in (2, 4, 56, 63):
+            damaged = bytearray(encoded)
+            damaged[offset + relative] = 1
+            with self.subTest(relative=relative), self.assertRaisesRegex(ValueError, 'Unsupported'):
+                native.decode(damaged)
+        for relative, value in ((0, 3), (1, 3)):
+            damaged = bytearray(encoded)
+            damaged[offset + relative] = value
+            with self.assertRaisesRegex(ValueError, 'section kind|Unsupported'):
+                native.decode(damaged)
+        for relative in (8, 16):
+            damaged = bytearray(encoded)
+            struct.pack_into('<Q', damaged, offset + relative, 1 << 63)
+            with self.assertRaisesRegex(ValueError, 'section table'):
+                native.decode(damaged)
+
+    def test_repeated_references_and_numeric_allocations_are_admitted_before_mutation(self):
+        raw = b'x' * 450
+        encoded = sectioned({'data': ['S2S:0:0:450'] * 8}, [(2, 1, raw, zlib.compress(raw))])
+        with self.assertRaisesRegex(ValueError, 'uncompressed size'):
+            native.decode(encoded, max_bytes=1024)
+        skeleton = {'a': 'S2S:0:0:60', 'b': 'S2S:0:0:60'}
+        with self.assertRaisesRegex(ValueError, 'uncompressed size'):
+            native._materialize(skeleton, [(2, bytes(60))], max_materialized_bytes=200)
+        self.assertEqual(skeleton, {'a': 'S2S:0:0:60', 'b': 'S2S:0:0:60'})
+        with self.assertRaisesRegex(ValueError, 'uncompressed size'):
+            native._materialize({'a': 'S2B:u8:0:0:32'}, [(1, bytes(32))], max_materialized_bytes=1000)
+
+    def test_wide_finite_floats_and_existing_aliases_remain_exact(self):
+        values = [1e300, -1e300, 1e-300, 1.25] * 16
+        document = {'a': values, 'alias': values, 'independent': values[:], 'future': {'field': 'retained'}}
+        skeleton, sections = native._lift(document)
+        self.assertTrue(skeleton['a'].startswith('S2B:f64:'))
+        decoded = native._materialize(skeleton, sections)
+        self.assertEqual(decoded, document)
+        self.assertIs(decoded['a'], decoded['alias'])
+        self.assertIsNot(decoded['a'], decoded['independent'])
+        decoded['a'][0] = 99
+        self.assertEqual(decoded['independent'][0], 1e300)
+        self.assertEqual(json.loads(native.decode(native.encode_v2(document, 'styk'))), document)
+
+    def test_literal_markers_unknown_fields_and_drawing_payloads_survive(self):
+        data = 'data:application/x-styk-tiles;base64,' + base64.b64encode(b'drawing pixels' * 10000).decode()
+        document = {'styk_tiles': data, 'literal': 'S2B:f64:0:0:3', 'escaped': 'S2E:a',
+                    'unknown': {'__proto__': {'retained': True}}, 'negative_zero': [-0.0] * 32}
+        skeleton, _ = native._lift(document)
+        self.assertTrue(skeleton['styk_tiles'].startswith('S2D:'))
+        decoded = json.loads(native.decode(native.encode_v2(document, 'styk')))
+        self.assertEqual(decoded, document)
+        self.assertEqual(struct.pack('<d', decoded['negative_zero'][0]), struct.pack('<d', -0.0))
+
+    def test_nonfinite_packed_values_and_invalid_ranges_are_rejected(self):
+        for value in (float('nan'), float('inf'), float('-inf')):
+            raw = struct.pack('<d', value)
+            with self.assertRaisesRegex(ValueError, 'non-finite'):
+                native.decode(sectioned({'a': 'S2B:f64:0:0:1'}, [(1, 0, raw, raw)]))
+        for marker in ('S2B:u8:0:0:9007199254740993', 'S2B:u8:0:1:1', 'S2S:0:99999999999999999:0'):
+            with self.assertRaisesRegex(ValueError, 'section reference'):
+                native._materialize({'a': marker}, [(1, b'')])
+
+    def test_writer_rejects_oversized_sections_before_payload_decoding(self):
+        encoded = base64.b64encode(bytes(50000)).decode()
+        with mock.patch.object(native.base64, 'b64decode', side_effect=AssertionError('Decoded before admission')):
+            with self.assertRaisesRegex(ValueError, 'uncompressed size'):
+                native.encode_v2({'data_base64': encoded}, 'styk', max_bytes=1024)
+        with self.assertRaisesRegex(ValueError, 'uncompressed size'):
+            native.encode_v2({'a': [1] * 32}, 'styk', max_bytes=31)
+
     def test_sectioned_metadata_and_file_limits_are_independent_and_bounded(self):
         document = {'metadata': 'x' * 1500}
         encoded = native.encode_v2(document, 'styk', max_bytes=1024, max_skeleton_bytes=2048)

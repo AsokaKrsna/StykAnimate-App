@@ -62,9 +62,12 @@ def _unpack(codec: int, data: bytes, raw_length: int) -> bytes:
         out = data
     elif codec == 1:
         try:
-            out = zlib.decompress(data)
+            decoder = zlib.decompressobj()
+            out = decoder.decompress(data, raw_length + 1)
         except zlib.error as error:
             raise ValueError('The StykAnimate file is damaged (invalid compressed data).') from error
+        if not decoder.eof or decoder.unused_data or decoder.unconsumed_tail:
+            raise ValueError('The StykAnimate file is damaged (invalid payload length).')
     elif codec == 2:
         if _zstd is None:
             raise ValueError('This project uses zstd compression this build cannot decode. Update the app to open this file.')
@@ -105,8 +108,12 @@ def _array_type(values: list) -> str | None:
             if abs(value) >= F64_INT_LIMIT: return None  # JSON ints may exceed f64
         else:
             ints = False
-        if f32 and struct.unpack('<f', struct.pack('<f', value))[0] != value:
-            f32 = False
+        if f32:
+            try:
+                f32 = struct.unpack('<f', struct.pack('<f', value))[0] == value
+            except OverflowError:
+                # Finite f64 values can exceed f32; they still lift losslessly.
+                f32 = False
     if ints:
         if low >= 0:
             if high <= 0xff: return 'u8'
@@ -118,7 +125,7 @@ def _array_type(values: list) -> str | None:
     return 'f32' if f32 else 'f64'
 
 
-def _lift(document):
+def _lift(document, *, max_bytes=MAX_BYTES):
     """Document -> (skeleton, sections[(kind, bytes)]); the input is not mutated."""
     arrays, blobs = bytearray(), bytearray()
     seen_arrays: dict[int, str] = {}
@@ -130,13 +137,17 @@ def _lift(document):
                 payload, prefix = None, ''
                 if key in B64_FIELDS:
                     payload = value
-                elif key == 'data_url' and value.startswith('data:'):
+                elif key in ('data_url', 'styk_tiles') and value.startswith('data:'):
                     comma = value.find(',')
                     if comma > 5 and value[:comma].endswith(';base64'):
                         payload, prefix = value[comma + 1:], value[:comma + 1]
                 if payload is not None:
                     hit = seen_blobs.get(payload)
                     if hit is None:
+                        if len(payload) // 4 * 3 > max_bytes - len(blobs):
+                            size = _canonical_base64_length(payload)
+                            if size is not None and size > max_bytes - len(blobs):
+                                raise ValueError('The native document exceeds the uncompressed size limit.')
                         try:
                             raw = base64.b64decode(payload, validate=True)
                         except ValueError:
@@ -157,6 +168,8 @@ def _lift(document):
                     return hit
                 size = TYPE_BYTES[element_type]
                 offset = len(arrays) + (-len(arrays) % size)
+                if len(value) > (max_bytes - offset) // size:
+                    raise ValueError('The native document exceeds the uncompressed size limit.')
                 arrays.extend(b'\0' * (offset - len(arrays)))
                 arrays.extend(struct.pack(f'<{len(value)}{TYPE_FORMAT[element_type]}', *value))
                 marker = f'S2B:{element_type}:0:{offset}:{len(value)}'
@@ -171,9 +184,117 @@ def _lift(document):
     return skeleton, [(1, bytes(arrays)), (2, bytes(blobs))]
 
 
-def _materialize(node, sections):
+def _canonical_base64_length(value):
+    if len(value) % 4:
+        return None
+    padding = 2 if value.endswith('==') else 1 if value.endswith('=') else 0
+    alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    end = len(value) - padding
+    last = 0
+    for index in range(end):
+        last = alphabet.find(value[index])
+        if last < 0:
+            return None
+    if (padding == 2 and last & 15) or (padding == 1 and last & 3):
+        return None
+    return len(value) // 4 * 3 - padding
+
+
+def _json_string_size(value):
+    """ASCII JSON string length, without allocating an escaped copy."""
+    size = 2
+    for character in value:
+        code = ord(character)
+        if character in '\"\\\b\t\n\f\r':
+            size += 2
+        elif code < 32 or code >= 128:
+            size += 12 if code > 0xffff else 6
+        else:
+            size += 1
+    return size
+
+
+def _materialize(node, sections, *, max_materialized_bytes=MAX_BYTES * 4, validate_only=False):
     """Replace marker strings in a parsed skeleton; identical markers share one list."""
     shared: dict[str, list] = {}
+    array_ranges = {}
+    materialized_bytes, allocation_bytes = 0, sum(len(raw) for _, raw in sections)
+
+    def admit(size, *, allocation=False):
+        nonlocal materialized_bytes, allocation_bytes
+        total = allocation_bytes if allocation else materialized_bytes
+        if size > max_materialized_bytes - total:
+            raise ValueError('The native document exceeds the uncompressed size limit.')
+        if allocation:
+            allocation_bytes += size
+        else:
+            materialized_bytes += size
+
+    def array_range(value, match):
+        if value in array_ranges:
+            return array_ranges[value]
+        element_type, index, offset, count = match[1], int(match[2]), int(match[3]), int(match[4])
+        size = TYPE_BYTES[element_type]
+        section = sections[index] if index < len(sections) else None
+        if section is None or section[0] != 1 or offset % size or offset + count * size > len(section[1]):
+            raise ValueError('The StykAnimate file is damaged (invalid array section reference).')
+        # Includes numeric objects and list capacity, beyond packed width.
+        admit(count * 48, allocation=True)
+        view = memoryview(section[1])[offset:offset + count * size]
+        json_size = 2 + max(0, count - 1)
+        if json_size + count > max_materialized_bytes:
+            raise ValueError('The native document exceeds the uncompressed size limit.')
+        for item, in struct.iter_unpack('<' + TYPE_FORMAT[element_type], view):
+            if isinstance(item, float) and not math.isfinite(item):
+                raise ValueError('The StykAnimate document contains non-finite numbers.')
+            json_size += len(str(item))
+            if json_size > max_materialized_bytes:
+                raise ValueError('The native document exceeds the uncompressed size limit.')
+        result = (element_type, view, json_size)
+        array_ranges[value] = result
+        return result
+
+    def payload_range(match):
+        index, offset, count = int(match[1]), int(match[2]), int(match[3])
+        section = sections[index] if index < len(sections) else None
+        if section is None or section[0] != 2 or offset + count > len(section[1]):
+            raise ValueError('The StykAnimate file is damaged (invalid payload section reference).')
+        return memoryview(section[1])[offset:offset + count], count
+
+    def preflight(value):
+        if isinstance(value, str):
+            match = MARKER_ARRAY.match(value)
+            if match:
+                admit(array_range(value, match)[2])
+                return
+            match = MARKER_B64.match(value) or MARKER_DATA.match(value)
+            if match:
+                _, count = payload_range(match)
+                encoded_size = 4 * ((count + 2) // 3)
+                admit(encoded_size, allocation=True)
+                admit(encoded_size + _json_string_size(match[4] if value[2] == 'D' else ''))
+                return
+            if value.startswith('S2E:'):
+                admit(_json_string_size(value[4:]))
+                return
+            if value.startswith(('S2B:', 'S2S:', 'S2D:')):
+                raise ValueError('The StykAnimate file is damaged (malformed section marker).')
+            admit(_json_string_size(value))
+        elif isinstance(value, list):
+            admit(2 + max(0, len(value) - 1))
+            for item in value:
+                preflight(item)
+        elif isinstance(value, dict):
+            admit(2 + max(0, len(value) - 1))
+            for key, item in value.items():
+                admit(_json_string_size(key) + 1)
+                preflight(item)
+        else:
+            admit(len(json.dumps(value, allow_nan=False)))
+
+    preflight(node)
+    if validate_only:
+        return node
 
     def resolve(value):
         match = MARKER_ARRAY.match(value)
@@ -181,21 +302,14 @@ def _materialize(node, sections):
             hit = shared.get(value)
             if hit is not None:
                 return hit
-            element_type, index, offset, count = match[1], int(match[2]), int(match[3]), int(match[4])
-            section = sections[index] if index < len(sections) else None
-            size = TYPE_BYTES[element_type]
-            if section is None or section[0] != 1 or offset % size or offset + count * size > len(section[1]):
-                raise ValueError('The StykAnimate file is damaged (invalid array section reference).')
-            out = list(struct.unpack_from(f'<{count}{TYPE_FORMAT[element_type]}', section[1], offset))
+            element_type, view, _ = array_ranges[value]
+            out = [item for item, in struct.iter_unpack('<' + TYPE_FORMAT[element_type], view)]
             shared[value] = out
             return out
         match = MARKER_B64.match(value) or MARKER_DATA.match(value)
         if match:
-            index, offset, count = int(match[1]), int(match[2]), int(match[3])
-            section = sections[index] if index < len(sections) else None
-            if section is None or section[0] != 2 or offset + count > len(section[1]):
-                raise ValueError('The StykAnimate file is damaged (invalid payload section reference).')
-            encoded = base64.b64encode(section[1][offset:offset + count]).decode('ascii')
+            view, _ = payload_range(match)
+            encoded = base64.b64encode(view).decode('ascii')
             return encoded if value[2] == 'S' else match[4] + encoded
         if value.startswith('S2E:'):
             return value[4:]
@@ -224,7 +338,8 @@ def encode_v2(document: dict, kind: str, *, max_bytes=MAX_BYTES,
     """Serialize an editable document dict as a sectioned container v2."""
     if kind not in MAGIC:
         raise ValueError('Unknown StykAnimate file kind.')
-    skeleton, sections = _lift(document)
+    skeleton, sections = _lift(document, max_bytes=max_bytes)
+    _materialize(skeleton, sections, max_materialized_bytes=max_bytes * 4, validate_only=True)
     payload = json.dumps(skeleton, ensure_ascii=False, allow_nan=False, separators=(',', ':')).encode('utf-8')
     if (not payload or len(payload) > max_skeleton_bytes or
             any(len(raw) > max_bytes for _, raw in sections) or
@@ -238,10 +353,10 @@ def encode_v2(document: dict, kind: str, *, max_bytes=MAX_BYTES,
         records += SECTION.pack(section_kind, section_codec, 0, 0, len(raw), len(stored), hashlib.sha256(raw).digest())
         payloads.append(stored)
     header = HEADER.pack(MAGIC[kind], 2, codec, 0, len(payload), len(packed_payload), hashlib.sha256(payload).digest())
-    out = header + struct.pack('<I', len(sections)) + packed_payload + bytes(records) + b''.join(payloads)
-    if len(out) > max_bytes:
+    parts = [header, struct.pack('<I', len(sections)), packed_payload, bytes(records), *payloads]
+    if sum(map(len, parts)) > max_bytes:
         raise ValueError('The native file exceeds the compressed size limit.')
-    return out
+    return b''.join(parts)
 
 
 def _decode_v2(data: bytes, kind: str, header_fields, max_bytes: int) -> bytes:
@@ -255,8 +370,12 @@ def _decode_v2(data: bytes, kind: str, header_fields, max_bytes: int) -> bytes:
     records, pos, expected = [], skeleton_end + count * SECTION.size, size
     for index in range(count):
         offset = skeleton_end + index * SECTION.size
-        section_kind, codec, _, _, raw, stored, section_digest = SECTION.unpack_from(data, offset)
-        if raw > max_bytes or pos + stored > len(data):
+        section_kind, codec, reserved, pad, raw, stored, section_digest = SECTION.unpack_from(data, offset)
+        if section_kind not in (1, 2):
+            raise ValueError('The StykAnimate file has an unknown section kind.')
+        if codec not in (0, 1, 2) or reserved or pad or any(data[offset + 56:offset + 64]):
+            raise ValueError('Unsupported StykAnimate file version. Update the app to open this file.')
+        if raw > max_bytes or pos + stored > len(data) or (codec == 0 and raw != stored):
             raise ValueError('The StykAnimate file is truncated or has an invalid section table.')
         expected += raw * 3  # materialized JSON upper bound (base64 growth)
         records.append((section_kind, codec, raw, stored, section_digest, pos))
@@ -273,10 +392,8 @@ def _decode_v2(data: bytes, kind: str, header_fields, max_bytes: int) -> bytes:
         section = _unpack(codec, data[offset:offset + stored], raw)
         if hashlib.sha256(section).digest() != section_digest:
             raise ValueError('The StykAnimate file is damaged (checksum mismatch).')
-        if section_kind not in (1, 2):
-            raise ValueError('The StykAnimate file has an unknown section kind.')
         sections.append((section_kind, section))
-    document = _materialize(json.loads(payload), sections)
+    document = _materialize(json.loads(payload), sections, max_materialized_bytes=max_bytes * 4)
     return json.dumps(document, ensure_ascii=True, allow_nan=False, separators=(',', ':')).encode('ascii')
 
 
