@@ -1,4 +1,5 @@
-import {restoreMessageError, messageError} from './localized-error.mjs';
+import {messageError} from './localized-error.mjs';
+import {DrawingWorker} from './drawing-worker-client.mjs';
 
 import {DrawingPreviewCache} from './drawing-preview-cache.mjs';
 import {DrawingHistory} from './drawing-history.mjs';
@@ -20,28 +21,6 @@ export async function drawingBarrier(report,options={}) {
   for(let i=0;i<(report.figure_types?.length??0);i++){const figure=report.figure_types[i];if(figure._styk?.movieclip?.document)await drawingBarrier(figure._styk.movieclip.document,{...options,seen});}
   if(report._styk?.movieclipSource?.document)await drawingBarrier(report._styk.movieclipSource.document,{...options,seen});
 }
-class DrawingWorker {
-  constructor(url=new URL('./drawing-worker.mjs',import.meta.url),{maxPending=2}={}){this.url=url;this.maxPending=maxPending;this.next=1;this.pending=new Map();}
-  request(kind,payload,{signal,transfer}={}) {
-    if(signal?.aborted)return Promise.reject(messageError(new DOMException('', 'AbortError'), "errors.drawingResources.drawingOperationCancelled", {}));
-    if(this.pending.size>=this.maxPending)return Promise.reject(messageError(new Error(''), "errors.drawingResources.drawingWorkerIsBusyWaitForTheCurrent", {}));
-    if(!this.worker){
-      this.worker=new Worker(this.url,{type:'module',name:'StykAnimate drawing pixels'});
-      this.worker.onmessage=({data})=>{const pending=this.pending.get(data.id);if(!pending){data.bitmap?.close();return;}if(data.fatal){this.dispose(restoreMessageError((data.error ? new Error(data.error) : messageError(new Error(''), "errors.drawingResources.drawingWorkerCouldNotLoadRetryTheOperation")), data));return;}this.pending.delete(data.id);pending.finish(data.error?restoreMessageError(new Error(data.error), data):null,data);};
-      this.worker.onerror=e=>{e.preventDefault();this.dispose((e.message ? new Error(e.message) : messageError(new Error(''), "errors.drawingResources.drawingWorkerStoppedRetryTheOperation")));};
-      this.worker.onmessageerror=()=>this.dispose(messageError(new Error(''), "errors.drawingResources.drawingPixelsCouldNotBeTransferred", {}));
-    }
-    return new Promise((resolve,reject)=>{
-      const id=this.next++,abort=()=>this.dispose(messageError(new DOMException('', 'AbortError'), "errors.drawingResources.drawingOperationCancelled", {}));
-      const timeout=setTimeout(()=>this.dispose(messageError(new Error(''), "errors.drawingResources.drawingWorkerTimedOutRetryTheOperation", {})),120000);
-      this.pending.set(id,{finish:(error,result)=>{clearTimeout(timeout);signal?.removeEventListener('abort',abort);error?reject(error):resolve(result);}});
-      signal?.addEventListener('abort',abort,{once:true});
-      this.worker.postMessage({id,kind,...payload},transfer??[]);
-    });
-  }
-  dispose(error=messageError(new DOMException('', 'AbortError'), "errors.drawingResources.drawingResourcesClosed", {})){this.worker?.terminate();this.worker=null;for(const p of this.pending.values())p.finish(error);this.pending.clear();}
-}
-
 /** Persistent stroke worker handle: one per DrawingResources so a heavy encode
  * or fill on the pixel worker never blocks painting. The Worker is spawned
  * lazily so this stays safe in non-DOM contexts. */
