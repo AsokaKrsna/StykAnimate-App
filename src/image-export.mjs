@@ -3,7 +3,7 @@ import {restoreMessageError, messageError} from './localized-error.mjs';
 import { normalizeGIFDither } from "./gif-options.mjs";
 import { EXPORT_MAX_PIXELS } from "./export-sampling.mjs";
 /** Offline animated image and numbered image-sequence exports.
- * Each frame is snapshotted into a transferable ImageBitmap; palette creation,
+ * Canvas frames are snapshotted into a transferable ImageBitmap; palette creation,
  * LZW, PNG/JPEG compression, checksums, APNG and ZIP writing stay in a worker.
  * Animated GIF renders each index twice: first to collect one animation palette,
  * then to encode. renderFrame must return the same committed image in both passes.
@@ -26,8 +26,9 @@ const abortError = () =>
 
 /**
  * @param {{format:'gif'|'apng'|'png-sequence'|'jpeg-sequence'|'gif-sequence'|'svg-sequence',width:number,height:number,
- * fps:number,totalFrames:number,renderFrame:(index:number)=>Promise<HTMLCanvasElement|OffscreenCanvas>|HTMLCanvasElement|OffscreenCanvas,
+ * fps:number,totalFrames:number,renderFrame?:(index:number)=>Promise<HTMLCanvasElement|OffscreenCanvas>|HTMLCanvasElement|OffscreenCanvas,
  * renderSVGFrame?:(index:number)=>Promise<Blob|string>|Blob|string,
+ * renderPNGFrame?:(index:number)=>Promise<{blob:Blob,width:number,height:number}>|{blob:Blob,width:number,height:number},
  * onProgress?:(value:{phase:"palette"|"encode",completed:number,total:number,progress:number})=>void,
  * signal?:AbortSignal,loop?:boolean,quality?:number,dither?:boolean,maxBytes?:number,
  * sink?:{streamed:boolean,write(part:Blob)=>Promise<void>,finish()=>Promise<object>,abort()=>Promise<void>}}} options
@@ -42,6 +43,7 @@ export async function exportAnimation({
   totalFrames,
   renderFrame,
   renderSVGFrame,
+  renderPNGFrame,
   onProgress,
   signal,
   loop = true,
@@ -61,6 +63,8 @@ export async function exportAnimation({
   if (!formats.has(format))
     throw messageError(new Error(''), "errors.imageExport.chooseGifApngOrAPngJpegGif", {});
   const vector = format === "svg-sequence";
+  const encodedPNG = (format === "apng" || format === "png-sequence") &&
+    typeof renderPNGFrame === "function";
   if (
     !Number.isInteger(width) ||
     !Number.isInteger(height) ||
@@ -90,7 +94,7 @@ export async function exportAnimation({
         : "Choose an image frame rate between 1 and 1,000 fps.",
     );
   }
-  if (typeof (vector ? renderSVGFrame : renderFrame) !== "function")
+  if (typeof (vector ? renderSVGFrame : encodedPNG ? renderPNGFrame : renderFrame) !== "function")
     throw new TypeError(
       vector
         ? "SVG sequence export needs a vector frame renderer."
@@ -115,7 +119,7 @@ export async function exportAnimation({
   if (signal?.aborted) throw abortError();
   if (
     typeof Worker === "undefined" ||
-    (!vector &&
+    (!vector && !encodedPNG &&
       (typeof createImageBitmap === "undefined" ||
         typeof OffscreenCanvas === "undefined"))
   ) {
@@ -190,6 +194,7 @@ export async function exportAnimation({
           dither,
           maxBytes,
           stream: Boolean(sink),
+          encodedPNG,
         },
       }),
     );
@@ -214,17 +219,28 @@ export async function exportAnimation({
           });
           continue;
         }
-        const canvas = await renderFrame(index);
-        check();
-        if (!canvas || canvas.width !== width || canvas.height !== height)
-          throw messageError(new Error(''), "errors.imageExport.renderedImageFrameHasTheWrongDimensions", {value: index + 1});
-        const bitmap = await createImageBitmap(canvas);
-        try {
+        if (encodedPNG) {
+          const frame = await renderPNGFrame(index);
           check();
-          // Backpressure: only one full-resolution frame is in flight at a time.
-          await forward(await request("frame", { bitmap }, [bitmap]));
-        } finally {
-          bitmap.close();
+          if (!(frame?.blob instanceof Blob) || frame.blob.type !== "image/png" ||
+              !frame.blob.size || frame.width !== width || frame.height !== height)
+            throw messageError(new Error(''), "errors.imageExport.renderedImageFrameHasTheWrongDimensions", {value: index + 1});
+          // The renderer already encoded this immutable frame off-thread. Keep
+          // the same one-frame backpressure without creating pixel surfaces.
+          await forward(await request("frame", {png: frame.blob}));
+        } else {
+          const canvas = await renderFrame(index);
+          check();
+          if (!canvas || canvas.width !== width || canvas.height !== height)
+            throw messageError(new Error(''), "errors.imageExport.renderedImageFrameHasTheWrongDimensions", {value: index + 1});
+          const bitmap = await createImageBitmap(canvas);
+          try {
+            check();
+            // Backpressure: only one full-resolution frame is in flight at a time.
+            await forward(await request("frame", { bitmap }, [bitmap]));
+          } finally {
+            bitmap.close();
+          }
         }
         check();
         onProgress?.({

@@ -10,7 +10,7 @@
  * into both. The 3D rig's view and the camera's commands, ported in M4, are frozen below. Delete this file when the inspector's markup changes on purpose
  * (M4 "Keep less used settings in titled sections that remember being open").
  */
-import {joinedDrawingSetsView} from '../../src/movieclip-drawings.mjs';
+import {joinedDrawingSetsView} from '../../src/movieclip-drawings-view.mjs';
 import {drawingInspector} from '../../src/drawing-view.mjs';
 import {rigControlsView, connectorPositionView} from './rig-controls-legacy.mjs';
 import {figureJoinAction} from '../../src/figure-join-action.mjs';
@@ -31,7 +31,7 @@ import {propertyToggle} from '../../src/property-toggle.mjs';
 import {isMovieclip} from '../../src/movieclips.mjs';
 // movieclipInspector: frozen below.
 import {sheetKeyAt} from '../../src/layer-sheet.mjs';
-import {drawingSetsView} from '../../src/movieclip-drawings.mjs';
+import {drawingSetsView} from '../../src/movieclip-drawings-view.mjs';
 import {playbackSettings,movieclipAsset,movieclipTime} from '../../src/movieclips.mjs';
 // src/spatial-controls.mjs's spatialControlsView and limbControl, verbatim at 52f13960 (the 3D rig's inspector, ported in M4).
 import {spatialPerspectiveAvailable} from '../../src/spatial-projection.mjs';

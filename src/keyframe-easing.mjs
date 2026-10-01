@@ -1,16 +1,16 @@
 import {messageError} from './localized-error.mjs';
-import {t as interfaceText} from './localization.mjs';
+import english from './locales/en-features/keyframeEasing.mjs';
 /** One outgoing timing curve per key. Native Pivot auto curves are import-only. */
 import {isDiscreteAnimationProperty} from './animation-properties.mjs';
 export const DEFAULT_BEZIER = Object.freeze([0.42, 0, 0.58, 1]);
 const EASE_IN = Object.freeze([0.42, 0, 1, 1]), EASE_OUT = Object.freeze([0, 0, 0.58, 1]);
 export const EASING_MODES = Object.freeze([
-  {id: 'auto', label: interfaceText("keyframeEasing.auto"), labelKey: "keyframeEasing.auto", sample: t => t * t * (3 - 2 * t)},
-  {id: 'bezier', label: interfaceText("keyframeEasing.bezier"), labelKey: "keyframeEasing.bezier", sample: (t, key) => cubicBezierProgress(t, key?.bezier ?? DEFAULT_BEZIER)},
-  {id: 'ease-in', label: interfaceText("keyframeEasing.easeIn"), labelKey: "keyframeEasing.easeIn", sample: t => cubicBezierProgress(t, EASE_IN)},
-  {id: 'ease-out', label: interfaceText("keyframeEasing.easeOut"), labelKey: "keyframeEasing.easeOut", sample: t => cubicBezierProgress(t, EASE_OUT)},
-  {id: 'linear', label: interfaceText("keyframeEasing.linear"), labelKey: "keyframeEasing.linear", sample: t => t},
-  {id: 'constant', label: interfaceText("keyframeEasing.constant"), labelKey: "keyframeEasing.constant", sample: t => t < 1 ? 0 : 1},
+  {id: 'auto', label: english["keyframeEasing.auto"], labelKey: "keyframeEasing.auto", sample: t => t * t * (3 - 2 * t)},
+  {id: 'bezier', label: english["keyframeEasing.bezier"], labelKey: "keyframeEasing.bezier", sample: (t, key) => cubicBezierProgress(t, key?.bezier ?? DEFAULT_BEZIER)},
+  {id: 'ease-in', label: english["keyframeEasing.easeIn"], labelKey: "keyframeEasing.easeIn", sample: t => cubicBezierProgress(t, EASE_IN)},
+  {id: 'ease-out', label: english["keyframeEasing.easeOut"], labelKey: "keyframeEasing.easeOut", sample: t => cubicBezierProgress(t, EASE_OUT)},
+  {id: 'linear', label: english["keyframeEasing.linear"], labelKey: "keyframeEasing.linear", sample: t => t},
+  {id: 'constant', label: english["keyframeEasing.constant"], labelKey: "keyframeEasing.constant", sample: t => t < 1 ? 0 : 1},
 ]);
 const modes = new Map(EASING_MODES.map(mode => [mode.id, mode]));
 export function easingMode(key) { return key?.interpolation === 'hold' ? 'constant' : key?.interpolation ?? 'linear'; }
@@ -19,7 +19,10 @@ export function validateKeyEasing(key, property) {
   if (key?.bezier !== undefined && (easingMode(key) !== 'bezier' || !Array.isArray(key.bezier) || key.bezier.length !== 4 ||
     !key.bezier.every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1)))
     throw messageError(new Error(''), "errors.keyframeEasing.bezierRequiresFourControlCoordinatesBetween0And", {});
-  if (isDiscreteAnimationProperty(property) && easingMode(key) !== 'constant') throw messageError(new Error(''), "errors.keyframeEasing.useConstantEasing", {value: property === 'paint' ? interfaceText("keyframeEasing.gradientLayouts") : property === 'zIndex' ? interfaceText("keyframeEasing.zIndexValues") : interfaceText("keyframeEasing.backgroundIdentities")});
+  if (isDiscreteAnimationProperty(property) && easingMode(key) !== 'constant') {
+    const messageKey = property === 'paint' ? "keyframeEasing.gradientLayouts" : property === 'zIndex' ? "keyframeEasing.zIndexValues" : "keyframeEasing.backgroundIdentities";
+    throw messageError(new Error(''), "errors.keyframeEasing.useConstantEasing", {value: {messageKey, diagnosticValue: english[messageKey]}});
+  }
   return key;
 }
 /** Canonical fields for writes/copies. `hold` is a read-compatible legacy alias. */

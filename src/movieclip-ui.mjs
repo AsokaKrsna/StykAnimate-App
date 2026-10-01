@@ -5,7 +5,7 @@ import {messageError} from './localized-error.mjs';
 
 import {t as interfaceText} from './localization.mjs';
 
-import {drawingSetsView} from './movieclip-drawings.mjs';
+import {drawingSetsView} from './movieclip-drawings-view.mjs';
 import {drawingBarrier} from './drawing-resources.mjs';
 import {playbackSettings,movieclipAsset,movieclipTime} from './movieclips.mjs';
 import {renderInspector} from './inspector-kit.mjs';

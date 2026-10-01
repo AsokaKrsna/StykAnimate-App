@@ -1,7 +1,7 @@
 import {errorMessageData, messageError} from './localized-error.mjs';
 
 import { GIFPaletteBuilder } from "./gif-quantize.mjs";
-import { APNGEncoder, GIFEncoder, SequenceZIP } from "./image-codecs.mjs";
+import { APNGEncoder, GIFEncoder, SequenceZIP, validatePNGFrame } from "./image-codecs.mjs";
 import {exportContext, checkExportContext} from './export-canvas.mjs';
 
 let output, canvas, context, config, paletteBuilder;
@@ -26,7 +26,9 @@ self.addEventListener("message", async (event) => {
   try {
     if (message.operation === "start") {
       config = message.config;
-      if (config.format !== "svg-sequence") {
+      if (config.encodedPNG && !["apng", "png-sequence"].includes(config.format))
+        throw new Error("Encoded PNG frames require APNG or PNG sequence export.");
+      if (config.format !== "svg-sequence" && !config.encodedPNG) {
         canvas = new OffscreenCanvas(config.width, config.height);
         context = exportContext(canvas);
         if (!context) throw messageError(new Error(''), "errors.imageExportWorker.aCanvasImageEncoderIsUnavailable", {});
@@ -49,6 +51,16 @@ self.addEventListener("message", async (event) => {
     } else if (message.operation === "frame") {
       if (!output && !paletteBuilder)
         throw messageError(new Error(''), "errors.imageExportWorker.theImageExportWasNotInitialized", {});
+      if (config.encodedPNG) {
+        if (!(message.png instanceof Blob) || message.png.type !== "image/png" ||
+            !message.png.size || message.png.size > config.maxBytes)
+          throw messageError(new Error(''), "errors.imageCodecs.theBrowserDidNotProduceAPngFrame", {});
+        const data = new Uint8Array(await message.png.arrayBuffer());
+        if (config.format === "png-sequence") validatePNGFrame(data, config.width, config.height);
+        output.add(data);
+        respond(message.id);
+        return;
+      }
       if (config.format === "svg-sequence") {
         const svg =
           message.svg instanceof Blob

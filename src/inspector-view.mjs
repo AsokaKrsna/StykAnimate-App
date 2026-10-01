@@ -21,7 +21,7 @@ import {t as interfaceText} from './localization.mjs';
  * camera's motion, drawing, parallax, drawing sets, builder surfaces) enter as
  * markup rows until their milestones.
  */
-import {joinedDrawingSetsView} from './movieclip-drawings.mjs';
+import {joinedDrawingSetsView} from './movieclip-drawings-view.mjs';
 import {spatialSections} from './spatial-controls.mjs';
 import {drawingInspector, DRAWING_TOOLS} from './drawing-view.mjs';
 import {rigSections} from './rig-controls.mjs';

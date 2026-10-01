@@ -1,5 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {rotatedDrawing,validateDrawingSets,drawingSetsView} from '../src/movieclip-drawings.mjs';
+import {rotatedDrawing,validateDrawingSets} from '../src/movieclip-drawings.mjs';
+import {drawingSetsView} from '../src/movieclip-drawings-view.mjs';
 import {spatialQuaternion} from '../src/rig-spatial.mjs';
 import {movieclipFigure} from '../src/movieclips.mjs';
 import {construction} from '../src/rig-examples-3d.mjs';

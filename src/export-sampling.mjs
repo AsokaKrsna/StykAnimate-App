@@ -1,23 +1,23 @@
 import {messageError} from './localized-error.mjs';
-import {t as interfaceText} from './localization.mjs';
+import english from './locales/en-features/exportSampling.mjs';
 /** Pivot's three pixel-export sampling choices. */
 export const EXPORT_SMOOTHING = Object.freeze([
   Object.freeze({
     value: "edges",
-    label: interfaceText("exportSampling.smoothEdges"), labelKey: "exportSampling.smoothEdges",
+    label: english["exportSampling.smoothEdges"], labelKey: "exportSampling.smoothEdges",
     description:
-      interfaceText("exportSampling.smoothFigureEdgesWhileKeepingSharpSpritePixels"), descriptionKey: "exportSampling.smoothFigureEdgesWhileKeepingSharpSpritePixels",
+      english["exportSampling.smoothFigureEdgesWhileKeepingSharpSpritePixels"], descriptionKey: "exportSampling.smoothFigureEdgesWhileKeepingSharpSpritePixels",
   }),
   Object.freeze({
     value: "none",
-    label: interfaceText("exportSampling.noSmoothing"), labelKey: "exportSampling.noSmoothing",
-    description: interfaceText("exportSampling.aliasedFigureEdgesAndUnfilteredSpritePixels"), descriptionKey: "exportSampling.aliasedFigureEdgesAndUnfilteredSpritePixels",
+    label: english["exportSampling.noSmoothing"], labelKey: "exportSampling.noSmoothing",
+    description: english["exportSampling.aliasedFigureEdgesAndUnfilteredSpritePixels"], descriptionKey: "exportSampling.aliasedFigureEdgesAndUnfilteredSpritePixels",
   }),
   Object.freeze({
     value: "sprites",
-    label: interfaceText("exportSampling.smoothSprites"), labelKey: "exportSampling.smoothSprites",
+    label: english["exportSampling.smoothSprites"], labelKey: "exportSampling.smoothSprites",
     description:
-      interfaceText("exportSampling.renderAtTwiceTheSizeThenDownsampleFor"), descriptionKey: "exportSampling.renderAtTwiceTheSizeThenDownsampleFor",
+      english["exportSampling.renderAtTwiceTheSizeThenDownsampleFor"], descriptionKey: "exportSampling.renderAtTwiceTheSizeThenDownsampleFor",
   }),
 ]);
 export function normalizeExportSmoothing(value = "edges") {
@@ -73,4 +73,3 @@ export function downsampleExportPixels(source, width, height) {
   }
   return output;
 }
-

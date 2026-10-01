@@ -58,6 +58,8 @@ What's new in each version of StykAnimate.
 - Faster color adjustments on large drawings, especially when painted areas are far apart.
 - Faster keyframe edits and figure posing in long animations with many layers.
 - Large personal libraries open faster, with more responsive selection.
+- Quicker preparation for playback and exports.
+- APNG and PNG sequence exports use less memory.
 
 ## [1.2.0]
 

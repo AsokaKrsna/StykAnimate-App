@@ -27,8 +27,42 @@ try {
   assert.equal(await popover.count(),0);
   // Simple filmstrip double-click takes the same path.
   await page.evaluate(()=>styk.settingsUI.commit({timelineMode:'simple'}));await settle();
+  const filmstripLabels=()=>page.evaluate(async()=>{
+    const {EASING_MODES}=await import('/src/keyframe-easing.mjs');
+    return {actual:[...document.querySelector('.sheet-easing-select').options].filter(option=>option.value).map(option=>[option.value,option.textContent]),
+      expected:EASING_MODES.map(mode=>[mode.id,styk.localization.t(mode.labelKey)])};
+  });
+  let captions=await filmstripLabels();assert.deepEqual(captions.actual,captions.expected);
+  await page.evaluate(()=>styk.localization.setLocale('en'));await settle();
+  captions=await filmstripLabels();assert.deepEqual(captions.actual,captions.expected);
+  await page.evaluate(()=>styk.localization.setLocale('it'));await settle();
+  captions=await filmstripLabels();assert.deepEqual(captions.actual,captions.expected);
   await page.locator('.sheet-preview').first().dblclick();await popover.waitFor();
   await popover.locator('.styk-easing-header button').click();await settle();
   assert.equal(await popover.count(),0);
-  assert.deepEqual(errors,[]);console.log('PASS: keyframe easing popover opens, applies and closes in a translated interface');
+  // Joined drawing-bank inspector captions keep their UI translation boundary.
+  await page.evaluate(async()=>{
+    const {emptyDocument,defaultFigure,createFrame,createObject}=await import('/src/demo.mjs');
+    const {movieclipFigure}=await import('/src/movieclips.mjs');
+    const ink=defaultFigure(1),inner={...emptyDocument(),figure_types:[ink],keyframes:[createFrame([createObject(ink,1,0,0)]),createFrame([createObject(ink,1,10,0)])]};
+    const clip=movieclipFigure(2,'Artist <clip>',inner,{duration:2});
+    clip._styk.movieclip.drawingSets=[{name:'Normal <authored>',views:[{name:'Front <authored>',frame:0}]},{name:'Alternate',views:[{name:'Side',frame:1}]}];
+    const report={...emptyDocument(),figure_types:[ink,clip],keyframes:[createFrame([createObject(ink,1,200,200),createObject(clip,2,200,200,{join:{target_object_slot:0,target_unique_id:1,target_handle_id:1}})])]};
+    styk.editor.load(report);styk.editor.select(1,-1);styk.fit();window.__drawingBankDocument=JSON.stringify(styk.editor.serialize());
+  });
+  await page.waitForFunction(()=>document.querySelector('[data-drawing-group][data-drawing-uid="2"]'));await settle();
+  const drawingLabels=()=>page.evaluate(()=>{
+    const bank=document.querySelector('[data-section="drawing-bank-2"]');
+    return {actual:[...bank.querySelectorAll('.spatial-choice>span')].map(node=>node.textContent),
+      expected:['movieclipDrawings.form','movieclipDrawings.view'].map(key=>styk.localization.t(key)),
+      names:[...bank.querySelectorAll('option')].map(node=>node.textContent),selected:[...bank.querySelectorAll('select')].map(node=>node.value),
+      unchanged:window.__drawingBankDocument===JSON.stringify(styk.editor.serialize())};
+  });
+  for(const locale of ['it','en','it']){
+    await page.evaluate(locale=>styk.localization.setLocale(locale),locale);await settle();
+    const drawing=await drawingLabels();assert.deepEqual(drawing.actual,drawing.expected);
+    assert.deepEqual(drawing.names,['Normal <authored>','Alternate','Front <authored>']);
+    assert.deepEqual(drawing.selected,['0','0']);assert.equal(drawing.unchanged,true);
+  }
+  assert.deepEqual(errors,[]);console.log('PASS: easing and drawing-bank labels follow language changes; popover opens, applies and closes in a translated interface');
 } finally {await page.evaluate(()=>styk.localization.setLocale('en')).catch(()=>{});await browser.close();backend.stop();}

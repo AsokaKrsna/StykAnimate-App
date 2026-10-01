@@ -85,19 +85,37 @@ function readPNG(data) {
     throw messageError(new Error(''), "errors.imageCodecs.theBrowserDidNotProduceAPngFrame", {});
   const chunks = [],
     view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-  let offset = 8;
+  let offset = 8, pixelBytes = 0, ended = false;
   while (offset + 12 <= data.length) {
     const length = view.getUint32(offset),
       end = offset + length + 12;
     if (end > data.length)
       throw messageError(new Error(''), "errors.imageCodecs.theEncodedPngFrameIsTruncated", {});
     const type = String.fromCharCode(...data.subarray(offset + 4, offset + 8));
+    if (crc32(data.subarray(offset + 4, end - 4)) !== view.getUint32(end - 4) ||
+        !chunks.length && (type !== "IHDR" || length !== 13) ||
+        type === "IEND" && length !== 0)
+      throw messageError(new Error(''), "errors.imageCodecs.theBrowserDidNotProduceAPngFrame", {});
     chunks.push({ type, data: data.subarray(offset + 8, offset + 8 + length) });
+    if (type === "IDAT") pixelBytes += length;
     offset = end;
-    if (type === "IEND") break;
+    if (type === "IEND") {ended = true; break;}
   }
-  if (!chunks.some((c) => c.type === "IDAT"))
+  if (!ended || offset !== data.length)
+    throw messageError(new Error(''), "errors.imageCodecs.theEncodedPngFrameIsTruncated", {});
+  if (!pixelBytes)
     throw messageError(new Error(''), "errors.imageCodecs.thePngFrameContainsNoPixels", {});
+  return chunks;
+}
+
+/** Check lossless frame bytes at the encoder boundary without decoding pixels. */
+export function validatePNGFrame(data, width, height) {
+  const chunks = readPNG(data), header = chunks.find(c => c.type === "IHDR")?.data;
+  if (!header || header.length !== 13)
+    throw messageError(new Error(''), "errors.imageCodecs.thePngFrameHeaderIsMissing", {});
+  const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
+  if (view.getUint32(0) !== width || view.getUint32(4) !== height)
+    throw messageError(new Error(''), "errors.imageCodecs.pngFrameDimensionsChangedDuringExport", {});
   return chunks;
 }
 
@@ -110,17 +128,8 @@ export class APNGEncoder extends BoundedOutput {
     [this.delayNum, this.delayDen] = delayFraction(this.fps);
   }
   add(data) {
-    const chunks = readPNG(data),
+    const chunks = validatePNGFrame(data, this.width, this.height),
       header = chunks.find((c) => c.type === "IHDR")?.data;
-    if (!header || header.length !== 13)
-      throw messageError(new Error(''), "errors.imageCodecs.thePngFrameHeaderIsMissing", {});
-    const view = new DataView(
-      header.buffer,
-      header.byteOffset,
-      header.byteLength,
-    );
-    if (view.getUint32(0) !== this.width || view.getUint32(4) !== this.height)
-      throw messageError(new Error(''), "errors.imageCodecs.pngFrameDimensionsChangedDuringExport", {});
     if (this.frames === 0) {
       this.header = new Uint8Array(header);
       this.append(signature, pngChunk("IHDR", header));

@@ -168,7 +168,7 @@ export class SheetFilmstrip {
     this.mixedOption = translatedElement(el('option', this.easingSelect, '', say("filmstrip.mixed")), "filmstrip.mixed", {});
     this.mixedOption.value = '';
     this.mixedOption.disabled = true;
-    for (const mode of EASING_MODES) el('option', this.easingSelect, '', mode.label).value = mode.id;
+    for (const mode of EASING_MODES) translatedElement(el('option', this.easingSelect), mode.labelKey).value = mode.id;
     easing.insertAdjacentHTML('beforeend', icon('chevron-down', 'ui-field-chev'));
     this._on(this.easingSelect, 'keydown', event => event.stopPropagation());
     this._on(this.easingSelect, 'change', () => {

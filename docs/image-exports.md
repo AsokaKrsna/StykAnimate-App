@@ -14,9 +14,15 @@ const blob = await exportAnimation({
 });
 ```
 
-The renderer supplies a complete output-size frame. A transferable ImageBitmap
-snapshots it and moves to a dedicated worker. One frame is in flight at a time;
-the next render starts only after the previous frame is encoded. Quantization,
+The renderer supplies a complete output-size frame. Canvas callers transfer an
+ImageBitmap to a dedicated worker. APNG and PNG sequences also accept
+`renderPNGFrame(index)`, returning `{blob, width, height}` with a lossless
+`image/png` Blob. The application uses the export renderer's existing worker PNG
+delivery with `preserveAlpha: true`, so these formats avoid full-size presentation
+and encoding canvases and bitmap round trips. The encoder validates the PNG
+dimensions before adding its bytes to the container. One frame is in flight at a
+time; the next render starts only after the previous frame and output write are
+acknowledged. Quantization,
 LZW compression, browser PNG/JPEG compression, CRC checksums, and container
 writing run in the worker. Terminating the worker cancels expensive operations.
 No network, backend endpoint, Python imaging library, npm codec, or ffmpeg is
