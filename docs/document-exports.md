@@ -91,6 +91,12 @@ cancelled and failed imports release their temporary owner. Import-only library
 operations do not lease originals. Browser project imports embed validated
 original bytes before publication so codec-worker cancellation cannot discard
 the active project's provenance. Native projects remain self-contained.
+Only an explicit no-binary-source response (422) permits local native saving
+without a fetched archive. A missing endpoint/source (404/410) or another lookup
+failure takes the authoritative service fallback; it cannot silently omit the
+original. If the service cannot recover it, Save fails and retains unsaved work
+and the previous complete file. A desktop lease survives decoded-cache eviction,
+but not backend process loss before the first native save or recovery checkpoint.
 
 PIV/STK export uses the same frame-at-a-time fingerprint for the submitted
 document. Older fingerprint versions keep their historical encoding. Validation
