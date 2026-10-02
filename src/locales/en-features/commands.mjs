@@ -1,6 +1,12 @@
 export default Object.freeze({
   "commands.newWindow": "New window",
   "commands.rename": "Rename project…",
+  "commands.closeProject": "Close project",
+  "commands.closeSavedProjects": "Close saved projects",
+  "commands.nextProject": "Next project",
+  "commands.previousProject": "Previous project",
+  "commands.recentProject": "Last used project",
+  "commands.saveAll": "Save all projects",
   "commands.saveAndClose": "Save and close",
   "commands.saveAndUpdate": "Save and restart to update",
   "commands.exportStkz": "Save figure…",

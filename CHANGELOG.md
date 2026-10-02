@@ -10,10 +10,12 @@ What's new in each version of StykAnimate.
 
 - Everyday Props · Pivot 3D: 30 editable everyday objects with working hinges and wheels for your animations.
 - Vehicles · Pivot 3D asset pack with twelve editable vehicles, spinning wheels, steering and opening parts.
+- Keep several projects open at once in tabs, each with its own undo history, and switch between them with a click or Ctrl+Tab.
 
 ### Changed
 
 - Ctrl-dragging a node that uses IK stretches it like any other node.
+- A calmer top bar: the menus are in the StykAnimate menu, and your open projects take their place.
 
 ## [1.2.5]
 

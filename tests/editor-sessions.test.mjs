@@ -166,6 +166,20 @@ test('an asynchronous load hands the open project over only when the new one is 
   editor.detachDocument(); editor.resumeDocument(second);
 });
 
+test('a load whose receiver fails leaves the open project in place', async () => {
+  const editor = new Editor({demo: false}).load(scene(), 'First');
+  setX(editor, 44);
+  const first = editor.report, seen = events(editor);
+  let received = null;
+  await assert.rejects(editor.loadAsync(scene(1), 'Second', {onDetach: session => { received = session; throw new Error('the tab could not be made'); }}), /could not be made/);
+  assert.equal(editor.report, first); assert.equal(editor.name, 'First'); assert.equal(rootX(editor), 44);
+  assert.equal(seen.some(detail => detail.kind === 'document'), false, 'nothing was published');
+  editor.undo(); assert.notEqual(rootX(editor), 44);
+  assert.throws(() => editor.resumeDocument(received), /no longer open/);
+  assert.throws(() => editor.load(scene(1), 'Second', {onDetach: () => { throw new Error('again'); }}), /again/);
+  assert.equal(editor.report, first);
+});
+
 test('the Simple timeline working frame follows the project, and the mode follows the editor', () => {
   const editor = new Editor({demo: false}).load(scene(), 'First');
   editor.enableFrameDrafts();

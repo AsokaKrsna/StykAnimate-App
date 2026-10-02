@@ -1,4 +1,5 @@
 import { _electron as electron } from '../tests/support/playwright.mjs';
+import { openAppMenu } from '../tests/support/app-menu.mjs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import path from 'node:path';
@@ -37,8 +38,7 @@ try {
   await page.screenshot({ path: path.join(output, 'export.png') });
   evidence.exportPanel = true;
   await page.keyboard.press('Escape');
-  await page.locator('[data-app-menu="help"]').click();
-  await page.locator('[data-action="donate"]').click();
+  await (await openAppMenu(page, 'help')).locator('[data-action="donate"]').click();
   assert.equal((await application.evaluate(() => globalThis.openedLinks)).at(-1), 'https://ko-fi.com/Q5Q41WY7QC');
   evidence.helpDonation = true;
 
@@ -87,8 +87,7 @@ try {
   await page.locator('.release-splash[open]').waitFor({ timeout: 30000 });
   evidence.splashOnNextLaunch = true;
   await page.keyboard.press('Escape');
-  await page.locator('[data-app-menu="help"]').click();
-  await page.locator('[data-action="check-updates"]').click();
+  await (await openAppMenu(page, 'help')).locator('[data-action="check-updates"]').click();
   await page.getByRole('button', { name: 'Open downloads' }).waitFor();
   evidence.developmentUnavailable = true;
   await writeFile(path.join(output, 'smoke.json'), JSON.stringify(evidence, null, 2));

@@ -40,7 +40,7 @@ try {
     const e=styk.editor,b=localeBaseline;
     return JSON.stringify(e.report)===b.report && e._undo.length===b.undo && e.revision===b.revision && e.dirty===b.dirty && e.selectedUid===b.uid && e.tick===b.tick;
   }));
-  check('Root chrome translation preserves the same Save button and icon nodes',await page.evaluate(() => document.querySelector('.titlebar [data-action=save]')===savedButton && savedButton.querySelector('svg')===savedIcon && savedButton.textContent.trim()==='Salva'));
+  check('Root chrome translation preserves the same Save button and icon nodes',await page.evaluate(() => document.querySelector('.titlebar [data-action=save]')===savedButton && savedButton.querySelector('svg')===savedIcon && savedButton.getAttribute('aria-label')==='Salva'));
   await page.screenshot({path:path.join(output,'italian-root-settings.png')});
   await page.getByRole('button',{name:'Chiudi impostazioni',exact:true}).click();
   await page.evaluate(() => styk.settingsUI.flush());
@@ -62,12 +62,12 @@ try {
   check('Stopping preview restores the localized Play action',await page.locator('#play-button').getAttribute('aria-label')==='Riproduci');
   await page.reload();
   await page.waitForFunction(() => window.styk?.ready && styk.localization);
-  check('Actual app reload restores Italian settings and translated chrome',await page.evaluate(() => styk.state.settings.locale==='it' && styk.localization.localization.locale==='it' && document.documentElement.lang==='it' && document.querySelector('.titlebar [data-action=save]').textContent.trim()==='Salva'));
+  check('Actual app reload restores Italian settings and translated chrome',await page.evaluate(() => styk.state.settings.locale==='it' && styk.localization.localization.locale==='it' && document.documentElement.lang==='it' && document.querySelector('.titlebar [data-action=save]').getAttribute('aria-label')==='Salva'));
   await settings();
   await page.locator('.styk-settings [data-setting=locale]').selectOption('en');
   await page.getByRole('button',{name:'Close settings',exact:true}).click();
   await page.evaluate(() => styk.settingsUI.flush());
-  check('Actual app can return to English through the same visible control',await page.evaluate(() => styk.state.settings.locale==='en' && document.querySelector('.titlebar [data-action=save]').textContent.trim()==='Save'));
+  check('Actual app can return to English through the same visible control',await page.evaluate(() => styk.state.settings.locale==='en' && document.querySelector('.titlebar [data-action=save]').getAttribute('aria-label')==='Save'));
   check('Root language workflows have no uncaught browser errors',errors.length===0);
   await writeFile(path.join(output,'report.json'),JSON.stringify({checks,errors,scope:'Actual running browser app, visible field/settings/menu/undo/preview, and browser preference reload. Native desktop language restart is separate.'},null,2));
 } catch(error) {

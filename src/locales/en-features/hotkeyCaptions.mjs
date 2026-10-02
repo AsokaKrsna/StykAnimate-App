@@ -65,6 +65,7 @@ export default {
   "hotkeyCaptions.command.panelToggleTimeline": "Show or fold the timeline",
   "hotkeyCaptions.command.layoutArrange": "Move the focused panel",
   "hotkeyCaptions.category.projectEditing": "Project & editing",
+  "hotkeyCaptions.category.projects": "Projects",
   "hotkeyCaptions.category.tools": "Tools",
   "hotkeyCaptions.category.animation": "Animation",
   "hotkeyCaptions.category.timeline": "Timeline",

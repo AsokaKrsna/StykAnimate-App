@@ -92,7 +92,7 @@ const STATES = [
   // The Polygons section is a closed disclosure; open it like a user and scroll it into view.
   {name: 'polygon-rows', enter: steps(select(WALKER), click('#inspector details[data-section="Polygons"] > summary'), frames,
     page => page.evaluate(() => document.querySelector('#inspector details[data-section="Polygons"]').scrollIntoView({block: 'start'})), frames)},
-  {name: 'file-menu', enter: steps(click('[data-app-menu="file"]'), waitFor('#menu'))},
+  {name: 'file-menu', enter: steps(click('.titlebar .brand'), waitFor('#menu'), page => page.locator('#menu').getByRole('menuitem', {name: 'File', exact: true}).click(), waitFor('.ui-menu[aria-label="File"]'))},
   // The rail's Add menu, and today's Insert dialog (its All in this project…).
   {name: 'add-menu', enter: steps(click('#open-insert'), waitFor('[role=menu][aria-label=Add]'))},
   {name: 'insert-dialog', enter: steps(click('#open-insert'), waitFor('[role=menu][aria-label=Add]'),

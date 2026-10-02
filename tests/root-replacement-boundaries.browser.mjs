@@ -65,9 +65,10 @@ try {
   await page.waitForFunction(() => window.styk?.ready);
   await setup();
   await hold();
+  // Projects stay open side by side (docs/PROJECT-TABS.md): closing one is what asks about its changes.
   await page.evaluate(() => {
     window.pendingNew = Promise.race([
-      styk.actions.new(),
+      styk.actions["close-project"](),
       new Promise((_, reject) =>
         setTimeout(
           () => reject(new Error("Replacement dialog did not resolve")),
@@ -78,7 +79,7 @@ try {
   });
   await page.locator("#keep-editing").waitFor();
   check(
-    "New finalizes a held gesture before asking to replace",
+    "Closing finalizes a held gesture before asking about the project",
     await page.evaluate(
       () =>
         !styk.state.drag &&
@@ -90,7 +91,7 @@ try {
   await page.locator("#keep-editing").click();
   await page.mouse.up();
   check(
-    "Cancelling New retains the edited document and one undo",
+    "Cancelling the close retains the edited document and one undo",
     await page.evaluate(async () => {
       await pendingNew;
       return (
@@ -104,7 +105,7 @@ try {
   await hold();
   await page.evaluate(() => {
     window.pendingNew = Promise.race([
-      styk.actions.new(),
+      styk.actions["close-project"](),
       new Promise((_, reject) =>
         setTimeout(
           () => reject(new Error("Replacement dialog did not resolve")),
@@ -120,7 +121,7 @@ try {
   });
   await page.mouse.up();
   check(
-    "Discard and New leave a clean zero-frame document without an old drag",
+    "Discarding the last project leaves a clean zero-frame document without an old drag",
     await page.evaluate(
       () =>
         styk.editor.report !== replaceBefore.report &&
@@ -145,20 +146,33 @@ try {
   );
   await setup();
   await hold();
+  await page.evaluate(() => { window.pendingNew = styk.actions.new(); });
+  await page.waitForFunction(() => styk.editor.report !== replaceBefore.report);
+  await page.mouse.up();
+  check(
+    "New finalizes a held gesture; the edited project rests beside the new one with its one undo",
+    await page.evaluate(async () => {
+      await pendingNew;
+      const resting = styk.projects.tabs.items.find((item) => item.session?.report === replaceBefore.report);
+      return !styk.state.drag && !styk.editor._drag && !styk.editor.canUndo && !styk.editor.dirty &&
+        Boolean(resting) && resting.dirty && resting.session._undo.length === replaceBefore.undo + 1;
+    }),
+  );
+  await setup();
+  await hold();
   await page
     .locator("#file-input")
     .setInputFiles(
       path.resolve("../Pivot Animator v5/Animations/tween_pendulum.piv"),
     );
-  await page.locator("#discard-changes").waitFor();
-  check(
-    "File import finalizes the held gesture before replacing",
-    await page.evaluate(
-      () => !styk.state.drag && !styk.editor._drag && styk.editor.dirty,
-    ),
-  );
-  await page.locator("#discard-changes").click();
   await page.waitForFunction(() => styk.editor.name === "tween_pendulum");
+  check(
+    "File import finalizes the held gesture before its project leaves the front",
+    await page.evaluate(() => {
+      const resting = styk.projects.tabs.items.find((item) => item.session?.report === replaceBefore.report);
+      return !styk.state.drag && !styk.editor._drag && Boolean(resting) && resting.dirty && resting.session._undo.length === replaceBefore.undo + 1;
+    }),
+  );
   await page.evaluate(() => {
     window.importedRoot = JSON.stringify(styk.editor.frame.objects);
   });

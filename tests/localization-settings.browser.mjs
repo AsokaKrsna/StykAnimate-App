@@ -86,7 +86,7 @@ try {
   check('Repeated menu replacements retain a bounded set of connected label bindings', await page.evaluate(() => localeApp.elements.size <= bindingBaseline && [...localeApp.elements].every(element => element.isConnected)));
 
   await setup();
-  check('A fresh page restores Italian through the existing settings persistence', await page.evaluate(() => localeSettings.value.locale === 'it' && localeApp.localization.locale === 'it' && document.documentElement.lang === 'it' && document.querySelector('[data-action=save]').textContent === 'Salva'));
+  check('A fresh page restores Italian through the existing settings persistence', await page.evaluate(() => localeSettings.value.locale === 'it' && localeApp.localization.locale === 'it' && document.documentElement.lang === 'it' && document.querySelector('[data-action=save]').getAttribute('aria-label') === 'Salva'));
   await page.setViewportSize({width:560,height:650});
   await page.evaluate(() => localeSettings.open());
   check('Localized settings fit the compact window without horizontal clipping', await page.locator('.styk-settings').evaluate(dialog => dialog.getBoundingClientRect().width <= innerWidth - 30 && dialog.scrollWidth <= dialog.clientWidth && dialog.querySelector('.styk-settings-content').scrollWidth <= dialog.querySelector('.styk-settings-content').clientWidth));

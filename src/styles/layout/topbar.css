@@ -1,24 +1,26 @@
-/* The top band (experience.md §2, §1.8; architecture §3.11.4): one 44px row on
- * the mist field in three clusters, who and where (the mark, the menubar, the
- * document) │ the workspaces │ the actions (history, Save, Export, or in a
- * session its quiet Export, Cancel or Test rig and the ink Done) and the window
- * controls. The side clusters take equal room while the window allows, so the
- * workspace switch sits in the middle, and never less than their content, so
- * the band never wraps or clips: the dock host folds it first. `.shell-top`
- * is the band's visual class beside the `.titlebar` hook; features/band.css
- * sizes the components inside it and folds their words.
+/* The top band (experience.md §2, §1.8; architecture §3.11.4): one row in three
+ * clusters that read left to right as where (the mark with its menu, the open
+ * projects as tabs) │ how (the workspaces) │ what next (history, Save, Export,
+ * or in a session its quiet Export, Cancel or Test rig and the ink Done) and
+ * the window controls. The start takes the room the other two leave, so the
+ * tabs have it, and no cluster takes less than its content, so the band never
+ * wraps or clips: the dock host folds it first. `.shell-top` is the band's
+ * visual class beside the `.titlebar` hook; features/band.css sizes the
+ * components inside it and folds their words; components/project-tabs.css
+ * shares the start's room between the tabs.
  *
  * Folds: the dock host writes the solver's fold steps to the band's own
  * `data-band`, in the band's fold order (BAND_FOLDS); src/shell/topbar.mjs
  * measures the band's width after each step, so no rule here may depend on the
  * window's size. Words and spacing fold before controls, the ink primary's word
- * last, and the menubar folds into the mark only at the minimal tier (`menus`).
+ * last. The menubar is always folded into the mark (features/band.css), so the
+ * `menus` step frees nothing.
  * Sessions: topbar.mjs writes `data-session` (build, movieclip, camera) and
  * shows the buttons marked `data-band-session` for it. */
 @layer layout {
   .shell-top {
     --band-pad: var(--space-2);
-    display: grid; grid-template-columns: minmax(max-content, 1fr) max-content minmax(max-content, 1fr);
+    display: grid; grid-template-columns: minmax(max-content, 1fr) max-content max-content;
     align-items: center; column-gap: var(--space-3);
     block-size: var(--topbar-h); min-inline-size: 0; padding: 0 var(--band-pad) 0 var(--space-2);
     overflow: hidden; border: 0; background: var(--surface); box-shadow: inset 0 -1px 0 var(--line-1);
@@ -44,13 +46,6 @@
   .shell-mark > :where(.chevron) { display: inline-flex; margin: 0; color: var(--text-3); }
   .shell-mark > :where(.chevron) > svg { inline-size: 12px; block-size: 12px; stroke-width: 2; }
 
-  /* The document's name; its state keeps the width of its widest words (data-band-reserve), so editing and
-   * saving never move the band or measure it again. */
-  .shell-top :where(#project-name) { max-inline-size: 220px; }
-  .shell-top :where(#save-state)[data-band-reserve] { display: inline-block; }
-  .shell-top :where(#save-state)[data-band-reserve]::after {
-    content: attr(data-band-reserve); display: block; block-size: 0; overflow: hidden; visibility: hidden;
-  }
   /* The workspace glyphs show only when the band folds the switch's names (features/band.css). */
   .band-ws-icon { display: none; }
   .band-ws-icon > svg { inline-size: 17px; block-size: 17px; }
@@ -71,11 +66,8 @@
   .shell-top[data-band~="tight"] { column-gap: var(--space-2); }
   .shell-top[data-band~="tight"] :where(.band-cluster) { gap: var(--space-0-5); }
   .shell-top[data-band~="tight"] :where(.band-end) { gap: var(--space-1); }
-  /* The document name truncates to 12, then 8 characters (with its ellipsis; the tooltip and Rename show it whole). */
-  .shell-top[data-band~="name"] :where(#project-name) { max-inline-size: 12ch; }
-  .shell-top[data-band~="name8"] :where(#project-name) { max-inline-size: 8ch; }
   .shell-top[data-band~="winctl"] :where(#window-controls) > button { inline-size: 36px; }
-  /* Once the switch shows its glyphs, the band's last spacing tightens too (the menubar stays docked down to 661px). */
+  /* Once the switch shows its glyphs, the band's last spacing tightens too. */
   .shell-top[data-band~="icons"] { column-gap: var(--space-1); padding-inline-start: var(--space-1); }
   .shell-top[data-band~="icons"] :where(.band-end) { gap: var(--space-0-5); }
 }

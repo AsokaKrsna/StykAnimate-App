@@ -47,7 +47,6 @@
   :where(:root[data-touch-layout="phone-portrait"]) .band-start { grid-column: 1; }
   :where(:root[data-touch-layout="phone-portrait"]) .band-end { grid-column: 2; }
   :where(:root[data-touch-layout="phone-portrait"]) .band-start { min-inline-size: 0; }
-  :where(:root[data-touch-layout="phone-portrait"]) .band-start > .ui-doc { flex: 0 1 auto; min-inline-size: 0; overflow: hidden; }
   .touch-tabbar {
     display: flex; align-items: stretch; gap: var(--space-1);
     min-block-size: var(--tabbar-h); padding: var(--space-1) var(--space-2) calc(var(--space-1) + var(--safe-bottom));

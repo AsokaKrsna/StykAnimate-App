@@ -90,12 +90,29 @@ export function writeBrowserRecovery(blob,name,signal,database=globalThis.indexe
   },signal);
 }
 
-/** Page lifetime ownership, independent of editable document data/history. */
+/**
+ * Page lifetime ownership, independent of editable document data/history. A page keeps one copy per open
+ * project: `slot` names the project (any string the page chooses); without one the page's first key is used.
+ */
 export class BrowserRecoverySession{
   constructor({locks=globalThis.navigator?.locks,database=globalThis.indexedDB}={}){
     this.locks=locks;this.database=database;this.id=crypto.randomUUID();this.pending=new Set();this.disposed=false;
+    this.slots=new Map();
     this.ready=this.claim(this.id).catch(()=>{this.locks=null;return ()=>{};}).then(release=>{this.release=release;});
   }
+  /** The key a project's copy is stored under, claimed on first use. */
+  async key(slot){
+    if(slot===undefined||slot===null)return this.id;
+    let entry=this.slots.get(slot);
+    if(!entry){
+      const id=crypto.randomUUID();
+      entry={id,release:null,ready:this.claim(id).catch(()=>()=>{}).then(release=>{entry.release=release;})};
+      this.slots.set(slot,entry);
+    }
+    await entry.ready;return entry.id;
+  }
+  /** The keys this page owns: never offered back to it as abandoned copies. */
+  owns(id){return id===this.id||[...this.slots.values()].some(entry=>entry.id===id);}
   claim(id){
     if(!this.locks?.request)return Promise.resolve(()=>{});
     return new Promise((resolve,reject)=>{
@@ -110,13 +127,15 @@ export class BrowserRecoverySession{
     const records=await listBrowserRecovery(this.database),available=[];
     for(const record of records){
       if(record.id===this.id){available.push(record);continue;}
+      if(this.owns(record.id))continue;
       const release=await this.claim(record.id);
       if(release){release();available.push(record);}
     }
     return available;
   }
-  async write(blob,name,signal){
+  async write(blob,name,signal,slot){
     await this.ready;if(this.disposed)return false;
+    const id=await this.key(slot);if(this.disposed||signal?.aborted)return false;
     // Store ArrayBuffers for WebKit compatibility; reject oversized snapshots
     // before allocating a second copy of their bytes on the UI thread.
     if(blob instanceof Blob){
@@ -124,10 +143,15 @@ export class BrowserRecoverySession{
       blob=await blob.arrayBuffer();
       if(this.disposed||signal?.aborted)return false;
     }
-    const write=writeBrowserRecovery(blob,name,signal,this.database,{id:this.id});this.pending.add(write);
+    const write=writeBrowserRecovery(blob,name,signal,this.database,{id});this.pending.add(write);
     try{return await write;}finally{this.pending.delete(write);}
   }
-  async clear(){await this.ready;return clearBrowserRecovery(this.database,{id:this.id});}
+  /** Removes a project's copy; a project that never wrote one has nothing to remove. */
+  async clear(slot){
+    await this.ready;
+    if(slot!==undefined&&slot!==null&&!this.slots.has(slot))return false;
+    return clearBrowserRecovery(this.database,{id:await this.key(slot)});
+  }
   /** Reserve an abandoned copy before decoding it; publication adopts its key. */
   async reserve(record){
     await this.ready;
@@ -136,7 +160,14 @@ export class BrowserRecoverySession{
     if(!release)return null;
     // Without Web Locks, never adopt a key another page could still own. The
     // source remains available until explicitly discarded in the recovery list.
-    return {commit:async()=>{if(this.locks?.request){await this.clear();this.release?.();this.id=record.id;this.release=release;}else release();},release};
+    // `slot` names the project the copy was restored into: its next recovery write replaces that copy.
+    return {commit:async slot=>{
+      if(!this.locks?.request){release();return;}
+      if(slot===undefined||slot===null){await this.clear();this.release?.();this.id=record.id;this.release=release;return;}
+      const previous=this.slots.get(slot);
+      if(previous){await previous.ready;await clearBrowserRecovery(this.database,{id:previous.id});previous.release?.();}
+      this.slots.set(slot,{id:record.id,release,ready:Promise.resolve()});
+    },release};
   }
   async discard(record){
     await this.ready;
@@ -148,6 +179,9 @@ export class BrowserRecoverySession{
     this.disposed=true;
     // A page can finish an already-submitted transaction during navigation.
     // Keep its lease until that write settles; no new writes enter afterwards.
-    this.ready.then(()=>Promise.allSettled([...this.pending])).then(()=>{this.release?.();this.release=null;});
+    this.ready.then(()=>Promise.allSettled([...this.pending])).then(()=>{
+      this.release?.();this.release=null;
+      for(const entry of this.slots.values()){entry.release?.();entry.release=null;}
+    });
   }
 }

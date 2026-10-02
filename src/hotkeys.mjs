@@ -114,6 +114,21 @@ group('Drawing', [
   ['drawing-mirror','Toggle mirror painting',['Shift+KeyM']],['drawing-swap-colors','Swap drawing colors',['KeyX']],['drawing-flip-view','Flip view horizontally',['KeyM']],
 ], 'drawing');
 group('Library', [['library-open', 'Open / insert library item', ['Enter']], ['library-rename', 'Rename library item', ['F2']]], 'library');
+/** The project tabs' keys work in the desktop app only: a browser keeps Ctrl+W, Ctrl+Tab and Ctrl+Page Up/Down for its own tabs. */
+export const DESKTOP_PROJECT_KEYS = Object.freeze({
+  'close-project': Object.freeze(['Mod+KeyW']),
+  // Command+Tab belongs to macOS; Control+Tab is what its apps use for tabs.
+  'recent-project': Object.freeze([isMacPlatform() ? 'Ctrl+Tab' : 'Mod+Tab']),
+  'next-project': Object.freeze(['Mod+PageDown']), 'previous-project': Object.freeze(['Mod+PageUp']),
+});
+const projectKeys = id => (globalThis.stykDesktop ? DESKTOP_PROJECT_KEYS[id] : []);
+group('Projects', [
+  ['close-project', 'Close project', projectKeys('close-project')],
+  ['recent-project', 'Last used project', projectKeys('recent-project'), {repeat: true}],
+  ['next-project', 'Next project', projectKeys('next-project')],
+  ['previous-project', 'Previous project', projectKeys('previous-project')],
+  ['save-all', 'Save all projects'],
+]);
 /** Ctrl+1–4 show and fold the panels in the desktop app only: a browser keeps them for its tabs. */
 export const DESKTOP_PANEL_KEYS = Object.freeze({
   'panel-toggle-properties': Object.freeze(['Mod+Digit1']), 'panel-toggle-vfx': Object.freeze(['Mod+Digit2']),

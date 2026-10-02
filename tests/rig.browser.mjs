@@ -98,8 +98,8 @@ try {
   check('Pivot export produces a real native file through the export dialog', (await readFile(pivPath)).length > 100);
   const stkPath = await saveExport('stk', 'rig-ui-edited.stk');
   check('STK export produces a real reusable native figure through the dialog', (await readFile(stkPath)).length > 16);
+  // The file opens beside the edited project, in a tab of its own: nothing is replaced, so nothing asks.
   await page.locator('#file-input').setInputFiles(pivPath);
-  await page.locator('#discard-changes').click();
   await page.waitForFunction(() => styk.editor.name === 'rig-ui-edited');
   check('Reopened PIV preserves all keyframes and the edited static joint geometry', await page.evaluate(({x, y}) => {
     const e = styk.editor, endpoint = e.geometry.objects.get(e.selectedSlot).segments[0].end;

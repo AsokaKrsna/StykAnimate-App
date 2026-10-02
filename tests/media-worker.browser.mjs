@@ -161,11 +161,11 @@ try {
   const delayedFixture = { name: result.fixtures[0].name, mimeType: result.fixtures[0].mimeType, buffer: Buffer.from(result.fixtures[0].bytes) };
   await page.locator('#media-input').setInputFiles(delayedFixture);
   await page.waitForFunction(() => globalThis.__delayedMediaWorkers.at(-1)?.pending);
-  await page.locator('[data-action="menu"]').click(); await page.locator('[data-action="new"]').click();
+  await page.locator('[data-action="menu"]').click(); await page.locator('#menu [data-action="new"]').click();
   await page.waitForFunction(() => window.styk.editor.report !== window.__beforeMediaDocument && globalThis.__delayedMediaWorkers.at(-1)?.terminated);
   const afterNew = await page.evaluate(() => ({ images: window.styk.editor.report.figure_types.filter(figure => figure.image_assets?.length).length, worker: globalThis.__delayedMediaWorkers.at(-1) }));
   assert.equal(afterNew.images, 0); assert.equal(afterNew.worker.posted, false); assert.equal(afterNew.worker.clearedDelay, true);
-  result.checks.push('Actual New cancels deferred media-input decoding, clears its timer and leaves no image in the replacement document');
+  result.checks.push('Actual New cancels deferred media-input decoding, clears its timer and leaves no image in the new project');
   await page.evaluate(() => { globalThis.__delayMedia = false; });
   await page.locator('#media-input').setInputFiles(delayedFixture);
   await page.waitForFunction(() => window.styk.editor.report.figure_types.filter(figure => figure.image_assets?.length).length === 1);

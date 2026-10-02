@@ -16,10 +16,12 @@
   </head>
   <body>
     <div id="app" class="shell">
-      <!-- The top band (experience.md §2): who and where (the mark, the menubar, the
-           document) │ the workspaces │ the actions (history, Save, Export, or a
+      <!-- The top band (experience.md §2): where (the mark and its menu, the open
+           projects as tabs) │ the workspaces │ the actions (history, Save, Export, or a
            session's Export, Cancel, Test rig and Done) and the window controls.
-           src/shell/topbar.mjs measures its folds and shows a session's buttons. -->
+           src/shell/topbar.mjs measures its folds and shows a session's buttons;
+           src/shell/project-tabs-view.mjs renders the tabs. The menus live in the mark's
+           menu: the menubar stays in the markup as their source. -->
       <header class="titlebar shell-top">
         <div class="band-cluster band-start">
           <button class="brand shell-mark" data-action="menu" aria-label="Main menu" aria-haspopup="menu" aria-expanded="false" data-i18n-aria-label="chrome.mainMenu">
@@ -34,12 +36,10 @@
             <button class="ui-menubar-item" role="menuitem" data-app-menu="animation" aria-haspopup="menu" aria-expanded="false" data-i18n="chrome.animation">Animation</button>
             <button class="ui-menubar-item" role="menuitem" data-app-menu="help" aria-haspopup="menu" aria-expanded="false" data-i18n="chrome.help">Help</button>
           </nav>
-          <button class="document-tab ui-doc" data-action="rename" title="Rename project"
-             data-i18n-title="chrome.renameProject"><span id="project-name" class="ui-doc-name">First steps</span
-            ><span class="ui-doc-state"
-              ><span id="dirty-dot" class="ui-dot" data-tone="success" data-band-reserve="" aria-hidden="true"></span
-              ><span id="save-state" data-band-reserve="Saved 00:00 PM">Saved</span></span
-          ></button>
+          <div class="project-tabs" id="project-tabs" data-band-reserve="tabs">
+            <div class="project-tabs-list" role="tablist" aria-label="Open projects" data-i18n-aria-label="chrome.openProjects"></div>
+            <button type="button" class="ui-icon-button project-tabs-add" data-size="sm" data-action="new" aria-label="New animation" data-icon="plus" data-i18n-aria-label="chrome.newAnimation"></button>
+          </div>
         </div>
         <div class="band-cluster band-center">
           <div class="workspace-switch ui-segmented" role="group" aria-label="Editing workspace" data-size="lg" data-i18n-aria-label="chrome.editingWorkspace">
@@ -60,12 +60,12 @@
             <button class="ui-icon-button band-redo" data-action="redo" title="Redo · Ctrl+Shift+Z" aria-label="Redo" data-icon="redo" data-i18n-title="chrome.redoCtrlShiftZ" data-i18n-aria-label="chrome.redo"></button>
           </div>
           <button
-            class="ui-button band-save"
-            data-variant="ghost"
+            class="ui-icon-button band-save"
             data-action="save"
             title="Save project · Ctrl+S"
+            aria-label="Save"
             data-icon="save"
-           data-i18n-title="chrome.saveProjectCtrlS"><span class="band-label" data-i18n-slot data-i18n="chrome.save">Save</span></button>
+           data-i18n-title="chrome.saveProjectCtrlS" data-i18n-aria-label="chrome.save"></button>
           <button
             type="button"
             class="ui-icon-button shell-sheet-button"

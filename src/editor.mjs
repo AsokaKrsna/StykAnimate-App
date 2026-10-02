@@ -511,7 +511,7 @@ export class Editor extends EventTarget {
     const initial=prepared.scene??initialLoadState(report,{initialFrameIndex,initialTick},this._frameDraftEnabled),index=initial.frameIndex;
     const started = performance.now();
     // The open document stays open beside the loaded one (editor-sessions.mjs): its owner receives it whole.
-    if(onDetach)onDetach(this.detachDocument());
+    if(onDetach)this.handOverDocument(onDetach);
     if(!preserveDrawingResources){drawingResourcesFor(this.report)?.dispose();for(const scope of this._movieclipScopes??[])drawingResourcesFor(scope.parent.report)?.dispose();}
     this._vfxClipEdit=null;this._selectedVfxClip=null;this._selectedVfxKey=null;
     this._movieclipScopes=[];

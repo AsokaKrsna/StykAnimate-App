@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {chromium} from './support/playwright.mjs';
+import {openAppMenu, closeAppMenus} from './support/app-menu.mjs';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 const out = path.resolve('artifacts/hotkeys-timeline'); await mkdir(out,{recursive:true});
@@ -47,9 +48,9 @@ try {
   const rebound = await snapshot();
   check('New binding dispatches from focused timeline', rebound.keys.includes(1) && rebound.keys.length === original.keys.length + 1);
   check('Timeline tooltip reflects custom binding',await page.locator('.sheet-frame-tools [data-hotkey-command="add-frame"]').evaluate(button=>button.dataset.hotkeyHint==='B'&&button.getAttribute('aria-keyshortcuts')==='B'&&!button.hasAttribute('title')));
-  await page.locator('[data-app-menu="animation"]').click();
-  check('Application menu reflects custom binding',await page.locator('#menu [data-action="add-frame"] kbd').textContent()==='B');
-  await page.keyboard.press('Escape');
+  const animationMenu = await openAppMenu(page, 'animation');
+  check('Application menu reflects custom binding',await animationMenu.locator('[data-action="add-frame"] kbd').textContent()==='B');
+  await closeAppMenus(page);
   await openSettings(); await rebind('add-frame','v');
   check('Conflicting shortcut offers explicit replacement',await page.locator('[data-hotkey-replace]').isVisible());
   check('Conflict does not change either binding before replacement',await page.evaluate(()=>styk.hotkeys.label('add-frame')==='B'&&styk.hotkeys.label('tool-select')==='V'));

@@ -54,6 +54,15 @@ export const editorSessionMethods = {
     sessions.add(session);
     return session;
   },
+  /**
+   * Detaches the open document for `receive(session)`, as a load that opens beside it does. If the receiver
+   * throws, the document stays open exactly as it was and the session is void.
+   */
+  handOverDocument(receive) {
+    const session = this.detachDocument();
+    try { receive(session); }
+    catch (error) { sessions.delete(session); Object.assign(this, session); throw error; }
+  },
   /** Opens a detached session again, as it was left; the session is spent. */
   resumeDocument(session) {
     if (!sessions.has(session)) throw messageError(new Error(''), 'errors.editorSessions.thisProjectIsNoLongerOpen', {});

@@ -270,8 +270,8 @@ try {
     const t = await editor('1440x900', { touch: false });
     const root = await t.eval(() => ({ ...document.documentElement.dataset }));
     check('A mouse keeps the desktop interface', root.input === 'pointer' && !root.touchLayout, root);
-    check('The desktop has no tab bar, no modifier buttons and its menubar', await t.eval(() => !document.querySelector('.touch-tabbar')
-      && document.querySelector('.touch-modifiers').hidden && getComputedStyle(document.querySelector('.app-menubar')).display !== 'none'));
+    check('The desktop has no tab bar, no modifier buttons and its project tabs', await t.eval(() => !document.querySelector('.touch-tabbar')
+      && document.querySelector('.touch-modifiers').hidden && document.querySelector('.project-tab[aria-selected="true"]').getClientRects().length > 0));
     check('The desktop band keeps its words and its height', await t.eval(() => document.querySelector('.titlebar').getBoundingClientRect().height <= 53
       && document.querySelector('.band-export .band-label').getClientRects().length > 0));
     check('The desktop inspector is docked', await t.eval(() => window.styk.shell.presentation('properties') === 'docked'));

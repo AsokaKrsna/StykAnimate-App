@@ -12,6 +12,21 @@ const commands = {
   "save-as": {
     "key": "hotkeyCaptions.command.saveAs"
   },
+  "close-project": {
+    "key": "commands.closeProject"
+  },
+  "recent-project": {
+    "key": "commands.recentProject"
+  },
+  "next-project": {
+    "key": "commands.nextProject"
+  },
+  "previous-project": {
+    "key": "commands.previousProject"
+  },
+  "save-all": {
+    "key": "commands.saveAll"
+  },
   "export": {
     "key": "hotkeyCaptions.command.export"
   },
@@ -430,6 +445,9 @@ const commands = {
 export const hotkeyCategoryMessages = {
   "Project & editing": {
     "key": "hotkeyCaptions.category.projectEditing"
+  },
+  "Projects": {
+    "key": "hotkeyCaptions.category.projects"
   },
   "Tools": {
     "key": "hotkeyCaptions.category.tools"

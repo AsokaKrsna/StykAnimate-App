@@ -55,11 +55,11 @@ try{
 
   await picker(page,'cancel');
   check('Cancelling the destination leaves unsaved work and recovery',await clickSave(page)===false&&await page.evaluate(()=>styk.editor.dirty)&&!!await recovery(page));
-  await page.evaluate(()=>{window.showSaveFilePicker=undefined;window.__replacement=styk.actions.new();});
+  await page.evaluate(()=>{window.showSaveFilePicker=undefined;window.__replacement=styk.actions['close-project']();});
   const refused=page.waitForEvent('download');
   await page.locator('#save-changes').click();
   await refused;await page.locator('#keep-editing').waitFor();
-  check('A download cannot silently approve replacing unsaved work',await page.locator('#keep-editing').isVisible()&&await page.evaluate(()=>styk.editor.dirty));
+  check('A download cannot silently approve closing unsaved work',await page.locator('#keep-editing').isVisible()&&await page.evaluate(()=>styk.editor.dirty));
   await page.locator('#keep-editing').click();await page.evaluate(()=>window.__replacement);
   await picker(page,'fail');
   await assert.rejects(()=>clickSave(page),/Disk write failed/);
@@ -83,7 +83,8 @@ try{
   await other.evaluate(()=>styk.actions.save());
   const copies=await page.evaluate(async()=> (await import('/src/browser-recovery.mjs')).listBrowserRecovery());
   check('Two tabs retain two independent recovery copies',copies.length===2&&new Set(copies.map(r=>r.id)).size===2);
-  check('A live copy is excluded from another tab’s recovery offers',await page.evaluate(async()=> (await styk.recovery.list()).length===1));
+  // A page owns one copy per open project; neither its own live copies nor another live tab's are offered back.
+  check('A live copy is excluded from another tab’s recovery offers',await page.evaluate(async()=> (await styk.recovery.list()).length===0));
   await picker(page,'success');await clickSave(page);
   check('Saving one tab leaves the other tab’s recovery intact',(await recovery(page))?.name==='Second tab');
   check('A live tab’s copy cannot be discarded by another tab',await page.evaluate(async record=>!await styk.recovery.discard(record),copies.find(r=>r.name==='Second tab')));

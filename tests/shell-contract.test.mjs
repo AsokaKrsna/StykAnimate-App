@@ -28,6 +28,9 @@ export const SHELL_CONTRACT = Object.freeze({
     // vfx-inspector, layer-timeline, builder-mode (#builder-outliner).
     panels: ['inspector', 'inspector-context', 'object-actions', 'vfx-panel', 'timeline',
       'animation-timeline', 'builder-outliner'],
+    // The open projects (src/shell/project-tabs-view.mjs renders the tabs into its .project-tabs-list;
+    // app.mjs anchors Ctrl+Tab's board to it).
+    projects: ['project-tabs'],
     // The dock host (src/shell/dock-host.mjs): the Properties panel's root, the
     // Library's empty host (user-library fills it), the tabs tests click
     // (#library-tab, #properties-tab, [data-vfx-tab]) and the two docks.
@@ -51,7 +54,7 @@ export const SHELL_CONTRACT = Object.freeze({
       'polygon-controls', 'polygon-count', 'finish-polygon'],
     // app.mjs and localization-bindings (#window-controls); base/document.css hides #app
     // while the theme is pending.
-    status: ['app', 'project-name', 'dirty-dot', 'save-state', 'stage-size', 'status', 'status-dot',
+    status: ['app', 'stage-size', 'status', 'status-dot',
       'renderer-label', 'render-time', 'object-count', 'window-controls'],
     // Reader-bound: read only by studio-shell.mjs (no null checks) and app.mjs.
     // They may be removed together with that reader.
@@ -62,8 +65,9 @@ export const SHELL_CONTRACT = Object.freeze({
   // commands (desktop/main.cjs), telemetry buckets (telemetry-core.mjs),
   // localization menu keys and hotkey hints. Never rename one.
   actions: {
-    // The band: its history, Save and Export, and a session's Cancel, Test rig and Done (camera-done, movieclip-*).
-    titlebar: ['menu', 'rename', 'undo', 'redo', 'save', 'export', 'movieclip-cancel', 'rig-test', 'movieclip-done',
+    // The band: New beside the tabs, its history, Save and Export, and a session's Cancel, Test rig and Done
+    // (camera-done, movieclip-*). Rename is a tab's double-click and File › Rename project.
+    titlebar: ['menu', 'new', 'undo', 'redo', 'save', 'export', 'movieclip-cancel', 'rig-test', 'movieclip-done',
       'camera-done', 'minimize', 'maximize', 'close'],
     // The stage header: the crumb, the view cluster (Build's Handles, Highlight, Isolate and construction
     // background too), zoom and Fit, and the polygon's own controls. The rail holds tools only.
@@ -168,15 +172,23 @@ test('Structural hooks that modules dereference without null checks are intact',
     assert.equal(byId.get(id)[0].parent, viewport, `#${id} is a direct child of #viewport`);
     assert.equal(byId.get(id)[0].tag, 'canvas', `#${id} is a canvas`);
   }
-  // The band (experience.md §2): three clusters, who and where (the mark, the menubar, the document), the
-  // workspace switch, and the actions. localization-bindings binds `.titlebar [data-action=save|export]` and the
-  // window controls; tests click `.titlebar [data-action=export]`, so the band keeps one Export (quiet in a
-  // session) and one Save. topbar.mjs shows a session's buttons ([data-band-session]) and hides the rest.
+  // The band (experience.md §2): three clusters, where (the mark with its menu, the open projects as tabs), the
+  // workspace switch, and the actions. The menubar stays in the markup as the source of the mark's menus
+  // (app.mjs reads its [data-app-menu] buttons) and never shows. localization-bindings binds
+  // `.titlebar [data-action=save|export]` and the window controls; tests click `.titlebar [data-action=export]`,
+  // so the band keeps one Export (quiet in a session) and one Save. topbar.mjs shows a session's buttons
+  // ([data-band-session]) and hides the rest.
   const titlebar = one('.titlebar');
   const clusters = titlebar.children.map(child => classes(child).find(name => /^band-(start|center|end)$/.test(name)));
   assert.deepEqual(clusters, ['band-start', 'band-center', 'band-end'], 'the band is three clusters');
   const [start, center, end] = titlebar.children;
-  for (const selector of ['[data-action="menu"]', '.app-menubar', '[data-action="rename"]', '#project-name', '#dirty-dot', '#save-state']) one(selector, start);
+  for (const selector of ['[data-action="menu"]', '.app-menubar', '#project-tabs']) one(selector, start);
+  // The tabs' list is an empty tablist the view fills; New sits beside it, inside the strip.
+  const tabs = one('#project-tabs', start), list = one('.project-tabs-list', tabs);
+  assert.equal(list.attrs.role, 'tablist');
+  assert.equal(list.children.length, 0, 'the tab list is empty in the markup');
+  assert.equal(one('[data-action="new"]', tabs).parent, tabs, 'New is the strip\'s own button');
+  assert.ok('data-band-reserve' in tabs.attrs, 'the band measures the strip by its reserve, not by its tabs');
   one('.workspace-switch', center);
   for (const mode of SHELL_CONTRACT.workspaceModes) one(`[data-workspace-mode="${mode}"]`, one('.workspace-switch'));
   for (const action of ['save', 'export']) assert.equal(find(`[data-action="${action}"]`, titlebar).length, 1, `one .titlebar [data-action="${action}"]`);

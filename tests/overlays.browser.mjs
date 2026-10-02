@@ -6,6 +6,7 @@
  * `node tests/overlays.browser.mjs`; STYK_URL overrides the address.
  */
 import {chromium} from './support/playwright.mjs';
+import {openAppMenu, closeAppMenus} from './support/app-menu.mjs';
 import assert from 'node:assert/strict';
 
 const base = process.env.STYK_URL || 'http://127.0.0.1:47832';
@@ -298,22 +299,28 @@ try {
   const focusedLabel = () => page.evaluate(() => document.activeElement?.querySelector?.(':scope > span')?.textContent ?? null);
   const tool = () => page.evaluate(() => styk.state.tool);
 
+  // The application menus are submenus of the mark's menu (the band keeps its room for the open projects).
   await step('app: letters typed into the open File menu never reach the tool hotkeys; typeahead, Left and Right, Escape', async () => {
     const before = await tool();
-    await page.click('[data-app-menu=file]');
-    assert.equal(await menuOpen(), true, 'the File menu renders into #menu');
+    await page.click('.titlebar .brand');
+    await page.locator('#menu').getByRole('menuitem', {name: 'File', exact: true}).focus();
+    await page.keyboard.press('ArrowRight');   // opens File on its first row
+    assert.equal(await menuOpen(), true, 'the mark\'s menu renders into #menu');
     assert.equal(await page.evaluate(() => styk.ui.overlays.blocksHotkeys()), true);
     await page.keyboard.press('h');
     assert.equal(await tool(), before, 'H does not pick the Pan tool behind the File menu');
     await page.waitForTimeout(750);   // a new typeahead query
     await page.keyboard.press('s');
     assert.equal(await focusedLabel(), 'Save');
+    await page.keyboard.press('ArrowLeft');
+    assert.equal(await focusedLabel(), 'File', 'Left closes the File menu and returns to its row');
+    await page.keyboard.press('ArrowDown');
     await page.keyboard.press('ArrowRight');
-    assert.equal(await page.evaluate(() => document.querySelector('[data-app-menu][aria-expanded="true"]')?.dataset.appMenu), 'edit');
+    assert.equal(await page.evaluate(() => document.activeElement.closest('.ui-menu')?.getAttribute('aria-label')), 'Edit', 'Right opens the next row\'s menu');
     assert.equal(await focusedLabel(), 'Undo');
-    await page.keyboard.press('Escape');
-    assert.deepEqual(await page.evaluate(() => [document.getElementById('menu').hidden, document.activeElement.dataset.appMenu ?? null,
-      styk.ui.overlays.blocksHotkeys()]), [true, 'edit', false], 'Escape closes the menu and returns focus to its button');
+    await closeAppMenus(page);
+    assert.deepEqual(await page.evaluate(() => [document.getElementById('menu').hidden, document.activeElement.dataset.action ?? null,
+      styk.ui.overlays.blocksHotkeys()]), [true, 'menu', false], 'Escape closes the menus and returns focus to the mark');
     await page.locator('#viewport').focus();
     await page.keyboard.press('h');
     assert.equal(await tool(), 'hand', 'with the menu closed, H picks the Pan tool again');
@@ -322,7 +329,9 @@ try {
   });
 
   await step('app: Space in an open menu runs the focused row and never arms the pan chord', async () => {
-    await page.click('[data-app-menu=help]');
+    await page.click('.titlebar .brand');
+    await page.locator('#menu').getByRole('menuitem', {name: 'Help', exact: true}).focus();
+    await page.keyboard.press('ArrowRight');
     assert.equal(await focusedLabel(), 'Keyboard shortcuts');
     await page.keyboard.down('Space');
     const held = await page.evaluate(() => [Boolean(styk.state.spaceHeld), Boolean(styk.state.space), document.querySelectorAll('dialog[open]').length]);
@@ -452,7 +461,7 @@ try {
       assert.ok(cluster.length >= 2 && cluster.every(item => item === true), `${width}x${height}: ${cluster}`);
       assert.equal((await centreHits('.stage-head [data-zoom] button')).length, 2, `${width}x${height}: zoom and Fit stay`);
       await page.evaluate(() => { styk.editor.dirty = true; });
-      await page.evaluate(() => { void styk.actions.new(); });
+      await page.evaluate(() => { void styk.actions['close-project'](); });
       await page.locator('#save-changes').waitFor();
       await settle(150);
       const buttons = await centreHits('.ui-dialog[open] .ui-dialog-foot button');
@@ -578,14 +587,15 @@ try {
   });
 
   await step('app: the project name dialog starts in its field, Enter saves the name and Escape cancels', async () => {
-    await page.click('.titlebar [data-action=rename]');
+    // A double-click on the project's tab renames it; the tab shows the new name and gets focus back.
+    await page.dblclick('.project-tab[aria-selected="true"] .project-tab-name');
     assert.equal(await page.evaluate(() => document.activeElement.id), 'rename-input', 'focus starts in the field, not on Close');
     await page.keyboard.type('Kick combo');   // the name is selected, so typing replaces it
     await page.keyboard.press('Enter');
     await settle();
-    assert.deepEqual(await page.evaluate(() => [styk.editor.name, document.getElementById('project-name').textContent,
-      document.querySelectorAll('dialog[open]').length, document.activeElement.dataset.action ?? null]), ['Kick combo', 'Kick combo', 0, 'rename']);
-    await page.click('.titlebar [data-action=rename]');
+    assert.deepEqual(await page.evaluate(() => [styk.editor.name, document.querySelector('.project-tab[aria-selected="true"] .project-tab-name').textContent,
+      document.querySelectorAll('dialog[open]').length, document.activeElement.getAttribute('role')]), ['Kick combo', 'Kick combo', 0, 'tab']);
+    await page.dblclick('.project-tab[aria-selected="true"] .project-tab-name');
     await page.keyboard.type('Something else');
     await page.keyboard.press('Escape');
     await settle();
@@ -595,15 +605,15 @@ try {
   await step('app: "Save changes?" starts on Save, without a ring after a pointer and with one after a key; Escape keeps editing', async () => {
     await page.evaluate(() => { styk.editor.dirty = true; });
     const focus = () => page.evaluate(() => [document.activeElement.id, document.activeElement.matches(':focus-visible')]);
-    await page.click('[data-app-menu=file]');
-    await page.click('#menu [data-action=new]');
+    // A new animation opens beside the project; closing the project is what asks about its changes.
+    await (await openAppMenu(page, 'file')).locator('[data-action="close-project"]').click();
     await page.locator('#save-changes').waitFor();
     assert.deepEqual(await focus(), ['save-changes', false], 'opened by a pointer: focused without the ring');
     await page.keyboard.press('Escape');
     await settle();
     assert.deepEqual(await page.evaluate(() => [document.querySelectorAll('dialog[open]').length, styk.editor.dirty, styk.editor.name]), [0, true, 'Kick combo']);
-    await page.locator('#viewport').focus();
-    await page.keyboard.press('Control+n');
+    await page.locator('.project-tab[aria-selected="true"]').focus();
+    await page.keyboard.press('Delete');
     await page.locator('#save-changes').waitFor();
     assert.deepEqual(await focus(), ['save-changes', true], 'opened from the keyboard: the ring shows');
     await page.keyboard.press('Escape');
@@ -854,7 +864,7 @@ try {
     assert.deepEqual(await open(), [], 'the privacy choice waits for the release notes to be known');
     assert.deepEqual(await desktopPage.evaluate(() => styk.ui.overlays.pendingPrompts()), ['release-notes', 'privacy-first-run']);
 
-    await desktopPage.click('[data-app-menu=file]');
+    await desktopPage.click('.titlebar .brand');
     await desktopPage.evaluate(() => fakeDesktop.notes());
     await desktopPage.waitForTimeout(300);
     assert.deepEqual(await open(), [], 'nothing opens over an open menu');

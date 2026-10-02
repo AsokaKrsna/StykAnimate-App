@@ -61,7 +61,9 @@ try {
     return {x: r.left + (tick + .5) * t.pxPerTick - t._offsetX(), y: r.top + t.rowY(row) + t.rowSize(row) / 2};
   }, {uid, tick});
   async function resetRange(file = sourcePath) {
-    await page.evaluate(() => {globalThis.previousRangeReport = styk.editor.report;});
+    // Each run opens a fresh copy of the source in place of the last one: projects open in tabs of their own,
+    // so the previous run's project closes first (its changes are discarded) and the file takes its place.
+    await page.evaluate(async () => {globalThis.previousRangeReport = styk.editor.report; styk.editor.markSaved(); await styk.projects.close();});
     const choosing = page.waitForEvent('filechooser');
     await page.locator('#viewport').focus();
     await page.keyboard.press('Control+o');

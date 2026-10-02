@@ -40,14 +40,14 @@ try {
     return JSON.stringify(e.report)===b.report&&e._undo.length===b.undo&&e.revision===b.revision&&e.dirty===b.dirty&&e.selectedUid===b.uid&&e.tick===b.tick&&document.querySelector('.titlebar [data-action=save]')===nativeLocaleSave&&nativeLocaleSave.querySelector('svg')===nativeLocaleSVG;
   }));
   await page.locator('[data-setting=locale]').selectOption('ar');
-  check('Arabic interface follows RTL while canvas and timeline coordinates remain left-to-right',await page.evaluate(()=>document.querySelector('.titlebar [data-action=save]').textContent.trim()==='حفظ'&&document.querySelector('[data-setting=locale]').getAttribute('aria-label')==='اللغة'&&getComputedStyle(document.documentElement).direction==='rtl'&&getComputedStyle(document.querySelector('#viewport')).direction==='ltr'&&getComputedStyle(document.querySelector('#timeline')).direction==='ltr'));
+  check('Arabic interface follows RTL while canvas and timeline coordinates remain left-to-right',await page.evaluate(()=>document.querySelector('.titlebar [data-action=save]').getAttribute('aria-label')==='حفظ'&&document.querySelector('[data-setting=locale]').getAttribute('aria-label')==='اللغة'&&getComputedStyle(document.documentElement).direction==='rtl'&&getComputedStyle(document.querySelector('#viewport')).direction==='ltr'&&getComputedStyle(document.querySelector('#timeline')).direction==='ltr'));
   check('Settings shows the coverage notice only for incomplete messages or plurals',await page.evaluate(()=>
     Boolean(document.querySelector('[data-locale-coverage]'))===styk.localization.localization.hasFallback));
   await page.screenshot({path:path.join(output,'arabic-root-settings.png')});
   await page.locator('[data-setting=locale]').selectOption('he');
-  check('Hebrew uses the reviewed Unicode Save caption without altering document geometry',await page.evaluate(()=>document.querySelector('.titlebar [data-action=save]').textContent.trim()==='שמירה'&&styk.editor.object.root_x===325.125));
+  check('Hebrew uses the reviewed Unicode Save caption without altering document geometry',await page.evaluate(()=>document.querySelector('.titlebar [data-action=save]').getAttribute('aria-label')==='שמירה'&&styk.editor.object.root_x===325.125));
   await page.locator('[data-setting=locale]').selectOption('zh-Hans');
-  check('Chinese generic Save/Open and project-opening captions follow their message contexts',await page.evaluate(()=>document.querySelector('.titlebar [data-action=save]').textContent.trim()==='保存'&&styk.localization.t('chrome.open')==='打开'&&styk.localization.t('menu.openProject')==='打开项目…'));
+  check('Chinese generic Save/Open and project-opening captions follow their message contexts',await page.evaluate(()=>document.querySelector('.titlebar [data-action=save]').getAttribute('aria-label')==='保存'&&styk.localization.t('chrome.open')==='打开'&&styk.localization.t('menu.openProject')==='打开项目…'));
   await page.setViewportSize({width:760,height:700});
   check('Native Chinese settings fit a compact window without horizontal overflow',await page.locator('.styk-settings').evaluate(dialog=>dialog.getBoundingClientRect().width<=innerWidth-30&&dialog.scrollWidth<=dialog.clientWidth&&dialog.querySelector('.styk-settings-content').scrollWidth<=dialog.querySelector('.styk-settings-content').clientWidth));
   await page.screenshot({path:path.join(output,'chinese-compact-settings.png')});
@@ -55,7 +55,7 @@ try {
   await page.evaluate(()=>styk.settingsUI.flush());
   await page.reload();
   await page.waitForFunction(()=>window.styk?.ready&&styk.localization);
-  check('Fresh actual app restores Arabic ID and captions from persisted settings',await page.evaluate(()=>styk.state.settings.locale==='ar'&&document.documentElement.lang==='ar'&&document.querySelector('.titlebar [data-action=save]').textContent.trim()==='حفظ'));
+  check('Fresh actual app restores Arabic ID and captions from persisted settings',await page.evaluate(()=>styk.state.settings.locale==='ar'&&document.documentElement.lang==='ar'&&document.querySelector('.titlebar [data-action=save]').getAttribute('aria-label')==='حفظ'));
   await settings();
   await page.locator('[data-setting=locale]').selectOption('en');
   await page.evaluate(()=>styk.settingsUI.flush());

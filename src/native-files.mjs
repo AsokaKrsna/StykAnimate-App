@@ -38,9 +38,10 @@ export async function writeNativeBlob(desktop, blob, options = {}) {
 }
 
 /** Read the fixed recovery file as bounded IPC chunks; no base64 is produced. */
-export async function readNativeRecovery(desktop, { signal, onProgress } = {}) {
+export async function readNativeRecovery(desktop, { signal, onProgress, id } = {}) {
   if (typeof desktop.beginRecoveryRead !== 'function') throw messageError(new Error(''), "errors.nativeFiles.restartTheLatestDesktopAppToEnableStreaming2", {});
-  return readNativeStoredFile(desktop, desktop.beginRecoveryRead, {signal, onProgress});
+  // `id` names one of the listed copies; without it the newest is read.
+  return readNativeStoredFile(desktop, () => desktop.beginRecoveryRead(id), {signal, onProgress});
 }
 
 export async function readNativeClipboard(desktop, options = {}) {

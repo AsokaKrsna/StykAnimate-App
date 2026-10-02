@@ -1,26 +1,31 @@
-/* The band's components (experience.md §2): the menubar, the document button,
- * the workspace switch and the band's buttons, sized for the band, and the
- * steps of the band's fold order that fold them or their words
- * (layout/topbar.css has the band's layout, its spacing and the document
- * name's truncation). A folded word stays the control's accessible name.
+/* The band's components (experience.md §2): the workspace switch and the
+ * band's buttons, sized for the band, and the steps of the band's fold order
+ * that fold them or their words (layout/topbar.css has the band's layout and
+ * its spacing; components/project-tabs.css has the tabs, which shrink on their
+ * own before any step). A folded word stays the control's accessible name.
+ * The menus live in the mark's menu: the menubar is their source and never
+ * shows. Save is a glyph beside the history; the tab of the project in front
+ * carries its name and state. The steps that folded the document's state and
+ * Save's word (state, name8, savelabel) free nothing now and are skipped by
+ * the measurement.
  *
- *   state        the document state's words fold to its dot
- *   tight        the menubar's items tighten
- *   savelabel    Save shows its glyph; save: it folds into File (Ctrl+S)
+ *   tight        the band's spacing tightens
+ *   name         the tabs' reserve narrows: they shrink to their pictures sooner
+ *   save         Save folds into File (Ctrl+S)
  *   testrig      Build's Test rig shows its glyph
  *   export2      a session's quiet Export shows its glyph; export2out: it folds into File
  *   switchtight  the workspace switch drops its dots and some padding
  *   icons        the workspace switch shows its three glyphs (never a pill)
- *   dot          the document name folds to its dot
+ *   dot          only the project in front keeps its tab, as its picture; the others and New are in the mark's menu
  *   redo         Redo folds into Edit
- *   primary      the ink primary's word (Export at rest, a session's Done), last of all
- *   menus        the menubar folds into the mark (the minimal tier) */
+ *   primary      the ink primary's word (Export at rest, a session's Done), last of all */
 @layer features {
-  .shell-top .app-menubar { margin-inline-end: var(--space-1); }
+  .shell-top .app-menubar { display: none; }
   .shell-top .band-export, .shell-top .band-done { --_h: var(--control-lg); --_px: 16px; }
   .shell-top .band-cancel, .shell-top .band-testrig { --_h: var(--control-lg); }
   .shell-top :where(.band-export, .band-done, .band-testrig) > svg { --icon-size: 15px; }
   .shell-top .band-save { margin-inline-end: var(--space-0-5); }
+  .shell-top .band-history, .shell-top .band-save { flex: none; }
 
   /* The workspace switch: the app's main choice, a pill on the band. Each workspace has its colour (Animate blue,
    * Draw orange, Build mint): its dot, and while it is the current one the soft tint of its pill. */
@@ -34,20 +39,14 @@
   .workspace-switch :where([aria-pressed="true"]) > .ui-dot { opacity: 1; box-shadow: 0 0 0 3px var(--_mode-soft); }
 
   /* Words that fold keep their node as the accessible name. */
-  .shell-top[data-band~="state"] :where(#save-state),
-  .shell-top[data-band~="savelabel"] :where(.band-save > .band-label),
   .shell-top[data-band~="testrig"] :where(.band-testrig > .band-label),
   .shell-top[data-session][data-band~="export2"] :where(.band-export > .band-label),
   .shell-top[data-band~="icons"] :where(.workspace-switch .band-label),
-  .shell-top[data-band~="dot"] :where(#project-name),
   .shell-top:not([data-session])[data-band~="primary"] :where(.band-export > .band-label),
   .shell-top[data-band~="primary"] :where(.band-done > .band-label) {
     position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
   }
-  .shell-top[data-band~="tight"] .app-menubar { margin-inline-end: 0; }
-  .shell-top[data-band~="tight"] .ui-menubar-item { padding-inline: 5px; }
   /* A glyph-only button keeps the band's 32px square. */
-  .shell-top[data-band~="savelabel"] .band-save,
   .shell-top[data-band~="testrig"] .band-testrig,
   .shell-top[data-session][data-band~="export2"] :where(.band-export),
   .shell-top:not([data-session])[data-band~="primary"] :where(.band-export),
@@ -56,13 +55,14 @@
   .shell-top[data-band~="switchtight"] .ui-segmented-item { gap: 0; padding-inline: var(--space-2-5); }
   .shell-top[data-band~="switchtight"] :where(.workspace-switch) .ui-dot { display: none; }
   .shell-top[data-band~="icons"] .ui-segmented-item { padding-inline: var(--space-1-5); }
-  .shell-top[data-band~="icons"] .ui-menubar-item { padding-inline: var(--space-1); }
   .shell-top[data-band~="icons"] .shell-mark { padding-inline: var(--space-1) var(--space-0-5); }
   .shell-top[data-band~="icons"] :where(.workspace-switch) .band-ws-icon { display: inline-flex; }
   .shell-top[data-band~="icons"] :where(.workspace-switch [aria-pressed="true"]) .band-ws-icon { color: var(--accent-text); }
-  /* The document folded to its dot keeps a 28px target. */
-  .shell-top[data-band~="dot"] .ui-doc { min-inline-size: var(--control-md); justify-content: center; padding-inline: var(--space-2); }
+  /* The tabs give their reserve back in two steps; the strip's own width never depends on how many there are. */
+  .shell-top[data-band~="name"] .project-tabs { min-inline-size: 120px; }
+  .shell-top[data-band~="dot"] .project-tabs { min-inline-size: 36px; margin-inline-start: 0; }
+  .shell-top[data-band~="dot"] :where(.project-tab:not([aria-selected="true"]), .project-tabs-add) { display: none; }
+  .shell-top[data-band~="dot"] .project-tab { min-inline-size: 36px; }
   .shell-top[data-band~="redo"] .band-redo { display: none; }
   .shell-top[data-session][data-band~="export2out"] :where(.band-export) { display: none; }
-  .shell-top[data-band~="menus"] .app-menubar { display: none; }
 }

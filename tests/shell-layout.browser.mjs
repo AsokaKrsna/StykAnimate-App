@@ -26,6 +26,7 @@
  * back too.
  */
 import {chromium} from './support/playwright.mjs';
+import {openAppMenu} from './support/app-menu.mjs';
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {BAND_FOLDS, stageFloor, timelineDefaultHeight} from '../src/shell/layout-solver.mjs';
@@ -240,7 +241,7 @@ try {
   await step('the controls that are never hidden stay visible, reachable and at least 24px', async () => {
     const always = ['.titlebar [data-action="export"]', '[data-action="undo"]', '[data-workspace-mode="animate"]', '[data-workspace-mode="draw"]',
       '[data-workspace-mode="rig"]:not(#builder-done)', '#zoom-label', '#play-button', '#onion-button'];
-    const docked = ['[data-app-menu="file"]', '#properties-tab', '#vfx-tab', '#library-tab', '#timeline-workflow [data-timeline-mode="advanced"]'];
+    const docked = ['.titlebar .brand', '.project-tab[aria-selected="true"]', '.project-tabs-add', '#properties-tab', '#vfx-tab', '#library-tab', '#timeline-workflow [data-timeline-mode="advanced"]'];
     for (const [width, height] of SIZES) {
       await resize(width, height);
       const selectors = [...always, ...(width > 800 ? docked : ['.shell-sheet-button'])];
@@ -268,7 +269,7 @@ try {
     await workspace('animate');
   });
 
-  await step('the band folds its words in order, and the menubar folds into the mark only at the minimal tier', async () => {
+  await step('the band folds its words in order, and the menus live in the mark at every size', async () => {
     const read = () => page.evaluate(() => ({
       steps: (document.querySelector('.titlebar').dataset.band ?? '').split(' ').filter(Boolean),
       menubar: document.querySelector('.app-menubar').checkVisibility(),
@@ -276,36 +277,32 @@ try {
       tier: document.documentElement.dataset.tier,
     }));
     await resize(1440, 900);
-    assert.deepEqual(await read(), {steps: [], menubar: true, save: true, tier: 'wide'}, 'a wide band folds nothing: Save stays beside Export');
+    assert.deepEqual(await read(), {steps: [], menubar: false, save: true, tier: 'wide'}, 'a wide band folds nothing: Save stays beside Export');
     let previous = [];
-    // With the desktop window controls (the step above shows them), Animate keeps the menubar down to 700px
-    // (experience.md §1.8, reference/158); at 661px the band holds the workspace switch and history too, so it
-    // folds the menubar into the mark and keeps Export's word instead (reference/104).
-    for (const width of [1280, 1100, 1024, 900, 801, 720, 700]) {
+    // The band keeps its room for the open projects: the menus never dock in it. The tabs shrink on their own
+    // before anything folds; the steps that folded the project's state and Save's word are gone.
+    const retired = ['state', 'name8', 'savelabel'];
+    for (const width of [1280, 1100, 1024, 900, 801, 720, 700, 661]) {
       await resize(width, 700);
       const band = await read();
-      assert.equal(band.menubar, true, `${width}: the menubar stays docked while the band fits`);
-      assert.ok(!band.steps.includes('menus'), `${width}: ${band.steps}`);
+      assert.equal(band.menubar, false, `${width}: the menus live in the mark`);
+      assert.deepEqual(band.steps.filter(item => retired.includes(item)), [], `${width}: ${band.steps}`);
       const order = band.steps.map(item => BAND_FOLDS.indexOf(item));
       assert.deepEqual(order, [...order].sort((a, b) => a - b), `${width}: the fold order (${band.steps})`);
       assert.ok(previous.every(item => band.steps.includes(item)), `${width}: folds only accumulate (${previous} then ${band.steps})`);
       previous = band.steps;
     }
-    await resize(661, 700);
-    const narrow = await read();
-    assert.ok(narrow.menubar ? !narrow.steps.includes('menus') : narrow.steps[0] === 'menus' && narrow.tier === 'minimal', `661: ${narrow.steps}`);
-    if (!narrow.menubar) assert.ok(!narrow.steps.includes('primary'), '661: where the menubar folds, Export keeps its word');
     await resize(640, 480);
     const minimal = await read();
     assert.equal(minimal.tier, 'minimal');
-    assert.equal(minimal.menubar, false, 'the menubar folds into the mark');
-    assert.equal(minimal.steps[0], 'menus');
+    assert.equal(minimal.menubar, false);
     await page.click('.brand');
     for (const name of ['File', 'Edit', 'View', 'Animation', 'Help'])
       assert.equal(await page.getByRole('menuitem', {name, exact: true}).getAttribute('aria-haspopup'), 'menu', `the mark's menu lists ${name}`);
     await page.getByRole('menuitem', {name: 'Animation', exact: true}).click();
     await page.getByRole('menuitemcheckbox', {name: 'Audio'}).click();
-    assert.equal(await page.locator('#timeline-audio').getAttribute('aria-expanded'), 'true', 'a folded menu runs its command (the header folds Audio here)');
+    // A folded menu runs its command (the header folds Audio here).
+    await page.waitForFunction(() => document.getElementById('timeline-audio').getAttribute('aria-expanded') === 'true');
     await page.evaluate(() => document.getElementById('timeline-audio').click());
     await resize(1440, 900);
     assert.deepEqual((await read()).steps, []);
@@ -317,17 +314,21 @@ try {
       new MutationObserver(records => { window.bandMeasures += records.length; })
         .observe(document.querySelector('.titlebar'), {attributes: true, attributeFilter: ['data-band', 'style']});
     });
-    const width = await page.evaluate(() => document.getElementById('save-state').getBoundingClientRect().width);
+    // The tab of the project in front carries its state: a dot in the room the tab already has.
+    const front = '.project-tab[aria-selected="true"]';
+    const width = await page.evaluate(selector => document.querySelector(selector).getBoundingClientRect().width, front);
     await page.evaluate(() => { styk.editor.dirty = true; styk.actions['zoom-in']?.(); });
     await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 100)));
     await settle();
-    const dirty = await page.evaluate(() => {
-      const state = document.getElementById('save-state');
-      return {text: state.textContent, width: state.getBoundingClientRect().width, color: getComputedStyle(state).color,
-        red: getComputedStyle(document.documentElement).getPropertyValue('--danger-text').trim()};
-    });
-    assert.equal(dirty.text, 'Edited');
-    assert.equal(dirty.width, width, 'the state keeps the width of its widest words');
+    const dirty = await page.evaluate(selector => {
+      const tab = document.querySelector(selector), dot = tab.querySelector('.project-tab-dot');
+      return {state: tab.dataset.state, label: tab.getAttribute('aria-label'), width: tab.getBoundingClientRect().width,
+        color: getComputedStyle(dot).backgroundColor, shown: getComputedStyle(dot).opacity};
+    }, front);
+    assert.equal(dirty.state, 'edited');
+    assert.match(dirty.label, /Edited$/, 'the tab says so in words too');
+    assert.equal(dirty.shown, '1');
+    assert.equal(dirty.width, width, 'the state never changes the tab\'s width');
     assert.equal(await page.evaluate(() => window.bandMeasures), 0, 'no measuring pass ran');
     assert.notEqual(dirty.color, 'rgb(179, 38, 30)', 'unsaved changes are neutral');
     await page.evaluate(() => { styk.editor.dirty = false; styk.actions['zoom-out']?.(); });
@@ -852,7 +853,7 @@ try {
   const cards = () => page.locator('#layout-popover [role="radio"]').evaluateAll(list => list.map(card => `${card.dataset.preset}${card.getAttribute('aria-checked') === 'true' ? '*' : ''}`));
   const layoutOpen = () => page.locator('#layout-popover').evaluate(element => element.matches(':popover-open'));
   const openLayout = async () => {
-    await page.click('[data-app-menu="view"]');
+    await openAppMenu(page, 'view');
     await page.getByRole('menuitem', {name: /^Layout…/}).click();
     await page.waitForFunction(() => document.getElementById('layout-popover')?.matches(':popover-open'));
     await settle();

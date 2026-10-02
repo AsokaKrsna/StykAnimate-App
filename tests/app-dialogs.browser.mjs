@@ -43,8 +43,9 @@ try {
     window.prompts = {...api, actions};
   });
 
-  await step('Save changes? names the project, starts on Save and Don\'t save lets New replace it', async () => {
-    await page.evaluate(() => { styk.editor.name = 'Kick combo'; styk.editor.dirty = true; window.pendingNew = styk.actions.new(); });
+  // A new animation opens beside the project (project tabs): closing the project is what asks about its changes.
+  await step('Save changes? names the project, starts on Save and Don\'t save lets the project close', async () => {
+    await page.evaluate(() => { styk.editor.name = 'Kick combo'; styk.editor.dirty = true; window.pendingNew = styk.actions['close-project'](); });
     await page.locator('#save-changes').waitFor();
     assert.deepEqual(await openDialogs(), ['Save changes to Kick combo?']);
     assert.equal(await focused(), 'save-changes');

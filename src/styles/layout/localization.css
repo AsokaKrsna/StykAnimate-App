@@ -30,5 +30,5 @@
   }
   :where(:root[dir="rtl"]) .ui-menu-sub { transform: rotate(180deg); }
   :where(:root[dir="rtl"]) .ui-section-chev { transform: scaleX(-1); }
-  .ui-doc-name, .library-name, .sheet-layer-name { unicode-bidi: plaintext; }
+  .library-name, .sheet-layer-name { unicode-bidi: plaintext; }
 }

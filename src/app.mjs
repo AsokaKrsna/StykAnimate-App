@@ -56,6 +56,10 @@ import { workload, documentComplexity } from './telemetry-workload.mjs';
 import { sizeBucket,complexityBucket,fpsBucket } from './telemetry-schema.mjs';
 import { BrowserRecoverySession, readBrowserRecovery } from './browser-recovery.mjs';
 import {DocumentSave, RecoveryDeadline, documentCheckpoint, matchesDocumentCheckpoint} from './document-save.mjs';
+import {createProjectTabsHost} from './project-tabs-host.mjs';
+import {installProjectTabs} from './shell/project-tabs-view.mjs';
+import {createProjectSwitcher} from './shell/project-switcher.mjs';
+import {sessionProject} from './editor-sessions.mjs';
 import { PrivacyUI } from './privacy-ui.mjs';
 import { FeedbackUI } from './feedback-ui.mjs';
 import { UpdateUI } from './update-ui.mjs';
@@ -197,12 +201,33 @@ const browserRecovery = desktop ? null : new BrowserRecoverySession();
 const manualSave = new DocumentSave(), recoveryDeadline = new RecoveryDeadline();
 let saveMutationEpoch = 0, finalizingDocument = false;
 let documentActivation = Promise.resolve();
+// The mutation epoch the project in front had when its recovery copy was last written (-1: it has none).
+let recoveredEpoch = -1;
+// A project is opening or closing: its save target is being bound, so nothing else may come to the front.
+let projectTransitions = 0;
+// The open projects (project-tabs-host.mjs, docs/PROJECT-TABS.md): one is live in this editor, the others rest
+// with their history. The hooks are this file's side of a project leaving the front or coming to it.
+const projects = createProjectTabsHost({editor, hooks: {
+  settle: () => settleProject(),
+  capture: () => captureProject(),
+  restore: (saved) => restoreProject(saved),
+  shown: (record, saved) => projectShown(saved),
+  confirmClose: () => dialogs.confirmReplace(),
+  blank: () => blankProject(),
+  release: (record) => releaseProject(record),
+  refuse: (reason) => projectRefused(reason),
+  busy: () => Boolean(projectTransitions || manualSave.active || state.importing || finalizingDocument || [...exportJobs].some((job) => job.raster)),
+  idle: () => !(state.playing || state.scrubbing || state.importing || manualSave.active || exportJobs.size || editingGestureActive()),
+  checkpoint: (record, signal) => writeRestingRecovery(record, signal),
+  checkpointFailed: (error) => status({messageKey: "app.recoveryCopyCouldNotBeWritten", messageParams: {message: error.message}}, true),
+}});
 const audioEngine = new AudioEngine({desktop, onError: error => { pause(); fail(error); }});
 let audioPreparation, audioScrubController, audioScrubAt = 0;
 editor.setFrameClipboardWorker(clipboardWorker);
 function interruptRecovery() {
   let aborted = false;
-  for (const job of exportJobs) if (job.recovery) { job.controller.abort(); aborted = true; }
+  // A resting project's copy is not interrupted: nothing the person does in front can change what it stores.
+  for (const job of exportJobs) if (job.recovery && !job.resting) { job.controller.abort(); aborted = true; }
   // Every gesture that kills a running export restarts its serialization from
   // zero; on large documents that work can never finish while the user keeps
   // interacting. Back off so attempts spread out instead of churning forever.
@@ -1927,7 +1952,7 @@ function loop(now) {
         liveEditing: Boolean(editor.dragging || state.drag || keyboardHandleGesture),
         playing: state.playing,
         artworkRevision: editor.definitionRevision,
-        canvasHandles: !pendingColorSample && (state.handles || state.tool === 'attach') && gpuHandlesEnabled() ? canvasHandles(geometry) : undefined,
+        canvasHandles: !pendingColorSample && !pendingProjectPicture && (state.handles || state.tool === 'attach') && gpuHandlesEnabled() ? canvasHandles(geometry) : undefined,
         outlineHandles: state.settings.outlineHandles,
         onionFrames,
         hiddenUids: effectiveHidden(),
@@ -1951,6 +1976,13 @@ function loop(now) {
         sample.finish(null,sample.radius?result:result.color);
       }catch(error){sample.finish(error);}
       requestRender(); // Restore GPU handles after sampling the artwork before presentation.
+    }
+    // A project's picture is read here too: the canvas holds this frame only until it is presented.
+    if(pendingProjectPicture && !state.editablePreparing && !state.playing){
+      const request=pendingProjectPicture,pending=stagePicture();
+      if(pending)void pending.then(bitmap=>{if(bitmap)projectTabsView.setPicture(request.id,bitmap);});
+      request.finish(Boolean(pending));
+      requestRender(); // The joints left out of the picture come back.
     }
     if(sampled){stages.scene=performance.now()-stageStarted;stageStarted=performance.now();Object.assign(stages,state.renderer.telemetryStages);}
     // Final editor overlay pass: keep the actual camera above artwork and tool feedback.
@@ -2151,25 +2183,19 @@ let savingDocument = false, lastSave = null;
 function saveStateMessage(dirty) {
   if (savingDocument) return {key: 'app.saving'};
   if (dirty) return {key: 'app.edited'};
-  return lastSave?.report === editor.report ? {key: 'app.savedAt', params: {time: {format: 'date', value: lastSave.time, options: {hour: 'numeric', minute: '2-digit'}}}} : {key: 'app.saved'};
+  return lastSave && lastSave.report === editor.report ? {key: 'app.savedAt', params: {time: {format: 'date', value: lastSave.time, options: {hour: 'numeric', minute: '2-digit'}}}} : {key: 'app.saved'};
 }
 function updateTitle() {
-  const name = editor.name || "Untitled", dirty = editor.dirty, message = saveStateMessage(dirty), words = interfaceText(message.key, message.params),
-    revision = `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}:${saveMutationEpoch}`;
+  const name = editor.name || "Untitled", dirty = editor.dirty, message = saveStateMessage(dirty), words = interfaceText(message.key, message.params);
+  // The tab of the project in front shows its name and state (shell/project-tabs-view.mjs); the list changes only when they do.
+  projects.sync({name, dirty, saved: savingDocument ? "saving" : dirty ? null : lastSave && lastSave.report === editor.report ? lastSave.time : null});
+  const published = documentStateNow(), revision = published.revision;
   if (name === shownTitle.name && dirty === shownTitle.dirty && revision === shownTitle.revision && words === shownTitle.words) return;
-  if (name !== shownTitle.name || dirty !== shownTitle.dirty || words !== shownTitle.words) {
+  if (name !== shownTitle.name || dirty !== shownTitle.dirty || words !== shownTitle.words)
     localizedText(document.querySelector("title"), "app.stykanimate", {value: dirty ? "• " : "", name: name});
-    if ($("project-name").textContent !== name) $("project-name").textContent = name;
-    // One dot: neutral while there are unsaved changes (never red), the success tone once saved.
-    $("dirty-dot").classList.toggle("dirty", dirty);
-    $("dirty-dot").dataset.tone = dirty || savingDocument ? "neutral" : "success";
-    localizedText($("save-state"), message.key, message.params);
-    $("save-state").dataset.dirty = String(dirty);
-    localizedAttribute($("project-name").closest("button"), "title", "app.renameProject", {name});
-  }
   const documentChanged = name !== shownTitle.name || dirty !== shownTitle.dirty || revision !== shownTitle.revision;
   shownTitle = { name, dirty, revision, words };
-  if (documentChanged) desktop?.setDocumentState?.({ name, dirty, revision });
+  if (documentChanged) desktop?.setDocumentState?.(published);
 }
 /** Auto key belongs to the Advanced timeline: edits on held frames key the playhead instead of the preceding key. */
 function syncAutoKey() {
@@ -3401,7 +3427,7 @@ async function api(path, options = {}) {
 async function acceptImport(
   result,
   name,
-  { replaceApproved = false, openToken } = {},
+  { openToken, recoveryId } = {},
 ) {
   try {
   let report = result.document ?? result.report ?? result;
@@ -3418,23 +3444,17 @@ async function acceptImport(
     const importedName = result.filename || name || {messageKey: "app.figure"};
     notify(interfaceText("app.imported", {value: importedName}), "app.imported", {value: importedName});
   } else {
-    const approvalCurrent =
-      replaceApproved &&
-      replaceApproved.report === editor.report &&
-      replaceApproved.revision === editor.revision &&
-      replaceApproved.draftRevision === editor.frameDraftRevision &&
-      !editor._drag &&
-      !editor._animationEdit;
-    if (!approvalCurrent && !(await dialogs.confirmReplace())) return false;
     let initialScene;
     try {
-      await editor.loadAsync(
+      // The project opens in a tab of its own; the one in front rests beside it (openProject).
+      if (!await openProject((session) => editor.loadAsync(
         report,
         (name || result.filename || "Untitled").replace(
           /\.(piv|stk|styk|stkz|stykmov|json|nodes|nodemc|stknds)$/i,
           "",
         ),
         {
+          ...session,
           initialFrameIndex: kind === "piv" && !savedDraft ? "last" : 0,
           prepareScene: state.renderer?.prepareInitialScene
             ? async (incoming) => {
@@ -3459,7 +3479,7 @@ async function acceptImport(
               }
             : undefined,
         },
-      );
+      ), {openToken, recoveryId})) return false;
       state.sourceId = result.sourceId || null;
       importer.adoptSource(result);
       if(result.playbackFrames) {
@@ -3480,14 +3500,6 @@ async function acceptImport(
       images.clear();
       fit();
     }
-    if (desktop?.activateDocument) {
-      // A launch-time file open races init()'s document activation; the file's
-      // activation must be the one that binds the native save target.
-      await documentActivation;
-      state.documentToken = (
-        await desktop.activateDocument({ openToken })
-      ).documentToken;
-    }
   }
   state.lastImportWarnings = [...(result.warnings || report._styk?.sticknodes?.warnings || []), ...(report.import_warnings || [])];
   if(state.lastImportWarnings.length)dialogs.showImportNotes(state.lastImportWarnings, {pivot: Boolean(report.import_warnings?.length),report});
@@ -3500,6 +3512,186 @@ async function acceptImport(
   return true;
   } finally {
     if (result.sourceOwner !== importer.activeSourceOwner) void importer.releaseSource(result);
+  }
+}
+/**
+ * Opens a project. `load(session)` publishes it in the editor: a load that takes the `session` options, which
+ * park the project in front as a tab unless that one is the untouched empty animation, which gives its place.
+ * The new project then gets its own save target on the desktop (`openToken`: the file it came from;
+ * `recoveryId`: the recovery copy it was restored from). Resolves false when nothing opened.
+ */
+async function openProject(load, { blank = false, openToken, recoveryId } = {}) {
+  if (!projects.canOpen() || !(await projects.settle()) || !projects.canOpen()) return false;
+  const beside = !projects.replaceable(), replaced = beside ? null : state.documentToken;
+  projectTransitions++;
+  try {
+    try { await load(beside ? { onDetach: (session) => projects.park(session) } : {}); }
+    catch (error) { projects.failed(); throw error; }
+    projects.opened({ blank });
+    // The open document is a new project: nothing of the previous one in front applies to it.
+    state.documentToken = null; state.sourceId = null; state.lastImport = null; state.lastImportWarnings = [];
+    lastSave = null; recoveredEpoch = -1; recoveryDeadline.reset(); state.recoveryBackoff = 1;
+    if (!beside) { importer.adoptSource(null); if (replaced) void desktop?.releaseDocument?.(replaced)?.catch(fail); }
+    scheduleProjectPicture();
+    if (desktop?.activateDocument) {
+      // A launch-time file open races init()'s document activation; the file's
+      // activation must be the one that binds the native save target.
+      await documentActivation;
+      try { state.documentToken = (await desktop.activateDocument({ openToken, recoveryId })).documentToken; }
+      catch (error) {
+        // The project is open either way; without its file it saves through Save as.
+        state.documentToken = (await desktop.activateDocument({})).documentToken;
+        throw error;
+      }
+    }
+    return true;
+  } finally { projectTransitions--; queueUI(); }
+}
+/** Ends what belongs to the project in front before another takes its place. Resolves false to keep it in front. */
+async function settleProject() {
+  finishCurrentEdit();
+  if (state.drag) cancelDrag();
+  cancelPolygonDraft();
+  construction?.cancel();
+  cancelSpritePlacement();
+  closeMenu();
+  // A figure being built ends by its own choice (keep or discard); Draw leaves once its pixels are published.
+  if (builderMode?.active) { builderMode.requestExit(); if (builderMode.active) return false; }
+  if (drawingController?.active) { await studioShell.changeMode("animate"); if (drawingController.active) return false; }
+  await drawingController?.barrier();
+  editablePreparation.cancel();
+  if (editor._drag || editor._animationEdit || editor._authoredPoseEdit) return false;
+  // The tab keeps a picture of the project as it was left: one frame, drawn now.
+  await requestProjectPicture();
+  return !(editor._drag || editor._animationEdit || editor._authoredPoseEdit);
+}
+/**
+ * A small picture of the stage as it is on screen, cropped to the artboard, for the project's tab and the
+ * switcher. Read from the canvas the renderer already drew: nothing is rendered for it. Null when the
+ * artboard is not on screen.
+ */
+function stagePicture() {
+  if (!state.renderer || document.hidden) return null;
+  const box = viewport.getBoundingClientRect(), board = $("artboard").getBoundingClientRect();
+  if (!(box.width > 0) || state.view.rotation || state.view.flip) return null;
+  const ratio = canvas.width / box.width;
+  const left = Math.max(0, board.left - box.left), top = Math.max(0, board.top - box.top),
+    right = Math.min(box.width, board.right - box.left), bottom = Math.min(box.height, board.bottom - box.top);
+  if (right - left < 16 || bottom - top < 16) return null;
+  const width = Math.round((right - left) * ratio), height = Math.round((bottom - top) * ratio), scale = Math.min(1, 256 / width);
+  try {
+    return createImageBitmap(canvas, Math.round(left * ratio), Math.round(top * ratio), width, height,
+      { resizeWidth: Math.max(1, Math.round(width * scale)), resizeHeight: Math.max(1, Math.round(height * scale)), resizeQuality: "medium" }).catch(() => null);
+  } catch { return null; }
+}
+/**
+ * Takes the picture of the project in front: the next frame is drawn without joints and read in the render
+ * loop, as the colour picker's sample is. Resolves once it was read (false when it could not be, soon after).
+ */
+let pendingProjectPicture = null, pictureTimer = 0;
+function requestProjectPicture() {
+  return new Promise((resolve) => {
+    pendingProjectPicture?.finish(false);
+    const finish = (taken) => {
+      clearTimeout(timeout);
+      if (pendingProjectPicture?.finish === finish) pendingProjectPicture = null;
+      resolve(taken);
+    };
+    const timeout = setTimeout(() => finish(false), 250);
+    pendingProjectPicture = { id: projects.tabs.activeId, finish };
+    requestRender();
+  });
+}
+/** The picture of a project that just came to the front, or was saved: once nothing is moving. Leaving takes one too (settleProject). */
+function scheduleProjectPicture(delay = 700, attempts = 4) {
+  clearTimeout(pictureTimer);
+  pictureTimer = setTimeout(() => {
+    if (state.playing || state.editablePreparing || editingGestureActive()) { if (attempts > 1) scheduleProjectPicture(1200, attempts - 1); return; }
+    void requestProjectPicture();
+  }, delay);
+}
+/** What this file holds for the project in front: read as it leaves, before the editor publishes the next one. */
+function captureProject() {
+  clearTimeout(pictureTimer);
+  return {
+    view: { ...state.view }, fitted: isFittedView(),
+    hidden: new Set(state.hidden), locked: new Set(state.locked),
+    documentToken: state.documentToken, sourceId: state.sourceId, sourceOwner: importer.detachSource(),
+    lastImport: state.lastImport, lastImportWarnings: state.lastImportWarnings, lastSave,
+    recoveryCurrent: recoveredEpoch === saveMutationEpoch,
+  };
+}
+function restoreProject(saved) {
+  state.view = saved.view;
+  state.hidden = saved.hidden; state.locked = saved.locked;
+  state.documentToken = saved.documentToken; state.sourceId = saved.sourceId;
+  importer.attachSource(saved.sourceOwner);
+  state.lastImport = saved.lastImport; state.lastImportWarnings = saved.lastImportWarnings; lastSave = saved.lastSave;
+  // Saves follow the project in front. Sent now, in order, so no save can reach the desktop before it.
+  if (saved.documentToken) void desktop?.selectDocument?.(saved.documentToken)?.catch(fail);
+}
+/** A project came to the front: `saved` is the state it rested with, absent for a new empty one. */
+function projectShown(saved) {
+  images.clear();
+  recoveryDeadline.reset(); state.recoveryBackoff = 1; state.recoveryFailed = false;
+  clearTimeout(state.recoveryTimer); state.recoveryTimer = null;
+  // The editor published the project, which counts as a change: its recovery copy is as current as it was.
+  recoveredEpoch = saved?.recoveryCurrent ? saveMutationEpoch : -1;
+  // A view the person left fitted follows the window it comes back to; a zoomed or panned one returns as it was.
+  if (!saved || saved.fitted) fit();
+  else { fittedSnapshot = null; placeArtboard(); requestRender(); }
+  queueUI();
+  if (editor.dirty && recoveredEpoch !== saveMutationEpoch) scheduleRecovery();
+  status({messageKey: "app.ready", messageParams: {}});
+  warmPlayback({immediate: true});
+  scheduleProjectPicture();
+}
+/** The last project closed: the window keeps a new, empty one in its place. */
+function blankProject() {
+  editor.newDocument();
+  state.documentToken = null; state.sourceId = null; state.lastImport = null; state.lastImportWarnings = [];
+  state.hidden.clear(); state.locked.clear();
+  lastSave = null;
+  if (desktop?.activateDocument) {
+    projectTransitions++;
+    documentActivation = documentActivation.then(() => desktop.activateDocument({}))
+      .then((document) => { state.documentToken = document.documentToken; }).catch(fail).finally(() => { projectTransitions--; });
+  }
+}
+/** A project closed: what it held outside the editor ends with it. Its recovery copy goes too, as closing decided its changes. */
+function releaseProject(record) {
+  const saved = record.state ?? {}, session = record.session;
+  if (session) {
+    drawingResourcesFor(session.report)?.dispose();
+    for (const scope of session._movieclipScopes ?? []) drawingResourcesFor(scope.parent.report)?.dispose();
+  }
+  if (saved.sourceOwner) void importer.releaseSource(saved.sourceOwner);
+  if (desktop) {
+    if (saved.documentToken) void Promise.resolve(desktop.deleteRecovery?.({ documentToken: saved.documentToken })).catch(() => {})
+      .then(() => desktop.releaseDocument?.(saved.documentToken)).catch(fail);
+  } else void browserRecovery.clear(record.id).catch(() => {});
+}
+function projectRefused(reason) {
+  if (reason === "limit") notify(interfaceText("app.closeAProjectToOpenAnother", {count: projects.tabs.limit}), "app.closeAProjectToOpenAnother", {count: projects.tabs.limit});
+  else notify(interfaceText("app.waitForTheSaveOrTheOpeningFileToFinish"), "app.waitForTheSaveOrTheOpeningFileToFinish", {});
+}
+/**
+ * The recovery copy of a project that rests with unsaved changes (project-tabs-host.mjs). It cannot change while it
+ * rests, so the snapshot needs no revision checks and edits to the project in front do not interrupt it.
+ */
+async function writeRestingRecovery(record, signal) {
+  const { report, name } = sessionProject(record.session), saved = record.state;
+  const controller = new AbortController(), job = { controller, recovery: true, resting: true };
+  const abort = () => controller.abort();
+  signal.addEventListener("abort", abort, { once: true });
+  exportJobs.add(job);
+  try {
+    const blob = await documentExporter.export(report, { format: "styk", name, sourceId: saved.sourceId, signal: controller.signal });
+    if (desktop) return await writeNativeBlob(desktop, blob, { recovery: true, name, signal: controller.signal, documentToken: saved.documentToken });
+    return await browserRecovery.write(blob, name, controller.signal, record.id);
+  } finally {
+    exportJobs.delete(job);
+    signal.removeEventListener("abort", abort);
   }
 }
 function cancelSpritePlacement() {
@@ -3815,7 +4007,7 @@ async function performNativeSave({saveAs}) {
         }
         // An anchor download has no completion acknowledgement. Keep both the
         // unsaved state and a recovery copy, including when timed autosave is off.
-        try { await browserRecovery.write(blob, name, signal); }
+        try { await browserRecovery.write(blob, name, signal, projects.tabs.activeId); }
         catch (error) { if (error.name === "AbortError") throw error; status({messageKey: "app.recoveryCopyCouldNotBeWritten", messageParams: {message: error.message}}, true); }
         if (signal.aborted) throw messageError(new DOMException('', "AbortError"), "errors.app.saveCancelled", {});
         await exportFlow.saveBlob(blob, `${name || "Untitled"}.styk`, signal);
@@ -3838,14 +4030,15 @@ async function performNativeSave({saveAs}) {
           // The project file has committed. Optional recovery cleanup must not
           // turn that successful atomic save into a failed Save/Close result.
           try {
-            if (desktop?.deleteRecovery) await desktop.deleteRecovery();
-            else if (!desktop) await browserRecovery.clear();
+            recoveredEpoch = -1;
+            if (desktop?.deleteRecovery) await desktop.deleteRecovery({documentToken});
+            else if (!desktop) await browserRecovery.clear(projects.tabs.activeId);
           } catch (error) { fail(error); }
         }
       }
       updateTitle();
       if (editor.dirty) notify(interfaceText("app.savedACopyNewerChangesAreStillUnsaved"), "app.savedACopyNewerChangesAreStillUnsaved", {});
-      else status({messageKey: "app.projectSaved", messageParams: {}});
+      else { status({messageKey: "app.projectSaved", messageParams: {}}); scheduleProjectPicture(0, 1); }
     } else status(downloaded ? {messageKey: "app.downloadStartedTheProjectStaysEditedUntilA", messageParams: {}} : {messageKey: "app.saveCancelled", messageParams: {}});
     return Boolean(
       saved &&
@@ -3861,6 +4054,15 @@ async function performNativeSave({saveAs}) {
     await sink?.abort();
   }
 }
+/**
+ * What the desktop holds to guard closing the window: the project in front, and whether any open project has
+ * unsaved changes (how many, and one of their names for the question it asks).
+ */
+function documentStateNow() {
+  const open = projects.summary();
+  return {name: editor.name || "Untitled", dirty: open.unsaved > 0, activeDirty: editor.dirty, unsaved: open.unsaved, unsavedName: open.unsavedName,
+    revision: `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}:${saveMutationEpoch}:${open.stamp}`};
+}
 /** Close/restart only the saved revision, including changes arriving during IPC. */
 async function finishDocumentAction(action, savedCheckpoint = null) {
   if (finalizingDocument) return false;
@@ -3874,19 +4076,22 @@ async function finishDocumentAction(action, savedCheckpoint = null) {
       await flush();
       if (!current()) return false;
     }
-    await desktop?.setDocumentState({name: editor.name, dirty: editor.dirty,
-      revision: `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}:${saveMutationEpoch}`});
+    await desktop?.setDocumentState(documentStateNow());
     if (!current()) {
       // Ensure the desktop retains the current dirty state if publication itself
       // yielded to a new edit; no close or restart follows this acknowledgement.
-      await desktop?.setDocumentState({name: editor.name, dirty: editor.dirty,
-        revision: `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}:${saveMutationEpoch}`});
+      await desktop?.setDocumentState(documentStateNow());
       return false;
     }
-    const result = await desktop?.[action]({saved: Boolean(savedCheckpoint),
-      revision: `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}:${saveMutationEpoch}`});
+    const result = await desktop?.[action]({saved: Boolean(savedCheckpoint), revision: documentStateNow().revision});
     return result !== false;
   } finally { finalizingDocument = false; }
+}
+/** The window closes or restarts once every open project with changes is saved; a cancelled save keeps it open. */
+async function saveEveryProjectThen(action) {
+  if (!await projects.saveAll(() => saveNative())) return false;
+  if (projects.summary().unsaved) return false;
+  return finishDocumentAction(action, documentCheckpoint(editor, state.documentToken, saveMutationEpoch));
 }
 /**
  * Shows `body` (trusted markup built here) in the shared #dialog under a
@@ -4078,19 +4283,42 @@ installMenuBar(document.querySelector(".app-menubar"), {
 function closeMenu(reason = "close") {
   menuFor(menuHost)?.close(reason, { restore: false });
 }
-/** At the minimal tier the menubar folds into the mark: its menus lead the StykAnimate menu as submenus. */
+/** The menus live in the mark's menu (the band keeps its room for the open projects): they lead it as submenus. */
 function foldedMenubarItems() {
-  const band = document.querySelector(".titlebar");
-  if (!band?.dataset.band?.split(" ").includes("menus")) return [];
-  const menus = [...band.querySelectorAll(".app-menubar [data-app-menu]")].map((button) => ({
+  const menus = [...document.querySelectorAll(".titlebar .app-menubar [data-app-menu]")].map((button) => ({
     label: button.textContent.trim(),
     submenu: appMenuItems(button.dataset.appMenu),
   }));
   return [...menus, null];
 }
+/** The open projects as a submenu, for where the band has no room for their tabs and for the keyboard. */
+function openProjectsMenu() {
+  if (projects.tabs.size < 2) return [];
+  return [{ label: interfaceText("projectTabs.openProjects"), labelKey: "projectTabs.openProjects", icon: "layers",
+    submenu: projects.tabs.items.map((item) => ({ label: item.name || interfaceText("app.untitled"), checked: item.id === projects.tabs.activeId,
+      run: guarded(() => projects.activate(item.id)) })) }, null];
+}
+/** A tab's menu: the project in front has its file commands; a resting one can come forward or close. */
+function projectMenuItems(id) {
+  const item = projects.tabs.get(id);
+  if (!item) return [];
+  if (id !== projects.tabs.activeId) return [
+    { label: interfaceText("projectTabs.switchToThisProject"), labelKey: "projectTabs.switchToThisProject", icon: "layers", run: guarded(() => projects.activate(id)) },
+    { label: interfaceText("commands.closeProject"), labelKey: "commands.closeProject", icon: "close", run: guarded(() => projects.close(id)) },
+  ];
+  return [
+    messageTuple(["save", "save", interfaceText("common.save"), "Ctrl S"], {2: {key: "common.save", params: {}}}),
+    messageTuple(["save-as", "save", interfaceText("common.saveAs"), "Ctrl Shift S"], {2: {key: "common.saveAs", params: {}}}),
+    messageTuple(["rename", "file", interfaceText("commands.rename")], {2: {key: "commands.rename", params: {}}}),
+    null,
+    messageTuple(["close-project", "close", interfaceText("commands.closeProject"), "Ctrl W"], {2: {key: "commands.closeProject", params: {}}}),
+    messageTuple(["close-saved-projects", "close", interfaceText("commands.closeSavedProjects"), "", projects.tabs.size < 2], {2: {key: "commands.closeSavedProjects", params: {}}}),
+  ];
+}
 function showMenu(anchor) {
   const items = [
     ...foldedMenubarItems(),
+    ...openProjectsMenu(),
     // The palette's row shows its first key only (Ctrl+P), from the registry.
     { command: "command-palette", icon: "search", label: commands.label("command-palette"), labelKey: "overlays.palette.open",
       shortcut: commands.shortcut("command-palette"), keyshortcuts: commands.keyShortcuts("command-palette") },
@@ -4403,22 +4631,24 @@ const actions = {
   'release-notes': () => releaseSplash.open(),
   donate: () => desktop?.openDonate(),
   'restart-update': () => finishDocumentAction('restartForUpdate'),
-  'save-and-update': async () => { if (await saveNative()) return finishDocumentAction('restartForUpdate', lastSave); return false; },
-  "save-and-close": async () => { if (await saveNative()) return finishDocumentAction('close', lastSave); return false; },
+  'save-and-update': () => saveEveryProjectThen('restartForUpdate'),
+  "save-and-close": () => saveEveryProjectThen('close'),
   new: async () => {
-    if (await dialogs.confirmReplace()) {
-      pause();
-      editor.newDocument();
-      state.sourceId = null;
-      importer.adoptSource(null);
-      telemetry.performance.resources('closed');telemetry.performance.closedAt=performance.now();
-      if (desktop?.activateDocument)
-        state.documentToken = (
-          await desktop.activateDocument({})
-        ).documentToken;
-      fit();
-    }
+    pause();
+    if (!await openProject((session) => editor.newDocument(session), { blank: true })) return;
+    telemetry.performance.resources('closed');telemetry.performance.closedAt=performance.now();
+    state.hidden.clear();
+    state.locked.clear();
+    images.clear();
+    fit();
   },
+  // Project tabs (project-tabs-host.mjs): Ctrl+W closes the one in front, Ctrl+Tab goes to the one used before it.
+  "close-project": () => projects.close(),
+  "close-saved-projects": () => projects.closeSaved(),
+  "next-project": () => { const next = projects.tabs.neighbour(1); return next ? projects.activate(next.id) : false; },
+  "previous-project": () => { const next = projects.tabs.neighbour(-1); return next ? projects.activate(next.id) : false; },
+  "recent-project": () => projectSwitcher.open(),
+  "save-all": () => projects.saveAll(() => saveNative()),
   undo: () => {
     pause();
     if (state.polygon) {
@@ -4880,7 +5110,22 @@ const dialogs = createAppDialogs({
   showDialog, closeDialog, promptText, saveNative, acceptNativeFile, updateTitle, localization: () => appLocalization,
   activity: () => activityLog,
 });
+// The open projects in the band (shell/project-tabs-view.mjs) and Ctrl+Tab's board (shell/project-switcher.mjs).
+const projectTabsView = installProjectTabs($("project-tabs"), {
+  tabs: projects.tabs,
+  icon: (name) => icon(name),
+  activate: guarded((id) => projects.activate(id)),
+  close: guarded((id) => projects.close(id)),
+  rename: guarded(async (id) => { if (await projects.activate(id)) return actions.rename(); }),
+  menu: (id, point) => showCommandMenu(projectMenuItems(id), point, { label: interfaceText("projectTabs.openProjects"), labelKey: "projectTabs.openProjects" }),
+});
+const projectSwitcher = createProjectSwitcher({
+  tabs: projects.tabs, anchor: $("project-tabs"), overlays,
+  activate: guarded((id) => projects.activate(id)),
+  picture: (id) => projectTabsView.picture(id),
+});
 const polygonSafeActions = new Set([
+  "close-project", "close-saved-projects", "next-project", "previous-project", "recent-project", "save-all",
   "menu",
   "command-palette",
   "settings",
@@ -4918,7 +5163,7 @@ for (const [name, action] of Object.entries(actions)) {
     if(drawingBusy())
       return drawingController.afterGesture(()=>actions[name](...args));
     if (state.polygon) {
-      if (["new", "open", "open-recent", "close"].includes(name))
+      if (["new", "open", "open-recent", "close", "close-project", "close-saved-projects", "next-project", "previous-project", "recent-project"].includes(name))
         cancelPolygonDraft();
       else if (
         !polygonSafeActions.has(name) &&
@@ -5233,6 +5478,8 @@ function runKeyboardCommand(id, event, modifiers = {shift: event.shiftKey}) {
     }
   }
   if (id === 'cancel') return cancelKeyboardCommand();
+  // Held, Ctrl+Tab shows the open projects and switches on release (shell/project-switcher.mjs).
+  if (id === 'recent-project') return projectSwitcher.open(event);
   if (id === 'handle-edit-hold') { state.handleEditHeld = true; requestRender(); return; }
   if (id === 'isolate-hold') { flushPoseMove(); state.isolateHeld = true; return; }
   if (id === 'depth-hold') { flushPoseMove(); state.depthHeld = true; return; }
@@ -5513,8 +5760,7 @@ editor.addEventListener("change", (e) => {
     saveMutationEpoch++;
     // Publish immediately during the final IPC handoff. Main-process guards
     // cannot rely on a title update deferred to the next animation frame.
-    if (finalizingDocument) desktop?.setDocumentState?.({name: editor.name, dirty: editor.dirty,
-      revision: `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}:${saveMutationEpoch}`})?.catch(fail);
+    if (finalizingDocument) desktop?.setDocumentState?.(documentStateNow())?.catch(fail);
   }
   if ((['toggle-selection', 'duplicate-pending'].includes(state.drag?.kind) || state.drag?.kind === 'tweener' && state.drag.press) &&
       ['document', 'seek', 'history', 'selection', 'edit'].includes(kind)) cancelDrag();
@@ -5526,7 +5772,7 @@ editor.addEventListener("change", (e) => {
       ['history', 'document', 'frame-draft'].includes(kind))) setTool('select');
   if (e.detail?.audio && !e.detail?.timing) {
     pause();
-    for (const job of exportJobs) job.controller.abort();
+    for (const job of exportJobs) if (!job.resting) job.controller.abort();
     // Audio metadata cannot invalidate any prepared animation pixels.
     if (playback.report === editor.report) { playback.documentRevision = editor.revision; state.playbackRevision = editor.revision; }
     queueUI(); if (editor.dirty) scheduleRecovery(); return;
@@ -5618,7 +5864,7 @@ editor.addEventListener("change", (e) => {
     assetLibrary?.invalidate();
   }
   if (["edit", "history", "document", "frame-draft"].includes(kind))
-    for (const job of exportJobs) job.controller.abort();
+    for (const job of exportJobs) if (!job.resting) job.controller.abort();
   if (
     (kind === "edit" || kind === "frame-draft" || (kind === "history" && (e.detail.layerSheet || e.detail.figureIndices?.length || (e.detail.frameIndices || e.detail.animation) && !e.detail.structural))) &&
     !e.detail?.live &&
@@ -5723,13 +5969,15 @@ function scheduleRecovery(delay = state.settings.autosaveSeconds * 1000 * (state
               recovery: true,
               name,
               signal,
+              documentToken: state.documentToken,
             });
           }
-          return browserRecovery.write(blob, name, signal);
+          return browserRecovery.write(blob, name, signal, projects.tabs.activeId);
         },
         { recovery: true },
       );
       if (saved && matchesDocumentCheckpoint(checkpoint, editor, state.documentToken, {epoch: saveMutationEpoch})) {
+        recoveredEpoch = saveMutationEpoch;
         recoveryDeadline.reset();
         state.recoveryBackoff = 1;
         state.recoveryFailed = false;
@@ -5750,22 +5998,11 @@ function scheduleRecovery(delay = state.settings.autosaveSeconds * 1000 * (state
   }, wait);
 }
 function offerRecovery() {
-  if (desktop?.getRecoveryInfo) {
-    desktop
-      .getRecoveryInfo()
-      .then((record) => {
-        if (!record) return;
-        showRecovery({
-          ...record,
-          native: true,
-        });
-      })
-      .catch((error) =>
-        status({messageKey: "app.recoveryCouldNotBeRead", messageParams: {message: error.message}}, true),
-      );
-    return;
-  }
-  void browserRecovery.list().then(records => {
+  // Every copy no open project owns: one per project that had unsaved changes when the app last stopped.
+  const copies = desktop?.listRecoveries
+    ? desktop.listRecoveries().then(records => records.map(record => ({...record, native: true, savedAt: Date.parse(record.savedAt)})))
+    : desktop ? Promise.resolve([]) : browserRecovery.list();
+  void copies.then(records => {
     if (records.length === 1) showRecovery(records[0]);
     else if (records.length > 1) showRecovery(null, records);
   }).catch(error => status({messageKey: "app.recoveryCouldNotBeRead", messageParams: {message: error.message}}, true));
@@ -5782,71 +6019,45 @@ function showRecovery(record, records = [record]) {
     timeout: 0, dismissible: false,
     actions: [
       { label: interfaceText("app.notNow"), labelKey: "app.notNow", id: "dismiss-recovery" },
-      ...(browserRecovery ? [{ label: interfaceText("app.manageCopies"), labelKey: "app.manageCopies", id: "manage-recovery", dismiss: false, run: guarded(() => restore({choose: true})) }] : []),
+      ...(browserRecovery || records.length > 1 ? [{ label: interfaceText("app.manageCopies"), labelKey: "app.manageCopies", id: "manage-recovery", dismiss: false, run: guarded(() => restore({choose: true})) }] : []),
       { label: interfaceText("app.restore"), labelKey: "app.restore", id: "restore-recovery", variant: "outline", dismiss: false, run: guarded(() => restore()) },
     ],
   });
+  const discard = copy => copy.native ? desktop.deleteRecovery({id: copy.id}).then(result => Boolean(result?.deleted)) : browserRecovery.discard(copy);
+  // A copy opens as a project of its own, with unsaved changes; the projects already open stay as they are.
   const restore = async ({choose = false} = {}) => {
-    if (browserRecovery && (choose || records.length > 1)) {
-      record = await dialogs.chooseRecovery(records, copy => browserRecovery.discard(copy));
+    let chosen = record;
+    if (choose || records.length > 1) {
+      chosen = await dialogs.chooseRecovery(records, discard);
       if (!records.length) offer.dismiss();
-      if (!record) return;
+      if (!chosen) return;
     }
-    if (await dialogs.confirmReplace()) {
-      const reservation = browserRecovery ? await browserRecovery.reserve(record) : null;
-      if (browserRecovery && !reservation) throw messageError(new Error(''), "errors.app.thisRecoveryCopyIsOpenInAnotherTab", {});
-      let adopted = false;
-      try {
-        const replaceApproved = {
-          report: editor.report,
-          revision: editor.revision,
-          draftRevision: editor.frameDraftRevision,
-        };
-        if (record.native) {
-          const native = await readNativeRecovery(desktop);
-          if (!native)
-            throw messageError(new Error(''), "errors.app.theRecoveryFileIsNoLongerAvailable", {});
-          record = { ...record, ...native };
-        }
-        if (browserRecovery) {
-          const current = await readBrowserRecovery(undefined, {id: record.id});
-          if (!current || current.savedAt !== record.savedAt || current.token !== record.token) throw messageError(new Error(''), "errors.app.theRecoveryCopyChangedReopenStykanimateToSee", {});
-          record = current;
-        }
-        if (record.blob) {
-          const restored = await importer.importNative(
-            new File([record.blob], `${record.name}.styk`),
-          );
-          if (!await acceptImport(restored, record.name, {
-            replaceApproved,
-          })) return;
-        } else {
-          if (
-            (replaceApproved.report !== editor.report ||
-              replaceApproved.revision !== editor.revision ||
-              replaceApproved.draftRevision !== editor.frameDraftRevision ||
-              editor._drag ||
-              editor._animationEdit) &&
-            !(await dialogs.confirmReplace())
-          )
-            return;
-          await editor.loadAsync(record.document, record.name);
-          state.sourceId = null;
-          importer.adoptSource(null);
-          if (desktop?.activateDocument)
-            state.documentToken = (
-              await desktop.activateDocument({})
-            ).documentToken;
-        }
-        editor.dirty = true;
-        await reservation?.commit();
-        adopted = true;
-        fit();
-        updateUI();
-        telemetry.count('recovery_restored');
-        offer.dismiss();
-      } finally { if (!adopted) reservation?.release(); }
-    }
+    const reservation = browserRecovery ? await browserRecovery.reserve(chosen) : null;
+    if (browserRecovery && !reservation) throw messageError(new Error(''), "errors.app.thisRecoveryCopyIsOpenInAnotherTab", {});
+    let adopted = false;
+    try {
+      let copy;
+      if (chosen.native) {
+        copy = await readNativeRecovery(desktop, {id: chosen.id});
+        if (!copy) throw messageError(new Error(''), "errors.app.theRecoveryFileIsNoLongerAvailable", {});
+      } else {
+        copy = await readBrowserRecovery(undefined, {id: chosen.id});
+        if (!copy || copy.savedAt !== chosen.savedAt || copy.token !== chosen.token) throw messageError(new Error(''), "errors.app.theRecoveryCopyChangedReopenStykanimateToSee", {});
+      }
+      const name = chosen.name || copy.name;
+      const restored = await importer.importNative(new File([copy.blob], `${name}.styk`));
+      // The restored project adopts the copy it came from: its next recovery write replaces it, saving removes it.
+      if (!await acceptImport(restored, name, {recoveryId: chosen.native ? chosen.id : undefined})) return;
+      editor.dirty = true;
+      await reservation?.commit(projects.tabs.activeId);
+      adopted = true;
+      fit();
+      updateUI();
+      telemetry.count('recovery_restored');
+      offer.dismiss();
+      records.splice(records.indexOf(chosen), 1);
+      if (records.length) showRecovery(records.length === 1 ? records[0] : null, records);
+    } finally { if (!adopted) reservation?.release(); }
   };
 }
 if (desktop) {
@@ -5881,8 +6092,9 @@ if (desktop) {
 window.addEventListener("pagehide", () => clipboardWorker.dispose());
 window.addEventListener("pagehide", event => { if (!event.persisted) importer.dispose(); });
 window.addEventListener("pagehide", event => { if (!event.persisted) browserRecovery?.dispose(); });
+window.addEventListener("pagehide", () => projects.dispose());
 window.addEventListener("beforeunload", (e) => {
-  if (editor.dirty && !desktop) {
+  if (projects.summary().unsaved && !desktop) {
     e.preventDefault();
     e.returnValue = "";
   }
@@ -5891,6 +6103,8 @@ window.styk = {
   recovery: browserRecovery,
   audioEngine,
   editor,
+  projects,
+  projectSwitcher,
   state,
   actions,
   importFiles,

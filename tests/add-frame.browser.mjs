@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {chromium} from './support/playwright.mjs';
+import {openAppMenu,closeAppMenus} from './support/app-menu.mjs';
 import {mkdir} from 'node:fs/promises';
 const browser=await chromium.launch({channel:'chrome',headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:960}}), errors=[];
@@ -36,7 +37,7 @@ try {
  assert.equal(await page.evaluate(()=>{styk.editor.seek(20,{allowBeyondEnd:true});return styk.editor.evaluatedFrame.objects.length;}),1);
  await page.evaluate(()=>styk.editor.setLayerLocked('layer-1',true));const locked=await snap();await page.keyboard.press('a');assert.deepEqual(await snap(),locked);
  await page.evaluate(()=>styk.editor.setLayerLocked('layer-1',false));
- await page.locator('[data-app-menu="animation"]').click();assert.equal(await page.locator('#menu [data-action="add-frame"]').count(),1);assert.equal(await page.locator('#menu [data-action="blank-frame"],#menu [data-action="duplicate-frame-after"]').count(),0);await page.keyboard.press('Escape');
+ const animationMenu=await openAppMenu(page,'animation');assert.equal(await animationMenu.locator('[data-action="add-frame"]').count(),1);assert.equal(await animationMenu.locator('[data-action="blank-frame"],[data-action="duplicate-frame-after"]').count(),0);await closeAppMenus(page);
  await mkdir('artifacts/add-frame',{recursive:true});await page.screenshot({path:'artifacts/add-frame/advanced.png'});
  await page.evaluate(()=>{styk.settingsUI.commit({timelineMode:'simple'});styk.editor.seek(5);});const simple=await snap();await page.getByRole('button',{name:'Add Frame',exact:true}).click();assert.equal((await snap()).tick,6);assert.equal((await snap()).duration,simple.duration+1);
  await page.screenshot({path:'artifacts/add-frame/simple.png'});

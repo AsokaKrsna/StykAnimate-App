@@ -31,11 +31,9 @@
   .touch-tabbar > .shell-sheet-button[aria-expanded="true"] { background: var(--accent-soft); color: var(--accent-text-strong); }
   .touch-tabbar > .shell-sheet-button[hidden] { display: none; }
 
-  /* ---- The band on a phone: the document's name gives way first; Save lives in File (autosave keeps the work) ---- */
+  /* ---- The band on a phone: the tabs share what is left; Save lives in File (autosave keeps the work) ---- */
   :where(:root[data-form="phone"]) .shell-top .band-save { display: none; }
-  :where(:root[data-touch-layout="phone-portrait"]) .shell-top :where(#project-name) { max-inline-size: 100%; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
-  :where(:root[data-touch-layout="phone-portrait"]) .shell-top .ui-doc { flex: 0 1 auto; min-inline-size: 0; max-inline-size: 100%; overflow: hidden; }
-  :where(:root[data-touch-layout="phone-portrait"]) .shell-top :where(#save-state) { display: none; }
+  :where(:root[data-form="phone"]) .shell-top .project-tabs { min-inline-size: 0; }
   :where(:root[data-form="phone"]) .shell-top .band-export > .band-label { display: none; }
   /* During a session (Build, a movieclip, the camera) an upright phone's band keeps Done; the quiet Export waits in File,
    * as the desktop band folds it (export2out). */
@@ -46,8 +44,8 @@
   /* ---- A tablet's workspace switch: segments a finger hits (40px inside the pill) ---- */
   :where(:root[data-form="tablet"]) .shell-top .workspace-switch { --_h: 46px; }
 
-  /* ---- The wing (phone, on its side): the workspaces as three glyphs, stacked; the document lives in the menu ---- */
-  :where(:root[data-touch-layout="phone-landscape"]) .shell-top :where(.ui-doc, .band-save, #window-controls) { display: none; }
+  /* ---- The wing (phone, on its side): the workspaces as three glyphs, stacked; the open projects live in the menu ---- */
+  :where(:root[data-touch-layout="phone-landscape"]) .shell-top :where(.project-tabs, .band-save, #window-controls) { display: none; }
   :where(:root[data-touch-layout="phone-landscape"]) .shell-top .workspace-switch {
     --_h: auto; flex-direction: column; justify-content: space-between; gap: 0; inline-size: 100%; block-size: 100%; padding: 2px 0; border-radius: var(--radius-lg);
   }

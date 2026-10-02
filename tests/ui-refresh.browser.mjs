@@ -1,4 +1,5 @@
 import {chromium} from './support/playwright.mjs';
+import {openAppMenu,closeAppMenus} from './support/app-menu.mjs';
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 const browser=await chromium.launch({channel:'chrome',headless:true});
@@ -6,7 +7,7 @@ const page=await browser.newPage({viewport:{width:1440,height:950}});
 const errors=[];page.on('pageerror',error=>errors.push(error.message));
 await mkdir('artifacts/figma-panel-refresh',{recursive:true});
 try {
- await page.goto('http://127.0.0.1:47831');
+ await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');
  await page.waitForFunction(()=>window.styk?.ready);
  const clickHandle = async joint => {
    const point = await page.evaluate(async joint => {
@@ -26,9 +27,9 @@ try {
  assert.equal(await page.locator('#inspector-context').textContent(),'Figure');
  assert.equal(await page.locator('[data-app-menu]').count(),6);
  for (const name of ['file','edit','view','editor','animation','help']) {
-   await page.locator(`[data-app-menu="${name}"]`).click();
-   assert.ok(await page.locator('#menu [role="menuitem"]').count());
-   await page.keyboard.press('Escape');
+   const menu=await openAppMenu(page,name);
+   assert.ok(await menu.locator('[role="menuitem"]').count());
+   await closeAppMenus(page);
  }
  assert.equal(await page.locator('#inspector [data-field="joint_angle"]').count(),0);
  await page.locator('[data-field="root_x"]').fill('420');
@@ -44,20 +45,20 @@ try {
  await page.locator('[data-field="joint_length"]').press('Tab');
  assert.equal(Number(await page.locator('[data-field="joint_length"]').inputValue()),80);
  await page.screenshot({path:'artifacts/figma-panel-refresh/joint.png'});
- await page.locator('[data-app-menu="editor"]').click();
- await page.locator('#menu [data-action="split-segment"]').waitFor();
- assert.equal(await page.locator('#menu [data-action="split-segment"]').isEnabled(),true);
+ let jointMenu=await openAppMenu(page,'editor');
+ await jointMenu.locator('[data-action="split-segment"]').waitFor();
+ assert.equal(await jointMenu.locator('[data-action="split-segment"]').isEnabled(),true);
  await page.screenshot({path:'artifacts/figma-panel-refresh/editor-menu.png'});
+ // The application menus are submenus of the mark's menu: Left closes one and returns to its row, Escape closes the rest.
  await page.keyboard.press('ArrowLeft');
- assert.equal(await page.locator('[data-app-menu="view"]').getAttribute('aria-expanded'),'true');
+ assert.equal(await page.evaluate(()=>document.activeElement.querySelector(':scope > span')?.textContent),'Joint');
  await page.keyboard.press('Escape');
- assert.equal(await page.locator('[data-app-menu="view"]').evaluate(el=>el===document.activeElement),true);
- await page.locator('[data-app-menu="editor"]').click();
+ assert.equal(await page.locator('.titlebar .brand').evaluate(el=>el===document.activeElement),true);
+ jointMenu=await openAppMenu(page,'editor');
  const before=await page.evaluate(()=>window.styk.editor.figure.segments.length);
- await page.locator('#menu [data-action="split-segment"]').click();
+ await jointMenu.locator('[data-action="split-segment"]').click();
  await page.waitForFunction(n=>window.styk.editor.figure.segments.length===n+1,before);
- await page.locator('[data-app-menu="edit"]').click();
- await page.locator('#menu [data-action="undo"]').click();
+ await (await openAppMenu(page,'edit')).locator('[data-action="undo"]').click();
  await page.waitForFunction(n=>window.styk.editor.figure.segments.length===n,before);
  await clickHandle(-1);
  await page.locator('[data-field="root_x"]').waitFor();
@@ -69,9 +70,8 @@ try {
  await page.screenshot({path:'artifacts/figma-panel-refresh/figure-final.png'});
  await page.mouse.click(100,110);
  await page.locator('[data-field="canvas_width"]').waitFor();
- await page.locator('[data-app-menu="editor"]').click();
- assert.equal(await page.locator('#menu [data-action="split-segment"]').isDisabled(),true);
- await page.keyboard.press('Escape');
+ assert.equal(await (await openAppMenu(page,'editor')).locator('[data-action="split-segment"]').isDisabled(),true);
+ await closeAppMenus(page);
  await page.setViewportSize({width:1100,height:740});
  await page.screenshot({path:'artifacts/figma-panel-refresh/compact.png'});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);

@@ -18,6 +18,7 @@ export function applicationMenuItems(name, editor, desktop) {
       messageTuple(['save', 'save', interfaceText("common.save"), 'Ctrl S'], {2: {key: "common.save", params: {}}}),
       messageTuple(['save-as', 'save', interfaceText("common.saveAs"), 'Ctrl Shift S'], {2: {key: "common.saveAs", params: {}}}),
       messageTuple(['rename', 'file', interfaceText("applicationMenu.renameProject")], {2: {key: "applicationMenu.renameProject", params: {}}}),
+      messageTuple(['close-project', 'close', interfaceText("commands.closeProject"), 'Ctrl W'], {2: {key: "commands.closeProject", params: {}}}),
       null,
       {label: interfaceText("applicationMenu.import"), labelKey: "applicationMenu.import", icon: 'import', submenu: [
         messageTuple(['import', 'import', interfaceText("applicationMenu.importFigures")], {2: {key: "applicationMenu.importFigures", params: {}}}),
