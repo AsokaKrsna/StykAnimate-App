@@ -49,6 +49,7 @@
     "test:project-files": "node --test scripts/project-files.test.mjs",
     "test:project-files:desktop": "node scripts/smoke-project-files.mjs",
     "test:project-tabs:desktop": "node scripts/smoke-project-tabs.mjs",
+    "test:project-library": "node --test scripts/project-library.test.mjs",
     "test:recovery:desktop": "node scripts/smoke-recovery.mjs",
     "benchmark:native-import": "node scripts/benchmark-native-import.mjs",
     "benchmark:dense": "node scripts/benchmark-dense-scene.mjs",

@@ -23,6 +23,7 @@ const { VideoExportService } = require('./video-export-service.cjs');
 const { AudioService } = require('./audio-service.cjs');
 const { VfwExportService } = require('./vfw-export-service.cjs');
 const { RecentFiles } = require('./recent-files.cjs');
+const { ProjectLibrary } = require('./project-library.cjs');
 const { LibraryStore } = require('./library-store.cjs');
 const { PublicLibrary, DownloadLedger, isPublicId } = require('./public-library.cjs');
 const { TelemetryService } = require('./telemetry.cjs');
@@ -56,6 +57,7 @@ let videoExports;
 let audioImports;
 let vfwExports;
 let recentFiles;
+let projectLibrary;
 let library;
 let telemetry;
 let telemetryReady;
@@ -219,6 +221,9 @@ async function rememberRecent(file) {
   // A damaged preferences directory must not turn a completed save into failure.
   try { await recentFiles.remember(path.resolve(file)); }
   catch (error) { console.warn('Recent files could not be updated:', error.message); }
+  // Home's project list (desktop/project-library.cjs) follows the same opens and saves.
+  try { await projectLibrary?.remember(path.resolve(file)); }
+  catch (error) { console.warn('The project list could not be updated:', error.message); }
 }
 
 async function queueOpenFile(file) {
@@ -370,6 +375,27 @@ function registerIpc() {
   handle('styk:recent-list', event => { trusted(event); return recentFiles.list(); });
   handle('styk:recent-open', async (event, id) => { trusted(event); return readImportFile(await recentFiles.resolve(id)); });
   handle('styk:recent-clear', event => { trusted(event); return recentFiles.clear(); });
+  // Home's projects (desktop/project-library.cjs): the renderer names a project by its opaque id, never by a path.
+  projectLibrary = new ProjectLibrary({directory: path.join(app.getPath('userData'), 'project-library')});
+  handle('styk:projects-list', event => { trusted(event); return projectLibrary.list({open: [...projectFiles.documents.values()]}); });
+  handle('styk:projects-open', async (event, id) => { trusted(event); return readImportFile(await projectLibrary.resolve(id)); });
+  handle('styk:projects-update', (event, id, changes) => { trusted(event); return projectLibrary.update(id, changes && typeof changes === 'object' ? changes : {}); });
+  handle('styk:projects-remove', (event, id) => { trusted(event); return projectLibrary.remove(id); });
+  handle('styk:projects-reveal', async (event, id) => { trusted(event); shell.showItemInFolder(await projectLibrary.location(id)); return true; });
+  handle('styk:projects-preview', (event, id) => { trusted(event); return projectLibrary.preview(id); });
+  // The picture and counts of the project in front: its save target is known here, so no path crosses the bridge.
+  handle('styk:projects-preview-set', (event, options) => {
+    trusted(event);
+    const document = projectFiles.requireCurrent(options?.documentToken);
+    return document.filename ? projectLibrary.setPreview(document.filename, {thumbnail: options?.thumbnail, stats: options?.stats}) : {stored: false};
+  });
+  handle('styk:projects-folder', (event, change) => {
+    trusted(event);
+    if (change?.action === 'create') return projectLibrary.createFolder(change.name);
+    if (change?.action === 'rename') return projectLibrary.renameFolder(change.name, change.to);
+    if (change?.action === 'delete') return projectLibrary.deleteFolder(change.name);
+    throw messageError(new Error(''), 'desktop.projectLibrary.errors.unknownFolderChange', {});
+  });
   handle('styk:clipboard-text-read', event => {
     trusted(event); const text = clipboard.readText();
     if (text.length > 100) throw messageError(new Error(''), 'desktop.main.errors.theClipboardDoesNotContainAShortSegmentValue', {});
