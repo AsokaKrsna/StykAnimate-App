@@ -196,6 +196,46 @@ test('unpinned stretch uses the gesture baseline and retracts without cumulative
   point(g(e).joints.get(22), {x: 400, y: 230}); e.commitDrag();
 });
 
+test('a stretch drag poses an IK node directly instead of solving the limb', () => {
+  for (const pinned of [true, false]) {
+    const e = fixture(); e.setNodeIK({enabled: true, pinned});
+    const before = g(e), knee = before.joints.get(11), count = e._undo.length;
+    e.beginDrag();
+    for (const target of [{x: 420, y: 300}, {x: 500, y: 120}]) {
+      e.poseJoint(target.x, target.y, {stretch: true, snap: false});
+      point(g(e).joints.get(22), target); point(g(e).joints.get(11), knee);
+      near(g(e).segments[1].length, Math.hypot(target.x - knee.x, target.y - knee.y)); near(g(e).segments[0].length, 90);
+    }
+    e.commitDrag(); assert.equal(e._undo.length, count + 1);
+    assert.equal(e.getIKSettings().pinned, pinned);
+    // The pin stays where the stretch left it, and plain drags solve the limb again.
+    e.select(1, -1); e.moveSelection(5, 5); point(g(e).joints.get(22), pinned ? {x: 500, y: 120} : {x: 505, y: 125});
+    e.select(1, 1); e.poseJoint(380, 200); point(g(e).joints.get(22), {x: 380, y: 200});
+    near(g(e).segments[1].length, Math.hypot(500 - knee.x, 120 - knee.y));
+    e.undo(); e.undo(); e.undo();
+    for (const [id, p] of before.joints) point(g(e).joints.get(id), p);
+  }
+});
+
+test('stretching a pinned node across its limb keeps the knee for Left and Right bends', () => {
+  for (const side of [-1, 1]) {
+    const e = fixture(); e.setNodeIK({enabled: true, bendDirection: side});
+    const knee = g(e).joints.get(11);
+    for (const target of [{x: 420, y: 300}, {x: 500, y: 120}, {x: 420, y: 300}]) {
+      e.poseJoint(target.x, target.y, {stretch: true, snap: false});
+      point(g(e).joints.get(22), target); point(g(e).joints.get(11), knee);
+    }
+  }
+});
+
+test('stretching a pinned node keeps the displayed length of a limb beyond its reach', () => {
+  const e = fixture(); e.setNodeIK({enabled: true, allowStretch: true}); e.poseJoint(600, 150);
+  const knee = g(e).joints.get(11);
+  e.poseJoint(640, 150, {stretch: true, snap: false});
+  point(g(e).joints.get(11), knee); point(g(e).joints.get(22), {x: 640, y: 150});
+  near(g(e).segments[0].length, 150); near(g(e).segments[1].length, 190);
+});
+
 test('releasing a stretched pin bakes only its own chain and leaves other pinned rest lengths intact', () => {
   for (const patch of [{pinned: false}, {enabled: false}]) {
     const e = fixture(); e.setNodeIK({enabled: true, allowStretch: true}); e.poseJoint(600, 150);

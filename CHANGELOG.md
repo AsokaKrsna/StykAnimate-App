@@ -6,6 +6,10 @@ What's new in each version of StykAnimate.
 
 ## [Unreleased]
 
+### Changed
+
+- Ctrl-dragging a node that uses IK stretches it like any other node.
+
 ## [1.2.5]
 
 Layer folders, camera follow and smoother editing

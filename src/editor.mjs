@@ -60,7 +60,7 @@ import {editorMovieclipMethods, applyMovieclipCommand} from './editor-movieclips
 import {editorLayerSheetMethods, initializeLayerSheet, applyLayerSheetCommand} from './editor-layer-sheet.mjs';
 import {validateLayerSheet} from './layer-sheet.mjs';
 import {isMovieclip, invalidateMovieclipTypes,movieclipSourceFrames,snapshotFigureDefinition} from './movieclips.mjs';
-import {hasPinnedIK, translateIKTargets, remapIKFollowers} from './ik.mjs';
+import {hasPinnedIK, translateIKTargets, remapIKFollowers, ikChain} from './ik.mjs';
 import {editorMotionPathMethods} from './editor-motion-path.mjs';
 import {snapshotPoseObject} from './pose-snapshot.mjs';
 import {cloneTopologySnapshot,topologyHistoryBytes} from './topology-history.mjs';
@@ -1117,7 +1117,8 @@ export class Editor extends EventTarget {
     finite(snapTolerance, 'Snap tolerance'); if (snapTolerance < 0) throw messageError(new Error(''), "errors.editor.snapToleranceCannotBeNegative", {});
     if (!this.object || this.selectedJoint < 0) return false;
     if (this.figure?.segments[this.selectedJoint]?._stykRig?.connector) return this.slideConnector(x,y);
-    if (this.object._stykIK?.[this.figure?.segments[this.selectedJoint]?.segment_id]?.enabled) {
+    // A stretch drag poses the node directly, like one without a controller.
+    if (!stretch && this.object._stykIK?.[this.figure?.segments[this.selectedJoint]?.segment_id]?.enabled) {
       // Shift or the depth key pushes a spatial hand/foot target in depth;
       // releasing it resumes ordinary target dragging from the current pointer.
       if ((alternate || depth) && this.poseSpatialIKDepth(x, y, {pixel: pixel || 1})) { this._clearFlatSpatialIK(); return true; }
@@ -1140,6 +1141,10 @@ export class Editor extends EventTarget {
         obj.len_flag=1;obj.lengths[this.selectedJoint]=along*current/chordLength;
       },{posed:true});
     }
+    const pointer = {x, y}, pin = this.object._stykIK?.[seg.segment_id];
+    const pinned = stretch && pin?.enabled && pin.pinned;
+    const solvedLengths = pinned ? this.geometry.objects.get(this.selectedSlot).solvedLengths : null;
+    const limb = pinned ? this._ikLimbPoints(seg.segment_id) : null;
     ({x,y}=authoredRigTarget(shape,x,y,stretch?undefined:{angle:this.object.angles[this.selectedJoint],
       length:(this.object.len_flag?this.object.lengths[this.selectedJoint]:seg.length)*Number(this.object.scale??1)}));
     const angle = Math.atan2(y - shape.start.y, x - shape.start.x) - shape.bend / 2;
@@ -1151,9 +1156,17 @@ export class Editor extends EventTarget {
         obj.len_flag = 1; const bend = shape.bend;
         const chord = Math.abs(bend) < 1e-7 ? 1 : Math.abs(2 * Math.sin(bend / 2) / bend);
         if (chord < 1e-8) throw messageError(new Error(''), "errors.editorMotionPath.reduceTheFullCircleBendBeforeStretchingThis", {});
-        let length = Math.hypot(x - shape.start.x, y - shape.start.y) / (Math.abs(obj.scale) * chord);
+        const reached = Math.hypot(x - shape.start.x, y - shape.start.y) / (Math.abs(obj.scale) * chord);
+        let length = reached;
         if (snap && defaults.lengthEnabled && Math.abs(length - defaults.length) * Math.abs(obj.scale) * chord <= snapTolerance) length = defaults.length;
+        // The rest of a limb displayed beyond its reach keeps the length shown.
+        if (solvedLengths) for (const i of ikChain(this.figure, seg.segment_id, pin.chainLength)) obj.lengths[i] = solvedLengths[i];
         obj.lengths[this.selectedJoint] = length;
+        if (pinned) {
+          const ratio = reached > 1e-8 ? length / reached : 0;
+          this._followStretchedIK(obj, seg.segment_id, limb,
+            {x: shape.start.x + (pointer.x - shape.start.x) * ratio, y: shape.start.y + (pointer.y - shape.start.y) * ratio});
+        }
       }
     }, {posed: true});
   }

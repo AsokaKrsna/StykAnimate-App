@@ -276,6 +276,21 @@ export const editorIKMethods = {
       object._stykIK = {...object._stykIK, [handle]: next}; delete object.runtime_segments;
     });
   },
+  /** The displayed limb of a pinned node, from its base to the joint before the node. */
+  _ikLimbPoints(handle) {
+    const c = this.object._stykIK[handle], graph = context(this), scene = this.geometry, geometry = scene.objects.get(this.selectedSlot);
+    const shapes = graph ? graph.chain(this.selectedSlot, handle, c.chainLength).map(i => {const e = graph.entries[i]; return scene.objects.get(e.slot).segments[e.index];})
+      : ikChain(this.figure, handle, c.chainLength, geometryPlans(geometry)?.definition ?? ikLayout(this.figure)).map(i => geometry.segments[i]);
+    return [shapes[0].start, ...shapes.slice(0, -1).map(s => s.end)];
+  },
+  /** A stretch drag poses a pinned node as ordinary FK. Its pin follows the
+   * stretched end and keeps the bend now shown; left behind, it would pull the limb back. */
+  _followStretchedIK(object, handle, limb, tip) {
+    const c = object._stykIK[handle], points = [...limb, tip];
+    const bendReference = ikBendReference(points, points.slice(1).map((p, i) => Math.hypot(p.x - points[i].x, p.y - points[i].y)), c.bendReference);
+    object._stykIK = {...object._stykIK, [handle]: {...c, target: {...c.target, x: tip.x, y: tip.y}, bendReference,
+      bendDirection: c.bendDirection && bendReference.side}};
+  },
   rotateIKTarget(radians) {
     if (!Number.isFinite(radians)) throw messageError(new Error(''), "errors.editorIk.ikRotationMustBeFinite", {});
     const {handle, controller} = controllerAt(this);
