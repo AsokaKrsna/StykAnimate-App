@@ -6,6 +6,10 @@ What's new in each version of StykAnimate.
 
 ## [Unreleased]
 
+### Added
+
+- Everyday Props · Pivot 3D: 30 editable everyday objects with working hinges and wheels for your animations.
+
 ### Changed
 
 - Ctrl-dragging a node that uses IK stretches it like any other node.
