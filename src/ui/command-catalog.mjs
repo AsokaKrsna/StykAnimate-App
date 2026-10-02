@@ -214,6 +214,7 @@ group('figure', [
   ['attach-figure', english["commands.joinFigure"], 'link', {labelKey: "commands.joinFigure", aliasOf: 'join-figure', palette: false}],
   ['detach-figure', english["commands.detachFigure"], 'detach', {labelKey: "commands.detachFigure", aliasOf: 'join-figure', palette: false}],
   ['combine-figures', english["commands.combineFigures"], 'combine', {labelKey: "commands.combineFigures", requires: ['figure'], keywords: ['merge']}],
+  ['disconnect-segment', english["commands.disconnectSegment"], 'cut', {labelKey: "commands.disconnectSegment", modes: ['animate'], requires: ['joint'], keywords: ['split', 'separate', 'detach', 'break', 'new figure', 'branch']}],
   ['add-to-library', english["commands.addToLibrary"], 'layers', {labelKey: "commands.addToLibrary", requires: ['figure'], keywords: ['save', 'asset']}],
   ['edit-in-build-mode', english["commands.editInBuildMode"], 'nodes', {labelKey: "commands.editInBuildMode", requires: ['figure'], keywords: ['build', 'rig', 'builder']}],
   ['selection-more', english["commands.selectionMore"], 'more', {...internal, labelKey: "commands.selectionMore"}],

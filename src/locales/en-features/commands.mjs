@@ -118,6 +118,7 @@ export default Object.freeze({
   "commands.joinFigure": "Join to figure",
   "commands.detachFigure": "Unjoin figure",
   "commands.combineFigures": "Combine connected figures",
+  "commands.disconnectSegment": "Disconnect segment",
   "commands.addToLibrary": "Add to library",
   "commands.editInBuildMode": "Edit figure",
   "commands.selectionMore": "Selection actions",

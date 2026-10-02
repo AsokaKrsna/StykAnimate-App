@@ -40,7 +40,7 @@ function mergedBend(parentAngle, parentBend, childAngle, childBend) {
     parentBend * childBend > 0 && Math.abs(difference) < .02 ? parentBend + childBend : childBend;
 }
 /** Resolve only needed objects and their ancestors, avoiding unrelated geometry. */
-function componentGeometry(report, frame, required) {
+export function componentGeometry(report, frame, required) {
   const needed = new Set(required);
   for (const slot of required) {
     let cursor = slot;

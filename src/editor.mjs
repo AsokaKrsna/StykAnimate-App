@@ -21,6 +21,7 @@ import {applyFrameTiming,captureTimingGeometry,restoreTimingGeometry} from './fr
 import {RetainedGeometryCache} from './playback-geometry-cache.mjs';
 import {editorBuilderMethods, segmentBranchIndices} from './editor-builder.mjs';
 import {editorCombineMethods} from './editor-combine.mjs';
+import {editorDisconnectMethods, applyDisconnectFrames} from './editor-disconnect.mjs';
 import {editorRigMethods} from './editor-rig.mjs';
 import {editorSelectionMethods} from './editor-selection.mjs';
 import {editorLayerMethods} from './editor-layers.mjs';
@@ -364,6 +365,7 @@ export class Editor extends EventTarget {
     else if(command.kind==='camera-motion'){if(value==null)delete this.report._styk.cameraMotion;else this.report._styk.cameraMotion=value;}
     else if (command.kind === 'scene') this._applySceneSnapshot(value);
     else if (command.kind === 'figure-range') this._applyFigureRangeCommand(command, direction);
+    else if (command.kind === 'disconnect') applyDisconnectFrames(this, command, direction);
     else if (command.kind === 'splice') {
       if (!sparseClipboard) {
         const previous = command[direction === 'before' ? 'after' : 'before'];
@@ -1371,11 +1373,12 @@ export class Editor extends EventTarget {
       source=source._styk?.movieclipSource?.document;
     }
   }
-  _topologyEdit(label, mutate, {appendOnly = false, segmentIndices, retainedGeometry, segmentMap, reversedGradients, preserveAnimationOrigins=false, originReRoot, originSplit, originSplits, originFreezeHandles} = {}) {
-    if (!this.figure) return false;
-    if(isMovieclip(this.figure))throw messageError(new Error(''), "errors.editor.openTheMovieclipToEditItsFigures", {});
+  /** Edits the selected figure's definition, or `definition` when given. */
+  _topologyEdit(label, mutate, {definition, appendOnly = false, segmentIndices, retainedGeometry, segmentMap, reversedGradients, preserveAnimationOrigins=false, originReRoot, originSplit, originSplits, originFreezeHandles} = {}) {
+    if (!(definition ?? this.figure)) return false;
+    if(isMovieclip(definition ?? this.figure))throw messageError(new Error(''), "errors.editor.openTheMovieclipToEditItsFigures", {});
     if (this._drag) this.commitDrag();
-    const figure = this.figure, index = this.report.figure_types.indexOf(figure), typeId = figure.figure_type_id;
+    const figure = definition ?? this.figure, index = this.report.figure_types.indexOf(figure), typeId = figure.figure_type_id;
     appendOnly = appendOnly && !figure._styk?.animationOrigin;
     if (figure._styk?.animationOrigin) segmentIndices = undefined;
     const sparse = segmentIndices ? new Set(segmentIndices) : appendOnly;
@@ -1744,6 +1747,7 @@ Object.assign(Editor.prototype, editorRangeMethods);
 Object.assign(Editor.prototype, editorColorMethods);
 Object.assign(Editor.prototype, editorBuilderMethods);
 Object.assign(Editor.prototype, editorCombineMethods);
+Object.assign(Editor.prototype, editorDisconnectMethods);
 Object.assign(Editor.prototype, editorRigMethods);
 Object.assign(Editor.prototype, editorRigConstraintMethods, editorSpatialMethods);
 Object.assign(Editor.prototype, editorSelectionMethods);

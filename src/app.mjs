@@ -4500,6 +4500,7 @@ overlay.addEventListener(
       messageTuple(["mirror", "flip", interfaceText("app.flipHorizontally"), "Shift H"], {2: {key: "app.flipHorizontally", params: {}}}),
       messageTuple(["mirror-vertical", "flip-vertical", interfaceText("app.flipVertically"), "Shift V"], {2: {key: "app.flipVertically", params: {}}}),
       joinMenuItem(),
+      ...(joint ? [messageTuple(["disconnect-segment", "cut", interfaceText("app.disconnectSegment"), "", !canDisconnectSegment()], {2: {key: "app.disconnectSegment", params: {}}})] : []),
       messageTuple(["camera-follow", "camera", interfaceText("app.followWithCamera"), "", Boolean(builderMode?.active)], {2: {key: "app.followWithCamera", params: {}}}),
       ...(joint ? [messageTuple(["segment-values", "sliders", interfaceText("app.exactValues"), "I"], {2: {key: "app.exactValues", params: {}}})] : []),
       messageTuple(["selection-more", "more", interfaceText("app.moreFigureActions")], {2: {key: "app.moreFigureActions", params: {}}}),
@@ -4556,6 +4557,17 @@ function joinMenuItem() {
   return ['join-figure', action?.kind === 'unjoin' ? 'detach' : 'link',
     state.figureJoin ? interfaceText("app.cancelJoining") : action?.kind === 'unjoin' ? interfaceText("app.unjoinFigure") : interfaceText("app.joinFigure"),
     '', !action];
+}
+/** Disconnect segment applies to the selected joint's branch of a visible, unlocked figure in Animate. */
+function canDisconnectSegment() {
+  return !builderMode?.active && Boolean(editor.object) && !isHidden(editor.selectedUid) && !isLocked(editor.selectedUid) && editor.canDisconnectSegment();
+}
+function disconnectSegment() {
+  if (builderMode?.active || isHidden(editor.selectedUid)) return;
+  if (isLocked(editor.selectedUid)) throw messageError(new Error(''), "errors.editorDisconnect.unlockTheFigureBeforeDisconnectingASegment", {});
+  pause(); finishCurrentEdit();
+  editor.disconnectSegment();
+  status({messageKey: "app.segmentDisconnected", messageParams: {}});
 }
 function toggleFigureJoin() {
   if (state.figureJoin) {setTool('select'); return;}
@@ -4739,6 +4751,7 @@ const actions = {
   "edit-text": () => showTextDialog(true),
   "attach-figure": toggleFigureJoin,
   "detach-figure": () => {if (selectedFigureJoinAction()?.kind === 'unjoin') toggleFigureJoin();},
+  "disconnect-segment": disconnectSegment,
   "combine-figures": () => {
     const roots = editor.resolveTranslationSelection().rootUids;
     if (roots.length !== 1)

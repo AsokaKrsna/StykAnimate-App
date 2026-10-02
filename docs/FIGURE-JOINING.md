@@ -99,3 +99,48 @@ present. It failed independently at the same boundary and passed in a temporary
 copy with a fixed noon clock (all 11 telemetry cases passed). No telemetry source
 or tests were changed. The final full-suite log retains the failure rather than
 claiming a fully green rerun.
+
+## Disconnecting a segment
+
+In Animate, a joint's canvas context menu (and the command palette) offers
+**Disconnect segment**. It turns the selected segment and every segment hanging
+from it into a new, unjoined figure, named after the segment, on the same layer.
+The command applies to that instance in every frame and pose source of the
+animation, so each key keeps its drawing: the new figure's origin sits on the
+joint where the part was attached, with the displayed pose (pinned IK and
+joined-parent poses included). Tweens between keys now move the new figure's
+origin on its own path rather than following the old parent bone. The new
+figure is selected; one undo restores the original figure.
+
+A linked instance (a definition shared with other figures) is first given its
+own copy of the definition, so the other instances keep the whole rig. The part
+paints in front of or behind the remaining figure, according to where its
+segments sat in the figure's drawing order. Fills inside the part move with it;
+figures joined to a joint of the part stay joined to the same joint of the new
+figure. IK controllers whose chain lies inside the part move with it; a chain
+crossing the cut is shortened, as Build's Delete does.
+
+The command is unavailable for the origin, for a segment holding the whole
+figure, for movieclips and drawing layers, and on hidden or locked figures. It
+refuses, without changing the document, figures with connectors, stretch parts
+or 3D rigs, a figure origin placed on the part, a fill that spans the cut, and
+figures still animated by legacy property curves.
+
+### Implementation
+
+`editor-disconnect.mjs` publishes one compound history step (the existing
+`movieclipBatch` collector) of three commands. A `disconnect` command inserts
+the new instance beside the source in each native keyframe and pose source that
+holds it, forking a shared definition; its definitions travel in
+`figureDefinitionSplice` and its layer membership in `frameUidCounts`, so undo,
+layer indexes and source retention use the existing paths. Two ordinary
+`_topologyEdit` calls (with an explicit `definition`) then trim the new and the
+remaining definitions, so IK, per-instance styles, effects and validation reuse
+the topology repair and whole-document validation. Handle IDs are preserved,
+which keeps joins, styles and IK tables keyed without remapping. Geometry is
+evaluated once per affected pose, only for the source's joined component.
+
+Coverage: `tests/editor-disconnect.test.mjs` (Simple and layer timelines,
+reopening, linked instances, joined children, pinned IK, fills, refusals) and
+`tests/disconnect-segment.browser.mjs` (the real context menu, undo and redo
+shortcuts in both timelines).
