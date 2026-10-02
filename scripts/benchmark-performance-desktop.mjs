@@ -46,7 +46,7 @@ const report = {at: new Date().toISOString(), source: {name: path.basename(sourc
 let expectedDigest;
 for (let run = 0; run < runs; run++) {
   const directory = path.join(output, String(run)); await mkdir(directory, {recursive: true});
-  const env = {...process.env, STYK_BENCH_INPUT: source, STYK_BENCH_OUTPUT: directory,
+  const env = {STYK_STARTUP_VIEW: 'editor', ...process.env, STYK_BENCH_INPUT: source, STYK_BENCH_OUTPUT: directory,
     ...(alternate?{STYK_BENCH_ALTERNATE_INPUT:alternate}:{}),
     STYK_USER_DATA_DIR: path.join(directory, 'profile'), STYK_LIBRARY_DIR: path.join(directory, 'library')};
   await mkdir(env.STYK_USER_DATA_DIR, {recursive: true});

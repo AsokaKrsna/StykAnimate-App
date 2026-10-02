@@ -37,6 +37,10 @@ import {appendLocalized, localizedMarkup, localizedAttribute, localizedText, cle
  * showMode() keeps the instruction of a pick mode while it lasts
  * ("Click the joint to join to · Cancel"). setViewMenu(true) folds the view
  * toggles into one View menu (a phone's touch interface, docs/TOUCH.md).
+ * setLesson(element) shows a tutorial's strip in the start, in the crumb's
+ * place (docs/TUTORIALS.md): a lesson adds no row. While it shows, a message
+ * that would cover it takes its own line under the header instead, and the
+ * view toggles keep their glyphs only.
  */
 import {setAttr, setHidden, setText, setVar} from '../ui/dom-write.mjs';
 import {createToolOptions} from '../ui/tool-options.mjs';
@@ -60,14 +64,14 @@ const COMPACT_TIERS = new Set(['compact', 'minimal']);
  * header's middle (place 'head') or the dropped line's top.
  */
 export function solveMessage({head, keep, view = null, startRight = head.left, width, pad = 8, compact = false, focusInStart = false,
-  gap = MESSAGE_GAP, dropGap = DROP_GAP}) {
+  keepStart = false, gap = MESSAGE_GAP, dropGap = DROP_GAP}) {
   const left = head.left + pad, limit = keep.left - gap, room = limit - left;
   const drop = () => ({x: head.left + head.width / 2, top: head.bottom + dropGap, place: 'drop', over: false, overView: false});
   if (!(width <= room)) return drop();
   let x = head.left + head.width / 2;
   if (x + width / 2 > limit) x = left + room / 2;
   const over = x - width / 2 < startRight + gap;
-  if (over && focusInStart) return drop();
+  if (over && (focusInStart || keepStart)) return drop();
   const overView = Boolean(compact && view && view.width > 0 && x + width / 2 > view.left - gap);
   return {x, top: head.top + head.height / 2, place: 'head', over, overView};
 }
@@ -106,7 +110,7 @@ export function createStageHead({root, toasts = () => null, toolOptions = {}, op
   const hereName = doc.createElement('span');
   appendLocalized(here, hereName);
   chip.before(separator, here);
-  let bar = null, shownMode = '', modeHandle = null, placed = false;
+  let bar = null, shownMode = '', modeHandle = null, placed = false, lesson = null;
 
   // The view menu (setViewMenu): one "View" button in the view cluster's place, where the header has no room for
   // the toggles (a phone's touch interface). Its rows are the cluster's shown controls, and each runs by clicking its
@@ -252,7 +256,7 @@ export function createStageHead({root, toasts = () => null, toolOptions = {}, op
     const keep = rectOf(compact && viewShown ? zoom : end);
     const pad = parseFloat(win.getComputedStyle(root).paddingInlineStart) || 8;
     const solved = solveMessage({head, keep, view: viewShown ? rectOf(view) : null, startRight: startRight(), width, pad, compact,
-      focusInStart: start.contains(doc.activeElement)});
+      focusInStart: start.contains(doc.activeElement), keepStart: shown(lesson)});
     if (solved.place === 'drop') setAttr(root, 'data-msg-drop', true);
     setAttr(root, 'data-msg-over', solved.over);
     setAttr(root, 'data-msg-over-view', solved.overView);
@@ -291,8 +295,21 @@ export function createStageHead({root, toasts = () => null, toolOptions = {}, op
     modeHandle = handle;
   }
 
+  /**
+   * A tutorial's strip (docs/TUTORIALS.md) in the start, where the crumb is, or null to end it. The strip is the
+   * tutorial's own element; the header only gives it its place and keeps messages off it.
+   */
+  function setLesson(element) {
+    if (lesson === (element ?? null)) return;
+    lesson?.remove();
+    lesson = element ?? null;
+    if (lesson) appendLocalized(start, lesson);
+    setAttr(root, 'data-lesson', Boolean(lesson));
+    reposition();
+  }
+
   return {
-    root, start, end, update, setZoom, setToolOptions, adopt, placeMessage, releaseMessage, showMode, setViewMenu,
+    root, start, end, update, setZoom, setToolOptions, adopt, placeMessage, releaseMessage, showMode, setViewMenu, setLesson,
     get toolOptions() { return bar; },
     destroy() { controller.abort(); observer?.disconnect(); bar?.destroy?.(); modeHandle?.dismiss(); },
   };

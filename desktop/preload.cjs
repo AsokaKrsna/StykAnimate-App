@@ -44,11 +44,18 @@ function apiToken() {
   try { return ipcRenderer.sendSync('styk:api-token') || ''; } catch { return ''; }
 }
 
+// Where this window starts ('home' or 'editor'), when the launch decides it (main.cjs startupView); else null.
+function startupView() {
+  const value = (process.argv ?? []).find(argument => argument.startsWith('--styk-startup-view='))?.slice('--styk-startup-view='.length);
+  return value === 'home' || value === 'editor' ? value : null;
+}
+
 // Every privileged operation has a narrow handler in main.cjs. No filesystem,
 // Node.js, Electron object, or arbitrary IPC channel crosses this boundary.
 contextBridge.exposeInMainWorld('stykDesktop', Object.freeze({
   isDesktop: true,
   apiToken: apiToken(),
+  startupView: startupView(),
   // Page zoom keeps CSS layout, pointer coordinates and devicePixelRatio aligned.
   setUIScale: percent => {
     if (!Number.isFinite(percent) || percent < 75 || percent > 200 || percent % 5 !== 0)

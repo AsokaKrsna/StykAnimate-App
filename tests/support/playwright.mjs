@@ -18,6 +18,11 @@
 //    another Electron app (VS Code, several agent hosts) export it, and Electron
 //    then runs main.cjs as plain Node where `app` is undefined.
 //
+//  - A page starts in the editor, not on Home (src/home/home.mjs): tests and
+//    profiling scripts drive the editor. Every browser context gets
+//    `window.stykStartupView = 'editor'` and Electron STYK_STARTUP_VIEW=editor; a
+//    test of Home at startup defines the value itself ('home') before the page loads.
+//
 // Overrides: STYK_BROWSER_PATH (executable), STYK_BROWSER_CHANNEL (for example
 // "chromium" or "chrome-beta"), STYK_BROWSER_GPU=1 (add the Linux GPU switches).
 import { existsSync } from 'node:fs';
@@ -50,7 +55,21 @@ export function isMissingBrowser(error) {
 
 export function electronEnvironment(env = process.env) {
   const { ELECTRON_RUN_AS_NODE: _ignored, ...clean } = env;
-  return clean;
+  return { STYK_STARTUP_VIEW: 'editor', ...clean };
+}
+
+/** Runs before the page's scripts; a value the test defined first stays. */
+export const EDITOR_FIRST = `globalThis.stykStartupView ??= 'editor';`;
+
+/** Every context of `browser` starts its pages in the editor (browser.newPage() makes its context through newContext). */
+export function editorFirst(browser) {
+  const newContext = browser.newContext.bind(browser);
+  browser.newContext = async (...args) => {
+    const context = await newContext(...args);
+    await context.addInitScript(EDITOR_FIRST);
+    return context;
+  };
+  return browser;
 }
 
 // Attach Playwright to the process that owns the window. The app normally
@@ -91,7 +110,7 @@ export async function launchChromium(options = {}, { browserType = playwright.ch
 
 export const chromium = new Proxy(playwright.chromium, {
   get(target, property) {
-    if (property === 'launch') return (options) => launchChromium(options);
+    if (property === 'launch') return async (options) => editorFirst(await launchChromium(options));
     const value = Reflect.get(target, property, target);
     return typeof value === 'function' ? value.bind(target) : value;
   },

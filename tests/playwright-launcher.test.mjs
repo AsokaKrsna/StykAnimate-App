@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {chromiumArguments, electronArguments, electronEnvironment, isMissingBrowser, launchChromium, LINUX_WEBGPU_ARGS} from './support/playwright.mjs';
+import {chromiumArguments, editorFirst, EDITOR_FIRST, electronArguments, electronEnvironment, isMissingBrowser, launchChromium, LINUX_WEBGPU_ARGS} from './support/playwright.mjs';
 
 const missing = channel => Object.assign(new Error(`browserType.launch: Chromium distribution '${channel}' is not found at /opt/google/chrome/chrome`));
 function fakeType(behaviour) {
@@ -68,9 +68,24 @@ test('missing-browser detection matches Playwright messages only', () => {
   assert.equal(isMissingBrowser(new Error('Timeout 30000ms exceeded')), false);
 });
 
-test('Electron never inherits ELECTRON_RUN_AS_NODE', () => {
+test('Electron never inherits ELECTRON_RUN_AS_NODE, and starts in the editor unless asked for Home', () => {
   const clean = electronEnvironment({ELECTRON_RUN_AS_NODE: '1', PATH: '/bin', STYK_USER_DATA_DIR: '/p'});
-  assert.deepEqual(clean, {PATH: '/bin', STYK_USER_DATA_DIR: '/p'});
+  assert.deepEqual(clean, {STYK_STARTUP_VIEW: 'editor', PATH: '/bin', STYK_USER_DATA_DIR: '/p'});
+  assert.equal(electronEnvironment({STYK_STARTUP_VIEW: 'home'}).STYK_STARTUP_VIEW, 'home');
+});
+
+test('browser pages start in the editor; a test that defines the view first keeps it', async () => {
+  const scripts = [];
+  const browser = {newContext: async () => ({addInitScript: async script => scripts.push(script)})};
+  editorFirst(browser);
+  await browser.newContext();
+  assert.deepEqual(scripts, [EDITOR_FIRST]);
+  const page = {stykStartupView: 'home'};
+  new Function('globalThis', EDITOR_FIRST)(page);
+  assert.equal(page.stykStartupView, 'home');
+  const fresh = {};
+  new Function('globalThis', EDITOR_FIRST)(fresh);
+  assert.equal(fresh.stykStartupView, 'editor');
 });
 
 test('Electron attaches directly to the X11 window on a Wayland desktop', () => {

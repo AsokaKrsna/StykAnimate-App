@@ -741,7 +741,19 @@ function registerIpc() {
   });
 }
 
+/**
+ * Where the window starts: 'editor' when it opens with a file (Home would only flash before it), or what
+ * STYK_STARTUP_VIEW says ('home' or 'editor': scripts that drive the editor ask for it). Otherwise the
+ * person's setting decides, in the renderer (src/home/home.mjs).
+ */
+function startupView() {
+  const asked = process.env.STYK_STARTUP_VIEW;
+  if (asked === 'home' || asked === 'editor') return asked;
+  return pendingFiles.length || pendingProtocol ? 'editor' : null;
+}
+
 async function createWindow() {
+  const view = startupView();
   window = new BrowserWindow({
     width: 1560, height: 1000, minWidth: 1000, minHeight: 680,
     backgroundColor: '#0a0b0f', show: false,
@@ -755,6 +767,7 @@ async function createWindow() {
       contextIsolation: true, nodeIntegration: false, sandbox: true,
       webSecurity: true, allowRunningInsecureContent: false,
       backgroundThrottling: true, spellcheck: false,
+      additionalArguments: view ? [`--styk-startup-view=${view}`] : [],
     },
   });
   window.webContents.setWindowOpenHandler(({ url }) => {

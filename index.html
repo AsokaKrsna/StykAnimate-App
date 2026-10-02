@@ -36,6 +36,8 @@
             <button class="ui-menubar-item" role="menuitem" data-app-menu="animation" aria-haspopup="menu" aria-expanded="false" data-i18n="chrome.animation">Animation</button>
             <button class="ui-menubar-item" role="menuitem" data-app-menu="help" aria-haspopup="menu" aria-expanded="false" data-i18n="chrome.help">Help</button>
           </nav>
+          <!-- Home (src/home/home.mjs): the page with the projects and the tutorials, and the way back from it. -->
+          <button type="button" class="ui-icon-button band-home" data-action="home" aria-pressed="false" aria-label="Home" data-tooltip="Home" data-icon="home" data-i18n-aria-label="home.home" data-i18n-tooltip="home.home"></button>
           <div class="project-tabs" id="project-tabs" data-band-reserve="tabs">
             <div class="project-tabs-list" role="tablist" aria-label="Open projects" data-i18n-aria-label="chrome.openProjects"></div>
             <button type="button" class="ui-icon-button project-tabs-add" data-size="sm" data-action="new" aria-label="New animation" data-icon="plus" data-i18n-aria-label="chrome.newAnimation"></button>
@@ -309,6 +311,8 @@
             ><span id="selection-summary">No figure selected</span>
           </div>
         </section>
+        <!-- Home (docs/HOME.md): a page over the workspace, built when it first shows (src/home/home-view.mjs). -->
+        <section id="home" class="home" aria-label="Home" data-i18n-aria-label="home.home" hidden></section>
       </section>
       <!-- The editor's activity log (no status bar): #status keeps the latest line, Help › Performance shows the log. -->
       <footer class="statusbar" hidden>

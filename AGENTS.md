@@ -17,6 +17,7 @@ StykAnimate is a local stick animation program built on sound architecture and g
 | Architecture and setup | `docs/ARCHITECTURE.md`, `README.md`, `package.json` |
 | Document, commands, undo | `src/editor.mjs`, `src/editor-*.mjs`, `src/pivot/`, `docs/SCENE-EDITING.md` |
 | Timeline and animation modes | `src/layer-timeline.mjs`, `docs/TIMELINE.md`, `docs/animation-modes.md` |
+| Home, project list, tutorials | `src/home/`, `src/tutorials/`, `desktop/project-library.cjs`, `docs/HOME.md`, `docs/TUTORIALS.md` |
 | WebGPU, playback, memory | `src/renderer.mjs`, `src/playback*.mjs`, `docs/renderer.md`, `docs/ADAPTIVE-PREVIEW.md` |
 | Import, formats, saving | `backend/README.md`, `codecs/`, `native/`, `docs/IMPORT-PIPELINE.md`, `docs/document-exports.md` |
 | Desktop and packaging | `desktop/`, `scripts/before-pack.cjs`, `docs/DESKTOP-RELEASE.md` |

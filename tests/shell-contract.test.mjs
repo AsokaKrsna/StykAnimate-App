@@ -31,6 +31,8 @@ export const SHELL_CONTRACT = Object.freeze({
     // The open projects (src/shell/project-tabs-view.mjs renders the tabs into its .project-tabs-list;
     // app.mjs anchors Ctrl+Tab's board to it).
     projects: ['project-tabs'],
+    // Home (src/home/home.mjs builds its page into #home, the workspace's last child; docs/HOME.md).
+    home: ['home'],
     // The dock host (src/shell/dock-host.mjs): the Properties panel's root, the
     // Library's empty host (user-library fills it), the tabs tests click
     // (#library-tab, #properties-tab, [data-vfx-tab]) and the two docks.
@@ -67,7 +69,7 @@ export const SHELL_CONTRACT = Object.freeze({
   actions: {
     // The band: New beside the tabs, its history, Save and Export, and a session's Cancel, Test rig and Done
     // (camera-done, movieclip-*). Rename is a tab's double-click and File › Rename project.
-    titlebar: ['menu', 'new', 'undo', 'redo', 'save', 'export', 'movieclip-cancel', 'rig-test', 'movieclip-done',
+    titlebar: ['menu', 'home', 'new', 'undo', 'redo', 'save', 'export', 'movieclip-cancel', 'rig-test', 'movieclip-done',
       'camera-done', 'minimize', 'maximize', 'close'],
     // The stage header: the crumb, the view cluster (Build's Handles, Highlight, Isolate and construction
     // background too), zoom and Fit, and the polygon's own controls. The rail holds tools only.

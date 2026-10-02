@@ -298,6 +298,19 @@ const shapes = Object.freeze({
   // The stage header's view toggles and the join mode's message (design/app-ui/reference, revision 4).
   joints: '<circle cx="12" cy="5" r="2.6"/><path d="M12 8v6M12 14l-4 7M12 14l4 7M7 10.5l5-1.5 5 1.5"/>',
   highlight: '<path d="M6 18 18 6"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M3 9.5 5 10.5M9.5 3l1 2M14 20.5l-1-2M20.5 14l-2-1"/>',
+  // Home and the tutorials (src/home/, src/tutorials/): the hub, learning, a help page, the grid and list
+  // layouts, sorting, a finished step, the three canvas shapes and the mouse a navigation step demonstrates.
+  home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9v11a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9"/>',
+  learn: '<path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/>',
+  book: '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/>',
+  tiles: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+  sort: '<path d="M7 4v16M3 8l4-4 4 4M17 20V4M21 16l-4 4-4-4"/>',
+  "check-circle": '<circle cx="12" cy="12" r="9"/><path d="m8.5 12.2 2.4 2.4 4.6-5"/>',
+  "canvas-landscape": '<rect x="3" y="6" width="18" height="12" rx="2"/>',
+  "canvas-portrait": '<rect x="7" y="3" width="10" height="18" rx="2"/>',
+  "canvas-square": '<rect x="4.5" y="4.5" width="15" height="15" rx="2"/>',
+  mouse: '<rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 7v4"/>',
 });
 const aliases = Object.freeze({
   x: "close",

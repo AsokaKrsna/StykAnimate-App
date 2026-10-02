@@ -47,6 +47,12 @@ test('a message that would cover a focused tool option takes its own line instea
   assert.equal(spot.place, 'drop');
 });
 
+test('a message that would cover a tutorial strip takes its own line instead', () => {
+  const spot = solveMessage({head, keep: end, view, startRight: 700, width: 300, keepStart: true});
+  assert.equal(spot.place, 'drop');
+  assert.equal(solveMessage({head, keep: end, view, startRight: 220, width: 300, keepStart: true}).place, 'head', 'a message clear of the strip stays in the header');
+});
+
 test('a pick mode outranks updates and toasts, and gives way to recovery and errors', () => {
   assert.ok(MESSAGE_PRIORITY.error > MESSAGE_PRIORITY.recovery && MESSAGE_PRIORITY.recovery > MESSAGE_PRIORITY.mode
     && MESSAGE_PRIORITY.mode > MESSAGE_PRIORITY.update && MESSAGE_PRIORITY.update > MESSAGE_PRIORITY.toast && MESSAGE_PRIORITY.toast > MESSAGE_PRIORITY.hint);

@@ -57,6 +57,7 @@ const build = {modes: ['rig']};
 const draw = {modes: ['draw']};
 
 group('file', [
+  ['home', english["commands.home"], 'home', {labelKey: "commands.home", keywords: ['projects', 'start', 'welcome', 'recent']}],
   ['new', english["menu.newAnimation"], 'new-file', {labelKey: 'menu.newAnimation', keywords: ['create', 'blank', 'project']}],
   ['new-window', english["commands.newWindow"], 'plus', {labelKey: "commands.newWindow", requires: ['desktop:newWindow']}],
   ['open', english["menu.openProject"], 'folder', {labelKey: 'menu.openProject', keywords: ['load', 'piv', 'stk']}],
@@ -319,6 +320,8 @@ group('canvas', [
 ]);
 group('help', [
   ['help', english["menu.shortcuts"], 'keyboard', {labelKey: 'menu.shortcuts', keywords: ['hotkeys', 'keys']}],
+  ['tutorials', english["commands.tutorials"], 'learn', {labelKey: "commands.tutorials", keywords: ['learn', 'guide', 'tour', 'lesson', 'how to', 'getting started']}],
+  ['tutorial-leave', english["commands.tutorialLeave"], 'close', {labelKey: "commands.tutorialLeave", ...internal}],
   ['about', english["commands.about"], 'help', {labelKey: "commands.about"}],
   ['release-notes', english["commands.releaseNotes"], 'file', {labelKey: "commands.releaseNotes", requires: ['desktop:updates'], keywords: ['release notes', 'changelog']}],
   ['check-updates', english["commands.checkUpdates"], 'import', {labelKey: "commands.checkUpdates", requires: ['desktop:updates']}],

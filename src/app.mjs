@@ -57,6 +57,8 @@ import { sizeBucket,complexityBucket,fpsBucket } from './telemetry-schema.mjs';
 import { BrowserRecoverySession, readBrowserRecovery } from './browser-recovery.mjs';
 import {DocumentSave, RecoveryDeadline, documentCheckpoint, matchesDocumentCheckpoint} from './document-save.mjs';
 import {createProjectTabsHost} from './project-tabs-host.mjs';
+import {createHome} from './home/home.mjs';
+import {createTutorials} from './tutorials/tutorials.mjs';
 import {installProjectTabs} from './shell/project-tabs-view.mjs';
 import {createProjectSwitcher} from './shell/project-switcher.mjs';
 import {sessionProject} from './editor-sessions.mjs';
@@ -380,8 +382,9 @@ const toasts = createToasts({
   overlays,
   icon: (name) => icon(name),
   // The stage header's centre, or a line of its own under it; the stage's bottom centre while the header is not shown.
-  slot: { place: (size) => stageHead.placeMessage(size), release: () => stageHead.releaseMessage() },
-  area: () => viewport.getBoundingClientRect(),
+  // While Home shows (src/home/home.mjs) the header is under it: the message keeps its fallback place, in Home's box.
+  slot: { place: (size) => (state.home ? null : stageHead.placeMessage(size)), release: () => stageHead.releaseMessage() },
+  area: () => (state.home ? $("home") : viewport).getBoundingClientRect(),
   topInset: () => bandBottom(document),
   t: (key, params) => appLocalization?.t(key, params),
   feedback: desktop?.sendTelemetryFeedback
@@ -5137,6 +5140,28 @@ const projectSwitcher = createProjectSwitcher({
   activate: guarded((id) => projects.activate(id)),
   picture: (id) => projectTabsView.picture(id),
 });
+// Home (src/home/home.mjs, docs/HOME.md): the page with the projects and the tutorials, over the workspace.
+const home = createHome({
+  root: $("home"), editor, state, actions, desktop, overlays, guarded, fail, toast, fit, pause, acceptNativeFile,
+  menu: (items, anchor, options) => showCommandMenu(items, anchor, options),
+  prompt: (options) => promptText({ ...options, overlays, t: kitT }),
+  // A listed project that is already open comes to the front as it was left.
+  activateDocument: (token) => {
+    if (state.documentToken === token) return true;
+    const open = projects.tabs.items.find((item) => item.state?.documentToken === token);
+    return open ? projects.activate(open.id) : false;
+  },
+  picture: () => projectTabsView.picture(projects.tabs.activeId),
+  focusStage: () => viewport.focus({ preventScroll: true }),
+  settings: () => editorSettings, tutorials: () => tutorials, studio: () => studioShell,
+  startupView: desktop?.startupView ?? window.stykStartupView,
+});
+// The tutorials (src/tutorials/tutorials.mjs, docs/TUTORIALS.md): guided steps in the editor itself, on a practice animation.
+const tutorials = createTutorials({
+  editor, state, actions, overlays, stageHead, toasts, guarded, fail, toast, fit, setTool, viewport, updateTitle, ready: editorReady,
+  commands: () => commands, settings: () => editorSettings, shell: () => shell, timeline: () => timelineUI, studio: () => studioShell,
+  home: () => home, touch: () => Boolean(touchMode?.active), mode: () => commandContext().mode, fitted: () => isFittedView(),
+});
 const polygonSafeActions = new Set([
   "close-project", "close-saved-projects", "next-project", "previous-project", "recent-project", "save-all",
   "menu",
@@ -5188,7 +5213,11 @@ for (const [name, action] of Object.entries(actions)) {
       }
     }
     telemetry.action(name);
-    return action(...args);
+    // A command that works on the animation sends Home away first; a tutorial hears which command ran.
+    home.before(name);
+    const result = action(...args);
+    tutorials.ran(name);
+    return result;
   };
 }
 document.addEventListener(
@@ -5702,7 +5731,7 @@ installPenMenuGuard(window);
 // their own keys (the layer search) stop them.
 const SHELL_FIELD_KEYS = new Set(['focus-next-region', 'focus-previous-region', 'layout-arrange', 'layout-menu']);
 document.addEventListener('keydown', guarded(event => {
-  if (overlays.blocksHotkeys() || !isHotkeyInput(event.target)) return;
+  if (overlays.blocksHotkeys() || state.home || !isHotkeyInput(event.target)) return;
   const command = hotkeys.resolve(event, hotkeyScopes(event));
   if (!SHELL_FIELD_KEYS.has(command?.id) || !actions[command.id]) return;
   event.preventDefault();
@@ -5717,6 +5746,8 @@ document.addEventListener('keydown', guarded(event => {
   const scopes = hotkeyScopes(event), command = hotkeys.resolve(event, scopes);
   const builderCheckbox = command?.scope === 'builder' && command.id.startsWith('builder-') && event.target.matches?.('input[type=checkbox],input[type=radio]');
   const effectHistory = ['undo','redo'].includes(command?.id) && vfxInspector?.ownsHistoryTarget(event.target);
+  // On Home only its own shortcuts act; every other key is the page's (a button's Enter, the search field).
+  if (home.blocksKey(command)) return;
   if (overlays.blocksHotkeys() || (isHotkeyInput(event.target) && !builderCheckbox && !effectHistory)) {
     // Where hotkeys are off, the palette's keys still never print (Ctrl+P) or open the browser's help (F1).
     if (command?.id === 'command-palette') event.preventDefault();
@@ -6118,6 +6149,8 @@ window.styk = {
   editor,
   projects,
   projectSwitcher,
+  home,
+  tutorials,
   state,
   actions,
   importFiles,
@@ -6356,6 +6389,8 @@ async function init() {
     onDonate: desktop?.openDonate ? () => desktop.openDonate() : undefined,
   });
   state.settings = editorSettings.value;
+  // Home shows first, over the editor that goes on starting behind it, unless the launch or the person's setting says otherwise.
+  home.start();
   // The touch interface (docs/TOUCH.md): decided before the shell lays out, kept current as the window turns.
   touchMode = installTouchMode({ getSetting: () => state.settings.touchInterface });
   window.styk.touch = touchMode;

@@ -95,7 +95,20 @@ export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   inspectorSections: Object.freeze({}),
   // The export dialog's remembered choices (export-request.mjs); null until the first export.
   exportPreferences: null,
+  // Home (docs/HOME.md): whether the app starts on it, and how its project list is shown and ordered.
+  showHomeOnStartup: true,
+  homeLayout: "grid",
+  homeSort: "recent",
+  // The tutorials a person finished (docs/TUTORIALS.md), by id.
+  tutorialsDone: Object.freeze([]),
 });
+const TUTORIAL_ID = /^[a-z][a-z0-9-]{0,39}$/;
+/** The finished tutorials as a short list of well-formed ids, each once. */
+export function normalizeTutorialsDone(value) {
+  if (!Array.isArray(value)) return DEFAULT_EDITOR_SETTINGS.tutorialsDone;
+  const ids = [...new Set(value.filter(id => typeof id === "string" && TUTORIAL_ID.test(id)))].slice(0, 64);
+  return Object.freeze(ids);
+}
 export function normalizeEditorSettings(value = {}) {
   const result = { ...DEFAULT_EDITOR_SETTINGS };
   result.locale = normalizeLocale(value?.locale);
@@ -145,6 +158,7 @@ export function normalizeEditorSettings(value = {}) {
     "autoKey",
     "loopPlayback",
     "fitViewOnPlayback",
+    "showHomeOnStartup",
   ])
     if (typeof value?.[key] === "boolean") result[key] = value[key];
   if (typeof value?.builderCanvasColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.builderCanvasColor))
@@ -180,6 +194,9 @@ export function normalizeEditorSettings(value = {}) {
   if (['auto','canvas','gpu'].includes(value?.rendererMode)) result.rendererMode = value.rendererMode;
   result.inspectorSections = normalizeSectionMemory(value?.inspectorSections);
   if (value?.exportPreferences && typeof value.exportPreferences === 'object') result.exportPreferences = normalizeExportPreferences(value.exportPreferences);
+  if (['grid', 'list'].includes(value?.homeLayout)) result.homeLayout = value.homeLayout;
+  if (['recent', 'name', 'modified'].includes(value?.homeSort)) result.homeSort = value.homeSort;
+  result.tutorialsDone = normalizeTutorialsDone(value?.tutorialsDone);
   return result;
 }
 const escape = (value) =>
@@ -606,6 +623,7 @@ export class EditorSettings {
         this.select(say("settings.touchInterface"), 'touchInterface', [messageTuple(['auto', say("settings.touchAuto")], {1: {key: "settings.touchAuto", params: {}}}), messageTuple(['on', say("settings.touchOn")], {1: {key: "settings.touchOn", params: {}}}), messageTuple(['off', say("settings.touchOff")], {1: {key: "settings.touchOff", params: {}}})], say("settings.touchInterfaceNote"))
         + this.select(say("settings.fingerDraw"), 'fingerDraw', [messageTuple(['auto', say("settings.fingerDrawAuto")], {1: {key: "settings.fingerDrawAuto", params: {}}}), messageTuple(['always', say("settings.fingerDrawAlways")], {1: {key: "settings.fingerDrawAlways", params: {}}}), messageTuple(['never', say("settings.fingerDrawNever")], {1: {key: "settings.fingerDrawNever", params: {}}})], say("settings.fingerDrawNote")));
       return this.group(this.t("settings.appearance"), themes + language + coverage + this.scaleControl())
+        + this.group(say("settings.startup"), this.checkbox(say("settings.showHomeOnStartup"), 'showHomeOnStartup', say("settings.showHomeOnStartupNote")))
         + touch
         + this.group(this.t('timeline.title'), timeline)
         + workspace;

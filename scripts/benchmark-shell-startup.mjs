@@ -18,7 +18,7 @@ for(const mode of modes){
   const directory=path.join(output,mode);await mkdir(directory,{recursive:true});
   const profile=path.join(directory,'profile');await mkdir(profile,{recursive:true});
   await writeFile(path.join(profile,'telemetry-state.json'),JSON.stringify({decided:true,consent:{analytics:false,diagnostics:false,policyVersion:POLICY_VERSION,updatedAt:Date.now()}}),{flag:'wx'});
-  const env={...process.env,STYK_SHELL_OUTPUT:directory,STYK_SHELL_MODE:mode,STYK_USER_DATA_DIR:profile,STYK_LIBRARY_DIR:path.join(directory,'library')};
+  const env={STYK_STARTUP_VIEW:'editor',...process.env,STYK_SHELL_OUTPUT:directory,STYK_SHELL_MODE:mode,STYK_USER_DATA_DIR:profile,STYK_LIBRARY_DIR:path.join(directory,'library')};
   delete env.ELECTRON_RUN_AS_NODE;
   await new Promise((resolve,reject)=>{
     const child=spawn(electron,['scripts/benchmark-shell-startup.cjs'],{cwd:process.cwd(),env,windowsHide:true,stdio:['pipe','pipe','pipe']});
