@@ -55,3 +55,61 @@ test('recovery tolerates missing or interrupted name metadata', async () => {
   await writeFile(path.join(root, 'recovery.json'), '{');
   assert.equal((await new RecoveryStore(root).get()).data, data);
 });
+
+const slots = ['0f8fad5b-d9cb-469f-a165-70867728950e', '7c9e6679-7425-40de-944b-e07fc1f90ae7', '3f2504e0-4f89-41d3-9a0c-0305e82c3301'];
+const put = async (store, slot, text, name) => {
+  const { file } = store.paths(slot);
+  await writeFile(file, text);
+  await store.updateMetadata(name, slot);
+};
+
+test('each open project keeps its own copy beside the single copy of earlier versions', async () => {
+  const root = await directory();
+  const store = new RecoveryStore(root);
+  await store.save({ data, name: 'Earlier version' });
+  await put(store, slots[0], 'first project', 'First');
+  await new Promise(resolve => setTimeout(resolve, 15));
+  await put(store, slots[1], 'second project', 'Second');
+  const listed = await new RecoveryStore(root).list();
+  assert.deepEqual(listed.map(record => record.slot), [slots[1], slots[0], null]);
+  assert.deepEqual(listed.map(record => record.name), ['Second', 'First', 'Earlier version']);
+  assert.equal(listed[0].size, 'second project'.length);
+  assert.equal((await store.info(slots[0])).name, 'First');
+  assert.equal((await store.info()).name, 'Earlier version');
+  await store.delete(slots[0]);
+  assert.equal(await store.info(slots[0]), null);
+  assert.equal(await readFile(store.paths(slots[1]).file, 'utf8'), 'second project');
+  assert.equal((await store.get()).data, data);
+  await store.deleteAll();
+  assert.deepEqual(await store.list(), []);
+});
+
+test('a slot name is an issued identifier, never a path', async () => {
+  const store = new RecoveryStore(await directory());
+  for (const slot of ['../recovery', 'recovery', 'C:\Windows\win.ini', '0f8fad5b-d9cb-469f-a165-70867728950e/..', '', 42, {}])
+    assert.throws(() => store.paths(slot), /no longer available/);
+  assert.equal(path.dirname(store.paths(slots[0]).file), store.directory);
+});
+
+test('copies left behind make room oldest first, never one an open project owns', async () => {
+  const root = await directory();
+  const store = new RecoveryStore(root, { maxSlots: 2 });
+  for (const [index, slot] of slots.entries()) {
+    await put(store, slot, `project ${index}`, `Project ${index}`);
+    await new Promise(resolve => setTimeout(resolve, 15));
+  }
+  await store.save({ data, name: 'Earlier version' });
+  assert.equal(await store.prune(new Set([slots[0]])), 1);
+  const kept = (await store.list()).map(record => record.slot);
+  assert.deepEqual(new Set(kept), new Set([null, slots[0], slots[2]]));
+  assert.equal(await store.prune(new Set(slots)), 0);
+});
+
+test('an unreadable copy is left out of the list and stays on disk', async () => {
+  const root = await directory();
+  const store = new RecoveryStore(root, { maxBytes: 8 });
+  await put(store, slots[0], 'tiny', 'Good');
+  await writeFile(store.paths(slots[1]).file, 'far more than eight bytes');
+  assert.deepEqual((await store.list()).map(record => record.slot), [slots[0]]);
+  assert.equal(await readFile(store.paths(slots[1]).file, 'utf8'), 'far more than eight bytes');
+});

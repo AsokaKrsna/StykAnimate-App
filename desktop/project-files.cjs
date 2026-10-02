@@ -5,13 +5,21 @@ const { messageError } = require('./localization.cjs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
-/** Native paths never enter this store through renderer-provided strings. */
+/**
+ * The open projects' save targets. Native paths never enter this store through renderer-provided strings.
+ *
+ * A window keeps several projects open; one is current (the one in front), and only it can be written. Each
+ * document also names its recovery copy (`recovery`): its own token, or the copy it was restored from.
+ */
 class ProjectFiles {
-  constructor({ maxOpenTokens = 32, openTokenTtlMs = 10 * 60 * 1000 } = {}) {
-    if (!Number.isSafeInteger(maxOpenTokens) || maxOpenTokens < 1 || !Number.isFinite(openTokenTtlMs) || openTokenTtlMs <= 0) throw messageError(new Error(''), 'desktop.projectFiles.errors.nativeProjectCapabilityLimitsMustBePositive', {});
+  constructor({ maxOpenTokens = 32, openTokenTtlMs = 10 * 60 * 1000, maxDocuments = 32 } = {}) {
+    if (!Number.isSafeInteger(maxOpenTokens) || maxOpenTokens < 1 || !Number.isFinite(openTokenTtlMs) || openTokenTtlMs <= 0 ||
+      !Number.isSafeInteger(maxDocuments) || maxDocuments < 1) throw messageError(new Error(''), 'desktop.projectFiles.errors.nativeProjectCapabilityLimitsMustBePositive', {});
     this.maxOpenTokens = maxOpenTokens;
     this.openTokenTtlMs = openTokenTtlMs;
+    this.maxDocuments = maxDocuments;
     this.opens = new Map();
+    this.documents = new Map();
     this.current = null;
   }
 
@@ -33,7 +41,8 @@ class ProjectFiles {
     return token;
   }
 
-  activate({ openToken } = {}) {
+  /** Opens a document and makes it current. `recovery` names the copy it was restored from (a slot the caller verified). */
+  activate({ openToken } = {}, { recovery } = {}) {
     let filename = null;
     if (openToken !== undefined && openToken !== null) {
       const opened = this.opens.get(openToken);
@@ -41,8 +50,45 @@ class ProjectFiles {
       filename = opened.filename;
       this.opens.delete(openToken);
     }
-    this.current = { documentToken: randomUUID(), filename };
+    const documentToken = randomUUID();
+    this.current = { documentToken, filename, recovery: recovery === undefined ? documentToken : recovery };
+    // A renderer that never releases (it reloaded, or crashed) cannot grow this map: the oldest make room.
+    while (this.documents.size >= this.maxDocuments) this.documents.delete(this.documents.keys().next().value);
+    this.documents.set(documentToken, this.current);
     return this.describe(this.current);
+  }
+
+  /** An open document, current or not. */
+  require(documentToken) {
+    const document = typeof documentToken === 'string' ? this.documents.get(documentToken) : null;
+    if (!document) throw messageError(new Error(''), 'desktop.projectFiles.errors.thisSaveBelongsToADifferentDocument', {});
+    return document;
+  }
+
+  /** Brings an open document to the front: saves and their dialogs follow it. */
+  select(documentToken) {
+    this.current = this.require(documentToken);
+    return this.describe(this.current);
+  }
+
+  /** Closes a document. Its save target and pending capabilities end with it. */
+  release(documentToken) {
+    const document = typeof documentToken === 'string' ? this.documents.get(documentToken) : null;
+    if (!document) return false;
+    this.documents.delete(documentToken);
+    if (this.current === document) this.current = null;
+    return true;
+  }
+
+  /** Forgets every document (the page loaded again). Pending native opens stay valid. */
+  clear() {
+    this.documents.clear();
+    this.current = null;
+  }
+
+  /** The recovery slots open documents own. */
+  get recoverySlots() {
+    return new Set([...this.documents.values()].map(document => document.recovery));
   }
 
   requireCurrent(documentToken) {

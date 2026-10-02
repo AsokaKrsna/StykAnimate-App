@@ -68,6 +68,7 @@ import {presencePlayback} from './movieclip-presence.mjs';
 import {editorAudioMethods, applyAudioCommand} from './editor-audio.mjs';
 import {editorDrawingMethods,applyDrawingCommand} from './editor-drawing.mjs';
 import {DrawingResources,drawingResourcesFor} from './drawing-resources.mjs';
+import {editorSessionMethods} from './editor-sessions.mjs';
 
 const clone = value => structuredClone(value);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -467,8 +468,8 @@ export class Editor extends EventTarget {
   }
   markSaved() { this._savedRevision = this._revision; this._emit('saved'); }
 
-  newDocument() {
-    return this.load(createStartupDocument(),'Untitled animation');
+  newDocument(options) {
+    return this.load(createStartupDocument(),'Untitled animation',options);
   }
   load(document, name, options = {}) {
     this._loadRequestId = (this._loadRequestId ?? 0) + 1;
@@ -504,11 +505,13 @@ export class Editor extends EventTarget {
     }
     return this._publishLoadedReport(prepared, name, options);
   }
-  _publishLoadedReport(prepared, name, {initialFrameIndex=0, initialTick, preserveDrawingResources=false} = {}) {
+  _publishLoadedReport(prepared, name, {initialFrameIndex=0, initialTick, preserveDrawingResources=false, onDetach} = {}) {
     const {report} = prepared;
     if (name !== undefined && name !== null && typeof name !== 'string') throw messageError(new Error(''), "errors.editor.theDocumentNameMustBeText", {});
     const initial=prepared.scene??initialLoadState(report,{initialFrameIndex,initialTick},this._frameDraftEnabled),index=initial.frameIndex;
     const started = performance.now();
+    // The open document stays open beside the loaded one (editor-sessions.mjs): its owner receives it whole.
+    if(onDetach)onDetach(this.detachDocument());
     if(!preserveDrawingResources){drawingResourcesFor(this.report)?.dispose();for(const scope of this._movieclipScopes??[])drawingResourcesFor(scope.parent.report)?.dispose();}
     this._vfxClipEdit=null;this._selectedVfxClip=null;this._selectedVfxKey=null;
     this._movieclipScopes=[];
@@ -1768,6 +1771,7 @@ Object.assign(Editor.prototype, editorOriginMutationMethods);
 Object.assign(Editor.prototype, editorMotionPathMethods);
 Object.assign(Editor.prototype, editorTweenerMethods);
 Object.assign(Editor.prototype, editorAudioMethods);
+Object.assign(Editor.prototype, editorSessionMethods);
 Object.defineProperties(Editor.prototype, Object.getOwnPropertyDescriptors(editorFrameDraftMethods));
 Editor.prototype._topologyEdit.frameDraftAware = true;
 Editor.prototype.replaceFigureDefinition.frameDraftAware = true;

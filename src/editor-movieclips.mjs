@@ -542,8 +542,10 @@ export const editorMovieclipMethods={
     const scope=scopes.at(-1),document=save?storedFrameReport(this.report,{validate:false}):null;
     const duration=save?Math.max(1,this.totalTicks):0;
     drawingResourcesFor(this.report)?.dispose();
+    // Revisions never repeat across the projects one editor holds (editor-sessions.mjs).
+    const serial=this._revisionSerial;
     for(const key of Object.keys(this))if(key!=='_movieclipScopes')delete this[key];
-    Object.assign(this,scope.parent);this._movieclipScopes=scopes.slice(0,-1);
+    Object.assign(this,scope.parent);this._movieclipScopes=scopes.slice(0,-1);this._revisionSerial=Math.max(this._revisionSerial,serial);
     if(save&&changed){
       const index=this.report.figure_types.findIndex(f=>f.figure_type_id===scope.typeId),figure=this.report.figure_types[index];
       publishDefinition(this,{...figure,_styk:{...figure._styk,movieclip:{...movieclipAsset(figure),document,duration}}},index,'Edit movieclip');

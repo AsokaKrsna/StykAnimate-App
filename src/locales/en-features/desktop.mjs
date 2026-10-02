@@ -119,6 +119,15 @@ export default Object.freeze({
   "desktop.main.unableToOpenFile": "Unable to open file",
   "desktop.main.restartToUpdate": "Restart to update",
   "desktop.main.saveChangesToName": "Save changes to {name}?",
+  "desktop.main.saveChangesToProjects": {
+    "one": "Save changes to {count} project?",
+    "other": "Save changes to {count} projects?"
+  },
+  "desktop.main.theseProjectsHaveChangesThatHaveNotBeenSaved": "These projects have changes that have not been saved.",
+  "desktop.main.saveAll": "Save all",
+  "desktop.main.discardAll": "Discard all",
+  "desktop.main.saveAllAndRestart": "Save all and restart",
+  "desktop.main.discardAllAndRestart": "Discard all and restart",
   "desktop.main.stykanimateWillCloseInstallTheDownloadedUpdateAndReopen": "StykAnimate will close, install the downloaded update, and reopen.",
   "desktop.main.saveAndRestart": "Save and restart",
   "desktop.main.cancel": "Cancel",
@@ -182,6 +191,7 @@ export default Object.freeze({
   "desktop.recovery.errors.recoveryDataIsNotValidBase64": "Recovery data is not valid base64.",
   "desktop.recovery.errors.theRecoveryFileIsEmptyOrExceedsTheSizeLimit": "The recovery file is empty or exceeds the size limit.",
   "desktop.recovery.errors.theRecoveryFileExceedsTheSizeLimit": "The recovery file exceeds the size limit.",
+  "desktop.recovery.errors.thisRecoveryCopyIsNoLongerAvailable": "This recovery copy is no longer available.",
   "desktop.releaseHistory.errors.releaseHistoryUnavailable": "Release history unavailable.",
   "desktop.releaseHistory.errors.releaseHistoryIsTooLarge": "Release history is too large.",
   "desktop.releaseHistory.errors.invalidReleaseHistory": "Invalid release history.",

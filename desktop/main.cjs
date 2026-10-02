@@ -82,7 +82,9 @@ function handleProtocol(value) {
   } catch { return false; }
 }
 const projectFiles = new ProjectFiles();
-let documentState = { name: 'Untitled', dirty: false };
+// What the window holds (several projects, one in front): `name` is the project in front, `dirty` is true while
+// any open project has unsaved changes, `unsaved` counts them and `unsavedName` names one of them.
+let documentState = { name: 'Untitled', dirty: false, unsaved: 0, unsavedName: '' };
 let quitting = false;
 let pendingFiles = process.argv.slice(app.isPackaged ? 1 : 2).filter((arg) => /\.(piv|stk|styk|stkz|stykmov|json|nodes|nodemc|stknds|zip)$/i.test(arg));
 
@@ -241,6 +243,19 @@ function documentActionCurrent(checkpoint) {
     (!checkpoint.saved || !documentState.dirty));
 }
 
+/** The question asked before unsaved work is closed: one project by its name, several by their count. */
+function unsavedPrompt({ restart = false } = {}) {
+  const several = documentState.unsaved > 1;
+  return {
+    message: several ? t('desktop.main.saveChangesToProjects', {count: documentState.unsaved})
+      : t('desktop.main.saveChangesToName', {name: documentState.unsavedName || documentState.name}),
+    several,
+    buttons: several
+      ? [t(restart ? 'desktop.main.saveAllAndRestart' : 'desktop.main.saveAll'), t('desktop.main.cancel'), t(restart ? 'desktop.main.discardAllAndRestart' : 'desktop.main.discardAll')]
+      : [t(restart ? 'desktop.main.saveAndRestart' : 'common.save'), t('desktop.main.cancel'), t(restart ? 'desktop.main.discardAndRestart' : 'desktop.main.discard')],
+  };
+}
+
 function registerIpc() {
   handle('styk:update-state', event => { trusted(event); return updates.snapshot(); });
   handle('styk:update-check', event => { trusted(event); void updates.check(); return updates.snapshot(); });
@@ -260,10 +275,11 @@ function registerIpc() {
       if (!documentActionCurrent(checkpoint)) return false;
       const revision = documentState.revision;
       if (documentState.dirty) {
+        const prompt = unsavedPrompt({ restart: true });
         const answer = await dialog.showMessageBox(window, {
-          type: 'question', title: t('desktop.main.restartToUpdate'), message: t('desktop.main.saveChangesToName', {name: documentState.name}),
+          type: 'question', title: t('desktop.main.restartToUpdate'), message: prompt.message,
           detail: t('desktop.main.stykanimateWillCloseInstallTheDownloadedUpdateAndReopen'),
-          buttons: [t('desktop.main.saveAndRestart'), t('desktop.main.cancel'), t('desktop.main.discardAndRestart')], defaultId: 0, cancelId: 1,
+          buttons: prompt.buttons, defaultId: 0, cancelId: 1,
         });
         if (answer.response === 0) { sendAction('save-and-update'); return false; }
         if (answer.response !== 2) return false;
@@ -459,14 +475,34 @@ function registerIpc() {
   });
   const projectTransfers = new Map();
   let projectRequestPending = false;
-  handle('styk:document-activate', async (event, options) => {
-    trusted(event);
-    const document = projectFiles.activate(options || {});
+  // A save belongs to the project in front: bringing another one there ends what the previous one had in flight.
+  const cancelProjectTransfers = async () => {
     const stale = [...projectTransfers.keys()];
     projectTransfers.clear();
     await Promise.all(stale.map((token) => fileStreams.cancel(token)));
+  };
+  // A recovery copy by the name the renderer was given (`recovery` is the single copy of earlier versions).
+  // An open project's copy is never listed, so it can be neither restored twice nor discarded from under it.
+  const spareRecovery = async (id) => {
+    const slot = id === 'recovery' ? null : id;
+    const record = typeof id === 'string' && !projectFiles.recoverySlots.has(slot) ? (await recovery.list()).find(item => item.slot === slot) : null;
+    if (!record) throw messageError(new Error(''), 'desktop.recovery.errors.thisRecoveryCopyIsNoLongerAvailable', {});
+    return record;
+  };
+  handle('styk:document-activate', async (event, options) => {
+    trusted(event);
+    const restored = options?.recoveryId === undefined || options?.recoveryId === null ? undefined : (await spareRecovery(options.recoveryId)).slot;
+    const document = projectFiles.activate(options || {}, { recovery: restored });
+    await cancelProjectTransfers();
     return document;
   });
+  handle('styk:document-select', async (event, documentToken) => {
+    trusted(event);
+    const document = projectFiles.select(documentToken);
+    await cancelProjectTransfers();
+    return document;
+  });
+  handle('styk:document-release', (event, documentToken) => { trusted(event); return projectFiles.release(documentToken); });
   handle('styk:project-write-begin', async (event, options) => {
     trusted(event);
     fileStreams.validateSize(options?.size);
@@ -499,7 +535,15 @@ function registerIpc() {
       return { ...transfer, filename: path.basename(destination), documentToken: document.documentToken };
     } finally { projectRequestPending = false; }
   });
-  let recoveryWriteToken = null;
+  // One write at a time per recovery copy; a newer snapshot of the same project replaces the one in flight.
+  const recoveryWrites = new Map();
+  const cancelRecoveryWrite = async (slot) => {
+    const token = recoveryWrites.get(slot);
+    if (token === undefined) return;
+    recoveryWrites.delete(slot);
+    await fileStreams.cancel(token);
+  };
+  const forgetRecoveryWrite = (token) => { for (const [slot, value] of recoveryWrites) if (value === token) recoveryWrites.delete(slot); };
   let recoveryControl = Promise.resolve();
   function controlRecovery(operation) {
     const result = recoveryControl.then(operation);
@@ -529,10 +573,15 @@ function registerIpc() {
     trusted(event);
     fileStreams.validateSize(options?.size);
     if (!options.size) throw messageError(new Error(''), 'desktop.main.errors.recoveryDataIsEmpty', {});
+    // A project's copy is named by its document; without one the write is the single copy of earlier versions.
+    const slot = options.documentToken === undefined || options.documentToken === null ? null : projectFiles.require(options.documentToken).recovery;
     return controlRecovery(async () => {
-      if (recoveryWriteToken) await fileStreams.cancel(recoveryWriteToken);
-      const result = await fileStreams.beginWrite({ destination: recovery.file, size: options.size, onCommit: () => recovery.updateMetadata(options.name) });
-      recoveryWriteToken = result.token;
+      await cancelRecoveryWrite(slot);
+      const result = await fileStreams.beginWrite({ destination: recovery.paths(slot).file, size: options.size, onCommit: async () => {
+        await recovery.updateMetadata(options.name, slot);
+        await recovery.prune(projectFiles.recoverySlots);
+      } });
+      recoveryWrites.set(slot, result.token);
       return result;
     });
   });
@@ -544,7 +593,7 @@ function registerIpc() {
     if (documentToken) projectFiles.requireCurrent(documentToken);
     try {
       const result = await fileStreams.finish(token);
-      if (token === recoveryWriteToken) recoveryWriteToken = null;
+      forgetRecoveryWrite(token);
       return documentToken ? { ...result, documentToken, filename: path.basename(result.path) } : result;
     } finally { if (!fileStreams.jobs.has(token)) projectTransfers.delete(token); }
   });
@@ -552,32 +601,53 @@ function registerIpc() {
     trusted(event);
     const result = await fileStreams.cancel(token);
     projectTransfers.delete(token);
-    if (token === recoveryWriteToken) recoveryWriteToken = null;
+    forgetRecoveryWrite(token);
     return result;
   });
-  handle('styk:recovery-info', (event) => { trusted(event); return recovery.info(); });
-  handle('styk:recovery-read-begin', async (event) => {
+  const describeRecovery = ({ slot, ...record }) => ({ id: slot ?? 'recovery', ...record });
+  // The newest copy, whoever owns it: what a single-project caller means by "the recovery".
+  handle('styk:recovery-info', async (event) => {
     trusted(event);
-    const info = await recovery.info();
-    if (!info) return null;
-    const transfer = await fileStreams.beginRead(recovery.file);
-    return transfer ? { ...info, ...transfer } : null;
+    const [newest] = await recovery.list();
+    if (!newest) return null;
+    const { slot, ...info } = newest;
+    return info;
+  });
+  // The copies no open project owns: what a start after a crash can offer to restore.
+  handle('styk:recovery-list', async (event) => {
+    trusted(event);
+    const owned = projectFiles.recoverySlots;
+    return (await recovery.list()).filter(record => !owned.has(record.slot)).map(describeRecovery);
+  });
+  handle('styk:recovery-read-begin', async (event, id) => {
+    trusted(event);
+    const record = id === undefined || id === null ? (await recovery.list())[0] : await spareRecovery(id);
+    if (!record) return null;
+    const transfer = await fileStreams.beginRead(recovery.paths(record.slot).file);
+    return transfer ? { ...describeRecovery(record), ...transfer } : null;
   });
   handle('styk:file-read-chunk', (event, token) => { trusted(event); return fileStreams.read(token); });
   handle('styk:file-read-close', (event, token) => { trusted(event); return fileStreams.closeRead(token); });
   handle('styk:recovery-save', (event, options) => {
     trusted(event);
     return controlRecovery(async () => {
-      if (recoveryWriteToken) { await fileStreams.cancel(recoveryWriteToken); recoveryWriteToken = null; }
+      await cancelRecoveryWrite(null);
       return recovery.save(options);
     });
   });
   handle('styk:recovery-get', (event) => { trusted(event); return recovery.get(); });
-  handle('styk:recovery-delete', async (event) => {
+  // {documentToken}: that open project's copy (it was saved or closed). {id}: a listed copy the person discards.
+  // Nothing: every copy, as a single-project caller's "delete the recovery" always meant.
+  handle('styk:recovery-delete', async (event, target) => {
     trusted(event);
+    if (target === undefined || target === null) return controlRecovery(async () => {
+      for (const slot of [...recoveryWrites.keys()]) await cancelRecoveryWrite(slot);
+      return recovery.deleteAll();
+    });
+    const slot = typeof target.documentToken === 'string' ? projectFiles.require(target.documentToken).recovery : (await spareRecovery(target.id)).slot;
     return controlRecovery(async () => {
-      if (recoveryWriteToken) { await fileStreams.cancel(recoveryWriteToken); recoveryWriteToken = null; }
-      return recovery.delete();
+      await cancelRecoveryWrite(slot);
+      return recovery.delete(slot);
     });
   });
   handle('styk:open-file', async (event) => {
@@ -635,9 +705,13 @@ function registerIpc() {
   });
   handle('styk:document-state', (event, state) => {
     trusted(event);
-    documentState = { name: String(state?.name || 'Untitled').slice(0, 180), dirty: Boolean(state?.dirty), revision: String(state?.revision || '').slice(0, 160) };
-    window.setTitle(`${documentState.dirty ? '• ' : ''}${documentState.name} — StykAnimate`);
-    window.setDocumentEdited(documentState.dirty);
+    const name = String(state?.name || 'Untitled').slice(0, 180), dirty = Boolean(state?.dirty);
+    const unsaved = Number.isSafeInteger(state?.unsaved) ? Math.max(dirty ? 1 : 0, Math.min(64, state.unsaved)) : dirty ? 1 : 0;
+    documentState = { name, dirty, revision: String(state?.revision || '').slice(0, 160), unsaved,
+      unsavedName: String(state?.unsavedName || name).slice(0, 180) };
+    // The title names the project in front; its dot is that project's own.
+    window.setTitle(`${(state?.activeDirty ?? dirty) ? '• ' : ''}${name} — StykAnimate`);
+    window.setDocumentEdited(dirty);
   });
 }
 
@@ -678,7 +752,7 @@ async function createWindow() {
       });
       if (editorWindow.isDestroyed() || !rendererFailed) return;
       if (answer.response === 0) {
-        documentState = { name: 'Untitled', dirty: false };
+        documentState = { name: 'Untitled', dirty: false, unsaved: 0, unsavedName: '' };
         await editorWindow.loadURL(backend.origin);
       } else if (answer.response === 2) {
         // The dead renderer cannot save. Closing this window must retain the
@@ -710,10 +784,11 @@ async function createWindow() {
     if (!quitting && rendererFailed) { event.preventDefault(); void offerRendererRecovery(); return; }
     if (!quitting && documentState.dirty) {
       event.preventDefault();
+      const prompt = unsavedPrompt();
       const answer = await dialog.showMessageBox(window, {
-        type: 'question', title: t('desktop.main.unsavedAnimation'), message: t('desktop.main.saveChangesToName', {name: documentState.name}),
-        detail: t('desktop.main.yourAnimationHasChangesThatHaveNotBeenSaved'),
-        buttons: [t('common.save'), t('desktop.main.cancel'), t('desktop.main.discard')], defaultId: 0, cancelId: 1,
+        type: 'question', title: t('desktop.main.unsavedAnimation'), message: prompt.message,
+        detail: t(prompt.several ? 'desktop.main.theseProjectsHaveChangesThatHaveNotBeenSaved' : 'desktop.main.yourAnimationHasChangesThatHaveNotBeenSaved'),
+        buttons: prompt.buttons, defaultId: 0, cancelId: 1,
       });
       if (answer.response === 0) sendAction('save-and-close');
       else if (answer.response === 2) { documentState.dirty = false; window.close(); }
@@ -722,6 +797,10 @@ async function createWindow() {
   window.on('closed', () => { window = null; });
   window.once('ready-to-show', () => window.show());
   window.webContents.on('did-start-loading', () => { pageLoaded = false; });
+  // A page that loads again opens its own documents; the previous page's cannot be written any more.
+  window.webContents.on('did-start-navigation', (event, _url, inPlace, mainFrame) => {
+    if ((event.isMainFrame ?? mainFrame) && !(event.isSameDocument ?? inPlace)) projectFiles.clear();
+  });
   window.webContents.on('did-finish-load', () => { rendererFailed = false; pageLoaded = true; void flushPendingOpens(); });
   await window.loadURL(backend.origin);
   if (process.env.STYK_DEVTOOLS === '1') window.webContents.openDevTools({ mode: 'detach' });

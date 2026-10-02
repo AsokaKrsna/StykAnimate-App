@@ -138,3 +138,66 @@ test('pending native opens are bounded by evicting the oldest unconsumed token',
     assert.throws(() => files.activate({ openToken: tokens[index] }), /no longer active/);
   }
 });
+
+test('several documents stay open; only the one in front can be written', () => {
+  const files = new ProjectFiles();
+  const first = files.activate({ openToken: files.rememberOpen(nativePath('first.styk')) });
+  const second = files.activate();
+  assert.throws(() => files.requireCurrent(first.documentToken), /different document/);
+  assert.deepEqual(files.select(first.documentToken), first);
+  assert.equal(files.requireCurrent(first.documentToken).filename, nativePath('first.styk'));
+  assert.throws(() => files.requireCurrent(second.documentToken), /different document/);
+  assert.throws(() => files.commit(second.documentToken, nativePath('second.styk')), /different document/);
+  files.select(second.documentToken);
+  assert.equal(files.commit(second.documentToken, nativePath('second.styk')).filename, 'second.styk');
+  files.select(first.documentToken);
+  assert.equal(files.requireCurrent(first.documentToken).filename, nativePath('first.styk'));
+  assert.equal(files.require(second.documentToken).filename, nativePath('second.styk'));
+});
+
+test('a closed document cannot be selected or written, and closing the front one leaves none current', () => {
+  const files = new ProjectFiles();
+  const first = files.activate(), second = files.activate();
+  assert.equal(files.release(first.documentToken), true);
+  assert.equal(files.release(first.documentToken), false);
+  assert.throws(() => files.select(first.documentToken), /different document/);
+  assert.deepEqual(describeCurrent(files, second.documentToken), second);
+  assert.equal(files.release(second.documentToken), true);
+  assert.equal(files.current, null);
+  assert.throws(() => files.requireCurrent(second.documentToken), /different document/);
+  for (const token of ['forged', null, undefined, 42, {}]) {
+    assert.throws(() => files.select(token), /different document/);
+    assert.equal(files.release(token), false);
+  }
+});
+
+test('each document names its recovery copy; a restored one adopts the copy it came from', () => {
+  const files = new ProjectFiles();
+  const first = files.activate(), slot = '0f8fad5b-d9cb-469f-a165-70867728950e';
+  const restored = files.activate({}, { recovery: slot });
+  const legacy = files.activate({}, { recovery: null });
+  assert.equal(files.require(first.documentToken).recovery, first.documentToken);
+  assert.equal(files.require(restored.documentToken).recovery, slot);
+  assert.equal(files.require(legacy.documentToken).recovery, null);
+  assert.deepEqual(files.recoverySlots, new Set([first.documentToken, slot, null]));
+  // The renderer never chooses a slot: only the caller's verified option does.
+  const forged = files.activate({ recovery: slot, recoveryId: slot });
+  assert.equal(files.require(forged.documentToken).recovery, forged.documentToken);
+  files.release(restored.documentToken);
+  assert.equal(files.recoverySlots.has(slot), false);
+});
+
+test('a reloaded page starts without documents while pending native opens stay valid', () => {
+  const files = new ProjectFiles({ maxDocuments: 3 });
+  const stale = files.activate();
+  const openToken = files.rememberOpen(nativePath('launch.styk'));
+  files.clear();
+  assert.equal(files.current, null);
+  assert.throws(() => files.select(stale.documentToken), /different document/);
+  assert.equal(files.activate({ openToken }).filename, 'launch.styk');
+  // Documents a renderer never released cannot accumulate.
+  const tokens = Array.from({ length: 4 }, () => files.activate().documentToken);
+  assert.equal(files.documents.size, 3);
+  assert.throws(() => files.select(tokens[0]), /different document/);
+  assert.equal(files.select(tokens[3]).documentToken, tokens[3]);
+});
