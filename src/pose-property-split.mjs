@@ -62,6 +62,14 @@ export function splitPosePropertyChanges(report, source, frame, uids, tick) {
     for (const field of scalarFields) {
       if (Object.hasOwn(original, field)) normalized[field] = original[field]; else delete normalized[field];
     }
+    // Mesh palette edits belong to the existing native instance pose. Keep
+    // that small overlay when scalar segment/fill properties become tracks.
+    if (object._stykStyle?.meshColors || original._stykStyle?.meshColors) {
+      normalized._stykStyle = {...normalized._stykStyle};
+      if (object._stykStyle?.meshColors) normalized._stykStyle.meshColors = object._stykStyle.meshColors;
+      else delete normalized._stykStyle.meshColors;
+      if (!Object.keys(normalized._stykStyle).length) delete normalized._stykStyle;
+    }
     // Only legacy scalar rotation curves need to be excluded from the snapshot.
     const delta = changedFigureProperties.has('rotation') ? animationRotation(figure, object) - animationRotation(figure, original) : 0;
     for(const [property,field] of [['x','root_x'],['y','root_y']])if(changedFigureProperties.has(property))normalized[field]=original[field];

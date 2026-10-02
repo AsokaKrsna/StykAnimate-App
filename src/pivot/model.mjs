@@ -9,7 +9,8 @@ import {validatePlayback} from '../movieclips.mjs';
 import {validateSpatialMesh} from '../spatial-mesh.mjs';
 import {validateContinuations,continuations} from '../movieclip-presence.mjs';
 import {validateIK} from '../ik.mjs';
-import {validatePoseChoice} from '../rig-pose-choices.mjs';
+import {validatePoseChoice,validateFigurePoseChoices} from '../rig-pose-choices.mjs';
+import {validateControlMetadata} from '../rig-control-details.mjs';
 import { timeline } from "./geometry.mjs";
 import { inverseCameraScale } from "./background.mjs";
 import { validateAnimationStyle } from '../animation-style.mjs';
@@ -51,7 +52,7 @@ function validateObjectPose(report, object, figure, origin = true) {
   validateIK(object);
   validateSpatialPose(object,figure);
   if(object._stykIK)for(const [id,c] of Object.entries(object._stykIK))if(c.enabled&&!rigIKAllowed(figure,figure.segments.findIndex(s=>s.segment_id===Number(id))))throw messageError(new Error(''), "errors.model.ikCannotDriveADerivedConnectorWeightedOr", {});
-  validateAnimationStyle(object);
+  validateAnimationStyle(object,figure);
   validateVfxOwner(object);
   if (object._stykZIndex !== undefined) validateFigureZIndex(object._stykZIndex);
   if(origin&&(object._stykAnimationOrigin!==undefined||figure._styk?.animationOrigin))validateOriginObject(object,figure);
@@ -199,6 +200,7 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
         (k === "angle_rad" ? finite : float32)(s[k], `Segment ${k}`);
       styleValues(s);
       validatePoseChoice(s);
+      validateControlMetadata(s);
       if (due()) yield progress('figures');
     }
     const done = new Set([0]);
@@ -216,6 +218,7 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
       for (const p of seen) done.add(p);
     }
     if (hasRigConstraints(fig)) yield* rigConstraintPlanSteps(fig);
+    validateFigurePoseChoices(fig);
     if (fig._styk?.spatialMesh !== undefined) validateSpatialMesh(fig);
     typeHandles.set(fig.figure_type_id, new Set([0, ...parents.keys()]));
     if(fig._styk?.animationOrigin!==undefined)yield* validateOriginSupportSteps(fig,fig._styk.animationOrigin,{sliceMs});

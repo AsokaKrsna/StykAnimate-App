@@ -10,6 +10,8 @@ What's new in each version of StykAnimate.
 
 - Everyday Props · Pivot 3D: 30 editable everyday objects with working hinges and wheels for your animations.
 - Vehicles · Pivot 3D asset pack with twelve editable vehicles, spinning wheels, steering and opening parts.
+- Named poses for articulated figures, with detailed controls that can be shown when needed.
+- Change individual colors on 3D figures from the Colors palette.
 - Keep several projects open at once in tabs, each with its own undo history, and switch between them with a click or Ctrl+Tab.
 - A new Home page to start an animation in landscape, vertical or square, reopen your projects and organize them with pins and folders.
 - Five short interactive tutorials that guide you step by step through the canvas, posing, the timeline and the panels.

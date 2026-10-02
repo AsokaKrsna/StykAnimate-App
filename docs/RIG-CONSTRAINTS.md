@@ -192,18 +192,55 @@ Choices whose hidden length is zero scale bound geometry in all three axes, so
 hidden expressions have no visible area at any viewing angle. Ordinary spatial
 bones continue to stretch only along their axis.
 
+A spatial figure may also store definition-only `_styk.poseChoices` groups:
+`{name, choices: [{id, label, angles: [[jointId, restDelta]],
+lengths: [[jointId, nativeLength]]}]}`. Each choice writes the same bounded set
+of existing channels for its group in one undoable edit; it never swaps meshes.
+Angles are relative to the native rest angles and retain the instance's figure
+rotation and reflection. Selection is derived from those channels, with Custom
+pose after fine edits. These groups have no Hidden option. Definitions validate
+every referenced bone/rotation channel, complete group channel sets and finite
+values; deleting a referenced control fails atomically. Native saving, duplicate
+figures and timeline interpolation preserve the ordinary pose channels.
+
+Dynamic controls with `_stykControl: {level: 'detail'}` keep their normal posing
+behavior but hide their canvas markers until **Detailed controls** is enabled.
+Choosing one from Articulation reveals its marker individually; Builder and
+joining also expose them. This checkbox is editor presentation state, not an
+animation channel or an undo step.
+
 Mechanical joints keep a part on a fixed track, such as a pistol's slide and
 trigger. A spatial bone with `motion: {type: 'slide' | 'hinge', min, max}` is
 rigid. A slide moves along its rest origin-to-tip direction, carried by its
 parent; its native length channel stores rest length plus travel, clamped to
-`min`–`max` figure units. A hinge turns only about the rest depth axis through
+`min`–`max` figure units. A hinge turns only about its configured axis through
 its origin, from its ordinary angle channel relative to its parent, clamped to
-`min`–`max` radians. Their turn and tilt channels are ignored, and neither their
-skin nor their children stretch. In Pose, dragging a mechanical joint moves it
+`min`–`max` radians. Optional `axis: [x, y, z]` gives a unit hinge axis in the
+parent's local rest coordinates; omitting it retains the depth axis `[0, 0, 1]`
+used by existing gun mechanisms. Their turn and tilt channels are ignored, and
+neither their skin nor their children stretch. In Pose, dragging a mechanical joint moves it
 to the point of its track nearest the pointer, relative to where it was grabbed,
 stopping exactly at either end. Rotate and Turn/tilt change only a hinge's angle
 and leave a slide unchanged. The rig panel shows a Slide or Hinge field as a
-percentage of travel; Reset returns it to rest. No channels or evaluator state
+percentage of travel; Reset returns it to rest. Rotate shows only a hinge's actual
+axis ring and leaves a slide unchanged.
+
+A mechanical motion can add `driver: {joint, multiplier}`. The driver must name
+another spatial mechanical bone, and the finite multiplier is bounded to −10…10.
+Its already clamped travel is multiplied and added to this joint's ordinary
+angle or length residual before this joint's own final limits. This supports a
+single curl control driving several finger joints while every joint retains fine
+posing, and small cheek or nose motions driven by a mouth or eyelid control.
+The dependency graph rejects cycles, remaps the driver during duplication, and
+invalidates driven geometry during pose edits. Native cumulative angle channels
+are decoded relative to the authored parent angle, so a driven parent cannot
+cancel a child's independent residual. The mechanical inspector edits that
+residual with a range shifted by the current driver contribution; negative fine
+adjustments can relax a curled finger without bending it backwards. Canvas drags
+and the hinge ring use the same limits, gesture undo and cancellation. These
+controls are FK tracks, rather than unconstrained three-axis finger IK.
+
+No channels or persistent evaluator state
 are added: figure meshes, playback, undo and native saving use the same
 channels. Mechanical joints are authored in definition data (see
 `scripts/pistol/build-3d.mjs`); Build Figure cannot create them yet, and earlier

@@ -4,10 +4,10 @@ import {unprojectSpatial,unprojectJoint,projectSpatial,projection} from './spati
 import {geometryPlans} from './pivot/geometry-pose.mjs';
 import {animationRotation} from './animation-origin.mjs';
 import {rigConstraintPlan} from './rig-constraints.mjs';
-import {spatialBone,spatialSkin,spatialMotionValue,quatMultiply,quatRotate,spatialPoint,spatialQuaternion,quaternionPose,betweenVectors} from './rig-spatial.mjs';
+import {spatialBone,spatialSkin,spatialMotionValue,spatialAxisQuaternion,quatMultiply,quatRotate,spatialPoint,spatialQuaternion,quaternionPose,betweenVectors} from './rig-spatial.mjs';
 import {inverseQuaternion,spatialWorldQuaternion,spatialWorldVector,spatialPoleHandle,captureSpatialIK,flatSpatialBend,spatialPoleFor,spatialKnee} from './ik-spatial.mjs';
 import {ikChain,ikLayout,ikFollowerIndices,solveObjectIK} from './ik.mjs';
-import {poseChoiceGroups} from './rig-pose-choices.mjs';
+import {poseChoiceGroups,applyChannelPoseChoice} from './rig-pose-choices.mjs';
 
 const plans=e=>geometryPlans(e.geometry.objects.get(e.selectedSlot));
 const layout=e=>plans(e)?.definition??ikLayout(e.figure);
@@ -16,9 +16,12 @@ export const editorSpatialMethods={
  ...editorSpatialShapeMethods,
  setPoseChoice(name,id){
   const group=poseChoiceGroups(this.figure,this.object).find(g=>g.name===name);if(!group)return false;
-  if(id!==0&&!group.choices.some(c=>c.id===id))throw messageError(new Error(''), "errors.editorSpatial.chooseAnAvailableRigPose", {});
+  if((id===0&&group.hidden===false)||(id!==0&&!group.choices.some(c=>c.id===id)))throw messageError(new Error(''), "errors.editorSpatial.chooseAnAvailableRigPose", {});
   if(group.value===id)return false;
   return this._objectEdit('Change '+name,o=>{
+   if(group.kind==='channels'){
+    applyChannelPoseChoice(this.figure,o,group.choices.find(c=>c.id===id));return;
+   }
    const lengths=o.len_flag?o.lengths.slice():this.figure.segments.map(s=>s.length);
    for(const c of group.choices)lengths[c.index]=c.id===id?c.shown:c.hidden;
    o.lengths=lengths;o.len_flag=1;delete o.runtime_segments;
@@ -83,7 +86,11 @@ export const editorSpatialMethods={
   const r=s._stykRig.spatial,delta=animationRotation(f,o),find=id=>{const i=f.segments.findIndex(s=>s.segment_id===id);return i<0?undefined:i;},parent=find(r.parent),turn=find(r.turn),pitch=find(r.pitch);
   const angles=this.geometry.objects.get(this.selectedSlot)?.solvedAngles??o.angles;
   const sign=o.image_text_flags?-1:1,parentAngle=parent===undefined?0:(angles[parent]-delta)*sign-f.segments[parent].angle_rad;
-  return{bend:(angles[index]-delta)*sign-s.angle_rad-parentAngle,turn:(angles[turn]-delta)*sign-f.segments[turn].angle_rad,pitch:(angles[pitch]-delta)*sign-f.segments[pitch].angle_rad};
+  const bend=(angles[index]-delta)*sign-s.angle_rad-parentAngle;
+  // Mechanical details expose their authored residual. Their master's applied
+  // rotation remains an evaluation dependency, not another editable channel.
+  return r.motion?{bend:r.motion.type==='hinge'?Math.atan2(Math.sin(bend),Math.cos(bend)):0,turn:0,pitch:0}:
+   {bend,turn:(angles[turn]-delta)*sign-f.segments[turn].angle_rad,pitch:(angles[pitch]-delta)*sign-f.segments[pitch].angle_rad};
  },
  setSpatialPose(patch,{wholeFigure=false}={}){
   const before=this.getSpatialPose();if(!before)return false;
@@ -263,8 +270,10 @@ export const editorSpatialMethods={
  /** Travel of the selected slide (figure units from rest) or hinge (radians). */
  getSpatialMotion(index=this.selectedJoint){
   const f=this.figure,o=this.object,s=f?.segments[index],r=s?._stykRig?.spatial,m=r?.motion;if(!o||!m||!spatialBone(s))return null;
-  const value=spatialMotionValue(r,{length:o.len_flag?o.lengths[index]:s.length,bend:m.type==='hinge'?this.getSpatialPose(index).bend:0});
-  return{type:m.type,min:m.min,max:m.max,value,fraction:m.max>m.min?(value-m.min)/(m.max-m.min):0};
+  const g=this.geometry.objects.get(this.selectedSlot),driver=m.driver?(g?.segments[rigPlan(this).ids.get(m.driver.joint)]?.spatialFrame?.motionValue??0)*m.driver.multiplier:0;
+  const applied=spatialMotionValue(r,{length:o.len_flag?o.lengths[index]:s.length,bend:m.type==='hinge'?this.getSpatialPose(index).bend:0,driver});
+  const min=m.min-driver,max=m.max-driver,value=applied-driver;
+  return{type:m.type,min,max,value,applied,driver,fraction:max>min?(value-min)/(max-min):0};
  },
  /** Set a mechanical joint's travel, clamped to its range; `fraction` maps 0–1 onto it. */
  setSpatialMotion(value,{fraction=false}={}){
@@ -290,10 +299,10 @@ export const editorSpatialMethods={
   const g=this.geometry.objects.get(this.selectedSlot);
   if(!gesture){
    const frame=g.segments[i].spatialFrame,r=f.segments[i]._stykRig.spatial,tip=spatialPoint(frame,r.tip),pivot=spatialPoint(frame,r.origin);
-   const axis=quatRotate(frame.q,m.type==='slide'?frame.axis:[0,0,1]);
+   const axis=quatRotate(frame.q,m.type==='slide'?frame.axis:r.motion.axis??[0,0,1]);
    const world=p=>{const v=spatialWorldVector(p,f,o).map(n=>n*o.scale);return[v[0]+g.root.x,v[1]+g.root.y,v[2]];};
    const along=p=>{const d=p-m.value;if(m.type==='slide')return world(tip.map((n,k)=>n+axis[k]*d));
-    const h=Math.sin(d/2),turned=quatRotate([axis[0]*h,axis[1]*h,axis[2]*h,Math.cos(d/2)],tip.map((n,k)=>n-pivot[k]));return world(turned.map((n,k)=>n+pivot[k]));};
+    const turned=quatRotate(spatialAxisQuaternion(axis,d),tip.map((n,k)=>n-pivot[k]));return world(turned.map((n,k)=>n+pivot[k]));};
    const start=along(m.value);
    gesture={along,start,grab:anchor?unprojectSpatial(anchor,start[2],o,g.root):{x:start[0],y:start[1]}};
    if(this._drag){this._drag.spatialGesture??=new Map();this._drag.spatialGesture.set(key,gesture);}

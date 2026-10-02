@@ -1,4 +1,5 @@
 export default Object.freeze({
+  "spatialControls.detailedControls": "Detailed controls",
   "spatialControls.ikDisabledFoot": "IK off: dragging the foot swings only the shin.",
   "spatialControls.ikDisabledHand": "IK off: dragging the hand swings only the forearm.",
   "spatialControls.depthHint": "Hold {key} while dragging to move a part toward or away from you (add Shift to go behind).",

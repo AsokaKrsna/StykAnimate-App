@@ -36,6 +36,12 @@ native Float32 rounding. An unchanged pose, including colours, returns the
 previous evaluation. Translation alone re-evaluates positions, but the artwork
 signature is root-relative, so rendered artwork is reused.
 
+The figure's Colors palette includes mesh colors. Per-instance recoloring uses
+the existing style override with bounded `_stykStyle.meshColors` palette-index
+RGB values, retaining the immutable mesh, skin weights and compiled plan.
+Color-only edits reuse evaluated vertex and triangle arrays and follow normal
+undo, native saving and timeline property behavior.
+
 The evaluated mesh is drawn as depth-tested triangles in one pass. Other visible
 primitives of the figure split its faces only where native per-face painter
 order would; zero-width construction lines do not. WebGPU renders mesh-only

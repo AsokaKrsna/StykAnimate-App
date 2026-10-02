@@ -111,6 +111,7 @@ export default {
   },
   "inspectorView.fillNumber": "Fill {index}",
   "inspectorView.replaceColorSegments": "Replace {color} ({segments})",
+  "inspectorView.replaceFigureColor": "Replace {color}",
   "inspectorView.replaceColorSegmentsAndFills": "Replace {color} ({segments}, {fills})",
   "builderSurfaceUi.jointNumber": "Joint {id}",
   "layerTimeline.color.blue": "Blue",

@@ -14,7 +14,7 @@ import { tweenBackground, releaseBackgroundResources } from "./background.mjs";
 import { composePoseChannels, invalidatePoseCache } from '../animation-pose.mjs';
 import { composeAnimationChannels, animationEndTick } from '../animation-channels.mjs';
 import { applyLayerOrder } from '../layers.mjs';
-import { resolveInstanceFigure } from '../animation-style.mjs';
+import { resolveInstanceFigure, meshPaletteColor } from '../animation-style.mjs';
 import {animationOriginLayout, animationOriginAngle, animationOriginBend, correctAnimationOrigins, animationRotation} from '../animation-origin.mjs';
 import {interpolateOriginSupport} from '../animation-origin-support.mjs';
 import {easedProgress, usesLegacyNativeEasing, easingMode, autoValue} from '../keyframe-easing.mjs';
@@ -866,7 +866,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
       const frames = new Array(segments.length);
       for (const i of meshPlan.bones) frames[i] = renders[i]?.spatialFrame;
       spatialMesh = yield* evaluateSpatialMeshSteps(meshPlan, frames, {root, scale, figureAngle: animationRotation(fig, obj),
-        mirror: Boolean(obj.image_text_flags), camera, joints, colorOf: c => objectColor(c, obj), slot}, previous?.spatialMesh);
+        mirror: Boolean(obj.image_text_flags), camera, joints, colorOf: (c,index) => objectColor(meshPaletteColor(fig,obj,index)??c, obj), slot}, previous?.spatialMesh);
       const levels = [];
       for (const p of polys) if (!p.culled) levels.push(p.z);
       // Zero-width lines paint nothing and must not split the depth-tested faces.

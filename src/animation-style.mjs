@@ -6,11 +6,17 @@ const alphaByte = opacity => Math.round((1 - opacity) * 255);
 const opacityOf = alpha => 1 - Number(alpha ?? 0) / 255;
 export const styleColor = rgb => ((rgb?.[0] ?? 0) << 16 | (rgb?.[1] ?? 0) << 8 | (rgb?.[2] ?? 0)) >>> 0;
 const rgbOf = color => [color >>> 16 & 255, color >>> 8 & 255, color & 255];
+/** Resolve only the small palette. Mesh topology and compiled bone bindings
+ * remain the shared definition even when one instance changes its colours. */
+export const meshPaletteColor = (figure, object, index) => {
+  const value = object?._stykStyle?.meshColors?.[index];
+  return value === undefined ? figure?._styk?.spatialMesh?.colors[index] : rgbOf(value);
+};
 export const polygonIdentity = (polygon,index) => polygon.polyfill_id ?? index + 1;
 export const nativeSegmentOpacity = segment => segment.transparency === undefined ? Number(segment.color_alpha ?? 1) : opacityOf(segment.transparency);
 
 /** Validate the small persisted overlay without inspecting shared assets. */
-export function validateAnimationStyle(object) {
+export function validateAnimationStyle(object, figure) {
   if (object?._styk?.colorMode !== undefined && object._styk.colorMode !== 'segments') throw messageError(new Error(''), "errors.animationStyle.invalidInstanceColorMode", {});
   const style = object?._stykStyle; if (style === undefined) return object;
   const record = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -21,6 +27,17 @@ export function validateAnimationStyle(object) {
   const width = value => { if (!Number.isFinite(value) || value < 0 || value > 1e6) throw messageError(new Error(''), "errors.animationStyle.styleWidthIsOutsideTheSupportedRange", {}); };
   if ('outlineColor' in style) color(style.outlineColor);
   if ('outlineWidth' in style) width(style.outlineWidth);
+  if (style.meshColors !== undefined) {
+    if (!record(style.meshColors) || Object.keys(style.meshColors).length > 1024)
+      throw messageError(new Error(''), 'errors.figureColors.chooseValidPaletteTargets', {});
+    for (const [key, value] of Object.entries(style.meshColors)) {
+      const index = Number(key);
+      if (!Number.isInteger(index) || index < 0 || index >= 1024 || String(index) !== key ||
+          figure && index >= (figure._styk?.spatialMesh?.colors.length ?? 0))
+        throw messageError(new Error(''), 'errors.figureColors.chooseValidPaletteTargets', {});
+      color(value);
+    }
+  }
   if (style.segments !== undefined) {
     if (!record(style.segments)) throw messageError(new Error(''), "errors.animationStyle.instanceSegmentStylesMustBeAHandleTable", {});
     for (const [handle, values] of Object.entries(style.segments)) {

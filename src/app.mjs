@@ -6,6 +6,7 @@ import {errorText, presentError} from './error-presentation.mjs';
 import {t as interfaceText} from './localization.mjs';
 
 import {installSpatialControls,drawSpatialGizmo,spatialGizmoDrag,updateSpatialGizmo,spatialControlMode} from './spatial-controls.mjs';
+import {rigDetailsShown} from './rig-control-details.mjs';
 import {drawingBarrier,drawingResourcesFor} from './drawing-resources.mjs';
 import {drawingMetadata} from './drawing-model.mjs';
 import {builderStrokeAppearance, setBuilderStroke, copyBuilderAppearance, pasteBuilderAppearance} from './builder-appearance.mjs';
@@ -1512,6 +1513,7 @@ function canvasHandles(geometry, {selectStatic = false} = {}) {
     usesBuilderBranch(),
     editor.selectedJoint,
     spatialControlMode(editor),
+    rigDetailsShown(editor),
     settings.showUnselectedHandles,
     settings.handleSize,
     settings.autoSizeHandles,
@@ -1532,6 +1534,7 @@ function canvasHandles(geometry, {selectStatic = false} = {}) {
     if (layerLocked(editor.report, object.unique_id) || (bound && !bound.has(object.unique_id)))
       locked.add(object.unique_id);
   const handles = getPivotHandles(geometry, {
+    showDetailed: rigDetailsShown(editor),
     spatialMode: builderMode?.active || !['select','pose'].includes(state.tool) ? 'pose' : spatialControlMode(editor),
     descriptorCache: selectStatic ? selectionHandleDescriptors : handleDescriptors,
     selectStatic,

@@ -1,6 +1,6 @@
 import {messageError} from './localized-error.mjs';
 /** Display colors and copy-on-write recoloring. No geometry or asset copies. */
-import {resolveInstanceFigure, styleColor, polygonIdentity} from './animation-style.mjs';
+import {resolveInstanceFigure, styleColor, polygonIdentity, meshPaletteColor} from './animation-style.mjs';
 import {segmentPaint, normalizePaint, parseColor, hexColor, samplePaint} from './paint.mjs';
 import {color, mixColor} from './pivot/geometry.mjs';
 
@@ -24,6 +24,10 @@ export function figurePalette(report, figure, object) {
     stops.forEach((stop,index)=>{const entry=row(stop.color);let match=matches.get(entry);if(!match){match={handleId:segment.segment_id,stops:[]};entry.segments.push(match);matches.set(entry,match);}match.stops.push(index);});
   }
   resolved.polyfills?.forEach((polygon,index)=>row(displayedColor(report,resolved,object,polygon.color_rgb??[0,0,0])).polygons.push(polygonIdentity(polygon,index)));
+  resolved._styk?.spatialMesh?.colors.forEach((_,index)=>{
+    const entry=row(displayedColor(report,resolved,object,meshPaletteColor(resolved,object,index)));
+    (entry.meshColors??=[]).push(index);
+  });
   return [...colors.values()].sort((a,b)=>b.segments.length-a.segments.length || a.color.localeCompare(b.color));
 }
 /** Palette membership is scoped by instance: attached rigs can reuse handle IDs. */
@@ -45,6 +49,7 @@ export function attachedFigurePalette(report, frame, uid) {
       const row=colors.get(entry.color);
       for(const segment of entry.segments)row.segments.push(segment);
       for(const polygon of entry.polygons)row.polygons.push(polygon);
+      if(entry.meshColors)row.meshColors=[...new Set([...(row.meshColors??[]),...entry.meshColors])];
       row.instances[object.unique_id]={...entry,figureTypeId:figure.figure_type_id};
     }
     for(const child of children.get(slot)??[])if(!seen.has(child)){seen.add(child);queue.push(child);}
@@ -73,6 +78,8 @@ export function validateRecolor(input) {
     if(!Array.isArray(operation.targets.segments)||!Array.isArray(operation.targets.polygons??[]))throw messageError(new Error(''), "errors.figureColors.chooseValidPaletteTargets", {});
     for(const entry of operation.targets.segments)if(!Number.isInteger(entry.handleId)||entry.handleId<1||entry.handleId>65535||!Array.isArray(entry.stops)||entry.stops.some(index=>!Number.isInteger(index)||index<0||index>=32))throw messageError(new Error(''), "errors.figureColors.chooseValidSegmentColorStops", {});
     for(const id of operation.targets.polygons??[])if(!Number.isInteger(id)||id<1||id>65535)throw messageError(new Error(''), "errors.figureColors.chooseValidFillIdentities", {});
+    if(operation.targets.meshColors!==undefined&&(!Array.isArray(operation.targets.meshColors)||operation.targets.meshColors.length>1024||new Set(operation.targets.meshColors).size!==operation.targets.meshColors.length||Array.from(operation.targets.meshColors).some(index=>!Number.isInteger(index)||index<0||index>=1024)))
+      throw messageError(new Error(''), 'errors.figureColors.chooseValidPaletteTargets', {});
   }
   if(operation.mode==='style'){
     const patch=operation.patch={...operation.patch};
@@ -103,9 +110,12 @@ export function recolorObject(report, figure, object, operation) {
   if(operation.mode==='replace'&&!targets)return object;
   const matches=new Map((targets?.segments??[]).map(entry=>[entry.handleId,entry.stops]));
   const polygons=new Set(targets?.polygons??[]);
+  const meshColors=new Set(targets?.meshColors??[]),mesh=resolved._styk?.spatialMesh;
+  for(const index of meshColors)if(index>=(mesh?.colors.length??0))throw messageError(new Error(''), 'errors.figureColors.chooseValidPaletteTargets', {});
   const needsNormalize=!usesSegmentColors(report,figure,object)||Boolean(Number(object.color_override_raw)>>>24);
   const normalize=operation.mode==='reset'||needsNormalize;
-  const style={...object._stykStyle,segments:{...object._stykStyle?.segments},polygons:{...object._stykStyle?.polygons}};
+  const style={...object._stykStyle,segments:{...object._stykStyle?.segments},polygons:{...object._stykStyle?.polygons},
+    ...(object._stykStyle?.meshColors?{meshColors:{...object._stykStyle.meshColors}}:{})};
   let changed=false;
   const write=(table,id,patch)=>{const before=table[id]??{},next={...before,...patch};if(JSON.stringify(before)!==JSON.stringify(next)){table[id]=next;changed=true;}};
   const putPaint=(segment,paint)=>{
@@ -152,6 +162,15 @@ export function recolorObject(report, figure, object, operation) {
     if(selected&&operation.color)value=operation.color;
     if(selected&&operation.mode==='style'&&operation.patch.color)value=operation.patch.color;
     write(style.polygons,id,{color:styleColor(value),...(selected&&operation.mode==='style'&&operation.patch.opacity!==undefined?{opacity:operation.patch.opacity}:{})});
+  });
+  mesh?.colors.forEach((_,index)=>{
+    const selected=operation.mode==='all'||operation.mode==='reset'||meshColors.has(index);
+    if(!normalize&&!selected)return;
+    let value=operation.mode==='reset'?figure._styk.spatialMesh.colors[index]:displayedColor(report,resolved,object,meshPaletteColor(resolved,object,index));
+    if(selected&&operation.color)value=operation.color;
+    if(selected&&operation.mode==='style'&&operation.patch.color)value=operation.patch.color;
+    const next=styleColor(value),before=style.meshColors?.[index];
+    if(next!==before){style.meshColors??={...object._stykStyle?.meshColors};style.meshColors[index]=next;changed=true;}
   });
   if(!changed&&!needsNormalize&&!Object.keys(fields).length)return object;
   return {...object,...fields,...(!usesSegmentColors(report,figure,object)?{_styk:{...object._styk,colorMode:'segments'}}:{}),_stykStyle:style,color_override_raw:0};

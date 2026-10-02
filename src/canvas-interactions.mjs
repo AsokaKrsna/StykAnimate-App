@@ -2,6 +2,7 @@
  * See artifacts/native-static/{joined-handle-routing,handle-size}.md.
  * Joined origins do not exist as handles: the parent's endpoint owns the joint.
  */
+import {rigControlIsDetail} from './rig-control-details.mjs';
 export const PIVOT_HANDLE_COLORS = Object.freeze({
   segment: '#ff0000', origin: '#ff8800', unselected: '#0000ff', unselectedOrigin: '#0080ff',
   joined: '#ffffff', unselectedJoined: '#d3d3d3', static: '#808080', selectedStatic: '#b04040',
@@ -114,7 +115,7 @@ export function pivotHandleColor({ selected = false, nodeSelected = false, origi
 export function getPivotHandles(geometry, {
   frame, selectedUid = null, selectedUids, selectedJoint = -1, selectedHandleIds, selectedBranch = false, builder = false, hiddenUids, lockedUids,
   showUnselected = true, showStatic = false, attaching = false, allowStaticManipulation = false,
-  selectStatic = false, joinTargetUids, spatialMode = 'pose',
+  selectStatic = false, joinTargetUids, spatialMode = 'pose', showDetailed = false,
   viewScale = 1, autoSize = true, minDiameter = 4, maxDiameter = 10, descriptorCache,
 } = {}) {
   if (!geometry?.objects) return [];
@@ -128,7 +129,7 @@ export function getPivotHandles(geometry, {
   const targets = attachments(geometry), result = [], groups = [];
   Object.defineProperty(result,'groups',{value:groups});
   const options = { viewScale, autoSize, minDiameter, maxDiameter }, scale = Math.max(1e-9, Math.abs(viewScale));
-  const settingsKey = [topologyEpoch,spatialMode,showUnselected,showStatic,attaching,allowStaticManipulation,selectStatic,viewScale,autoSize,minDiameter,maxDiameter,builder,selectedJoint,selectedBranch,[...(selectedHandleIds??[])].join(',')].join('|');
+  const settingsKey = [topologyEpoch,spatialMode,showUnselected,showStatic,showDetailed,attaching,allowStaticManipulation,selectStatic,viewScale,autoSize,minDiameter,maxDiameter,builder,selectedJoint,selectedBranch,[...(selectedHandleIds??[])].join(',')].join('|');
   if(descriptorCache && descriptorCache.key!==settingsKey){descriptorCache.key=settingsKey;descriptorCache.objects=new WeakMap();}
   for (const g of objects) {
     if (!g) continue;
@@ -171,6 +172,8 @@ export function getPivotHandles(geometry, {
       const segment=g.segments[index];
       if(segment.static&&!showStatic&&!selectStatic&&!attaching&&!builderSelection?.has(index)&&!g.obj._stykIK?.[segmentId(segment)]?.enabled)continue;
       const id = segmentId(segment), joined = Boolean(joinedVertices?.has(id));
+      if (rigControlIsDetail(segment.seg) && !showDetailed && !builder && !attaching &&
+          !joined && !(uid === selectedUid && index === selectedJoint)) continue;
       if (allEndpoints || joined || (selectStatic && segment.static)) add(segment.handle ?? segment.end, segment.index, id, 'segment', Boolean(segment.static), joined);
     }
     const ownHandles=result.slice(first);groups.push({uid,offset:first,handles:ownHandles});

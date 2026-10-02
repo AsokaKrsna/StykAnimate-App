@@ -10,6 +10,7 @@ import {spatialBone,spatialPoint} from './rig-spatial.mjs';
 import {ikChain} from './ik.mjs';
 import {icon} from './icons.mjs';
 import {poseChoiceGroups} from './rig-pose-choices.mjs';
+import {rigControlIsDetail,rigDetailsShown,setRigDetailsShown} from './rig-control-details.mjs';
 import {propertyToggle} from './property-toggle.mjs';
 import {renderInspector} from './inspector-kit.mjs';
 import {createSpatialGizmo,drawRotationGizmo,startRotationGizmo,rotateGizmo} from './spatial-gizmo.mjs';
@@ -42,7 +43,7 @@ export function spatialSections(editor,{hotkeyLabel}={}){
  const feet=targets.filter(({s})=>/foot|ankle/i.test(childOf(s.segment_id)?.s.name??'')),planted=feet.length&&feet.every(({s})=>editor.object._stykIK[s.segment_id].enabled&&editor.object._stykIK[s.segment_id].pinned);
  const choose=(index,name,focus=false,labelKey)=>`<button type="button" data-spatial-${focus?'focus':'select'}="${index}" aria-pressed="${selected===index}" ${labelKey?messageAttributes(labelKey):''}>${esc(name)}</button>`;
  const groups=poseChoiceGroups(editor.figure,editor.object);
- const choices=groups.map(g=>`<label class="spatial-choice"><span>${esc(g.name)}</span><select class="inline-select" data-spatial-choice="${esc(g.name)}" aria-label="${esc(g.name)}"><option value="0" ${g.value===0?'selected':''} data-i18n="spatialControls.hidden">${messageHTML("spatialControls.hidden", {})}</option>${g.value===-1?`<option value="-1" selected disabled data-i18n="spatialControls.customPose">${messageHTML("spatialControls.customPose", {})}</option>`:''}${g.choices.map(c=>`<option value="${c.id}" ${g.value===c.id?'selected':''}${descriptorAttributes(c, "label")}>${esc(c.label)}</option>`).join('')}</select></label>`).join('');
+ const choices=groups.map(g=>`<label class="spatial-choice"><span>${esc(g.name)}</span><select class="inline-select" data-spatial-choice="${esc(g.name)}" aria-label="${esc(g.name)}">${g.hidden!==false?`<option value="0" ${g.value===0?'selected':''} data-i18n="spatialControls.hidden">${messageHTML("spatialControls.hidden", {})}</option>`:''}${g.value===-1?`<option value="-1" selected disabled data-i18n="spatialControls.customPose">${messageHTML("spatialControls.customPose", {})}</option>`:''}${g.choices.map(c=>`<option value="${c.id}" ${g.value===c.id?'selected':''}${descriptorAttributes(c, "label")}>${esc(c.label)}</option>`).join('')}</select></label>`).join('');
  const shortcuts=`<div class="spatial-targets" role="group" aria-label="Body controls" data-i18n-aria-label="spatialControls.bodyControls">${choose(-1,interfaceText("spatialControls.moveFigure"),false,'spatialControls.moveFigure')}<button type="button" data-spatial-whole aria-pressed="${mode==='figure'}" data-i18n="spatialControls.rotateFigure">${messageHTML("spatialControls.rotateFigure", {})}</button>${targets.map(({s,i})=>{const child=childOf(s.segment_id);return choose(mode!=='pose'&&child?child.i:i,(child?.s.name??s.name).replace(/ ankle$/,''));}).join('')}</div>`;
  const trunk=[['Pelvis','spatialControls.hips'],['Lower torso','spatialControls.torso'],['Waist','spatialControls.waist'],['Chest','spatialControls.chest'],[bones.some(b=>b.s.name==='Head')?'Head':'Neck','spatialControls.head']].flatMap(([name,key])=>{const b=bones.find(b=>b.s.name===name);return b?[choose(b.i,interfaceText(key),false,key)]:[];}).join('');
  const rows=pose?['pitch','turn','bend'].map((key,i)=>{const value=pose[key]*DEG,labelKey=['spatialControls.tilt','spatialControls.turn','spatialControls.bend'][i],label=interfaceText(labelKey);return`<div class="spatial-axis spatial-${key}"><label for="spatial-${key}-number" ${messageAttributes(labelKey)}>${label}</label><input id="spatial-${key}-range" type="range" min="-180" max="180" step="0.1" value="${wrap(pose[key])*DEG}" data-spatial-axis="${key}" aria-label="${label}" ${messageAttributes(labelKey,{},'aria-label')}><label class="field"><input id="spatial-${key}-number" type="number" step="1" value="${Math.round(value*10)/10}" data-spatial-axis="${key}" aria-label="${label} degrees" ${messageAttributes("spatialControls.degrees", {label:{messageKey:labelKey}}, "aria-label")}><small>°</small></label></div>`;}).join(''):'';
@@ -70,7 +71,8 @@ export function spatialSections(editor,{hotkeyLabel}={}){
  // locks, coat panels. Each gets a shortcut; a tie is named by its upper bone.
  const trunkNames=new Set(['Pelvis','Lower torso','Waist','Chest','Neck','Head']),definition=geometryPlans(editor.geometry.objects.get(editor.selectedSlot))?.definition;
  const limbBones=new Set(targets.flatMap(({s})=>ikChain(editor.figure,s.segment_id,editor.object._stykIK[s.segment_id].chainLength,definition)));
- const parts=bones.filter(({s,i})=>{const parent=bones.find(b=>b.s.segment_id===s._stykRig.spatial.parent);return parent&&trunkNames.has(parent.s.name)&&!trunkNames.has(s.name)&&!limbBones.has(i);});
+ const parts=bones.filter(({s,i})=>{const parent=bones.find(b=>b.s.segment_id===s._stykRig.spatial.parent);return parent&&trunkNames.has(parent.s.name)&&!trunkNames.has(s.name)&&!limbBones.has(i)&&!rigControlIsDetail(s);});
+ const detailToggle=bones.some(({s})=>rigControlIsDetail(s))?propertyToggle('spatial-details',interfaceText('spatialControls.detailedControls'),rigDetailsShown(editor),'sliders',{labelKey:'spatialControls.detailedControls'}):'';
  const rig=html=>({kind:'markup',html:`<div class="spatial-rig">${html}</div>`});
  const articulation={kind:'select',id:'spatial-joint',label:interfaceText("spatialControls.articulation"), labelKey: "spatialControls.articulation",span:2,value:pose?selected:-1,
   options:[{value:-1,label:interfaceText("spatialControls.moveWholeCharacter"), labelKey: "spatialControls.moveWholeCharacter"},...bones.map(({s,i})=>({value:i,label:s.name||interfaceText('builderSurfaceUi.jointNumber',{id:s.segment_id}),...(s.name?{}:{labelKey:'builderSurfaceUi.jointNumber',labelParams:{id:s.segment_id}})}))]};
@@ -82,6 +84,7 @@ export function spatialSections(editor,{hotkeyLabel}={}){
   ]},
   {id:'rig-body',title:interfaceText("spatialControls.body"), titleKey: "spatialControls.body",rows:[
    rig(`${shortcuts}${trunk?`<div class="spatial-trunk" role="group" aria-label="Torso controls" data-i18n-aria-label="spatialControls.torsoControls">${trunk}</div>`:''}${parts.length?`<div class="spatial-parts" role="group" aria-label="Parts" data-i18n-aria-label="spatialControls.parts">${parts.map(b=>choose(b.i,b.s.name.replace(/ sash upper$/,' tie'))).join('')}</div>`:''}${feet.length?`<button type="button" class="spatial-plant" data-spatial-feet="${planted?'release':'plant'}" ${messageAttributes(planted?"spatialControls.releaseFeet":"spatialControls.plantBothFeet")}>${icon('pin')}${planted?interfaceText("spatialControls.releaseFeet"):interfaceText("spatialControls.plantBothFeet")}</button>`:''}`),
+   detailToggle&&rig(detailToggle),
    {kind:'grid',rows:[articulation]},
    ik&&rig(`<div class="spatial-targets" role="group" aria-label="Limb rotations" data-i18n-aria-label="spatialControls.limbRotations">${rotations}</div>`),
   ]},
@@ -104,7 +107,7 @@ export function spatialGizmoDrag(editor,point,project){
  const gizmo=spatialGizmo(editor,project);if(!gizmo)return null;
  // A visible neighboring pivot wins over an overlapping rotation sphere.
  const g=editor.geometry.objects.get(editor.selectedSlot);
- if(Math.hypot(point.x-gizmo.center.x,point.y-gizmo.center.y)>12&&g.segments.some((s,i)=>{if(i===editor.selectedJoint||!s.spatialFrame||s.static)return false;const p=project(s.start);return Math.hypot(p.x-point.x,p.y-point.y)<7;}))return null;
+ if(Math.hypot(point.x-gizmo.center.x,point.y-gizmo.center.y)>12&&g.segments.some((s,i)=>{if(i===editor.selectedJoint||!s.spatialFrame||s.static||rigControlIsDetail(s.seg)&&!rigDetailsShown(editor))return false;const p=project(s.start);return Math.hypot(p.x-point.x,p.y-point.y)<7;}))return null;
  return startRotationGizmo(gizmo,point);
 }
 export function updateSpatialGizmo(editor,drag,point,precision=false){
@@ -137,6 +140,7 @@ export function installSpatialControls({editor,root,refresh,guard}){
   const t=e.target;if(t.type==='number'&&adjust(t))return;if(t.id==='spatial-joint'){finish(true);if(spatialControlMode(editor)==='figure')modes.set(editor,'rotate');editor.select(editor.selectedUid,Number(t.value));refresh();}
   else if(t.matches('input[type=number][data-spatial-axis]')){applyPose(editor,{[t.dataset.spatialAxis]:t.valueAsNumber/DEG});refresh();}
   else if(t.matches('[data-spatial-choice]')){editor.setPoseChoice(t.dataset.spatialChoice,Number(t.value));refresh();}
+  else if(t.id==='spatial-details'){finish(true);setRigDetailsShown(editor,t.checked);refresh();}
   else if(t.id==='spatial-ik'){withLimb(()=>editor.setNodeIK(t.checked?{enabled:true,pinned:false}:{enabled:false}));refresh();}
   else if(t.id==='spatial-pin'){withLimb(()=>editor.setNodeIK({pinned:t.checked}));refresh();}
   else if(t.id==='spatial-stretch'){withLimb(()=>editor.setNodeIK({allowStretch:t.checked}));refresh();}
