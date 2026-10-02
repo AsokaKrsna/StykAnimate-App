@@ -100,3 +100,5 @@ the desktop build (Electron), GPU memory, and resting projects with large drawin
 - `node --test scripts/project-files.test.mjs scripts/recovery.test.mjs`
 - `STYK_URL=<dev server> node tests/project-tabs.browser.mjs` (opening, switching, per-project undo,
   cross-project paste, closing, saving, recovery copies, twelve tabs, Ctrl+Tab, reordering)
+- `npm run test:project-tabs:desktop` (Electron: a save target per project, the window-close question for
+  several unsaved projects, a recovery copy per project, and restoring them after a restart)
