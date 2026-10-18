@@ -22,6 +22,10 @@ What's new in each version of StykAnimate.
 - Ctrl-dragging a node that uses IK stretches it like any other node.
 - A calmer top bar: the menus are in the StykAnimate menu, and your open projects take their place.
 
+### Fixed
+
+- Fixed an error when deleting your last color palette.
+
 ## [1.2.5]
 
 Layer folders, camera follow and smoother editing
