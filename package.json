@@ -3,6 +3,15 @@
   "productName": "StykAnimate",
   "version": "1.2.5",
   "description": "A WebGPU desktop workspace for Pivot animation and stick figures.",
+  "license": "GPL-3.0-or-later",
+  "homepage": "https://stykanimate.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/filippocalippo/StykAnimate-App.git"
+  },
+  "bugs": {
+    "url": "https://github.com/filippocalippo/StykAnimate-App/issues"
+  },
   "private": true,
   "type": "module",
   "main": "desktop/main.cjs",
