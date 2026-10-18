@@ -1,5 +1,7 @@
 # Desktop codecs
 
-These are the application's existing Python codec modules, copied without algorithm changes from the sibling `tools` directory and `StykAnimate/tools/codec_bridge.py`. They now live in the private app repository so release builds work from a clean checkout. Development, PyInstaller and electron-builder all use this copy.
+The Python codec modules that read and write Pivot (`.piv`, `.stk`) and StykAnimate files. Development, PyInstaller and electron-builder all use this directory, so release builds work from a clean checkout.
 
-Update these files when changing a codec. Rebuild the sidecar before packaging. Do not publish this directory as a GitHub release attachment.
+The Pivot format support was reverse-engineered for interoperability; StykAnimate is not affiliated with Pivot Animator.
+
+Rebuild the sidecar (`npm run build:sidecar`) before packaging after changing a codec. Release uploads attach only the built installers, never this directory.

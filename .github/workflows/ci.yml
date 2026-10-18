@@ -49,8 +49,6 @@ jobs:
         run: npm test
       - name: Codec service tests
         run: python -m unittest discover -s backend -p "test_*.py"
-      - name: Website and cloud tests
-        run: node --test website/tests/*.test.mjs cloud/tests/*.test.mjs
 
   web:
     uses: ./.github/workflows/web-verify.yml
