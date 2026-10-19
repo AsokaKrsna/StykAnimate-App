@@ -29,6 +29,8 @@ Before writing code, read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and the d
 5. For visible changes, include before and after screenshots or a short clip.
 6. For user-facing changes, add one short entry to the `Unreleased` section of [CHANGELOG.md](CHANGELOG.md), following the style guide in [docs/RELEASING.md](docs/RELEASING.md): the result first, in plain language, without internal details.
 
+Only the maintainer can merge into `main`. Every pull request needs the maintainer's approval and passing unit tests; workflows from first-time contributors start after a maintainer approves them.
+
 ### What we look after in review
 
 - **Your animations are safe.** Saving must stay atomic: a failed or cancelled save never damages the existing file or loses unsaved work. Old files must keep opening, and undo/redo must keep working.
